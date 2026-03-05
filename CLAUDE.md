@@ -7,7 +7,7 @@ with typed threads (Base/P/C/F/B/L), dependency graphs, gates, and policy enforc
 
 ```bash
 bun install
-bun test          # 199 tests across 28 files
+bun test          # run full test suite
 bun dev           # Next.js UI at http://localhost:3000
 ```
 
@@ -86,10 +86,10 @@ handlers directly.
 
 ## Adding a New CLI Command
 
-1. Create `lib/seqctl/commands/<name>.ts` with the handler function
+1. Create `lib/seqctl/commands/<n>.ts` with the handler function
 2. Add the command to the `commands` map in `lib/seqctl/index.ts`
 3. Add help text to the help string in `index.ts`
-4. Write tests in `lib/seqctl/commands/<name>.test.ts`
+4. Write tests in `lib/seqctl/commands/<n>.test.ts`
 5. If the command has a corresponding API route, add it in `app/api/`
 
 ## Adding a New Thread Type Template
