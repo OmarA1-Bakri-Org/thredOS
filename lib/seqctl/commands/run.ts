@@ -5,8 +5,13 @@ import { MprocsClient } from '../../mprocs/client'
 import { updateStepProcess, readMprocsMap } from '../../mprocs/state'
 import { runStep } from '../../runner/wrapper'
 import { saveRunArtifacts } from '../../runner/artifacts'
-import { StepNotFoundError } from '../../errors'
+import { compilePrompt } from '../../runner/prompt-compiler'
+import { dispatch, exitCodeToStatus } from '../../runner/dispatch'
+import { readPrompt, validatePromptExists } from '../../prompts/manager'
+import { StepNotFoundError, PromptNotFoundError } from '../../errors'
 import type { Step, Sequence, StepStatus } from '../../sequence/schema'
+
+const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000 // 30 minutes
 
 interface CLIOptions {
   json: boolean
@@ -60,7 +65,12 @@ function getRunnableSteps(sequence: Sequence): Step[] {
 }
 
 /**
- * Execute a single step
+ * Execute a single step via the Agent Execution Protocol:
+ * 1. Read prompt file
+ * 2. Compile with context (sequence state, dependency artifacts, project info)
+ * 3. Dispatch to agent CLI (claude, codex, gemini, sh)
+ * 4. Run via existing runner (spawn, capture, timeout)
+ * 5. Map exit code to status
  */
 async function executeSingleStep(
   basePath: string,
@@ -74,33 +84,58 @@ async function executeSingleStep(
     throw new StepNotFoundError(stepId)
   }
 
+  // Validate prompt file exists
+  const promptExists = await validatePromptExists(basePath, stepId)
+  if (!promptExists) {
+    return {
+      success: false,
+      stepId,
+      runId,
+      status: 'FAILED',
+      error: `Prompt file not found for step '${stepId}'. Expected: .threados/prompts/${stepId}.md`,
+    }
+  }
+
   // Update status to RUNNING
   step.status = 'RUNNING'
   await writeSequence(basePath, sequence)
 
   try {
-    // Execute the step
-    const result = await runStep({
+    // 1. Read raw prompt
+    const rawPrompt = await readPrompt(basePath, stepId)
+
+    // 2. Compile with context
+    const compiledPrompt = await compilePrompt({
       stepId,
-      runId,
-      command: step.model, // In reality this would be the actual command
-      args: ['--prompt-file', step.prompt_file],
-      cwd: step.cwd,
+      step,
+      rawPrompt,
+      sequence,
+      basePath,
+      maxTokens: step.model === 'claude-code' ? 8000 : 4000,
     })
 
-    // Save artifacts
+    // 3. Dispatch to agent (writes temp prompt, resolves CLI, checks availability)
+    const runnerConfig = await dispatch(step.model, {
+      stepId,
+      runId,
+      compiledPrompt,
+      cwd: step.cwd || basePath,
+      timeout: step.timeout_ms || DEFAULT_TIMEOUT_MS,
+    })
+
+    // 4. Execute via runner
+    const result = await runStep(runnerConfig)
+
+    // 5. Save artifacts
     const artifactPath = await saveRunArtifacts(basePath, result)
 
-    // Update status based on result
-    if (result.status === 'SUCCESS') {
-      step.status = 'DONE'
-    } else {
-      step.status = 'FAILED'
-    }
+    // 6. Map exit code to step status
+    const newStatus = exitCodeToStatus(result.exitCode)
+    step.status = newStatus
     await writeSequence(basePath, sequence)
 
     return {
-      success: result.status === 'SUCCESS',
+      success: newStatus === 'DONE',
       stepId,
       runId,
       status: step.status,
