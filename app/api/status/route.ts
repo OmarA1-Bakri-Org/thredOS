@@ -21,6 +21,7 @@ function buildStatus(sequence: Sequence, mprocsMap: Record<string, number>) {
     steps: sequence.steps.map(s => ({
       id: s.id, name: s.name, type: s.type, status: s.status,
       model: s.model, dependsOn: s.depends_on, processIndex: mprocsMap[s.id],
+      groupId: s.group_id, fusionCandidates: s.fusion_candidates, fusionSynth: s.fusion_synth,
     })),
     gates: sequence.gates.map(g => ({
       id: g.id, name: g.name, status: g.status, dependsOn: g.depends_on,

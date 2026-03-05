@@ -8,11 +8,18 @@ import { useUIStore } from '@/lib/ui/store'
 import { useSequenceGraph } from './useSequenceGraph'
 import { StepNode } from './StepNode'
 import { GateNode } from './GateNode'
+import { GroupBoundary } from './GroupBoundary'
+import { FusionMerge } from './FusionMerge'
 import { DependencyEdge } from './DependencyEdge'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { EmptyState } from '@/components/EmptyState'
 
-const nodeTypes = { stepNode: StepNode, gateNode: GateNode }
+const nodeTypes = {
+  stepNode: StepNode,
+  gateNode: GateNode,
+  groupBoundary: GroupBoundary,
+  fusionNode: FusionMerge,
+}
 const edgeTypes = { depEdge: DependencyEdge }
 
 function CanvasInner() {
