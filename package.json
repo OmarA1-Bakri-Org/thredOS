@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "bin": {
-    "seqctl": "./lib/seqctl/index.ts"
+    "thread": "./lib/seqctl/index.ts"
   },
   "scripts": {
     "dev": "next dev",

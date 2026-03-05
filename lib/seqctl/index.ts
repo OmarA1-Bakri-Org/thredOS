@@ -70,10 +70,10 @@ async function main() {
 
   if (options.help || !command) {
     console.log(`
-seqctl - ThreadOS Sequence Controller
+thread - ThreadOS Sequence Controller
 
 Usage:
-  seqctl <command> [subcommand] [options]
+  thread <command> [subcommand] [options]
 
 Commands:
   init                        Initialize .threados/ directory
