@@ -10,7 +10,7 @@ export type StepStatus = z.infer<typeof StepStatusSchema>
 export const StepTypeSchema = z.enum(['base', 'p', 'c', 'f', 'b', 'l'])
 export type StepType = z.infer<typeof StepTypeSchema>
 
-export const ModelTypeSchema = z.enum(['claude-code', 'codex', 'gemini'])
+export const ModelTypeSchema = z.enum(['claude-code', 'codex', 'gemini', 'shell'])
 export type ModelType = z.infer<typeof ModelTypeSchema>
 
 export const FailPolicySchema = z.enum(['stop-all', 'continue', 'retry'])

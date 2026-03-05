@@ -55,9 +55,6 @@ export class CircularDependencyError extends ThreadOSError {
 }
 
 /**
- * Thrown when a step execution exceeds its timeout
- */
-/**
  * Thrown when a gate cannot be found by ID
  */
 export class GateNotFoundError extends ThreadOSError {
@@ -101,5 +98,28 @@ export class ProcessTimeoutError extends ThreadOSError {
   constructor(stepId: string, timeoutMs: number) {
     super(`Step '${stepId}' timed out after ${timeoutMs}ms`, 'PROCESS_TIMEOUT')
     this.name = 'ProcessTimeoutError'
+  }
+}
+
+/**
+ * Thrown when an agent CLI is not found on the system
+ */
+export class AgentNotFoundError extends ThreadOSError {
+  constructor(model: string, hint?: string) {
+    const message = hint
+      ? `Agent '${model}' not found. ${hint}`
+      : `Agent '${model}' not found on PATH`
+    super(message, 'AGENT_NOT_FOUND')
+    this.name = 'AgentNotFoundError'
+  }
+}
+
+/**
+ * Thrown when a step's prompt file is missing
+ */
+export class PromptNotFoundError extends ThreadOSError {
+  constructor(stepId: string, path: string) {
+    super(`Prompt file not found for step '${stepId}': ${path}`, 'PROMPT_NOT_FOUND')
+    this.name = 'PromptNotFoundError'
   }
 }
