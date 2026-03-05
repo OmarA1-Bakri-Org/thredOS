@@ -36,8 +36,11 @@ describe('readSequence / writeSequence', () => {
     await expect(readSequence(tempDir)).rejects.toThrow()
   })
 
-  test('throws on missing file', async () => {
-    await expect(readSequence(tempDir)).rejects.toThrow()
+  test('returns default sequence when file missing', async () => {
+    const result = await readSequence(tempDir)
+    expect(result.name).toBe('New Sequence')
+    expect(result.steps).toEqual([])
+    expect(result.gates).toEqual([])
   })
 
   test('handles empty sequence', async () => {

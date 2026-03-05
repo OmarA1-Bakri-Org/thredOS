@@ -38,10 +38,10 @@ export async function readSequence(basePath: string): Promise<Sequence> {
   const content = await readFile(fullPath, 'utf-8')
   const raw = YAML.parse(content)
 
-  // Validate with Zod - return default on invalid data instead of crashing
+  // Validate with Zod - throw on invalid data so corruption is surfaced
   const result = SequenceSchema.safeParse(raw)
   if (!result.success) {
-    return DEFAULT_SEQUENCE
+    throw new SequenceValidationError(result.error)
   }
   return result.data
 }

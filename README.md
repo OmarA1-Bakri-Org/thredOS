@@ -8,31 +8,37 @@ ThreadOS lets you define sequences of AI agent steps, wire them with dependencie
 
 ```bash
 bun install
+bun link    # registers the 'thread' command globally
 ```
 
 ## Quick Start
 
 ```bash
 # Initialize a new sequence
-bunx seqctl init my-project
+thread init
 
 # Add steps
-bunx seqctl step add --id research --name "Research" --type base --model claude-code --prompt prompts/research.md
-bunx seqctl step add --id implement --name "Implement" --type base --model claude-code --prompt prompts/implement.md
+thread step add research --name "Research" --type base --model claude-code --prompt prompts/research.md
+thread step add implement --name "Implement" --type base --model claude-code --prompt prompts/implement.md
 
 # Add dependencies
-bunx seqctl dep add --from implement --to research
+thread dep add implement research
 
-# Run the sequence
-bunx seqctl run
+# Insert a review gate
+thread gate insert review --name "Review Research" --depends-on research
+thread dep add implement review
 
 # Check status
-bunx seqctl status
+thread status
+
+# Approve the gate and run
+thread gate approve review
+thread run runnable
 ```
 
 ## Architecture
 
-```
+```text
 ThreadOS
 ├── lib/seqctl/        # CLI commands
 ├── lib/sequence/      # Schema, parser, DAG
@@ -53,7 +59,7 @@ ThreadOS
 |------|------|-------------|
 | `base` | Base | Single sequential agent |
 | `p` | Parallel | Multiple agents, same task |
-| `c` | Chained | Sequential pipeline |
+| `c` | Chained | Sequential pipeline with gates |
 | `f` | Fusion | Candidates + synthesis |
 | `b` | Baton | Hand-off between agents |
 | `l` | Long-autonomy | Extended autonomous operation |
@@ -63,12 +69,17 @@ ThreadOS
 See [docs/cli-reference.md](docs/cli-reference.md) for the complete command reference.
 
 Key commands:
-- `seqctl init <name>` — Initialize a sequence
-- `seqctl step add|remove|update` — Manage steps
-- `seqctl dep add|remove` — Manage dependencies
-- `seqctl gate approve|block` — Control gates
-- `seqctl run` — Execute the sequence
-- `seqctl status` — View current state
+
+- `thread init` — Initialize a sequence
+- `thread step add|edit|rm|clone` — Manage steps
+- `thread dep add|rm` — Manage dependencies
+- `thread gate insert|approve|block|list` — Control gates
+- `thread group parallelize|list` — Manage parallel groups
+- `thread fusion create` — Create fusion workflows
+- `thread run step|runnable|group` — Execute steps
+- `thread stop|restart` — Control running steps
+- `thread status` — View current state
+- `thread template apply <type>` — Apply thread templates
 
 ## UI
 
@@ -77,6 +88,7 @@ bun dev
 ```
 
 Opens the horizontal canvas UI at `http://localhost:3000` with:
+
 - **Sequence Canvas** — Visual DAG of steps and dependencies
 - **Step Inspector** — Edit step properties
 - **Chat Panel** — AI-assisted sequence management
@@ -93,6 +105,10 @@ Opens the horizontal canvas UI at `http://localhost:3000` with:
 ```bash
 bun test
 ```
+
+## Acknowledgments
+
+Special thanks to [IndyDevDan](https://youtube.com/@IndyDevDan) (Dan, [@disler](https://github.com/disler)) for the inspiration. His work on agentic engineering patterns, Claude Code skills, and the [Agentic Engineer](https://agenticengineer.com) course helped shape the thinking behind ThreadOS. If you're building with AI agents, his content is essential viewing.
 
 ## License
 

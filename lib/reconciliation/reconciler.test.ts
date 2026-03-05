@@ -60,6 +60,8 @@ describe('reconcileState', () => {
 
   test('handles missing sequence gracefully', async () => {
     const result = await reconcileState(join(testDir, 'nonexistent'))
-    expect(result.errors.length).toBeGreaterThan(0)
+    expect(result.checked).toBe(0)
+    expect(result.changes).toHaveLength(0)
+    expect(result.errors).toHaveLength(0)
   })
 })

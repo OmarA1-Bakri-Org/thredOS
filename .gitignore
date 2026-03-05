@@ -46,8 +46,8 @@ next-env.d.ts
 # Vendored binaries (not committed)
 vendor/
 
-# Claude Code local config
-.claude/
+# Claude Code local config (keep commands committed)
+.claude/settings.local.json
 
 # Windows artifacts
 nul
