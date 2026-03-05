@@ -133,6 +133,23 @@ describe('compilePrompt', () => {
     expect(result).toContain('Work independently')
   })
 
+  test('handles parallel step without group_id', async () => {
+    const s1 = makeStep({ id: 'lone-worker', type: 'p' })
+    const seq = makeSequence([s1])
+
+    const result = await compilePrompt({
+      stepId: 'lone-worker',
+      step: s1,
+      rawPrompt: 'Solo parallel.',
+      sequence: seq,
+      basePath: '/tmp/nonexistent',
+    })
+
+    expect(result).toContain('Parallel execution')
+    expect(result).toContain('Work independently')
+    expect(result).not.toContain('worker 0')
+  })
+
   test('includes fusion synth context', async () => {
     const c1 = makeStep({ id: 'cand-1', type: 'f', fusion_candidates: true })
     const c2 = makeStep({ id: 'cand-2', type: 'f', fusion_candidates: true })
@@ -168,10 +185,12 @@ describe('compilePrompt', () => {
     expect(result).toContain('FILES_CREATED')
   })
 
-  test('truncates when exceeding token budget', async () => {
+  test('truncates within token budget', async () => {
     const step = makeStep()
     const seq = makeSequence([step])
     const hugePrompt = 'x'.repeat(50000)
+    const maxTokens = 2000
+    const maxChars = maxTokens * 4 // CHARS_PER_TOKEN = 4
 
     const result = await compilePrompt({
       stepId: 'test-step',
@@ -179,10 +198,10 @@ describe('compilePrompt', () => {
       rawPrompt: hugePrompt,
       sequence: seq,
       basePath: '/tmp/nonexistent',
-      maxTokens: 2000,
+      maxTokens,
     })
 
-    expect(result.length).toBeLessThan(50000)
+    expect(result.length).toBeLessThanOrEqual(maxChars)
     expect(result).toContain('truncated')
   })
 })

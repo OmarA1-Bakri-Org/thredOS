@@ -68,6 +68,7 @@ function getRunnableSteps(sequence: Sequence): Step[] {
  * Execute a single step via the Agent Execution Protocol:
  * 1. Read prompt file
  * 2. Compile with context (sequence state, dependency artifacts, project info)
+ *    - Shell steps skip compilation and pass raw script directly
  * 3. Dispatch to agent CLI (claude, codex, gemini, sh)
  * 4. Run via existing runner (spawn, capture, timeout)
  * 5. Map exit code to status
@@ -84,15 +85,19 @@ async function executeSingleStep(
     throw new StepNotFoundError(stepId)
   }
 
-  // Validate prompt file exists
+  // Validate prompt file exists \u2014 use step.prompt_file, not hardcoded stepId path
+  const promptPath = step.prompt_file
   const promptExists = await validatePromptExists(basePath, stepId)
   if (!promptExists) {
+    // Bug fix: persist FAILED status so step isn't re-selected by run runnable
+    step.status = 'FAILED'
+    await writeSequence(basePath, sequence)
     return {
       success: false,
       stepId,
       runId,
       status: 'FAILED',
-      error: `Prompt file not found for step '${stepId}'. Expected: .threados/prompts/${stepId}.md`,
+      error: `Prompt file not found for step '${stepId}'. Expected: ${promptPath}`,
     }
   }
 
@@ -104,21 +109,23 @@ async function executeSingleStep(
     // 1. Read raw prompt
     const rawPrompt = await readPrompt(basePath, stepId)
 
-    // 2. Compile with context
-    const compiledPrompt = await compilePrompt({
-      stepId,
-      step,
-      rawPrompt,
-      sequence,
-      basePath,
-      maxTokens: step.model === 'claude-code' ? 8000 : 4000,
-    })
+    // 2. Compile with context (skip for shell \u2014 shell runs raw script directly)
+    const promptForDispatch = step.model === 'shell'
+      ? rawPrompt
+      : await compilePrompt({
+          stepId,
+          step,
+          rawPrompt,
+          sequence,
+          basePath,
+          maxTokens: step.model === 'claude-code' ? 8000 : 4000,
+        })
 
     // 3. Dispatch to agent (writes temp prompt, resolves CLI, checks availability)
     const runnerConfig = await dispatch(step.model, {
       stepId,
       runId,
-      compiledPrompt,
+      compiledPrompt: promptForDispatch,
       cwd: step.cwd || basePath,
       timeout: step.timeout_ms || DEFAULT_TIMEOUT_MS,
     })

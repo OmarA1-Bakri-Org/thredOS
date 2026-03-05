@@ -123,17 +123,17 @@ function buildThreadTypeContext(step: Step, sequence: Sequence): string | null {
     }
 
     case 'p': {
-      // Parallel: show group context
-      const groupSteps = step.group_id
-        ? allSteps.filter(s => s.group_id === step.group_id)
-        : []
+      // Parallel: show group context (guard against missing group_id)
+      if (!step.group_id) {
+        return `**Parallel execution** \u2014 You are one of multiple parallel workers. Work independently. Do not coordinate with other workers.`
+      }
+      const groupSteps = allSteps.filter(s => s.group_id === step.group_id)
       const workerN = groupSteps.findIndex(s => s.id === step.id) + 1
       return `**Parallel execution** \u2014 You are worker ${workerN} of ${groupSteps.length} in group \`${step.group_id}\`. Work independently. Do not coordinate with other workers.`
     }
 
     case 'f': {
       if (step.fusion_synth) {
-        // Synthesis step: will get all candidate outputs via artifacts
         const candidates = allSteps.filter(s => s.fusion_candidates)
         return `**Fusion synthesis** \u2014 You are the synthesis step. ${candidates.length} candidates have produced independent solutions. Review all candidate outputs below and synthesize the best parts into a single unified solution.`
       }
@@ -145,7 +145,6 @@ function buildThreadTypeContext(step: Step, sequence: Sequence): string | null {
     }
 
     case 'b': {
-      // Baton: hand-off context
       const prevSteps = step.depends_on
       if (prevSteps.length > 0) {
         return `**Baton hand-off** \u2014 The previous agent(s) (${prevSteps.join(', ')}) have completed their work. Continue from where they left off. Their output is in "Prior Step Outputs" below.`
@@ -214,12 +213,21 @@ async function loadDependencyArtifacts(
     if (!depStep || depStep.status !== 'DONE') continue
 
     try {
-      // Find the most recent run for this step
-      const runDirs = await readdir(runsDir).catch(() => [] as string[])
+      // Find the most recent run for this step (sort by mtime, newest first)
+      const runDirNames = await readdir(runsDir).catch(() => [] as string[])
+      const runDirsWithTime: { name: string; mtime: number }[] = []
+      for (const name of runDirNames) {
+        const stepArtifactDir = join(runsDir, name, depId)
+        try {
+          const s = await stat(stepArtifactDir)
+          runDirsWithTime.push({ name, mtime: s.mtimeMs })
+        } catch { /* no artifacts for this dep in this run */ }
+      }
+      runDirsWithTime.sort((a, b) => b.mtime - a.mtime) // newest first
+
       let latestStdout = ''
       let latestDuration: number | undefined
-
-      for (const runId of runDirs.reverse()) {
+      for (const { name: runId } of runDirsWithTime) {
         const stdoutPath = join(runsDir, runId, depId, 'stdout.log')
         const statusPath = join(runsDir, runId, depId, 'status.json')
         try {
@@ -295,10 +303,14 @@ async function buildFileTree(basePath: string): Promise<string | null> {
 function truncateToFit(text: string, maxChars: number): string {
   if (text.length <= maxChars) return text
 
-  const headSize = Math.floor(maxChars * 0.6)
-  const tailSize = Math.floor(maxChars * 0.3)
+  const separator = '\n\n[...context truncated to fit token budget...]\n\n'
+  const available = maxChars - separator.length
+  if (available <= 0) return text.slice(0, maxChars)
+
+  const headSize = Math.floor(available * 0.65)
+  const tailSize = available - headSize
   const head = text.slice(0, headSize)
   const tail = text.slice(-tailSize)
 
-  return `${head}\n\n[...context truncated to fit token budget...]\n\n${tail}`
+  return `${head}${separator}${tail}`
 }
