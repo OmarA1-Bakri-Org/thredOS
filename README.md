@@ -11,6 +11,16 @@ bun install
 bun link    # registers the 'thread' command globally
 ```
 
+## Environment
+
+Copy `.env.example` to `.env.local` (UI/API) or `.env` and set values as needed.
+
+| Variable | Required | Default | Purpose |
+|------|------|------|------|
+| `THREADOS_BASE_PATH` | No | `./` (or `process.cwd()` fallback) | Base directory used by API routes for ThreadOS files |
+| `THREADOS_MPROCS_PATH` | No | auto-resolved | Absolute/relative path to `mprocs` binary |
+| `ANTHROPIC_API_KEY` | Optional by workflow | unset | Required only for Anthropic-backed chat responses; CLI/thread management works without it |
+
 ## Quick Start
 
 ```bash
@@ -99,6 +109,19 @@ Opens the horizontal canvas UI at `http://localhost:3000` with:
 - [CLI Reference](docs/cli-reference.md)
 - [Thread Types Guide](docs/thread-types.md)
 - [Policy Configuration](docs/policy.md)
+
+## Policy Modes
+
+Safety policy is loaded from `.threados/policy.yaml` (see [docs/policy.md](docs/policy.md)).
+
+- `SAFE` (default): command execution actions require confirmation
+- `POWER`: skips confirmations but still enforces limits (`forbidden_patterns`, concurrency/fanout caps, etc.)
+
+## Local Verification
+
+```bash
+bun run check
+```
 
 ## Testing
 

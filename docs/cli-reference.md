@@ -1,146 +1,233 @@
-# seqctl CLI Reference
+# `thread` CLI Reference
 
 ## Global Options
 
-- `--json` — Output as JSON
-- `--help` — Show help
-- `--watch` — Watch mode (for status)
+- `-j, --json` — Output as JSON
+- `-h, --help` — Show help
+- `-w, --watch` — Watch mode (status only)
 
 ## Commands
 
-### `seqctl init <name>`
+### `thread init`
 
-Initialize a new ThreadOS sequence in the current directory.
+Initialize `.threados/` in the current working directory.
 
 ```bash
-seqctl init my-project
-# Creates .threados/sequence.yaml
+thread init
 ```
 
-### `seqctl step add`
+### `thread step add <stepId> [options]`
 
-Add a new step to the sequence.
+Add a new step.
 
 ```bash
-seqctl step add --id build --name "Build" --type base --model claude-code --prompt prompts/build.md
+thread step add build --name "Build" --type base --model claude-code --prompt .threados/prompts/build.md
 ```
 
 Options:
-- `--id` (required) — Unique step identifier
-- `--name` (required) — Human-readable name
-- `--type` (required) — Step type: base, p, c, f, b, l
-- `--model` (required) — Model: claude-code, codex, gemini
-- `--prompt` (required) — Path to prompt file
-- `--depends-on` — Comma-separated dependency IDs
-- `--cwd` — Working directory
-- `--lane` — Lane assignment
+- `--name, -n` — Display name
+- `--type, -t` — Step type: `base`, `p`, `c`, `f`, `b`, `l`
+- `--model, -m` — Model id (for example `claude-code`, `codex`, `gemini`)
+- `--prompt, -p` — Prompt file path
+- `--depends-on, -d` — Comma-separated dependency IDs
+- `--cwd` — Working directory for the step
 
-### `seqctl step remove`
+### `thread step edit <stepId> [options]`
 
-Remove a step and clean up dependencies.
+Edit an existing step.
 
 ```bash
-seqctl step remove --id build
+thread step edit build --name "Build v2" --type p
 ```
 
-### `seqctl step update`
+### `thread step rm <stepId>`
 
-Update step fields.
+Remove a step.
 
 ```bash
-seqctl step update --id build --name "Build v2" --type p
+thread step rm build
 ```
 
-### `seqctl run`
+### `thread step clone <sourceId> <newId>`
 
-Execute the sequence via mprocs.
+Clone an existing step.
 
 ```bash
-seqctl run
+thread step clone research research-copy
 ```
 
-### `seqctl stop`
+### `thread dep add <stepId> <depId>`
 
-Stop the sequence or a specific step.
+Add a dependency to a step.
 
 ```bash
-seqctl stop
-seqctl stop --step-id build
+thread dep add implement research
 ```
 
-### `seqctl restart`
+### `thread dep rm <stepId> <depId>`
 
-Restart a specific step.
+Remove a dependency from a step.
 
 ```bash
-seqctl restart --step-id build
+thread dep rm implement research
 ```
 
-### `seqctl status`
+### `thread gate insert <gateId> [options]`
 
-View sequence status.
+Insert a gate.
 
 ```bash
-seqctl status
-seqctl status --json
-seqctl status --watch
+thread gate insert review --name "Review" --depends-on research
 ```
 
-### `seqctl dep add`
+Options:
+- `--name, -n` — Gate display name
+- `--depends-on, -d` — Comma-separated step IDs
 
-Add a dependency between steps.
+### `thread gate approve <gateId>`
+
+Approve a gate.
 
 ```bash
-seqctl dep add --from build --to research
+thread gate approve review
 ```
 
-### `seqctl dep remove`
-
-Remove a dependency.
-
-```bash
-seqctl dep remove --from build --to research
-```
-
-### `seqctl gate approve`
-
-Approve a gate to allow downstream steps to proceed.
-
-```bash
-seqctl gate approve --id review-gate
-```
-
-### `seqctl gate block`
+### `thread gate block <gateId>`
 
 Block a gate.
 
 ```bash
-seqctl gate block --id review-gate
+thread gate block review
 ```
 
-### `seqctl group create`
+### `thread gate list`
 
-Create a step group.
+List all gates.
 
 ```bash
-seqctl group create --id my-group --steps step-1,step-2,step-3
+thread gate list
 ```
 
-### `seqctl fusion create`
+### `thread run step <stepId>`
 
-Create a fusion pattern with candidates and a synthesis step.
+Run one specific step.
 
 ```bash
-seqctl fusion create --candidates step-a,step-b --synth step-c
+thread run step research
 ```
 
-### `seqctl template apply`
+### `thread run runnable`
 
-Apply a predefined template.
+Run all runnable steps.
 
 ```bash
-seqctl template apply parallel --name "Parallel Research"
-seqctl template apply chained --name "Pipeline"
+thread run runnable
 ```
 
-Available templates: base, parallel, chained, fusion, orchestrated, long-autonomy
+### `thread run group <groupId>`
+
+Run a grouped set of steps.
+
+```bash
+thread run group group-1
+```
+
+### `thread status [--watch]`
+
+Show sequence status.
+
+```bash
+thread status
+thread status --watch
+thread status --json
+```
+
+### `thread stop <stepId>`
+
+Stop a running step.
+
+```bash
+thread stop research
+```
+
+### `thread restart <stepId>`
+
+Restart a step.
+
+```bash
+thread restart research
+```
+
+### `thread group parallelize <stepId1> <stepId2> [...]`
+
+Mark steps as a parallel group.
+
+```bash
+thread group parallelize research implement validate
+```
+
+### `thread group list`
+
+List existing groups.
+
+```bash
+thread group list
+```
+
+### `thread fusion create --candidates <id1,id2,...> --synth <synthId>`
+
+Create a fusion pattern.
+
+```bash
+thread fusion create --candidates draft-a,draft-b --synth final-synth
+```
+
+### `thread mprocs open`
+
+Generate `.threados/mprocs.yaml` and launch mprocs.
+
+```bash
+thread mprocs open
+```
+
+### `thread mprocs select <stepId>`
+
+Select a step process in mprocs.
+
+```bash
+thread mprocs select research
+```
+
+### `thread template apply <type> [--name <name>]`
+
+Apply a thread template.
+
+```bash
+thread template apply parallel --name "Parallel Research"
+thread template apply chained --name "Pipeline"
+```
+
+Available templates: `base`, `parallel`, `chained`, `fusion`, `orchestrated`, `long-autonomy`
+
+## Environment Variables
+
+See `.env.example` for local defaults and expected values:
+
+- `THREADOS_BASE_PATH`
+- `THREADOS_MPROCS_PATH`
+- `ANTHROPIC_API_KEY`
+
+## Policy Modes
+
+Policy file location: `.threados/policy.yaml`.
+
+- `SAFE` (default): requires confirmation for command execution actions.
+- `POWER`: no confirmation prompts, but policy limits still apply.
+
+Full policy reference: `docs/policy.md`.
+
+## Local Verification
+
+```bash
+bun run check
+```
