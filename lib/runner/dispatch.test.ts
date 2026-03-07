@@ -1,5 +1,8 @@
 import { describe, test, expect } from 'bun:test'
 import { dispatch, checkAgentAvailable, exitCodeToStatus, getSupportedModels } from './dispatch'
+import type { ModelType } from '../sequence/schema'
+
+const unsupportedModel = 'unknown-model' as ModelType
 
 describe('exitCodeToStatus', () => {
   test('maps 0 to DONE', () => {
@@ -50,14 +53,14 @@ describe('dispatch', () => {
       stepId: 'build',
       runId: 'run-123',
       compiledPrompt: '#!/bin/sh\necho "hello"',
-      cwd: '/tmp',
+      cwd: process.cwd(),
       timeout: 30000,
     })
 
     expect(config.command).toBe('sh')
     expect(config.stepId).toBe('build')
     expect(config.runId).toBe('run-123')
-    expect(config.cwd).toBe('/tmp')
+    expect(config.cwd).toBe(process.cwd())
     expect(config.timeout).toBe(30000)
     expect(config.env?.THREADOS_STEP_ID).toBe('build')
     expect(config.env?.THREADOS_RUN_ID).toBe('run-123')
@@ -68,7 +71,7 @@ describe('dispatch', () => {
       stepId: 'test',
       runId: 'run-456',
       compiledPrompt: 'echo "test"',
-      cwd: '/tmp',
+      cwd: process.cwd(),
       timeout: 5000,
     })
 
@@ -79,11 +82,11 @@ describe('dispatch', () => {
 
   test('rejects unsupported model', async () => {
     await expect(
-      dispatch('unknown-model' as any, {
+      dispatch(unsupportedModel, {
         stepId: 'x',
         runId: 'r',
         compiledPrompt: 'p',
-        cwd: '/tmp',
+        cwd: process.cwd(),
         timeout: 1000,
       })
     ).rejects.toThrow('Agent')

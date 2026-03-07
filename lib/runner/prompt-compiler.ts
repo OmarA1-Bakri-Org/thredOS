@@ -1,5 +1,5 @@
 import { readFile, readdir, stat } from 'fs/promises'
-import { join, relative } from 'path'
+import { join } from 'path'
 import type { Step, Sequence } from '../sequence/schema'
 
 export interface CompileOptions {

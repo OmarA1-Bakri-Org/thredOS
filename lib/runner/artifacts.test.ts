@@ -18,7 +18,7 @@ describe('artifacts', () => {
 
   test('createRunDirectory creates nested dirs', async () => {
     const dir = await createRunDirectory(tmpDir, 'run-1', 'step-1')
-    expect(dir).toBe(join(tmpDir, '.threados/runs/run-1/step-1'))
+    expect(dir).toBe(join(tmpDir, '.threados', 'runs', 'run-1', 'step-1'))
     // Should not throw on access
     const { access } = await import('fs/promises')
     await access(dir)
@@ -63,7 +63,7 @@ describe('artifacts', () => {
       endTime: now,
     }
     const artifactPath = await saveRunArtifacts(tmpDir, result)
-    expect(artifactPath).toContain('run-1/step-1')
+    expect(artifactPath).toBe(join(tmpDir, '.threados', 'runs', 'run-1', 'step-1'))
 
     const stdout = await readFile(join(artifactPath, 'stdout.log'), 'utf-8')
     expect(stdout).toBe('hello')
