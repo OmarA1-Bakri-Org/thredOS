@@ -74,4 +74,25 @@ describe('runStep', () => {
     })
     expect(result.stdout.trim()).toBe('test-value')
   })
+
+  test('inherited env vars filtered through allowlist', async () => {
+    const originalSensitive = process.env.AWS_SECRET_ACCESS_KEY
+    process.env.AWS_SECRET_ACCESS_KEY = 'super-secret'
+
+    try {
+      const result = await runStep({
+        stepId: 'env-filter-step',
+        runId: 'run-7',
+        command: process.execPath,
+        args: ['-e', 'process.stdout.write(process.env.AWS_SECRET_ACCESS_KEY ?? "FILTERED")'],
+      })
+      expect(result.stdout.trim()).toBe('FILTERED')
+    } finally {
+      if (originalSensitive !== undefined) {
+        process.env.AWS_SECRET_ACCESS_KEY = originalSensitive
+      } else {
+        delete process.env.AWS_SECRET_ACCESS_KEY
+      }
+    }
+  })
 })
