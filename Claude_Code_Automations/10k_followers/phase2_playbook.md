@@ -124,7 +124,7 @@ Your mission is the single problem you solve. Everything flows from this.
 - Frame your expertise as solutions to their problems, not credentials.
 
 **Claude prompt for content angle development:**
-```
+```text
 Find the best angle/topic for one LinkedIn post that turns my expertise
 into something useful, relatable, and 100% about the reader — not
 bragging — by asking clarifying questions about real problems my
@@ -147,7 +147,7 @@ Every post follows: **Mission + Solution + Angle + Format**
 
 #### Template A: Single Image Post
 
-```
+```text
 [HOOK — 2 lines, ~55 chars each. Pattern interrupt.]
 [Blank line]
 [Body — 3-8 short paragraphs. About the reader. No emojis. No hashtags.]
@@ -193,7 +193,7 @@ The hook is the first 2 lines before "see more." It determines whether anyone re
 **Generation workflow:**
 1. Write the full post body first.
 2. Prompt Claude/ChatGPT:
-```
+```text
 Write the hook for this post — the first 2 lines before 'more'
 (roughly 2 short sentences, ~55 characters max each).
 The hook's only job is to break scrolling patterns and make them
