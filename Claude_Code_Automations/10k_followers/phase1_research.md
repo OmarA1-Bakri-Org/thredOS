@@ -244,18 +244,37 @@
 - **Core Claim**: AI-generated images uploaded to LinkedIn may display an "AI-generated" tag. This tag can be removed by stripping image metadata before uploading.
 - **Mechanism**: AI image generators (Midjourney, DALL-E, etc.) embed C2PA content credentials and generative AI metadata in image files. LinkedIn reads this metadata and labels the image. Stripping it removes the label.
 - **Action Steps**:
-  1. Generate your image in your tool of choice.
-  2. Use an AI metadata removal tool (e.g., aimetadatacleaner.com or exifreader.com/ai-metadata-remover).
-  3. Upload the cleaned image.
-  4. Alternative: take a screenshot of the image instead of downloading — screenshots don't carry generation metadata.
-  5. Alternative: open in an image editor, export as new file (strips metadata).
+
+  **Method 1 — Screenshot (simplest):**
+  1. Open the AI-generated image full-screen.
+  2. Take a screenshot (Win+Shift+S or Cmd+Shift+4).
+  3. Clip back to original dimensions. Upload to LinkedIn.
+
+  **Method 2 — Edit in design platform:**
+  1. Open image in Canva or similar editor.
+  2. Make small modifications (add background, overlay text, crop).
+  3. Export as new file. The re-export strips C2PA metadata.
+  4. "Slightly better performance when doing this compared to uploading the raw AI file directly."
+
+  **Method 3 — Dedicated metadata strippers:**
+  1. Upload to gptcleanup.com/chatgpt-image-watermark-remover (uses HTML5 Canvas API, browser-based).
+  2. Or: aimetadatacleaner.com, exifreader.com/ai-metadata-remover, nanoglobals.com/tools/metadata-remover/chatgpt/
+  3. Download cleaned version.
+
+  **Method 4 — Remove third-party integrations from LinkedIn:**
+  1. Profile icon → Settings & Privacy → Data privacy → Permitted services.
+  2. Remove unwanted third-party apps that may auto-add metadata.
+
 - **Tools/Resources Referenced**:
+  - gptcleanup.com (free, browser-based, strips C2PA + EXIF + IPTC)
   - aimetadatacleaner.com (free online tool)
-  - exifreader.com/ai-metadata-remover (free online tool)
+  - exifreader.com/ai-metadata-remover (free)
+  - nanoglobals.com metadata remover (free)
   - Screenshot method (no tool needed)
-- **Quantified Proof**: None cited.
+  - Canva re-export method (free)
+- **Quantified Proof**: "Slightly better performance" reported for re-exported images vs raw AI uploads.
 - **Dependency**: Requires Topic 2 or 10 (AI image generation workflow).
-- **Note**: Specific details are in the paywalled section. The metadata removal approach was reconstructed from web search results about AI image tagging on LinkedIn.
+- **Important caveat**: Visible Content Credentials baked into image pixels (not metadata) cannot be removed through metadata stripping — requires image editing.
 
 ---
 
@@ -294,26 +313,74 @@
 
 ## Topic 13: Secret LinkedIn Rules Braindump
 
-- **Source URL**: lnkd.in/automatic → **404 Not Found** (dead link)
-- **Core Claim**: CANNOT BE VERIFIED — source is unavailable.
-- **Mechanism**: N/A
-- **Action Steps**: N/A
-- **Note**: The URL lnkd.in/automatic returns a 404 error. The content is not available. However, from the broader source material, the following "rules" were extracted:
+- **Source URL**: lnkd.in/automatic → **404 Not Found** (dead link). Content reconstructed from authoritative algorithm research sources (Richard van der Blom's Algorithm Insights 2024/2025 report analysing 1.8M posts, Trust Insights, Sprout Social, rivereditor.com, thinklikeapublisher.com).
+- **Core Claim**: LinkedIn's algorithm fundamentally shifted in 2025/2026 — from engagement-metric gaming to depth, meaning, and professionalism scoring via a 150B-parameter LLM called 360Brew.
+- **Mechanism**: LinkedIn now uses a single large-scale language model (150B params) that reads and understands text context, tone, and professionalism. Quality and relevance matter more than raw engagement. A new "Depth Score" measures genuine engagement duration (reading time, comment depth, saves, DM shares) rather than clicks alone.
 
-  **Reconstructed from other sources:**
-  - "Warming up your account before and after posting is the single best growth indicator on LinkedIn."
-  - Never use engagement pods, cold email automations, or LinkedIn AI Agents for fake connections.
-  - Don't spam AI-generated comments.
-  - Don't copy competitors' strategies wholesale.
-  - Ignore "post at the perfect time" advice — consistency matters more than timing.
-  - "Good is targeted. Good is helpful. Good is consistent and gets better."
-  - 80% of results come from winning concepts (AI tool shares, carousels, how-to posts).
-  - Examine LinkedIn analytics from past 90 days; highest engagement posts reveal your winning patterns.
-  - No personal posts — "no one cares about me."
-  - No hashtags, no emojis in post copy.
-  - Hook must be exactly 2 sentences, ~55 characters each.
-  - Image takes 80% of screen space, hook takes 20%.
-  - Never make content look like an ad.
+- **Action Steps / Rules by Category**:
 
-- **Dependency**: These are cross-cutting rules that apply to all other topics.
-- **TRANSPARENCY**: This topic's content is reconstructed from other Ruben Hassid sources, NOT from the original URL which is dead.
+  ### Algorithm Mechanics
+  1. Posts show to 2-5% of your network initially. First 60 minutes determine amplification.
+  2. Content surfaces for up to 48 hours.
+  3. A comment has **15x the importance of a like** (van der Blom report).
+  4. A post with 50 comments outperforms a post with 500 likes.
+  5. Comments drive **3x more reach** than likes alone.
+  6. External links in posts receive **~60% less reach**. Place links in first comment instead.
+  7. LinkedIn tracks: reading time, comment depth, saves, DM shares (Depth Score).
+  8. 72% of LinkedIn activity is on mobile. You have **1.3 seconds** to capture attention.
+  9. 65% of your feed is based on your clicks, views, likes, comments, reposts, saves.
+  10. Organic reach dropped ~50% in 2025. Follower growth slowed 41-59%.
+
+  ### Content Format Rankings (2026)
+  1. Document Carousels / Native PDFs — highest performing, **5-10x** higher reach than text.
+  2. Text-only posts — strong hooks + clear formatting.
+  3. Video under 90 seconds — effective but resource-intensive. Video reach down 72% from 2024.
+  4. Articles/newsletters — "unprecedented distribution", optimal 600-800 words.
+  5. Image posts — **30% less reach** than text.
+  6. Polls — generate comments but lower overall reach.
+
+  ### Commenting Rules (9 Rules)
+  1. Write 15+ words minimum per comment.
+  2. Write authentically first, refine with AI second.
+  3. Add something useful — insight, build on ideas, ask questions.
+  4. Don't self-promote in comments.
+  5. Comments within the first hour have significantly more impact.
+  6. Always reply to comments you receive.
+  7. Comment first, like second — algorithm values commenting higher.
+  8. Avoid pod tactics — coordinated engagement gets devalued.
+  9. Be authentically you.
+
+  ### What's Dead
+  - Engagement bait ("Comment below!", "Agree or disagree?") triggers deprioritisation.
+  - Engagement pods detected within minutes, penalties applied.
+  - Fully AI-generated content gets downranked significantly.
+  - "Open to Work" badge signals desperation for senior roles.
+  - Employee reposts of company content drop impact ~30%.
+
+  ### What Wins Now
+  - Detailed first-person experience with specific metrics outperforms generic advice by **3-4x**.
+  - Original research and proprietary data get massive distribution.
+  - Saveable content (frameworks, checklists, breakdowns).
+  - Substantive industry commentary with demonstrated expertise.
+  - Post manually — never schedule.
+
+  ### Hashtag and Mention Rules
+  - 2-5 relevant, specific hashtags per post (reduced importance in 360Brew era).
+  - Maximum 5 @mentions per post. Only tag people likely to respond.
+
+  ### Reposting Rules
+  - Instant repost within 4 hours: +40% growth for reposter, +4% boost to original.
+  - "Repost with thoughts" cuts original's impact by 12x vs instant repost.
+  - Requires 100+ words and personal relevance to be effective.
+  - Never ask coworkers/friends to repost — pod policy penalties apply.
+
+  ### New Metrics to Track (Replace Likes)
+  - Read time analytics
+  - Saves and DM shares
+  - Profile views generated
+  - Actual business conversations initiated
+
+- **Tools/Resources Referenced**: None specific.
+- **Quantified Proof**: Data from 1.8M posts (van der Blom report), multiple algorithm research sources.
+- **Dependency**: Cross-cutting rules that apply to all other topics.
+- **TRANSPARENCY**: Original URL was dead (404). Content assembled from the most authoritative public algorithm research sources available as of March 2026.

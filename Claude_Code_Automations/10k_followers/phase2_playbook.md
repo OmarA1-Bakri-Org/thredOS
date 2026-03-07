@@ -317,27 +317,59 @@ LinkedIn labels AI-generated images with an "AI-generated" tag by reading C2PA m
 
 ## 5. Secret Rules & Edge Cases
 
-### Algorithm Rules
-- LinkedIn's algorithm weighs comments more heavily than likes or shares.
-- Dwell time (how long someone spends reading your post) is a key ranking signal.
-- Carousel format maximises dwell time through forced swipes.
-- Posting frequency: once daily is optimal. More than once reduces per-post reach.
-- "Post at the perfect time" is a myth — consistency matters more than timing.
+### Algorithm Mechanics (360Brew Era — 2025/2026)
+- LinkedIn uses a 150B-parameter LLM called "360Brew" that reads context, tone, and professionalism.
+- New "Depth Score" measures reading time, comment depth, saves, and DM shares.
+- Posts show to 2-5% of network first. **First 60 minutes determine amplification.**
+- Content surfaces for up to 48 hours.
+- A comment has **15x the importance of a like** (van der Blom, 1.8M posts analysed).
+- A post with 50 comments outperforms one with 500 likes.
+- External links reduce reach by ~60%. Put links in first comment.
+- 72% of LinkedIn activity is mobile. You have **1.3 seconds** to capture attention.
+- Organic reach dropped ~50% in 2025. Strategy and effort now required.
+
+### Content Format Rankings
+1. Document Carousels / Native PDFs — **5-10x** higher reach than text posts.
+2. Text-only posts with strong hooks and clear formatting.
+3. Video under 90 seconds (but video reach down 72% from 2024).
+4. Articles/newsletters — optimal 600-800 words of insight.
+5. Image posts — **30% less reach** than text.
+6. Polls — generate comments but lower overall reach.
 
 ### Content Rules
 - No personal posts. No humble brags. No "I'm excited to announce."
-- No hashtags in post body.
-- No emojis in post body.
-- Hook: exactly 2 sentences, ~55 chars each.
-- Image: 80% of screen space. Hook: 20%.
-- Never make content look like an ad.
-- 80% of your results come from "winning concepts" — AI tool shares, carousels, how-to posts.
+- 2-5 specific hashtags per post (reduced importance in 360Brew era).
+- No emojis in post body. Max 5 @mentions — only tag people likely to respond.
+- Hook: exactly 2 sentences, ~55 chars each. Image: 80% of screen.
+- Never make content look like an ad. Post manually — never schedule.
+- 80% of results come from "winning concepts" — AI tool shares, carousels, how-to posts.
+- Detailed first-person experience with specific metrics outperforms generic advice by **3-4x**.
+
+### What's Dead
+- Engagement bait ("Comment below!", "Agree or disagree?") — triggers deprioritisation.
+- Engagement pods — detected within minutes, penalties applied.
+- Fully AI-generated content — downranked. "Your readers hate it, the algorithm hates it."
+- "Open to Work" badge — signals desperation for senior roles.
+- Employee reposts of company content — impact drops ~30%.
+- "Repost with thoughts" — cuts original's impact by **12x** vs instant repost.
 
 ### Growth Rules
-- Engagement pods are counterproductive — they attract the wrong audience.
 - Cold email automations damage your account reputation.
 - Don't copy competitors — discover your own voice through daily posting.
-- Examine your LinkedIn analytics every 90 days. Highest-engagement posts reveal your winning patterns. Double down on what works.
+- Examine analytics every 90 days. Double down on winning patterns.
+- Company page organic posts reach only ~1.6% of followers. Individual profiles are the channel.
+- Instant repost within 4 hours: +40% growth for reposter, +4% to original.
+
+### Commenting Rules (9 Rules from Algorithm Research)
+1. Write 15+ words minimum.
+2. Write authentically first, refine with AI second.
+3. Add something useful — insight, question, build on the idea.
+4. Don't self-promote in comments.
+5. Comments within the first hour have significantly more impact.
+6. Always reply to comments you receive.
+7. Comment first, like second.
+8. Avoid pod tactics.
+9. Be authentically you.
 
 ### Mindset Rules
 - "Someone infinitely dumber than you is getting what you want in life by simply being consistent."
@@ -345,7 +377,7 @@ LinkedIn labels AI-generated images with an "AI-generated" tag by reading C2PA m
 - "If you can't be social on social media, don't try to grow on social media."
 - AI accelerates execution but requires human judgment, taste, and daily discipline.
 
-*Source: Topic 13 (reconstructed from multiple sources — original URL was dead)*
+*Source: Topic 13 — original URL dead; reconstructed from van der Blom Algorithm Insights (1.8M posts), Trust Insights, Sprout Social, rivereditor.com, thinklikeapublisher.com, and Ruben Hassid's broader content.*
 
 ---
 

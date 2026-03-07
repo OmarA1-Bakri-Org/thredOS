@@ -69,25 +69,66 @@ This window is when LinkedIn's algorithm decides how widely to distribute.
 
 ---
 
-## 5. Algorithm Rules
+## 5. Algorithm Rules (2025/2026)
+
+LinkedIn uses a 150B-parameter LLM called "360Brew" that reads context, tone, and
+professionalism. It shifted from engagement metrics to a "Depth Score."
 
 ### What the Algorithm Rewards
-- **Comments** are weighted more heavily than likes or shares
-- **Dwell time** (time spent reading) is a key ranking signal
-- **Carousel format** maximises dwell time through forced swipes
-- **Active accounts** get preferential distribution
+- **Comments**: 15x the importance of a like. 50 comments > 500 likes.
+- **Dwell time / Depth Score**: reading time, comment depth, saves, DM shares
+- **Carousel format**: maximises dwell time through forced swipes (5-10x reach vs text)
+- **Active accounts**: preferential distribution for consistent posters
+- **First-person experience with specifics**: 3-4x reach vs generic advice
+- **Saves and DM shares**: LinkedIn added these to analytics -- they value them
+- **Original research and proprietary data**
 
 ### What the Algorithm Punishes
-- External links in posts (reduced distribution)
-- Engagement pods (wrong audience signals)
-- Automated comments (pattern detection)
-- Inconsistent posting (lost algorithmic momentum)
+- External links in posts (~60% less reach). Put links in first comment.
+- Engagement pods: detected within minutes, penalties applied
+- Automated/generic comments: pattern detection active
+- Fully AI-generated content: downranked significantly
+- Engagement bait: "Comment below!", "Agree or disagree?" triggers deprioritisation
+- Inconsistent posting: lost algorithmic momentum
+
+### Post Distribution Process
+1. Initial quality/spam check
+2. Shown to 2-5% of your network
+3. **First 60 minutes** determine if the post gets amplified
+4. Wider distribution based on initial performance
+5. Content surfaces for up to 48 hours
 
 ### Posting Frequency
-- Once daily is optimal
+- Once daily is Ruben's approach (never missed a day in 3 years)
+- Some algorithm research suggests 3-4 high-quality posts/week is optimal
 - More than once per day reduces per-post reach
+- Post manually -- never schedule
 - "Post at the perfect time" is a myth -- consistency matters more than timing
-- Never miss a day. "I never missed a day in 3 years."
+- 72% of activity is mobile. You have 1.3 seconds to capture attention.
+
+### Content Format Rankings (2026)
+1. Document Carousels / Native PDFs -- highest performing
+2. Text-only posts with strong hooks
+3. Video under 90 seconds (but reach down 72% from 2024)
+4. Articles/newsletters (600-800 words optimal)
+5. Image posts (30% less reach than text)
+6. Polls (comments but lower reach)
+
+### Hashtag and Mention Rules
+- 2-5 relevant, specific hashtags per post
+- Maximum 5 @mentions -- only tag people likely to respond
+- Reduced importance in 360Brew era; context matters more
+
+### Reposting Strategy
+- Instant repost within 4 hours: +40% growth for reposter
+- "Repost with thoughts" cuts original's impact by 12x vs instant repost
+- Never ask coworkers/friends to repost -- pod policy penalties
+
+### New Metrics to Track (Replace Likes)
+- Read time analytics
+- Saves and DM shares
+- Profile views generated
+- Actual business conversations initiated
 
 ### Analytics Review (Every 90 Days)
 - Open LinkedIn analytics

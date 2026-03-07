@@ -173,15 +173,30 @@ Use Gemini with Thinking model to extract from source material:
 
 ## 7. AI Image Tag Removal
 
-LinkedIn labels AI-generated images with a visible tag by reading C2PA metadata.
+LinkedIn uses C2PA content credentials to label AI-generated content with a "CR" badge.
+Microsoft (LinkedIn's parent) signed up to C2PA standards. LinkedIn may also suppress
+reach for posts with obvious AI visuals.
 
-### Method 1: Metadata Stripper
-Upload to aimetadatacleaner.com, download cleaned version.
+### Method 1: Screenshot (Simplest)
+Open the generated image full-screen. Take a screenshot (Win+Shift+S or Cmd+Shift+4).
+Clip back to original dimensions. Screenshots carry no generation metadata.
 
-### Method 2: Screenshot
-Open the generated image full-screen, take a screenshot.
-Screenshots carry no generation metadata.
+### Method 2: Edit in Design Platform
+Open in Canva or similar. Make small modifications (add background, overlay text, crop).
+Export as new file. The re-export strips C2PA metadata.
+"Slightly better performance compared to uploading the raw AI file directly."
 
-### Method 3: Re-export
-Open in any image editor (Canva, Photoshop, Paint).
-Export as new file -- re-exported files strip generation metadata.
+### Method 3: Dedicated Metadata Strippers (Browser-Based)
+- gptcleanup.com/chatgpt-image-watermark-remover (HTML5 Canvas API, strips C2PA + EXIF + IPTC)
+- aimetadatacleaner.com
+- exifreader.com/ai-metadata-remover
+- nanoglobals.com/tools/metadata-remover/chatgpt/
+All processing happens in-browser for privacy.
+
+### Method 4: Remove Third-Party Integrations
+Profile icon then Settings & Privacy then Data privacy then Permitted services.
+Remove unwanted third-party apps that may auto-add metadata.
+
+### Caveat
+Visible Content Credentials baked into image pixels (not metadata) cannot be removed
+through metadata stripping -- would require image editing software.
