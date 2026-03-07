@@ -7,9 +7,26 @@ with typed threads (Base/P/C/F/B/L), dependency graphs, gates, and policy enforc
 
 ```bash
 bun install
-bun test          # run full test suite
+bun run check     # local verification (lint/tests/type checks as configured)
 bun dev           # Next.js UI at http://localhost:3000
 ```
+
+## Environment Variables
+
+Use `.env.example` as the source of truth for local setup.
+
+| Variable | Required | Default | Notes |
+|------|------|------|------|
+| `THREADOS_BASE_PATH` | No | `./` / `process.cwd()` fallback | API routes resolve `.threados/` data from this base path |
+| `THREADOS_MPROCS_PATH` | No | auto-resolved (`mprocs` or vendored path) | Override when `mprocs` is not on PATH |
+| `ANTHROPIC_API_KEY` | Optional by workflow | unset | Needed for Anthropic-backed chat behavior |
+
+## Policy (SAFE/POWER)
+
+Policy config file: `.threados/policy.yaml` (full reference: `docs/policy.md`).
+
+- `SAFE` is the default mode and requires confirmation for command execution.
+- `POWER` removes confirmation prompts but still enforces policy limits.
 
 ## CLI
 
@@ -74,6 +91,7 @@ stdout/stderr capture, timeout handling, and artifact collection per step.
 ## Testing
 
 ```bash
+bun run check                    # Local verification command
 bun test                         # Full suite
 bun test lib/sequence/           # Module-specific
 bun test test/integration/       # Integration tests

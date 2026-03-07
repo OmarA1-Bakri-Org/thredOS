@@ -1,6 +1,7 @@
 # Policy Configuration
 
-ThreadOS enforces safety policies via `.threados/policy.yaml`.
+ThreadOS enforces safety policies via `.threados/policy.yaml` in your project root.
+If the file does not exist, ThreadOS falls back to SAFE defaults.
 
 ## Configuration
 
@@ -17,11 +18,18 @@ forbidden_patterns:           # Regex patterns to block
   - "sudo.*"
 ```
 
+## Where It Is Used
+
+- CLI/runtime actions are validated against this policy before execution.
+- `SAFE` mode requires confirmation for command execution actions.
+- `POWER` mode removes confirmation prompts but still applies allowlist/forbidden/concurrency rules.
+- Keep this file in `.threados/policy.yaml` so both UI/API and CLI flows resolve the same policy.
+
 ## Modes
 
 ### SAFE (default)
 
-- All mutation commands require confirmation
+- Command execution actions require confirmation
 - Policy checks enforced on every action
 - Chat orchestrator always proposes, never auto-executes
 
