@@ -1,11 +1,26 @@
 name: CI
 on: [push, pull_request]
 jobs:
-  test:
+  verify:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install
+      - run: bun run lint
+      - run: bun run typecheck
+      - run: bun test
+
+  playwright-ui:
+    needs: verify
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
       - run: bun install
-      - run: bun test
-      - run: npx tsc --noEmit
+      - run: bunx playwright install --with-deps chromium
+      - run: bun run test:ui
