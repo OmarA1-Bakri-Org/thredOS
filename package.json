@@ -10,7 +10,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "bun test"
+    "test": "bun test",
+    "check": "bun run lint && npx tsc --noEmit && bun test"
   },
   "dependencies": {
     "@radix-ui/react-separator": "^1.1.8",

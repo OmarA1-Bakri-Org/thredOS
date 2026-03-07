@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useSyncExternalStore } from 'react'
 import dynamic from 'next/dynamic'
 import { Group, Panel, Separator } from 'react-resizable-panels'
 import { Toolbar } from '@/components/toolbar/Toolbar'
@@ -24,11 +24,13 @@ const ChatPanel = dynamic(
 )
 
 export default function Home() {
-  const [mounted, setMounted] = useState(false)
+  const mounted = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false
+  )
   const inspectorOpen = useUIStore(s => s.inspectorOpen)
   const chatOpen = useUIStore(s => s.chatOpen)
-
-  useEffect(() => setMounted(true), [])
 
   if (!mounted) return <div className="h-screen flex flex-col"><LoadingSpinner message="Loading..." /></div>
 
