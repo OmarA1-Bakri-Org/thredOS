@@ -10,7 +10,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "typecheck": "tsc --noEmit",
     "test": "bun test",
+    "test:ui": "playwright test test/ui/main-page.e2e.ts",
     "check": "bun run lint && npx tsc --noEmit && bun test"
   },
   "dependencies": {
@@ -33,6 +35,8 @@
     "zustand": "^5.0.11"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.10.2",
+    "@playwright/test": "^1.54.2",
     "@tailwindcss/postcss": "^4",
     "@types/bun": "^1.3.6",
     "@types/dagre": "^0.7.53",
