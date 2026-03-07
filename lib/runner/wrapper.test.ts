@@ -7,8 +7,8 @@ describe('runStep', () => {
     const result = await runStep({
       stepId: 'test-step',
       runId: 'run-1',
-      command: 'echo',
-      args: ['hello'],
+      command: process.execPath,
+      args: ['-e', 'process.stdout.write("hello\\n")'],
     })
     expect(result.status).toBe('SUCCESS')
     expect(result.exitCode).toBe(0)
@@ -24,8 +24,8 @@ describe('runStep', () => {
     const result = await runStep({
       stepId: 'fail-step',
       runId: 'run-2',
-      command: 'sh',
-      args: ['-c', 'exit 1'],
+      command: process.execPath,
+      args: ['-e', 'process.exit(1)'],
     })
     expect(result.status).toBe('FAILED')
     expect(result.exitCode).toBe(1)
@@ -35,8 +35,8 @@ describe('runStep', () => {
     const result = await runStep({
       stepId: 'stderr-step',
       runId: 'run-3',
-      command: 'sh',
-      args: ['-c', 'echo error >&2'],
+      command: process.execPath,
+      args: ['-e', 'process.stderr.write("error\\n")'],
     })
     expect(result.stderr.trim()).toBe('error')
   })
@@ -46,8 +46,8 @@ describe('runStep', () => {
       runStep({
         stepId: 'timeout-step',
         runId: 'run-4',
-        command: 'sleep',
-        args: ['60'],
+        command: process.execPath,
+        args: ['-e', 'setTimeout(() => {}, 60000)'],
         timeout: 100,
       })
     ).rejects.toThrow(ProcessTimeoutError)
@@ -68,10 +68,31 @@ describe('runStep', () => {
     const result = await runStep({
       stepId: 'env-step',
       runId: 'run-6',
-      command: 'sh',
-      args: ['-c', 'echo $MY_VAR'],
+      command: process.execPath,
+      args: ['-e', 'process.stdout.write(process.env.MY_VAR ?? "")'],
       env: { MY_VAR: 'test-value' },
     })
     expect(result.stdout.trim()).toBe('test-value')
+  })
+
+  test('inherited env vars filtered through allowlist', async () => {
+    const originalSensitive = process.env.AWS_SECRET_ACCESS_KEY
+    process.env.AWS_SECRET_ACCESS_KEY = 'super-secret'
+
+    try {
+      const result = await runStep({
+        stepId: 'env-filter-step',
+        runId: 'run-7',
+        command: process.execPath,
+        args: ['-e', 'process.stdout.write(process.env.AWS_SECRET_ACCESS_KEY ?? "FILTERED")'],
+      })
+      expect(result.stdout.trim()).toBe('FILTERED')
+    } finally {
+      if (originalSensitive !== undefined) {
+        process.env.AWS_SECRET_ACCESS_KEY = originalSensitive
+      } else {
+        delete process.env.AWS_SECRET_ACCESS_KEY
+      }
+    }
   })
 })
