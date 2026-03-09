@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { mkdtemp, readFile, rm } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import type { MergeEvent, RunScope, ThreadSurface } from './types'
+import type { MergeEvent, RunEvent, RunScope, ThreadSurface } from './types'
 import {
   getThreadSurfaceStatePath,
   readThreadSurfaceState,
@@ -47,6 +47,18 @@ const mergeEvent: MergeEvent = {
   summary: 'Research merged back in',
 }
 
+const runEvent: RunEvent = {
+  id: 'event-1',
+  runId: 'run-master-1',
+  eventType: 'child-agent-spawned',
+  createdAt: '2026-03-09T00:01:00.000Z',
+  threadSurfaceId: 'thread-master',
+  payload: {
+    childThreadSurfaceId: 'thread-research',
+    parentThreadSurfaceId: 'thread-master',
+  },
+}
+
 describe('thread surface repository', () => {
   beforeEach(async () => {
     basePath = await mkdtemp(join(tmpdir(), 'threados-thread-state-'))
@@ -62,15 +74,17 @@ describe('thread surface repository', () => {
       threadSurfaces: [],
       runs: [],
       mergeEvents: [],
+      runEvents: [],
     })
   })
 
-  test('writing thread surfaces, runs, and merges persists atomically', async () => {
+  test('writing thread surfaces, runs, merges, and run events persists atomically', async () => {
     await writeThreadSurfaceState(basePath, {
       version: 1,
       threadSurfaces: [threadSurface],
       runs: [run],
       mergeEvents: [mergeEvent],
+      runEvents: [runEvent],
     })
 
     const persisted = await readThreadSurfaceState(basePath)
@@ -79,6 +93,7 @@ describe('thread surface repository', () => {
       threadSurfaces: [threadSurface],
       runs: [run],
       mergeEvents: [mergeEvent],
+      runEvents: [runEvent],
     })
   })
 
@@ -88,6 +103,7 @@ describe('thread surface repository', () => {
       threadSurfaces: [threadSurface],
       runs: [run],
       mergeEvents: [],
+      runEvents: [],
     })
 
     const filePath = getThreadSurfaceStatePath(basePath)
@@ -95,18 +111,48 @@ describe('thread surface repository', () => {
     expect(raw.threadSurfaces).toHaveLength(1)
     expect(raw.runs).toHaveLength(1)
     expect(raw.mergeEvents).toHaveLength(0)
+    expect(raw.runEvents).toHaveLength(0)
   })
 
-  test('updateThreadSurfaceState preserves local-first layout while changing content', async () => {
+  test('readThreadSurfaceState defaults runEvents to an empty array when missing on disk', async () => {
+    const filePath = getThreadSurfaceStatePath(basePath)
+    await Bun.write(filePath, JSON.stringify({
+      version: 1,
+      threadSurfaces: [threadSurface],
+      runs: [run],
+      mergeEvents: [mergeEvent],
+    }))
+
+    await expect(readThreadSurfaceState(basePath)).resolves.toEqual({
+      version: 1,
+      threadSurfaces: [threadSurface],
+      runs: [run],
+      mergeEvents: [mergeEvent],
+      runEvents: [],
+    })
+  })
+
+  test('updateThreadSurfaceState preserves existing state when only runEvents changes', async () => {
+    await writeThreadSurfaceState(basePath, {
+      version: 1,
+      threadSurfaces: [threadSurface],
+      runs: [run],
+      mergeEvents: [mergeEvent],
+      runEvents: [],
+    })
+
     const nextState = await updateThreadSurfaceState(basePath, () => ({
       version: 1,
       threadSurfaces: [threadSurface],
       runs: [run],
-      mergeEvents: [],
+      mergeEvents: [mergeEvent],
+      runEvents: [runEvent],
     }))
 
     expect(nextState.threadSurfaces[0]?.id).toBe('thread-master')
     expect(nextState.runs[0]?.runNotes).toBe('Watch lane order')
+    expect(nextState.mergeEvents).toEqual([mergeEvent])
+    expect(nextState.runEvents).toEqual([runEvent])
     expect(getThreadSurfaceStatePath(basePath)).toBe(join(basePath, '.threados/state/thread-surfaces.json'))
   })
 })

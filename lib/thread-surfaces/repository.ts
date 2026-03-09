@@ -2,7 +2,7 @@ import { existsSync } from 'fs'
 import { mkdir, readFile } from 'fs/promises'
 import { join } from 'path'
 import { writeFileAtomic } from '@/lib/fs/atomic'
-import type { MergeEvent, RunScope, ThreadSurface } from './types'
+import type { MergeEvent, RunEvent, RunScope, ThreadSurface } from './types'
 
 const THREAD_SURFACE_STATE_PATH = '.threados/state/thread-surfaces.json'
 
@@ -11,6 +11,7 @@ export interface ThreadSurfaceState {
   threadSurfaces: ThreadSurface[]
   runs: RunScope[]
   mergeEvents: MergeEvent[]
+  runEvents: RunEvent[]
 }
 
 const DEFAULT_THREAD_SURFACE_STATE: ThreadSurfaceState = {
@@ -18,6 +19,7 @@ const DEFAULT_THREAD_SURFACE_STATE: ThreadSurfaceState = {
   threadSurfaces: [],
   runs: [],
   mergeEvents: [],
+  runEvents: [],
 }
 
 export function getThreadSurfaceStatePath(basePath: string): string {
@@ -37,6 +39,7 @@ export async function readThreadSurfaceState(basePath: string): Promise<ThreadSu
     threadSurfaces: Array.isArray(raw.threadSurfaces) ? raw.threadSurfaces : [],
     runs: Array.isArray(raw.runs) ? raw.runs : [],
     mergeEvents: Array.isArray(raw.mergeEvents) ? raw.mergeEvents : [],
+    runEvents: Array.isArray(raw.runEvents) ? raw.runEvents : [],
   }
 }
 
