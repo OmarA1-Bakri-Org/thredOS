@@ -83,7 +83,7 @@ export function projectLaneBoard({ threadSurfaces, runs, mergeEvents, runIds }: 
   const selectedRuns = runs.filter(run => selectedRunIds.has(run.id))
   const surfaceMap = new Map(threadSurfaces.map(surface => [surface.id, surface]))
 
-  const rows = selectedRuns.map(run => ({
+  const rows: LaneBoardRow[] = selectedRuns.map(run => ({
     threadSurfaceId: run.threadSurfaceId,
     surfaceLabel: surfaceMap.get(run.threadSurfaceId)?.surfaceLabel ?? run.threadSurfaceId,
     runId: run.id,
