@@ -42,7 +42,7 @@ async function readThreadSurfaceState() {
   }
 }
 
-describe('thread run lifecycle routes', () => {
+describe.serial('thread run lifecycle routes', () => {
   beforeEach(async () => {
     basePath = await mkdtemp(join(tmpdir(), 'threados-thread-run-lifecycle-'))
     process.env.THREADOS_BASE_PATH = basePath

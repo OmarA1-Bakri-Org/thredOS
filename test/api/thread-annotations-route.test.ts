@@ -42,7 +42,7 @@ const runs: RunScope[] = [
   },
 ]
 
-describe('thread annotation route', () => {
+describe.serial('thread annotation route', () => {
   beforeEach(async () => {
     basePath = await mkdtemp(join(tmpdir(), 'threados-thread-annotations-'))
     process.env.THREADOS_BASE_PATH = basePath

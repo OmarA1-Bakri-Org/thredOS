@@ -27,7 +27,7 @@ async function readThreadSurfaceState(): Promise<ThreadSurfaceState> {
   return JSON.parse(content) as ThreadSurfaceState
 }
 
-describe('thread spawn event persistence', () => {
+describe.serial('thread spawn event persistence', () => {
   beforeEach(async () => {
     basePath = await mkdtemp(join(tmpdir(), 'threados-spawn-events-'))
     runtimeEventLinesByStep = {}

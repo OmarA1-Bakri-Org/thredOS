@@ -53,7 +53,7 @@ async function emitRuntimeEventWithCommand(
   }
 }
 
-describe('thread runtime event persistence', () => {
+describe.serial('thread runtime event persistence', () => {
   beforeEach(async () => {
     basePath = await mkdtemp(join(tmpdir(), 'threados-runtime-events-'))
     runtimeEventLinesByStep = {}

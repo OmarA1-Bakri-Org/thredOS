@@ -26,7 +26,7 @@ const baseSequence = {
   ],
 }
 
-describe('API Routes', () => {
+describe.serial('API Routes', () => {
   beforeEach(async () => {
     basePath = await mkdtemp(join(tmpdir(), 'threados-api-test-'))
     process.env.THREADOS_BASE_PATH = basePath

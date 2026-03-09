@@ -66,7 +66,7 @@ const mergeEvents: MergeEvent[] = [
   },
 ]
 
-describe('thread surface read routes', () => {
+describe.serial('thread surface read routes', () => {
   beforeEach(async () => {
     basePath = await mkdtemp(join(tmpdir(), 'threados-thread-routes-'))
     process.env.THREADOS_BASE_PATH = basePath
