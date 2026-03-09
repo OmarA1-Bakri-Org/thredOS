@@ -9,9 +9,11 @@ import type { Sequence, Step } from '@/lib/sequence/schema'
 import { runStep } from '@/lib/runner/wrapper'
 import { saveRunArtifacts } from '@/lib/runner/artifacts'
 import { readThreadSurfaceState, writeThreadSurfaceState } from '@/lib/thread-surfaces/repository'
-import { completeRun, createReplacementRun, createRootThreadSurfaceRun, recordMergeEvent } from '@/lib/thread-surfaces/mutations'
+import { completeRun, createChildThreadSurfaceRun, createReplacementRun, createRootThreadSurfaceRun, recordChildAgentSpawnEvent, recordMergeEvent } from '@/lib/thread-surfaces/mutations'
 import { deriveMergeEventForSuccessfulStep } from '@/lib/thread-surfaces/merge-runtime'
-import { deriveStepThreadSurfaceId, resolveStepRuntimeState } from '@/lib/thread-surfaces/step-runtime'
+import { deriveStepThreadSurfaceId } from '@/lib/thread-surfaces/step-runtime'
+import { deriveSpawnSpecsForStep, type SpawnSpec } from '@/lib/thread-surfaces/spawn-runtime'
+import type { ThreadSurfaceState } from '@/lib/thread-surfaces/repository'
 
 const ROOT_THREAD_SURFACE_ID = 'thread-root'
 
@@ -42,7 +44,7 @@ async function executeStep(bp: string, seq: Sequence, stepId: string, runId: str
   const step = seq.steps.find(s => s.id === stepId)
   if (!step) return { success: false, stepId, runId, status: 'FAILED' as const, error: 'Step not found' }
 
-  const stepRuntime = await createStepRunScope(bp, step)
+  const stepRuntime = await createStepRunScope(bp, seq, step)
   step.status = 'RUNNING'
   await writeSequence(bp, seq)
   try {
@@ -90,30 +92,56 @@ async function createRunScopeForRequest(bp: string, sequenceName: string, runId:
   await writeThreadSurfaceState(bp, nextState)
 }
 
-async function createStepRunScope(bp: string, step: Step) {
+interface StepRunScope {
+  runId: string
+  startedAt: string
+  executionIndex: number
+  threadSurfaceId: string
+}
+
+async function createStepRunScope(bp: string, seq: Sequence, step: Step): Promise<{ stepRun: StepRunScope | null; spawnSpecs: SpawnSpec[] }> {
   const currentState = await readThreadSurfaceState(bp)
+  const spawnSpecs = deriveSpawnSpecsForStep({ sequence: seq, step })
+  const threadSurfaceId = deriveStepThreadSurfaceId(step.id)
+  const existingSurface = currentState.threadSurfaces.find(surface => surface.id === threadSurfaceId) ?? null
+  const shouldCreateSurface = existingSurface != null || spawnSpecs.length > 0 || step.watchdog_for != null || step.fusion_synth === true
+
+  if (!shouldCreateSurface) {
+    return { stepRun: null, spawnSpecs }
+  }
+
   const runId = randomUUID()
   const startedAt = new Date().toISOString()
   const executionIndex = currentState.runs.length + 1
-  const resolution = resolveStepRuntimeState({
-    state: currentState,
-    step: {
-      id: step.id,
-      name: step.name,
-      orchestrator: step.orchestrator,
-    },
-    runId,
-    startedAt,
-    executionIndex,
-  })
 
-  await writeThreadSurfaceState(bp, resolution.state)
+  const nextState = existingSurface
+    ? createReplacementRun(currentState, {
+        threadSurfaceId,
+        runId,
+        startedAt,
+        executionIndex,
+      }).state
+    : createChildThreadSurfaceRun(currentState, {
+        parentSurfaceId: resolveParentSurfaceId(currentState, step),
+        parentAgentNodeId: step.id,
+        childSurfaceId: threadSurfaceId,
+        childSurfaceLabel: step.name,
+        createdAt: startedAt,
+        runId,
+        startedAt,
+        executionIndex,
+      }).state
+
+  await writeThreadSurfaceState(bp, nextState)
 
   return {
-    runId,
-    startedAt,
-    executionIndex,
-    threadSurfaceId: resolution.threadSurfaceId,
+    stepRun: {
+      runId,
+      startedAt,
+      executionIndex,
+      threadSurfaceId,
+    },
+    spawnSpecs,
   }
 }
 
@@ -124,22 +152,28 @@ async function finalizeStepRunScope(
   stepRuntime: Awaited<ReturnType<typeof createStepRunScope>>,
   success: boolean,
 ) {
+  if (stepRuntime.stepRun == null) {
+    return
+  }
+
   const currentState = await readThreadSurfaceState(bp)
   let nextState = completeRun(currentState, {
-    runId: stepRuntime.runId,
+    runId: stepRuntime.stepRun.runId,
     runStatus: success ? 'successful' : 'failed',
     endedAt: new Date().toISOString(),
     runSummary: success ? `step:${step.id}` : `step:${step.id}:failed`,
   }).state
 
   if (success) {
+    nextState = persistSpawnedChildren(nextState, stepRuntime.stepRun, stepRuntime.spawnSpecs)
+
     const mergeEvent = deriveMergeEventForSuccessfulStep({
       step,
       threadSurfaces: nextState.threadSurfaces,
       stepThreadSurfaceIds: Object.fromEntries(seq.steps.map(sequenceStep => [sequenceStep.id, deriveStepThreadSurfaceId(sequenceStep.id)])),
-      runId: stepRuntime.runId,
+      runId: stepRuntime.stepRun.runId,
       mergeId: randomUUID(),
-      executionIndex: stepRuntime.executionIndex,
+      executionIndex: stepRuntime.stepRun.executionIndex,
       createdAt: new Date().toISOString(),
       summary: step.name,
     })
@@ -159,6 +193,57 @@ async function finalizeStepRunScope(
   }
 
   await writeThreadSurfaceState(bp, nextState)
+}
+
+function persistSpawnedChildren(state: ThreadSurfaceState, stepRun: StepRunScope, spawnSpecs: SpawnSpec[]): ThreadSurfaceState {
+  let nextState = state
+
+  for (const spawnSpec of spawnSpecs) {
+    const createdAt = new Date().toISOString()
+    const childSurfaceExists = nextState.threadSurfaces.some(surface => surface.id === spawnSpec.childThreadSurfaceId)
+
+    if (!childSurfaceExists) {
+      nextState = createChildThreadSurfaceRun(nextState, {
+        parentSurfaceId: spawnSpec.parentThreadSurfaceId,
+        parentAgentNodeId: spawnSpec.childAgentNodeId,
+        childSurfaceId: spawnSpec.childThreadSurfaceId,
+        childSurfaceLabel: spawnSpec.childSurfaceLabel,
+        createdAt,
+        runId: randomUUID(),
+        startedAt: createdAt,
+        executionIndex: nextState.runs.length + 1,
+      }).state
+    } else if (spawnSpec.childThreadSurfaceId !== stepRun.threadSurfaceId) {
+      nextState = createReplacementRun(nextState, {
+        threadSurfaceId: spawnSpec.childThreadSurfaceId,
+        runId: randomUUID(),
+        startedAt: createdAt,
+        executionIndex: nextState.runs.length + 1,
+      }).state
+    }
+
+    nextState = recordChildAgentSpawnEvent(nextState, {
+      eventId: randomUUID(),
+      runId: stepRun.runId,
+      threadSurfaceId: spawnSpec.parentThreadSurfaceId,
+      childThreadSurfaceId: spawnSpec.childThreadSurfaceId,
+      parentThreadSurfaceId: spawnSpec.parentThreadSurfaceId,
+      createdAt,
+    }).state
+  }
+
+  return nextState
+}
+
+function resolveParentSurfaceId(state: ThreadSurfaceState, step: Step): string {
+  if (step.watchdog_for) {
+    const watchedSurfaceId = deriveStepThreadSurfaceId(step.watchdog_for)
+    if (state.threadSurfaces.some(surface => surface.id === watchedSurfaceId)) {
+      return watchedSurfaceId
+    }
+  }
+
+  return ROOT_THREAD_SURFACE_ID
 }
 
 async function finalizeRunScope(bp: string, runId: string, success: boolean, runSummary: string) {

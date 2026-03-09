@@ -52,7 +52,7 @@ describe('thread runtime event persistence', () => {
     await rm(basePath, { recursive: true, force: true })
   })
 
-  test('run step creates a child thread surface and child run beneath the root surface', async () => {
+  test('plain steps do not create child thread surfaces when no delegation metadata exists', async () => {
     await setupSequence({
       version: '1.0',
       name: 'Runtime Sequence',
@@ -81,127 +81,19 @@ describe('thread runtime event persistence', () => {
     expect(response.status).toBe(200)
 
     const state = await readThreadSurfaceState()
-    expect(state.threadSurfaces).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          id: 'thread-root',
-          childSurfaceIds: ['thread-step-a'],
-        }),
-        expect.objectContaining({
-          id: 'thread-step-a',
-          parentSurfaceId: 'thread-root',
-          parentAgentNodeId: 'step-a',
-          surfaceLabel: 'Step A',
-        }),
-      ]),
-    )
-    expect(state.runs).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          threadSurfaceId: 'thread-root',
-          runStatus: 'successful',
-        }),
-        expect.objectContaining({
-          threadSurfaceId: 'thread-step-a',
-          runStatus: 'successful',
-        }),
-      ]),
-    )
-  })
-
-  test('worker step nests beneath its orchestrator thread surface when that parent exists', async () => {
-    await setupSequence({
-      version: '1.0',
-      name: 'Orchestrated Sequence',
-      steps: [
-        {
-          id: 'orch-orchestrator',
-          name: 'Main Orchestrator',
-          type: 'b',
-          model: 'codex',
-          prompt_file: '.threados/prompts/orch-orchestrator.md',
-          depends_on: [],
-          status: 'DONE',
-          orchestrator: 'orch-orchestrator',
-        },
-        {
-          id: 'orch-worker-1',
-          name: 'Worker 1',
-          type: 'b',
-          model: 'codex',
-          prompt_file: '.threados/prompts/orch-worker-1.md',
-          depends_on: ['orch-orchestrator'],
-          status: 'READY',
-          orchestrator: 'orch-orchestrator',
-        },
-      ],
-      gates: [],
-    })
-    await writePrompt('orch-orchestrator')
-    await writePrompt('orch-worker-1')
-    await writeThreadSurfaceState({
-      version: 1,
-      threadSurfaces: [
-        {
-          id: 'thread-root',
-          parentSurfaceId: null,
-          parentAgentNodeId: null,
-          depth: 0,
-          surfaceLabel: 'Orchestrated Sequence',
-          createdAt: '2026-03-09T12:00:00.000Z',
-          childSurfaceIds: ['thread-orch-orchestrator'],
-        },
-        {
-          id: 'thread-orch-orchestrator',
-          parentSurfaceId: 'thread-root',
-          parentAgentNodeId: 'orch-orchestrator',
-          depth: 1,
-          surfaceLabel: 'Main Orchestrator',
-          createdAt: '2026-03-09T12:00:01.000Z',
-          childSurfaceIds: [],
-        },
-      ],
-      runs: [
-        {
-          id: 'run-root-seed',
-          threadSurfaceId: 'thread-root',
-          runStatus: 'successful',
-          startedAt: '2026-03-09T12:00:00.000Z',
-          endedAt: '2026-03-09T12:00:15.000Z',
-          executionIndex: 1,
-        },
-        {
-          id: 'run-orchestrator-seed',
-          threadSurfaceId: 'thread-orch-orchestrator',
-          runStatus: 'successful',
-          startedAt: '2026-03-09T12:00:01.000Z',
-          endedAt: '2026-03-09T12:00:16.000Z',
-          executionIndex: 2,
-        },
-      ],
-      mergeEvents: [],
-      runEvents: [],
-    })
-
-    const { POST } = await import('@/app/api/run/route')
-    const response = await POST(new Request('http://localhost/api/run', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ stepId: 'orch-worker-1' }),
-    }))
-
-    expect(response.status).toBe(200)
-
-    const state = await readThreadSurfaceState()
-    expect(state.threadSurfaces).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          id: 'thread-orch-worker-1',
-          parentSurfaceId: 'thread-orch-orchestrator',
-          parentAgentNodeId: 'orch-worker-1',
-        }),
-      ]),
-    )
+    expect(state.threadSurfaces).toEqual([
+      expect.objectContaining({
+        id: 'thread-root',
+        childSurfaceIds: [],
+      }),
+    ])
+    expect(state.runs).toEqual([
+      expect.objectContaining({
+        threadSurfaceId: 'thread-root',
+        runStatus: 'successful',
+      }),
+    ])
+    expect(state.runEvents).toEqual([])
   })
 
   test('successful fusion synth step records a merge event using dependency order as source order', async () => {
