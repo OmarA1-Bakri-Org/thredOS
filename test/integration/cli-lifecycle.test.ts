@@ -154,7 +154,7 @@ describe('CLI lifecycle integration', () => {
     expect(logs.length).toBeGreaterThan(0)
   })
 
-  test('successful orchestrator CLI runs create delegated child surfaces and spawn events', async () => {
+  test('orchestrator metadata alone does not create delegated child surfaces in the CLI runtime', async () => {
     await initCommand(undefined, [], { json: false, help: false, watch: false })
 
     const seq = await readSequence(tmpDir)
@@ -234,47 +234,16 @@ describe('CLI lifecycle integration', () => {
     }
 
     const state = await readThreadSurfaceState(tmpDir)
-    expect(state.threadSurfaces).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          id: 'thread-root',
-          childSurfaceIds: ['thread-orchestrator'],
-        }),
-        expect.objectContaining({
-          id: 'thread-orchestrator',
-          parentSurfaceId: 'thread-root',
-          childSurfaceIds: expect.arrayContaining(['thread-worker-a', 'thread-worker-b']),
-        }),
-        expect.objectContaining({
-          id: 'thread-worker-a',
-          parentSurfaceId: 'thread-orchestrator',
-          parentAgentNodeId: 'worker-a',
-        }),
-        expect.objectContaining({
-          id: 'thread-worker-b',
-          parentSurfaceId: 'thread-orchestrator',
-          parentAgentNodeId: 'worker-b',
-        }),
-      ]),
-    )
-    expect(state.runEvents).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          eventType: 'child-agent-spawned',
-          threadSurfaceId: 'thread-orchestrator',
-          payload: expect.objectContaining({
-            childThreadSurfaceId: 'thread-worker-a',
-          }),
-        }),
-        expect.objectContaining({
-          eventType: 'child-agent-spawned',
-          threadSurfaceId: 'thread-orchestrator',
-          payload: expect.objectContaining({
-            childThreadSurfaceId: 'thread-worker-b',
-          }),
-        }),
-      ]),
-    )
+    expect(state.threadSurfaces).toEqual([
+      expect.objectContaining({
+        id: 'thread-root',
+        childSurfaceIds: [],
+      }),
+    ])
+    expect(state.threadSurfaces.some(surface => surface.id === 'thread-orchestrator')).toBe(false)
+    expect(state.threadSurfaces.some(surface => surface.id === 'thread-worker-a')).toBe(false)
+    expect(state.threadSurfaces.some(surface => surface.id === 'thread-worker-b')).toBe(false)
+    expect(state.runEvents).toEqual([])
     expect(logs.some(message => message.includes('"success":true'))).toBe(true)
   })
 
