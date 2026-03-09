@@ -2,6 +2,20 @@
 
 import { create } from 'zustand'
 
+export type ThreadSurfaceViewMode = 'hierarchy' | 'lanes'
+
+export interface HierarchyViewportState {
+  x: number
+  y: number
+  zoom: number
+}
+
+export interface LaneBoardState {
+  scrollLeft: number
+  focusedThreadSurfaceId: string | null
+  focusedRunId: string | null
+}
+
 interface UIStore {
   selectedNodeId: string | null
   setSelectedNodeId: (id: string | null) => void
@@ -13,6 +27,31 @@ interface UIStore {
   setSearchQuery: (q: string) => void
   minimapVisible: boolean
   toggleMinimap: () => void
+  viewMode: ThreadSurfaceViewMode
+  setViewMode: (mode: ThreadSurfaceViewMode) => void
+  selectedThreadSurfaceId: string | null
+  setSelectedThreadSurfaceId: (id: string | null) => void
+  selectedRunId: string | null
+  setSelectedRunId: (id: string | null) => void
+  hierarchyViewport: HierarchyViewportState
+  setHierarchyViewport: (viewport: HierarchyViewportState) => void
+  laneFocusThreadSurfaceId: string | null
+  setLaneFocusThreadSurfaceId: (id: string | null) => void
+  laneBoardState: LaneBoardState
+  setLaneBoardState: (state: LaneBoardState) => void
+  openLaneViewForThreadSurface: (threadSurfaceId: string, runId?: string | null) => void
+}
+
+const defaultHierarchyViewport: HierarchyViewportState = {
+  x: 0,
+  y: 0,
+  zoom: 1,
+}
+
+const defaultLaneBoardState: LaneBoardState = {
+  scrollLeft: 0,
+  focusedThreadSurfaceId: null,
+  focusedRunId: null,
 }
 
 export const useUIStore = create<UIStore>((set) => ({
@@ -26,4 +65,40 @@ export const useUIStore = create<UIStore>((set) => ({
   setSearchQuery: (q) => set({ searchQuery: q }),
   minimapVisible: true,
   toggleMinimap: () => set((s) => ({ minimapVisible: !s.minimapVisible })),
+  viewMode: 'hierarchy',
+  setViewMode: (mode) => set({ viewMode: mode }),
+  selectedThreadSurfaceId: null,
+  setSelectedThreadSurfaceId: (id) => set({ selectedThreadSurfaceId: id }),
+  selectedRunId: null,
+  setSelectedRunId: (id) => set({ selectedRunId: id }),
+  hierarchyViewport: defaultHierarchyViewport,
+  setHierarchyViewport: (viewport) => set({ hierarchyViewport: viewport }),
+  laneFocusThreadSurfaceId: null,
+  setLaneFocusThreadSurfaceId: (id) =>
+    set((state) => ({
+      laneFocusThreadSurfaceId: id,
+      laneBoardState: {
+        ...state.laneBoardState,
+        focusedThreadSurfaceId: id,
+        focusedRunId: id == null ? null : state.laneBoardState.focusedRunId,
+      },
+    })),
+  laneBoardState: defaultLaneBoardState,
+  setLaneBoardState: (state) =>
+    set({
+      laneFocusThreadSurfaceId: state.focusedThreadSurfaceId,
+      laneBoardState: state,
+    }),
+  openLaneViewForThreadSurface: (threadSurfaceId, runId = null) =>
+    set((state) => ({
+      viewMode: 'lanes',
+      selectedThreadSurfaceId: threadSurfaceId,
+      selectedRunId: runId,
+      laneFocusThreadSurfaceId: threadSurfaceId,
+      laneBoardState: {
+        ...state.laneBoardState,
+        focusedThreadSurfaceId: threadSurfaceId,
+        focusedRunId: runId,
+      },
+    })),
 }))
