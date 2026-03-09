@@ -5,6 +5,18 @@ import type { Sequence } from '@/lib/sequence/schema'
 import type { SequenceStatus } from '@/app/api/status/route'
 import type { MergeEvent, RunScope, ThreadSurface } from '@/lib/thread-surfaces/types'
 
+interface ThreadSurfacesResponse {
+  threadSurfaces: ThreadSurface[]
+}
+
+interface ThreadRunsResponse {
+  runs: RunScope[]
+}
+
+interface ThreadMergesResponse {
+  mergeEvents: MergeEvent[]
+}
+
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, init)
   if (!res.ok) {
@@ -18,6 +30,18 @@ function postJson<T>(url: string, body: unknown): Promise<T> {
   return fetchJson<T>(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
 }
 
+export function unwrapThreadSurfacesResponse(response: ThreadSurfacesResponse): ThreadSurface[] {
+  return response.threadSurfaces
+}
+
+export function unwrapThreadRunsResponse(response: ThreadRunsResponse): RunScope[] {
+  return response.runs
+}
+
+export function unwrapThreadMergesResponse(response: ThreadMergesResponse): MergeEvent[] {
+  return response.mergeEvents
+}
+
 export function useSequence() {
   return useQuery<Sequence>({ queryKey: ['sequence'], queryFn: () => fetchJson('/api/sequence') })
 }
@@ -29,7 +53,7 @@ export function useStatus() {
 export function useThreadSurfaces() {
   return useQuery<ThreadSurface[]>({
     queryKey: ['thread-surfaces'],
-    queryFn: () => fetchJson('/api/thread-surfaces'),
+    queryFn: async () => unwrapThreadSurfacesResponse(await fetchJson<ThreadSurfacesResponse>('/api/thread-surfaces')),
     retry: false,
   })
 }
@@ -38,7 +62,7 @@ export function useThreadRuns(threadSurfaceId?: string | null) {
   const query = threadSurfaceId ? `?threadSurfaceId=${encodeURIComponent(threadSurfaceId)}` : ''
   return useQuery<RunScope[]>({
     queryKey: ['thread-runs', threadSurfaceId ?? null],
-    queryFn: () => fetchJson(`/api/thread-runs${query}`),
+    queryFn: async () => unwrapThreadRunsResponse(await fetchJson<ThreadRunsResponse>(`/api/thread-runs${query}`)),
     retry: false,
   })
 }
@@ -47,7 +71,7 @@ export function useThreadMerges(runId?: string | null) {
   const query = runId ? `?runId=${encodeURIComponent(runId)}` : ''
   return useQuery<MergeEvent[]>({
     queryKey: ['thread-merges', runId ?? null],
-    queryFn: () => fetchJson(`/api/thread-merges${query}`),
+    queryFn: async () => unwrapThreadMergesResponse(await fetchJson<ThreadMergesResponse>(`/api/thread-merges${query}`)),
     retry: false,
   })
 }
