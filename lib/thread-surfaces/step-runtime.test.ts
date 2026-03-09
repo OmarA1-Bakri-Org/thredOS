@@ -6,12 +6,6 @@ import { deriveStepThreadSurfaceId, resolveStepRuntimeState } from './step-runti
 
 const timestamp = '2026-03-09T10:00:00.000Z'
 
-interface RuntimeStep {
-  id: string
-  name: string
-  orchestrator?: string
-}
-
 function buildRootState(): ThreadSurfaceState {
   const rootSurface: ThreadSurface = {
     id: 'thread-root',
@@ -53,18 +47,18 @@ describe('step runtime mapping', () => {
       executionIndex: 2,
     })
 
-    expect(result.threadSurfaceId).toBe('thread-step-research')
+    expect(result.threadSurfaceId).toBe('thread-research')
     expect(result.parentSurfaceId).toBe('thread-root')
     expect(result.createdSurface).toBe(true)
     expect(result.surface).toMatchObject({
-      id: 'thread-step-research',
+      id: 'thread-research',
       parentSurfaceId: 'thread-root',
       parentAgentNodeId: 'research',
       depth: 1,
     })
     expect(result.run).toMatchObject({
       id: 'run-research-001',
-      threadSurfaceId: 'thread-step-research',
+      threadSurfaceId: 'thread-research',
       executionIndex: 2,
     })
   })
@@ -93,10 +87,10 @@ describe('step runtime mapping', () => {
       executionIndex: 3,
     })
 
-    expect(result.parentSurfaceId).toBe('thread-step-research-orchestrator')
+    expect(result.parentSurfaceId).toBe('thread-research-orchestrator')
     expect(result.surface).toMatchObject({
-      id: 'thread-step-review',
-      parentSurfaceId: 'thread-step-research-orchestrator',
+      id: 'thread-review',
+      parentSurfaceId: 'thread-research-orchestrator',
       depth: 2,
     })
   })
@@ -115,9 +109,9 @@ describe('step runtime mapping', () => {
 
     expect(result.createdSurface).toBe(true)
     expect(result.replacedRun).toBeNull()
-    expect(result.state.threadSurfaces.map(surface => surface.id)).toContain('thread-step-synthesis')
+    expect(result.state.threadSurfaces.map(surface => surface.id)).toContain('thread-synthesis')
     expect(result.state.runs.find(run => run.id === 'run-synthesis-001')).toMatchObject({
-      threadSurfaceId: 'thread-step-synthesis',
+      threadSurfaceId: 'thread-synthesis',
       runStatus: 'running',
       endedAt: null,
     })
@@ -149,15 +143,15 @@ describe('step runtime mapping', () => {
     expect(replacement.createdSurface).toBe(false)
     expect(replacement.replacedRun).toMatchObject({
       id: 'run-research-001',
-      threadSurfaceId: 'thread-step-research',
+      threadSurfaceId: 'thread-research',
       runStatus: 'running',
     })
     expect(replacement.run).toMatchObject({
       id: 'run-research-002',
-      threadSurfaceId: 'thread-step-research',
+      threadSurfaceId: 'thread-research',
       executionIndex: 5,
     })
-    expect(replacement.state.threadSurfaces.filter(surface => surface.id === 'thread-step-research')).toHaveLength(1)
+    expect(replacement.state.threadSurfaces.filter(surface => surface.id === 'thread-research')).toHaveLength(1)
     expect(replacement.state.runs.map(run => run.id)).toEqual(['run-root-001', 'run-research-001', 'run-research-002'])
   })
 })

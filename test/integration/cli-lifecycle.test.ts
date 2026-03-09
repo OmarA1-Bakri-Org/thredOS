@@ -5,6 +5,7 @@ import { stepCommand } from '../../lib/seqctl/commands/step'
 import { depCommand } from '../../lib/seqctl/commands/dep'
 import { runCommand } from '../../lib/seqctl/commands/run'
 import { readSequence, writeSequence } from '../../lib/sequence/parser'
+import { readThreadSurfaceState } from '../../lib/thread-surfaces/repository'
 
 const jsonOpts = { json: true, help: false, watch: false }
 
@@ -96,6 +97,70 @@ describe('CLI lifecycle integration', () => {
     process.exit = origExit
 
     // Check that some output was produced
+    expect(logs.length).toBeGreaterThan(0)
+  })
+
+  test('run step persists thread surface runtime state even when the agent command fails', async () => {
+    await initCommand(undefined, [], { json: false, help: false, watch: false })
+
+    const seq = await readSequence(tmpDir)
+    seq.name = 'CLI Runtime Sequence'
+    seq.steps = [{
+      id: 'runtime-step',
+      name: 'Runtime Step',
+      type: 'base',
+      model: 'claude-code',
+      prompt_file: '.threados/prompts/runtime-step.md',
+      depends_on: [],
+      status: 'READY',
+    }]
+    await writeSequence(tmpDir, seq)
+
+    const logs: string[] = []
+    const origLog = console.log
+    const origErr = console.error
+    const origExit = process.exit
+    console.log = (msg: string) => logs.push(msg)
+    console.error = (msg: string) => logs.push(msg)
+    process.exit = (() => { throw new Error('exit') }) as never
+
+    try {
+      await runCommand('step', ['runtime-step'], jsonOpts)
+    } catch {
+      // expected - claude CLI may not be installed in test
+    } finally {
+      console.log = origLog
+      console.error = origErr
+      process.exit = origExit
+    }
+
+    const state = await readThreadSurfaceState(tmpDir)
+    expect(state.threadSurfaces).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'thread-root',
+          childSurfaceIds: ['thread-runtime-step'],
+        }),
+        expect.objectContaining({
+          id: 'thread-runtime-step',
+          parentSurfaceId: 'thread-root',
+          parentAgentNodeId: 'runtime-step',
+          surfaceLabel: 'Runtime Step',
+        }),
+      ]),
+    )
+    expect(state.runs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          threadSurfaceId: 'thread-root',
+          runStatus: 'failed',
+        }),
+        expect.objectContaining({
+          threadSurfaceId: 'thread-runtime-step',
+          runStatus: 'failed',
+        }),
+      ]),
+    )
     expect(logs.length).toBeGreaterThan(0)
   })
 })

@@ -9,7 +9,9 @@ import type { Sequence, Step } from '@/lib/sequence/schema'
 import { runStep } from '@/lib/runner/wrapper'
 import { saveRunArtifacts } from '@/lib/runner/artifacts'
 import { readThreadSurfaceState, writeThreadSurfaceState } from '@/lib/thread-surfaces/repository'
-import { completeRun, createReplacementRun, createRootThreadSurfaceRun } from '@/lib/thread-surfaces/mutations'
+import { completeRun, createReplacementRun, createRootThreadSurfaceRun, recordMergeEvent } from '@/lib/thread-surfaces/mutations'
+import { deriveMergeEventForSuccessfulStep } from '@/lib/thread-surfaces/merge-runtime'
+import { deriveStepThreadSurfaceId, resolveStepRuntimeState } from '@/lib/thread-surfaces/step-runtime'
 
 const ROOT_THREAD_SURFACE_ID = 'thread-root'
 
@@ -39,6 +41,8 @@ function getRunnableSteps(sequence: Sequence): Step[] {
 async function executeStep(bp: string, seq: Sequence, stepId: string, runId: string) {
   const step = seq.steps.find(s => s.id === stepId)
   if (!step) return { success: false, stepId, runId, status: 'FAILED' as const, error: 'Step not found' }
+
+  const stepRuntime = await createStepRunScope(bp, step)
   step.status = 'RUNNING'
   await writeSequence(bp, seq)
   try {
@@ -47,10 +51,12 @@ async function executeStep(bp: string, seq: Sequence, stepId: string, runId: str
     const artifactPath = await runtime.saveRunArtifacts(bp, result)
     step.status = result.status === 'SUCCESS' ? 'DONE' : 'FAILED'
     await writeSequence(bp, seq)
+    await finalizeStepRunScope(bp, seq, step, stepRuntime, result.status === 'SUCCESS')
     return { success: result.status === 'SUCCESS', stepId, runId, status: step.status, duration: result.duration, artifactPath }
   } catch (err) {
     step.status = 'FAILED'
     await writeSequence(bp, seq).catch(() => {})
+    await finalizeStepRunScope(bp, seq, step, stepRuntime, false).catch(() => {})
     return { success: false, stepId, runId, status: 'FAILED' as const, error: err instanceof Error ? err.message : String(err) }
   }
 }
@@ -80,6 +86,77 @@ async function createRunScopeForRequest(bp: string, sequenceName: string, runId:
         startedAt,
         executionIndex,
       }).state
+
+  await writeThreadSurfaceState(bp, nextState)
+}
+
+async function createStepRunScope(bp: string, step: Step) {
+  const currentState = await readThreadSurfaceState(bp)
+  const runId = randomUUID()
+  const startedAt = new Date().toISOString()
+  const executionIndex = currentState.runs.length + 1
+  const resolution = resolveStepRuntimeState({
+    state: currentState,
+    step: {
+      id: step.id,
+      name: step.name,
+      orchestrator: step.orchestrator,
+    },
+    runId,
+    startedAt,
+    executionIndex,
+  })
+
+  await writeThreadSurfaceState(bp, resolution.state)
+
+  return {
+    runId,
+    startedAt,
+    executionIndex,
+    threadSurfaceId: resolution.threadSurfaceId,
+  }
+}
+
+async function finalizeStepRunScope(
+  bp: string,
+  seq: Sequence,
+  step: Step,
+  stepRuntime: Awaited<ReturnType<typeof createStepRunScope>>,
+  success: boolean,
+) {
+  const currentState = await readThreadSurfaceState(bp)
+  let nextState = completeRun(currentState, {
+    runId: stepRuntime.runId,
+    runStatus: success ? 'successful' : 'failed',
+    endedAt: new Date().toISOString(),
+    runSummary: success ? `step:${step.id}` : `step:${step.id}:failed`,
+  }).state
+
+  if (success) {
+    const mergeEvent = deriveMergeEventForSuccessfulStep({
+      step,
+      threadSurfaces: nextState.threadSurfaces,
+      stepThreadSurfaceIds: Object.fromEntries(seq.steps.map(sequenceStep => [sequenceStep.id, deriveStepThreadSurfaceId(sequenceStep.id)])),
+      runId: stepRuntime.runId,
+      mergeId: randomUUID(),
+      executionIndex: stepRuntime.executionIndex,
+      createdAt: new Date().toISOString(),
+      summary: step.name,
+    })
+
+    if (mergeEvent) {
+      nextState = recordMergeEvent(nextState, {
+        mergeId: mergeEvent.id,
+        runId: mergeEvent.runId,
+        destinationThreadSurfaceId: mergeEvent.destinationThreadSurfaceId,
+        sourceThreadSurfaceIds: mergeEvent.sourceThreadSurfaceIds,
+        mergeKind: mergeEvent.mergeKind,
+        executionIndex: mergeEvent.executionIndex,
+        createdAt: mergeEvent.createdAt,
+        summary: mergeEvent.summary,
+      }).state
+    }
+  }
 
   await writeThreadSurfaceState(bp, nextState)
 }

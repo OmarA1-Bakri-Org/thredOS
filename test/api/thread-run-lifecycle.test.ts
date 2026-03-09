@@ -35,7 +35,7 @@ async function setupTestSequence() {
 async function readThreadSurfaceState() {
   const content = await readFile(join(basePath, ...THREAD_SURFACE_STATE_PATH), 'utf-8')
   return JSON.parse(content) as {
-    threadSurfaces: Array<{ id: string }>
+    threadSurfaces: Array<{ id: string; childSurfaceIds?: string[]; parentSurfaceId?: string | null; parentAgentNodeId?: string | null }>
     runs: Array<{ id: string; threadSurfaceId: string; runStatus: string; endedAt: string | null }>
     mergeEvents: Array<{ id: string }>
   }
@@ -79,16 +79,32 @@ describe('thread run lifecycle routes', () => {
     expect(response.status).toBe(200)
 
     const state = await readThreadSurfaceState()
-    expect(state.threadSurfaces).toEqual([
-      expect.objectContaining({
-        id: 'thread-root',
-      }),
-    ])
-    expect(state.runs).toHaveLength(1)
-    expect(state.runs[0]).toMatchObject({
-      threadSurfaceId: 'thread-root',
-      runStatus: 'successful',
-    })
+    expect(state.threadSurfaces).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'thread-root',
+          childSurfaceIds: ['thread-step-a'],
+        }),
+        expect.objectContaining({
+          id: 'thread-step-a',
+          parentSurfaceId: 'thread-root',
+          parentAgentNodeId: 'step-a',
+        }),
+      ]),
+    )
+    expect(state.runs).toHaveLength(2)
+    expect(state.runs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          threadSurfaceId: 'thread-root',
+          runStatus: 'successful',
+        }),
+        expect.objectContaining({
+          threadSurfaceId: 'thread-step-a',
+          runStatus: 'successful',
+        }),
+      ]),
+    )
   })
 
   test('a new run request creates a new RunScope instead of mutating the old run', async () => {
@@ -106,10 +122,18 @@ describe('thread run lifecycle routes', () => {
     }))
 
     const state = await readThreadSurfaceState()
-    expect(state.runs).toHaveLength(2)
-    expect(state.runs[0].id).not.toBe(state.runs[1].id)
-    expect(state.runs[0].runStatus).toBe('successful')
-    expect(state.runs[1].runStatus).toBe('successful')
+    expect(state.threadSurfaces).toHaveLength(2)
+    expect(state.runs).toHaveLength(4)
+
+    const rootRuns = state.runs.filter(run => run.threadSurfaceId === 'thread-root')
+    const childRuns = state.runs.filter(run => run.threadSurfaceId === 'thread-step-a')
+
+    expect(rootRuns).toHaveLength(2)
+    expect(childRuns).toHaveLength(2)
+    expect(rootRuns[0]?.id).not.toBe(rootRuns[1]?.id)
+    expect(childRuns[0]?.id).not.toBe(childRuns[1]?.id)
+    expect(rootRuns.every(run => run.runStatus === 'successful')).toBe(true)
+    expect(childRuns.every(run => run.runStatus === 'successful')).toBe(true)
   })
 
   test('stop marks the current run cancelled', async () => {

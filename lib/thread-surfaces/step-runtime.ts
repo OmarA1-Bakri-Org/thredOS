@@ -31,7 +31,7 @@ export interface StepRuntimeResolution {
 const DEFAULT_ROOT_SURFACE_ID = 'thread-root'
 
 export function deriveStepThreadSurfaceId(stepId: string): string {
-  return `thread-step-${stepId}`
+  return `thread-${stepId}`
 }
 
 export function resolveStepParentSurfaceId(step: Pick<StepRuntimeStep, 'orchestrator'>, rootSurfaceId = DEFAULT_ROOT_SURFACE_ID): string {
@@ -48,7 +48,10 @@ export function resolveStepRuntimeState({
   createdAt = startedAt,
 }: ResolveStepRuntimeStateArgs): StepRuntimeResolution {
   const threadSurfaceId = deriveStepThreadSurfaceId(step.id)
-  const parentSurfaceId = resolveStepParentSurfaceId(step, rootSurfaceId)
+  const preferredParentSurfaceId = resolveStepParentSurfaceId(step, rootSurfaceId)
+  const parentSurfaceId = state.threadSurfaces.some(surface => surface.id === preferredParentSurfaceId)
+    ? preferredParentSurfaceId
+    : rootSurfaceId
   const existingSurface = state.threadSurfaces.find(surface => surface.id === threadSurfaceId) ?? null
 
   if (existingSurface) {

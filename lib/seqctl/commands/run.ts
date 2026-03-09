@@ -10,6 +10,10 @@ import { dispatch, exitCodeToStatus } from '../../runner/dispatch'
 import { readPrompt, validatePromptExists } from '../../prompts/manager'
 import { StepNotFoundError } from '../../errors'
 import type { Step, Sequence, StepStatus } from '../../sequence/schema'
+import { readThreadSurfaceState, writeThreadSurfaceState } from '../../thread-surfaces/repository'
+import { completeRun, createReplacementRun, createRootThreadSurfaceRun, recordMergeEvent } from '../../thread-surfaces/mutations'
+import { deriveMergeEventForSuccessfulStep } from '../../thread-surfaces/merge-runtime'
+import { deriveStepThreadSurfaceId, resolveStepRuntimeState } from '../../thread-surfaces/step-runtime'
 
 const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000 // 30 minutes
 
@@ -36,6 +40,8 @@ interface RunRunnableResult {
   skipped: string[]
   error?: string
 }
+
+const ROOT_THREAD_SURFACE_ID = 'thread-root'
 
 /**
  * Get runnable steps (READY status with all dependencies satisfied)
@@ -85,6 +91,8 @@ async function executeSingleStep(
     throw new StepNotFoundError(stepId)
   }
 
+  const stepRuntime = await createStepRunScope(basePath, step)
+
   // Validate prompt file exists \u2014 use step.prompt_file, not hardcoded stepId path
   const promptPath = step.prompt_file
   const promptExists = await validatePromptExists(basePath, stepId)
@@ -92,6 +100,7 @@ async function executeSingleStep(
     // Bug fix: persist FAILED status so step isn't re-selected by run runnable
     step.status = 'FAILED'
     await writeSequence(basePath, sequence)
+    await finalizeStepRunScope(basePath, sequence, step, stepRuntime, false).catch(() => {})
     return {
       success: false,
       stepId,
@@ -140,6 +149,7 @@ async function executeSingleStep(
     const newStatus = exitCodeToStatus(result.exitCode)
     step.status = newStatus
     await writeSequence(basePath, sequence)
+    await finalizeStepRunScope(basePath, sequence, step, stepRuntime, newStatus === 'DONE')
 
     return {
       success: newStatus === 'DONE',
@@ -160,6 +170,7 @@ async function executeSingleStep(
         writeError
       )
     }
+    await finalizeStepRunScope(basePath, sequence, step, stepRuntime, false).catch(() => {})
 
     return {
       success: false,
@@ -169,6 +180,102 @@ async function executeSingleStep(
       error: error instanceof Error ? error.message : String(error),
     }
   }
+}
+
+async function createRootRunScopeForCommand(basePath: string, sequenceName: string, runId: string, startedAt: string) {
+  const currentState = await readThreadSurfaceState(basePath)
+  const executionIndex = currentState.runs.length + 1
+  const nextState = currentState.threadSurfaces.some(surface => surface.id === ROOT_THREAD_SURFACE_ID)
+    ? createReplacementRun(currentState, {
+        threadSurfaceId: ROOT_THREAD_SURFACE_ID,
+        runId,
+        startedAt,
+        executionIndex,
+      }).state
+    : createRootThreadSurfaceRun(currentState, {
+        surfaceId: ROOT_THREAD_SURFACE_ID,
+        surfaceLabel: sequenceName,
+        createdAt: startedAt,
+        runId,
+        startedAt,
+        executionIndex,
+      }).state
+
+  await writeThreadSurfaceState(basePath, nextState)
+}
+
+async function finalizeRootRunScopeForCommand(basePath: string, runId: string, success: boolean, runSummary: string) {
+  const currentState = await readThreadSurfaceState(basePath)
+  const nextState = completeRun(currentState, {
+    runId,
+    runStatus: success ? 'successful' : 'failed',
+    endedAt: new Date().toISOString(),
+    runSummary,
+  }).state
+  await writeThreadSurfaceState(basePath, nextState)
+}
+
+async function createStepRunScope(basePath: string, step: Step) {
+  const currentState = await readThreadSurfaceState(basePath)
+  const childRunId = randomUUID()
+  const startedAt = new Date().toISOString()
+  const executionIndex = currentState.runs.length + 1
+  const resolution = resolveStepRuntimeState({
+    state: currentState,
+    step: {
+      id: step.id,
+      name: step.name,
+      orchestrator: step.orchestrator,
+    },
+    runId: childRunId,
+    startedAt,
+    executionIndex,
+  })
+
+  await writeThreadSurfaceState(basePath, resolution.state)
+
+  return {
+    runId: childRunId,
+    executionIndex,
+  }
+}
+
+async function finalizeStepRunScope(basePath: string, sequence: Sequence, step: Step, stepRuntime: Awaited<ReturnType<typeof createStepRunScope>>, success: boolean) {
+  const currentState = await readThreadSurfaceState(basePath)
+  let nextState = completeRun(currentState, {
+    runId: stepRuntime.runId,
+    runStatus: success ? 'successful' : 'failed',
+    endedAt: new Date().toISOString(),
+    runSummary: success ? `step:${step.id}` : `step:${step.id}:failed`,
+  }).state
+
+  if (success) {
+    const mergeEvent = deriveMergeEventForSuccessfulStep({
+      step,
+      threadSurfaces: nextState.threadSurfaces,
+      stepThreadSurfaceIds: Object.fromEntries(sequence.steps.map(sequenceStep => [sequenceStep.id, deriveStepThreadSurfaceId(sequenceStep.id)])),
+      runId: stepRuntime.runId,
+      mergeId: randomUUID(),
+      executionIndex: stepRuntime.executionIndex,
+      createdAt: new Date().toISOString(),
+      summary: step.name,
+    })
+
+    if (mergeEvent) {
+      nextState = recordMergeEvent(nextState, {
+        mergeId: mergeEvent.id,
+        runId: mergeEvent.runId,
+        destinationThreadSurfaceId: mergeEvent.destinationThreadSurfaceId,
+        sourceThreadSurfaceIds: mergeEvent.sourceThreadSurfaceIds,
+        mergeKind: mergeEvent.mergeKind,
+        executionIndex: mergeEvent.executionIndex,
+        createdAt: mergeEvent.createdAt,
+        summary: mergeEvent.summary,
+      }).state
+    }
+  }
+
+  await writeThreadSurfaceState(basePath, nextState)
 }
 
 /**
@@ -185,6 +292,8 @@ export async function runCommand(
   // Read and validate sequence
   const sequence = await readSequence(basePath)
   validateDAG(sequence)
+  const startedAt = new Date().toISOString()
+  await createRootRunScopeForCommand(basePath, sequence.name, runId, startedAt)
 
   const mprocsClient = new MprocsClient()
 
@@ -208,6 +317,7 @@ export async function runCommand(
       runId,
       mprocsClient
     )
+    await finalizeRootRunScopeForCommand(basePath, runId, result.success, `step:${stepId}`)
 
     // Update mprocs map
     const mprocsMap = await readMprocsMap(basePath)
@@ -230,11 +340,11 @@ export async function runCommand(
     const runnableSteps = getRunnableSteps(sequence)
 
     if (runnableSteps.length === 0) {
-      const result: RunRunnableResult = {
-        success: true,
-        executed: [],
-        skipped: [],
-        error: 'No runnable steps found',
+    const result: RunRunnableResult = {
+      success: true,
+      executed: [],
+      skipped: [],
+      error: 'No runnable steps found',
       }
       if (options.json) {
         console.log(JSON.stringify(result))
@@ -282,6 +392,7 @@ export async function runCommand(
       executed,
       skipped,
     }
+    await finalizeRootRunScopeForCommand(basePath, runId, result.success, 'mode:runnable')
 
     if (options.json) {
       console.log(JSON.stringify(result))
@@ -343,6 +454,7 @@ export async function runCommand(
       executed,
       skipped: [],
     }
+    await finalizeRootRunScopeForCommand(basePath, runId, result.success, `group:${groupId}`)
 
     if (options.json) {
       console.log(JSON.stringify(result))
