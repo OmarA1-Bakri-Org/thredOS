@@ -78,4 +78,11 @@ describe('artifacts', () => {
     const statusJson = JSON.parse(await readFile(join(artifactPath, 'status.json'), 'utf-8'))
     expect(statusJson.status).toBe('SUCCESS')
   })
+
+  test('getRuntimeEventLogPath resolves under the run artifact directory', async () => {
+    const { getRuntimeEventLogPath } = await importActualArtifacts()
+    expect(getRuntimeEventLogPath(tmpDir, 'run-2', 'step-9')).toBe(
+      join(tmpDir, '.threados', 'runs', 'run-2', 'step-9', 'events.jsonl'),
+    )
+  })
 })

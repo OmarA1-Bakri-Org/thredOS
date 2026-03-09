@@ -4,6 +4,7 @@ import { writeFileAtomic } from '../fs/atomic'
 import type { RunResult, RunStatus } from './wrapper'
 
 const RUNS_PATH = '.threados/runs'
+const EVENTS_LOG_FILE = 'events.jsonl'
 
 export interface StatusJson {
   stepId: string
@@ -31,6 +32,14 @@ export async function createRunDirectory(
   const dirPath = join(basePath, RUNS_PATH, runId, stepId)
   await mkdir(dirPath, { recursive: true })
   return dirPath
+}
+
+export function getRuntimeEventLogPath(
+  basePath: string,
+  runId: string,
+  stepId: string
+): string {
+  return join(basePath, RUNS_PATH, runId, stepId, EVENTS_LOG_FILE)
 }
 
 /**
