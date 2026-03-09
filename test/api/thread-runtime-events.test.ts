@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
-import { join } from 'path'
+import { dirname, join } from 'path'
 import YAML from 'yaml'
 import type { ThreadSurfaceState } from '@/lib/thread-surfaces/repository'
 
 let basePath = ''
+let runtimeEventLinesByStep: Record<string, string[]> = {}
 
 async function setupSequence(sequence: object) {
   await mkdir(join(basePath, '.threados', 'prompts'), { recursive: true })
@@ -29,19 +30,37 @@ async function readThreadSurfaceState(): Promise<ThreadSurfaceState> {
 describe('thread runtime event persistence', () => {
   beforeEach(async () => {
     basePath = await mkdtemp(join(tmpdir(), 'threados-runtime-events-'))
+    runtimeEventLinesByStep = {}
     process.env.THREADOS_BASE_PATH = basePath
     globalThis.__THREADOS_RUN_ROUTE_RUNTIME__ = {
-      runStep: async ({ stepId, runId }: { stepId: string; runId: string }) => ({
+      runStep: async ({
         stepId,
         runId,
-        exitCode: 0,
-        status: 'SUCCESS',
-        duration: 15,
-        stdout: `ok:${stepId}`,
-        stderr: '',
-        startTime: new Date('2026-03-09T12:00:00.000Z'),
-        endTime: new Date('2026-03-09T12:00:15.000Z'),
-      }),
+        env,
+      }: {
+        stepId: string
+        runId: string
+        env?: Record<string, string>
+      }) => {
+        const eventLogPath = env?.THREADOS_EVENT_LOG
+        const lines = runtimeEventLinesByStep[stepId] ?? []
+        if (eventLogPath && lines.length > 0) {
+          await mkdir(dirname(eventLogPath), { recursive: true })
+          await writeFile(eventLogPath, `${lines.join('\n')}\n`, 'utf-8')
+        }
+
+        return {
+          stepId,
+          runId,
+          exitCode: 0,
+          status: 'SUCCESS',
+          duration: 15,
+          stdout: `ok:${stepId}`,
+          stderr: '',
+          startTime: new Date('2026-03-09T12:00:00.000Z'),
+          endTime: new Date('2026-03-09T12:00:15.000Z'),
+        }
+      },
       saveRunArtifacts: async () => join(basePath, '.threados', 'runs', 'mock'),
     }
   })
@@ -129,7 +148,6 @@ describe('thread runtime event persistence', () => {
           prompt_file: '.threados/prompts/fusion-synth.md',
           depends_on: ['candidate-a', 'candidate-b'],
           status: 'READY',
-          fusion_synth: true,
         },
       ],
       gates: [],
@@ -137,6 +155,16 @@ describe('thread runtime event persistence', () => {
     await writePrompt('candidate-a')
     await writePrompt('candidate-b')
     await writePrompt('fusion-synth')
+    runtimeEventLinesByStep['fusion-synth'] = [
+      JSON.stringify({
+        eventType: 'merge-into',
+        createdAt: '2026-03-09T12:00:05.000Z',
+        destinationStepId: 'fusion-synth',
+        sourceStepIds: ['candidate-a', 'candidate-b'],
+        mergeKind: 'block',
+        summary: 'Fusion runtime merge',
+      }),
+    ]
     await writeThreadSurfaceState({
       version: 1,
       threadSurfaces: [
@@ -167,6 +195,15 @@ describe('thread runtime event persistence', () => {
           createdAt: '2026-03-09T12:00:02.000Z',
           childSurfaceIds: [],
         },
+        {
+          id: 'thread-fusion-synth',
+          parentSurfaceId: 'thread-root',
+          parentAgentNodeId: 'fusion-synth',
+          depth: 1,
+          surfaceLabel: 'Fusion Synth',
+          createdAt: '2026-03-09T12:00:03.000Z',
+          childSurfaceIds: [],
+        },
       ],
       runs: [
         {
@@ -192,6 +229,14 @@ describe('thread runtime event persistence', () => {
           startedAt: '2026-03-09T12:00:02.000Z',
           endedAt: '2026-03-09T12:00:15.000Z',
           executionIndex: 3,
+        },
+        {
+          id: 'run-fusion-seed',
+          threadSurfaceId: 'thread-fusion-synth',
+          runStatus: 'successful',
+          startedAt: '2026-03-09T12:00:03.000Z',
+          endedAt: '2026-03-09T12:00:15.000Z',
+          executionIndex: 4,
         },
       ],
       mergeEvents: [],

@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
-import { join } from 'path'
+import { dirname, join } from 'path'
 import YAML from 'yaml'
 import type { ThreadSurfaceState } from '@/lib/thread-surfaces/repository'
 
 let basePath = ''
+let runtimeEventLinesByStep: Record<string, string[]> = {}
 
 async function setupSequence(sequence: object) {
   await mkdir(join(basePath, '.threados', 'prompts'), { recursive: true })
@@ -29,19 +30,37 @@ async function readThreadSurfaceState(): Promise<ThreadSurfaceState> {
 describe('thread spawn event persistence', () => {
   beforeEach(async () => {
     basePath = await mkdtemp(join(tmpdir(), 'threados-spawn-events-'))
+    runtimeEventLinesByStep = {}
     process.env.THREADOS_BASE_PATH = basePath
     globalThis.__THREADOS_RUN_ROUTE_RUNTIME__ = {
-      runStep: async ({ stepId, runId }: { stepId: string; runId: string }) => ({
+      runStep: async ({
         stepId,
         runId,
-        exitCode: 0,
-        status: 'SUCCESS',
-        duration: 15,
-        stdout: `ok:${stepId}`,
-        stderr: '',
-        startTime: new Date('2026-03-09T12:00:00.000Z'),
-        endTime: new Date('2026-03-09T12:00:15.000Z'),
-      }),
+        env,
+      }: {
+        stepId: string
+        runId: string
+        env?: Record<string, string>
+      }) => {
+        const eventLogPath = env?.THREADOS_EVENT_LOG
+        const lines = runtimeEventLinesByStep[stepId] ?? []
+        if (eventLogPath && lines.length > 0) {
+          await mkdir(dirname(eventLogPath), { recursive: true })
+          await writeFile(eventLogPath, `${lines.join('\n')}\n`, 'utf-8')
+        }
+
+        return {
+          stepId,
+          runId,
+          exitCode: 0,
+          status: 'SUCCESS',
+          duration: 15,
+          stdout: `ok:${stepId}`,
+          stderr: '',
+          startTime: new Date('2026-03-09T12:00:00.000Z'),
+          endTime: new Date('2026-03-09T12:00:15.000Z'),
+        }
+      },
       saveRunArtifacts: async () => join(basePath, '.threados', 'runs', 'mock'),
     }
   })
@@ -460,5 +479,75 @@ describe('thread spawn event persistence', () => {
         }),
       }),
     ])
+  })
+
+  test('runtime-emitted spawn-child events create child surfaces without static orchestrator metadata', async () => {
+    await setupSequence({
+      version: '1.0',
+      name: 'Runtime Spawn Sequence',
+      steps: [
+        {
+          id: 'delegate-step',
+          name: 'Delegate Step',
+          type: 'base',
+          model: 'codex',
+          prompt_file: '.threados/prompts/delegate-step.md',
+          depends_on: [],
+          status: 'READY',
+        },
+      ],
+      gates: [],
+    })
+    await writePrompt('delegate-step')
+    runtimeEventLinesByStep['delegate-step'] = [
+      JSON.stringify({
+        eventType: 'spawn-child',
+        createdAt: '2026-03-09T12:00:03.000Z',
+        childStepId: 'delegate-child-a',
+        childLabel: 'Delegate Child A',
+        spawnKind: 'orchestrator',
+      }),
+      JSON.stringify({
+        eventType: 'spawn-child',
+        createdAt: '2026-03-09T12:00:04.000Z',
+        childStepId: 'delegate-child-b',
+        childLabel: 'Delegate Child B',
+        spawnKind: 'orchestrator',
+      }),
+    ]
+
+    const { POST } = await import('@/app/api/run/route')
+    const response = await POST(new Request('http://localhost/api/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ stepId: 'delegate-step' }),
+    }))
+
+    expect(response.status).toBe(200)
+
+    const state = await readThreadSurfaceState()
+    expect(state.threadSurfaces).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'thread-root',
+          childSurfaceIds: ['thread-delegate-step'],
+        }),
+        expect.objectContaining({
+          id: 'thread-delegate-step',
+          parentSurfaceId: 'thread-root',
+          childSurfaceIds: ['thread-delegate-child-a', 'thread-delegate-child-b'],
+        }),
+        expect.objectContaining({
+          id: 'thread-delegate-child-a',
+          parentSurfaceId: 'thread-delegate-step',
+          surfaceLabel: 'Delegate Child A',
+        }),
+        expect.objectContaining({
+          id: 'thread-delegate-child-b',
+          parentSurfaceId: 'thread-delegate-step',
+          surfaceLabel: 'Delegate Child B',
+        }),
+      ]),
+    )
   })
 })

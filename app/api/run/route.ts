@@ -7,13 +7,14 @@ import { getBasePath } from '@/lib/config'
 import { jsonError, auditLog, checkPolicy, handleError } from '@/lib/api-helpers'
 import type { Sequence, Step } from '@/lib/sequence/schema'
 import { runStep } from '@/lib/runner/wrapper'
-import { saveRunArtifacts } from '@/lib/runner/artifacts'
+import { getRuntimeEventLogPath, saveRunArtifacts } from '@/lib/runner/artifacts'
 import { readThreadSurfaceState, writeThreadSurfaceState } from '@/lib/thread-surfaces/repository'
 import { completeRun, createChildThreadSurfaceRun, createReplacementRun, createRootThreadSurfaceRun, recordChildAgentSpawnEvent, recordMergeEvent } from '@/lib/thread-surfaces/mutations'
 import { deriveMergeEventForSuccessfulStep } from '@/lib/thread-surfaces/merge-runtime'
 import { deriveStepThreadSurfaceId } from '@/lib/thread-surfaces/step-runtime'
 import { deriveSpawnSpecsForStep, type SpawnSpec } from '@/lib/thread-surfaces/spawn-runtime'
 import type { ThreadSurfaceState } from '@/lib/thread-surfaces/repository'
+import { readRuntimeEventLog, type RuntimeDelegationEvent } from '@/lib/thread-surfaces/runtime-event-log'
 
 const ROOT_THREAD_SURFACE_ID = 'thread-root'
 
@@ -49,11 +50,22 @@ async function executeStep(bp: string, seq: Sequence, stepId: string, runId: str
   await writeSequence(bp, seq)
   try {
     const runtime = getRunRouteRuntime()
-    const result = await runtime.runStep({ stepId, runId, command: step.model, args: ['--prompt-file', step.prompt_file], cwd: step.cwd })
+    const runtimeEventLogPath = getRuntimeEventLogPath(bp, runId, stepId)
+    const result = await runtime.runStep({
+      stepId,
+      runId,
+      command: step.model,
+      args: ['--prompt-file', step.prompt_file],
+      cwd: step.cwd,
+      env: {
+        THREADOS_EVENT_LOG: runtimeEventLogPath,
+      },
+    })
     const artifactPath = await runtime.saveRunArtifacts(bp, result)
+    const runtimeEvents = await readRuntimeEventLog(bp, runId, stepId)
     step.status = result.status === 'SUCCESS' ? 'DONE' : 'FAILED'
     await writeSequence(bp, seq)
-    await finalizeStepRunScope(bp, seq, step, stepRuntime, result.status === 'SUCCESS')
+    await finalizeStepRunScope(bp, seq, step, stepRuntime, result.status === 'SUCCESS', runtimeEvents.events)
     return { success: result.status === 'SUCCESS', stepId, runId, status: step.status, duration: result.duration, artifactPath }
   } catch (err) {
     step.status = 'FAILED'
@@ -151,48 +163,171 @@ async function finalizeStepRunScope(
   step: Step,
   stepRuntime: Awaited<ReturnType<typeof createStepRunScope>>,
   success: boolean,
+  runtimeEvents: RuntimeDelegationEvent[],
 ) {
-  if (stepRuntime.stepRun == null) {
+  let currentState = await readThreadSurfaceState(bp)
+  let effectiveStepRun = stepRuntime.stepRun
+
+  if (effectiveStepRun == null && success && runtimeEvents.length > 0) {
+    const materialized = materializeStepRunForRuntimeEvents(currentState, step)
+    currentState = materialized.state
+    effectiveStepRun = materialized.stepRun
+  }
+
+  if (effectiveStepRun == null) {
     return
   }
 
-  const currentState = await readThreadSurfaceState(bp)
   let nextState = completeRun(currentState, {
-    runId: stepRuntime.stepRun.runId,
+    runId: effectiveStepRun.runId,
     runStatus: success ? 'successful' : 'failed',
     endedAt: new Date().toISOString(),
     runSummary: success ? `step:${step.id}` : `step:${step.id}:failed`,
   }).state
 
   if (success) {
-    nextState = persistSpawnedChildren(nextState, stepRuntime.stepRun, stepRuntime.spawnSpecs)
-
-    const mergeEvent = deriveMergeEventForSuccessfulStep({
-      step,
-      threadSurfaces: nextState.threadSurfaces,
-      stepThreadSurfaceIds: Object.fromEntries(seq.steps.map(sequenceStep => [sequenceStep.id, deriveStepThreadSurfaceId(sequenceStep.id)])),
-      runId: stepRuntime.stepRun.runId,
-      mergeId: randomUUID(),
-      executionIndex: stepRuntime.stepRun.executionIndex,
-      createdAt: new Date().toISOString(),
-      summary: step.name,
-    })
-
-    if (mergeEvent) {
-      nextState = recordMergeEvent(nextState, {
-        mergeId: mergeEvent.id,
-        runId: mergeEvent.runId,
-        destinationThreadSurfaceId: mergeEvent.destinationThreadSurfaceId,
-        sourceThreadSurfaceIds: mergeEvent.sourceThreadSurfaceIds,
-        mergeKind: mergeEvent.mergeKind,
-        executionIndex: mergeEvent.executionIndex,
-        createdAt: mergeEvent.createdAt,
-        summary: mergeEvent.summary,
-      }).state
-    }
+    nextState = runtimeEvents.length > 0
+      ? persistRuntimeDelegationEvents(nextState, effectiveStepRun, step, runtimeEvents)
+      : persistFallbackRuntimeState(nextState, seq, step, stepRuntime, effectiveStepRun)
   }
 
   await writeThreadSurfaceState(bp, nextState)
+}
+
+function materializeStepRunForRuntimeEvents(state: ThreadSurfaceState, step: Step): { state: ThreadSurfaceState; stepRun: StepRunScope } {
+  const runId = randomUUID()
+  const startedAt = new Date().toISOString()
+  const executionIndex = state.runs.length + 1
+  const threadSurfaceId = deriveStepThreadSurfaceId(step.id)
+  const existingSurface = state.threadSurfaces.find(surface => surface.id === threadSurfaceId) ?? null
+
+  const nextState = existingSurface
+    ? createReplacementRun(state, {
+        threadSurfaceId,
+        runId,
+        startedAt,
+        executionIndex,
+      }).state
+    : createChildThreadSurfaceRun(state, {
+        parentSurfaceId: resolveParentSurfaceId(state, step),
+        parentAgentNodeId: step.id,
+        childSurfaceId: threadSurfaceId,
+        childSurfaceLabel: step.name,
+        createdAt: startedAt,
+        runId,
+        startedAt,
+        executionIndex,
+      }).state
+
+  return {
+    state: nextState,
+    stepRun: {
+      runId,
+      startedAt,
+      executionIndex,
+      threadSurfaceId,
+    },
+  }
+}
+
+function persistFallbackRuntimeState(
+  state: ThreadSurfaceState,
+  seq: Sequence,
+  step: Step,
+  stepRuntime: Awaited<ReturnType<typeof createStepRunScope>>,
+  effectiveStepRun: StepRunScope,
+): ThreadSurfaceState {
+  let nextState = persistSpawnedChildren(state, effectiveStepRun, stepRuntime.spawnSpecs)
+
+  const mergeEvent = deriveMergeEventForSuccessfulStep({
+    step,
+    threadSurfaces: nextState.threadSurfaces,
+    stepThreadSurfaceIds: Object.fromEntries(seq.steps.map(sequenceStep => [sequenceStep.id, deriveStepThreadSurfaceId(sequenceStep.id)])),
+    runId: effectiveStepRun.runId,
+    mergeId: randomUUID(),
+    executionIndex: effectiveStepRun.executionIndex,
+    createdAt: new Date().toISOString(),
+    summary: step.name,
+  })
+
+  if (mergeEvent) {
+    nextState = recordMergeEvent(nextState, {
+      mergeId: mergeEvent.id,
+      runId: mergeEvent.runId,
+      destinationThreadSurfaceId: mergeEvent.destinationThreadSurfaceId,
+      sourceThreadSurfaceIds: mergeEvent.sourceThreadSurfaceIds,
+      mergeKind: mergeEvent.mergeKind,
+      executionIndex: mergeEvent.executionIndex,
+      createdAt: mergeEvent.createdAt,
+      summary: mergeEvent.summary,
+    }).state
+  }
+
+  return nextState
+}
+
+function persistRuntimeDelegationEvents(
+  state: ThreadSurfaceState,
+  stepRun: StepRunScope,
+  step: Step,
+  runtimeEvents: RuntimeDelegationEvent[],
+): ThreadSurfaceState {
+  let nextState = state
+
+  for (const event of runtimeEvents) {
+    if (event.eventType === 'spawn-child') {
+      const parentThreadSurfaceId = event.parentStepId
+        ? deriveStepThreadSurfaceId(event.parentStepId)
+        : stepRun.threadSurfaceId
+      const childThreadSurfaceId = deriveStepThreadSurfaceId(event.childStepId)
+      const createdAt = event.createdAt
+      const childSurfaceExists = nextState.threadSurfaces.some(surface => surface.id === childThreadSurfaceId)
+
+      if (!childSurfaceExists) {
+        nextState = createChildThreadSurfaceRun(nextState, {
+          parentSurfaceId: parentThreadSurfaceId,
+          parentAgentNodeId: event.childStepId,
+          childSurfaceId: childThreadSurfaceId,
+          childSurfaceLabel: event.childLabel,
+          createdAt,
+          runId: randomUUID(),
+          startedAt: createdAt,
+          executionIndex: nextState.runs.length + 1,
+        }).state
+      } else if (childThreadSurfaceId !== stepRun.threadSurfaceId) {
+        nextState = createReplacementRun(nextState, {
+          threadSurfaceId: childThreadSurfaceId,
+          runId: randomUUID(),
+          startedAt: createdAt,
+          executionIndex: nextState.runs.length + 1,
+        }).state
+      }
+
+      nextState = recordChildAgentSpawnEvent(nextState, {
+        eventId: randomUUID(),
+        runId: stepRun.runId,
+        threadSurfaceId: parentThreadSurfaceId,
+        childThreadSurfaceId,
+        parentThreadSurfaceId,
+        createdAt,
+      }).state
+      continue
+    }
+
+    const destinationThreadSurfaceId = deriveStepThreadSurfaceId(event.destinationStepId)
+    nextState = recordMergeEvent(nextState, {
+      mergeId: randomUUID(),
+      runId: stepRun.runId,
+      destinationThreadSurfaceId,
+      sourceThreadSurfaceIds: event.sourceStepIds.map(sourceStepId => deriveStepThreadSurfaceId(sourceStepId)),
+      mergeKind: event.mergeKind,
+      executionIndex: stepRun.executionIndex,
+      createdAt: event.createdAt,
+      summary: event.summary ?? step.name,
+    }).state
+  }
+
+  return nextState
 }
 
 function persistSpawnedChildren(state: ThreadSurfaceState, stepRun: StepRunScope, spawnSpecs: SpawnSpec[]): ThreadSurfaceState {
