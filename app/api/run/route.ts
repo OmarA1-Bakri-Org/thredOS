@@ -19,6 +19,15 @@ const BodySchema = z.union([
   z.object({ groupId: z.string() }),
 ])
 
+interface RunRouteRuntime {
+  runStep: typeof runStep
+  saveRunArtifacts: typeof saveRunArtifacts
+}
+
+declare global {
+  var __THREADOS_RUN_ROUTE_RUNTIME__: RunRouteRuntime | undefined
+}
+
 function getRunnableSteps(sequence: Sequence): Step[] {
   const done = new Set([
     ...sequence.steps.filter(s => s.status === 'DONE').map(s => s.id),
@@ -33,8 +42,9 @@ async function executeStep(bp: string, seq: Sequence, stepId: string, runId: str
   step.status = 'RUNNING'
   await writeSequence(bp, seq)
   try {
-    const result = await runStep({ stepId, runId, command: step.model, args: ['--prompt-file', step.prompt_file], cwd: step.cwd })
-    const artifactPath = await saveRunArtifacts(bp, result)
+    const runtime = getRunRouteRuntime()
+    const result = await runtime.runStep({ stepId, runId, command: step.model, args: ['--prompt-file', step.prompt_file], cwd: step.cwd })
+    const artifactPath = await runtime.saveRunArtifacts(bp, result)
     step.status = result.status === 'SUCCESS' ? 'DONE' : 'FAILED'
     await writeSequence(bp, seq)
     return { success: result.status === 'SUCCESS', stepId, runId, status: step.status, duration: result.duration, artifactPath }
@@ -42,6 +52,13 @@ async function executeStep(bp: string, seq: Sequence, stepId: string, runId: str
     step.status = 'FAILED'
     await writeSequence(bp, seq).catch(() => {})
     return { success: false, stepId, runId, status: 'FAILED' as const, error: err instanceof Error ? err.message : String(err) }
+  }
+}
+
+function getRunRouteRuntime(): RunRouteRuntime {
+  return globalThis.__THREADOS_RUN_ROUTE_RUNTIME__ ?? {
+    runStep,
+    saveRunArtifacts,
   }
 }
 

@@ -31,9 +31,10 @@ export interface LaneBoardModel {
 }
 
 export function useLaneBoard(args: LaneBoardModelArgs): LaneBoardModel {
+  const { threadSurfaces, runs, mergeEvents, runIds, draftSurfaceOrder } = args
   return useMemo(
-    () => createLaneBoardModel(args),
-    [args.threadSurfaces, args.runs, args.mergeEvents, args.runIds, args.draftSurfaceOrder],
+    () => createLaneBoardModel({ threadSurfaces, runs, mergeEvents, runIds, draftSurfaceOrder }),
+    [threadSurfaces, runs, mergeEvents, runIds, draftSurfaceOrder],
   )
 }
 

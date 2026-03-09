@@ -7,7 +7,7 @@ import { auditLog, handleError } from '@/lib/api-helpers'
 import { readMprocsMap } from '@/lib/mprocs/state'
 import { StepNotFoundError } from '@/lib/errors'
 import { readThreadSurfaceState, writeThreadSurfaceState } from '@/lib/thread-surfaces/repository'
-import { createReplacementRun } from '@/lib/thread-surfaces/mutations'
+import { createReplacementRun, createRootThreadSurfaceRun } from '@/lib/thread-surfaces/mutations'
 
 const ROOT_THREAD_SURFACE_ID = 'thread-root'
 const BodySchema = z.object({ stepId: z.string() })
@@ -32,12 +32,22 @@ export async function POST(request: Request) {
     await writeSequence(bp, seq)
 
     const currentState = await readThreadSurfaceState(bp)
-    const nextState = createReplacementRun(currentState, {
-      threadSurfaceId: ROOT_THREAD_SURFACE_ID,
-      runId: randomUUID(),
-      startedAt: new Date().toISOString(),
-      executionIndex: currentState.runs.length + 1,
-    }).state
+    const startedAt = new Date().toISOString()
+    const nextState = currentState.threadSurfaces.some(surface => surface.id === ROOT_THREAD_SURFACE_ID)
+      ? createReplacementRun(currentState, {
+          threadSurfaceId: ROOT_THREAD_SURFACE_ID,
+          runId: randomUUID(),
+          startedAt,
+          executionIndex: currentState.runs.length + 1,
+        }).state
+      : createRootThreadSurfaceRun(currentState, {
+          surfaceId: ROOT_THREAD_SURFACE_ID,
+          surfaceLabel: seq.name,
+          createdAt: startedAt,
+          runId: randomUUID(),
+          startedAt,
+          executionIndex: currentState.runs.length + 1,
+        }).state
     await writeThreadSurfaceState(bp, nextState)
 
     await auditLog('restart', stepId)

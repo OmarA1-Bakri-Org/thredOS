@@ -79,7 +79,7 @@ describe('dispatch', () => {
 
   test('rejects unsupported model', async () => {
     await expect(
-      dispatch('unknown-model' as any, {
+      dispatch('unknown-model' as unknown as Parameters<typeof dispatch>[0], {
         stepId: 'x',
         runId: 'r',
         compiledPrompt: 'p',

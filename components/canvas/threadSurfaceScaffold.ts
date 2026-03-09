@@ -63,7 +63,7 @@ export function resolveThreadSurfaceCanvasData({
   runs,
   mergeEvents,
 }: ResolveThreadSurfaceCanvasDataArgs): ThreadSurfaceCanvasData {
-  if (hasRealThreadSurfaceData(threadSurfaces, runs, mergeEvents)) {
+  if (hasResolvedThreadSurfaceApiData(threadSurfaces, runs, mergeEvents) && hasPersistedThreadSurfaceData(threadSurfaces, runs, mergeEvents)) {
     return {
       source: 'api',
       threadSurfaces: threadSurfaces ?? [],
@@ -104,7 +104,15 @@ function buildRunSummary(status: SequenceStatus): string {
   ].join(' | ')
 }
 
-function hasRealThreadSurfaceData(
+export function hasResolvedThreadSurfaceApiData(
+  threadSurfaces?: ThreadSurface[] | null,
+  runs?: RunScope[] | null,
+  mergeEvents?: MergeEvent[] | null,
+): boolean {
+  return Array.isArray(threadSurfaces) && Array.isArray(runs) && Array.isArray(mergeEvents)
+}
+
+function hasPersistedThreadSurfaceData(
   threadSurfaces?: ThreadSurface[] | null,
   runs?: RunScope[] | null,
   mergeEvents?: MergeEvent[] | null,

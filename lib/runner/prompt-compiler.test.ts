@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'bun:test'
 import { compilePrompt } from './prompt-compiler'
-import type { Sequence, Step } from '../sequence/schema'
+import type { Gate, Sequence, Step } from '../sequence/schema'
 
 function makeStep(overrides: Partial<Step> = {}): Step {
   return {
@@ -15,7 +15,7 @@ function makeStep(overrides: Partial<Step> = {}): Step {
   }
 }
 
-function makeSequence(steps: Step[] = [], gates: any[] = []): Sequence {
+function makeSequence(steps: Step[] = [], gates: Gate[] = []): Sequence {
   return {
     version: '1.0',
     name: 'test-seq',

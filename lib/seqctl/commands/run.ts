@@ -8,7 +8,7 @@ import { saveRunArtifacts } from '../../runner/artifacts'
 import { compilePrompt } from '../../runner/prompt-compiler'
 import { dispatch, exitCodeToStatus } from '../../runner/dispatch'
 import { readPrompt, validatePromptExists } from '../../prompts/manager'
-import { StepNotFoundError, PromptNotFoundError } from '../../errors'
+import { StepNotFoundError } from '../../errors'
 import type { Step, Sequence, StepStatus } from '../../sequence/schema'
 
 const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000 // 30 minutes

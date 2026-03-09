@@ -2,10 +2,16 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, test } from 'bun:test'
 import type { ReactElement, ReactNode } from 'react'
 import type { SequenceStatus } from '@/app/api/status/route'
+import { resolveThreadSurfaceFocusedDetail } from '@/components/canvas/threadSurfaceFocus'
 import { resolveThreadSurfaceCanvasData } from '@/components/canvas/threadSurfaceScaffold'
 import { HierarchyView } from '@/components/hierarchy/HierarchyView'
 import { useHierarchyGraph } from '@/components/hierarchy/useHierarchyGraph'
 import { createLaneBoardModel } from '@/components/lanes/useLaneBoard'
+import {
+  unwrapThreadMergesResponse,
+  unwrapThreadRunsResponse,
+  unwrapThreadSurfacesResponse,
+} from '@/lib/ui/api'
 import { useUIStore } from '@/lib/ui/store'
 import type { MergeEvent, RunScope, ThreadSurface } from '@/lib/thread-surfaces/types'
 
@@ -77,9 +83,9 @@ describe('thread surface ui flow', () => {
 
     const threadSurfaceData = resolveThreadSurfaceCanvasData({
       status: legacyStatus,
-      threadSurfaces: multiThreadState.threadSurfaces,
-      runs: multiThreadState.runs,
-      mergeEvents: multiThreadState.mergeEvents,
+      threadSurfaces: unwrapThreadSurfacesResponse({ threadSurfaces: multiThreadState.threadSurfaces }),
+      runs: unwrapThreadRunsResponse({ runs: multiThreadState.runs }),
+      mergeEvents: unwrapThreadMergesResponse({ mergeEvents: multiThreadState.mergeEvents }),
     })
 
     expect(threadSurfaceData.source).toBe('api')
@@ -154,5 +160,27 @@ describe('thread surface ui flow', () => {
         orderedThreadSurfaceIds: ['thread-master', 'thread-review'],
       },
     ])
+
+    const focusedDetail = resolveThreadSurfaceFocusedDetail({
+      threadSurfaces: threadSurfaceData.threadSurfaces,
+      runs: threadSurfaceData.runs,
+      mergeEvents: threadSurfaceData.mergeEvents,
+      rows: laneBoard.rows,
+      mergeGroups: laneBoard.mergeGroups,
+      focusedThreadSurfaceId: useUIStore.getState().laneFocusThreadSurfaceId,
+      selectedRunId: useUIStore.getState().selectedRunId,
+    })
+
+    expect(focusedDetail).toMatchObject({
+      threadSurfaceId: 'thread-synthesis',
+      runId: 'run-synthesis',
+      runSummary: 'Synthesis merged research and outreach into a unified brief.',
+      incomingMergeGroups: [
+        expect.objectContaining({
+          mergeEventId: 'merge-block-synthesis',
+          destinationThreadSurfaceId: 'thread-synthesis',
+        }),
+      ],
+    })
   })
 })
