@@ -5,10 +5,9 @@ import { getBasePath } from '@/lib/config'
 import { auditLog, handleError } from '@/lib/api-helpers'
 import { readMprocsMap } from '@/lib/mprocs/state'
 import { StepNotFoundError } from '@/lib/errors'
+import { ROOT_THREAD_SURFACE_ID } from '@/lib/thread-surfaces/constants'
 import { readThreadSurfaceState, writeThreadSurfaceState } from '@/lib/thread-surfaces/repository'
 import { cancelRun, findLatestActiveRunForSurface } from '@/lib/thread-surfaces/mutations'
-
-const ROOT_THREAD_SURFACE_ID = 'thread-root'
 const BodySchema = z.object({ stepId: z.string() })
 
 export async function POST(request: Request) {
@@ -25,7 +24,9 @@ export async function POST(request: Request) {
       try {
         const { MprocsClient } = await import('@/lib/mprocs/client')
         await new MprocsClient().stopProcess(idx)
-      } catch {}
+      } catch (error) {
+        console.error(`[stop] Failed to stop mprocs process for step '${stepId}':`, error)
+      }
     }
     step.status = 'FAILED'
     await writeSequence(bp, seq)

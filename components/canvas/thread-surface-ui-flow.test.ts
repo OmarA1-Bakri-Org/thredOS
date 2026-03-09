@@ -29,7 +29,7 @@ type MultiThreadFixture = {
 }
 
 const multiThreadState = JSON.parse(
-  readFileSync(new URL('../fixtures/thread-surfaces/multi-thread-state.json', import.meta.url), 'utf8'),
+  readFileSync(new URL('../../test/fixtures/thread-surfaces/multi-thread-state.json', import.meta.url), 'utf8'),
 ) as MultiThreadFixture
 
 const legacyStatus: SequenceStatus = {
@@ -67,7 +67,7 @@ function collectButtons(node: ReactNode, acc: ButtonElement[] = []): ButtonEleme
   return acc
 }
 
-describe('thread surface ui flow', () => {
+describe('thread surface canvas flow', () => {
   test('prefers real thread-surface data over the legacy scaffold and opens lane context from hierarchy clicks', () => {
     useUIStore.setState({
       viewMode: 'hierarchy',

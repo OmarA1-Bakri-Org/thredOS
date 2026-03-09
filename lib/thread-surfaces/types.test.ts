@@ -17,7 +17,15 @@ describe('thread surface domain types', () => {
     expect(RunStatusValues).toEqual(['pending', 'running', 'successful', 'failed', 'cancelled'])
     expect(LaneTerminalStateValues).toEqual(['completed', 'failed', 'cancelled', 'merged'])
     expect(MergeKindValues).toEqual(['single', 'block'])
-    expect(RunEventTypeValues).toContain('merge-occurred')
+    expect(RunEventTypeValues).toEqual([
+      'step-started',
+      'step-completed',
+      'gate-approved',
+      'child-agent-spawned',
+      'merge-occurred',
+      'run-cancelled',
+      'run-completed',
+    ])
   })
 
   test('ThreadSurface captures structural identity separate from runs', () => {

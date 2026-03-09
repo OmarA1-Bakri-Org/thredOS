@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { NextResponse } from 'next/server'
 import { getBasePath } from '@/lib/config'
 import { handleError, jsonError } from '@/lib/api-helpers'
+import { ThreadSurfaceNotFoundError, ThreadSurfaceRunNotFoundError } from '@/lib/errors'
 import { resolveSurfaceAnnotations } from '@/lib/thread-surfaces/annotations'
 import { readThreadSurfaceState, updateThreadSurfaceState } from '@/lib/thread-surfaces/repository'
 
@@ -44,12 +45,12 @@ export async function POST(request: Request) {
     const state = await updateThreadSurfaceState(getBasePath(), (currentState) => {
       const surfaceExists = currentState.threadSurfaces.some(surface => surface.id === body.surfaceId)
       if (!surfaceExists) {
-        throw new Error(`Thread surface ${body.surfaceId} not found`)
+        throw new ThreadSurfaceNotFoundError(body.surfaceId)
       }
 
       const runIndex = currentState.runs.findIndex(run => run.id === body.runId && run.threadSurfaceId === body.surfaceId)
       if (runIndex === -1) {
-        throw new Error(`Run ${body.runId} for surface ${body.surfaceId} not found`)
+        throw new ThreadSurfaceRunNotFoundError(body.surfaceId, body.runId)
       }
 
       const nextRuns = [...currentState.runs]
@@ -68,7 +69,7 @@ export async function POST(request: Request) {
 
     const surface = state.threadSurfaces.find(candidate => candidate.id === body.surfaceId)
     if (!surface) {
-      return jsonError(`Thread surface ${body.surfaceId} not found`, 'NOT_FOUND', 404)
+      throw new ThreadSurfaceNotFoundError(body.surfaceId)
     }
 
     return NextResponse.json({

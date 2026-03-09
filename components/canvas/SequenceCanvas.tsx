@@ -81,7 +81,8 @@ function CanvasInner() {
   const selectedRunId = useUIStore(s => s.selectedRunId)
   const laneFocusThreadSurfaceId = useUIStore(s => s.laneFocusThreadSurfaceId)
   const openLaneViewForThreadSurface = useUIStore(s => s.openLaneViewForThreadSurface)
-  const setLaneFocusThreadSurfaceId = useUIStore(s => s.setLaneFocusThreadSurfaceId)
+  const laneBoardState = useUIStore(s => s.laneBoardState)
+  const setLaneBoardState = useUIStore(s => s.setLaneBoardState)
   const setSelectedThreadSurfaceId = useUIStore(s => s.setSelectedThreadSurfaceId)
   const setSelectedRunId = useUIStore(s => s.setSelectedRunId)
   const setViewMode = useUIStore(s => s.setViewMode)
@@ -157,7 +158,11 @@ function CanvasInner() {
       focusedThreadSurfaceId={focusedThreadSurfaceId}
       selectedRunId={selectedRunId}
       onFocusThread={(threadSurfaceId, runId) => {
-        setLaneFocusThreadSurfaceId(threadSurfaceId)
+        setLaneBoardState({
+          ...laneBoardState,
+          focusedThreadSurfaceId: threadSurfaceId,
+          focusedRunId: runId,
+        })
         setSelectedThreadSurfaceId(threadSurfaceId)
         setSelectedRunId(runId)
       }}

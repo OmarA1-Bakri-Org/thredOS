@@ -1,3 +1,4 @@
+import { InvalidThreadSurfaceMergeError } from '@/lib/errors'
 import type { Step } from '@/lib/sequence/schema'
 import type { MergeEvent, ThreadSurface } from './types'
 
@@ -28,22 +29,22 @@ export function deriveMergeEventForSuccessfulStep({
 
   const destinationThreadSurfaceId = stepThreadSurfaceIds[step.id]
   if (!destinationThreadSurfaceId) {
-    throw new Error(`Merge destination lane must reference an existing thread surface: ${step.id}`)
+    throw new InvalidThreadSurfaceMergeError(`Merge destination lane must reference an existing thread surface: ${step.id}`)
   }
   if (!threadSurfaces.some(surface => surface.id === destinationThreadSurfaceId)) {
-    throw new Error(`Merge destination lane must reference an existing thread surface: ${destinationThreadSurfaceId}`)
+    throw new InvalidThreadSurfaceMergeError(`Merge destination lane must reference an existing thread surface: ${destinationThreadSurfaceId}`)
   }
 
   const sourceThreadSurfaceIds = step.depends_on.map(stepId => {
     const sourceThreadSurfaceId = stepThreadSurfaceIds[stepId]
     if (!sourceThreadSurfaceId) {
-      throw new Error(`Merge source lane must reference an existing thread surface: ${stepId}`)
+      throw new InvalidThreadSurfaceMergeError(`Merge source lane must reference an existing thread surface: ${stepId}`)
     }
     if (!threadSurfaces.some(surface => surface.id === sourceThreadSurfaceId)) {
-      throw new Error(`Merge source lane must reference an existing thread surface: ${sourceThreadSurfaceId}`)
+      throw new InvalidThreadSurfaceMergeError(`Merge source lane must reference an existing thread surface: ${sourceThreadSurfaceId}`)
     }
     if (sourceThreadSurfaceId === destinationThreadSurfaceId) {
-      throw new Error('Merge source lanes cannot include the destination lane')
+      throw new InvalidThreadSurfaceMergeError('Merge source lanes cannot include the destination lane')
     }
     return sourceThreadSurfaceId
   })
