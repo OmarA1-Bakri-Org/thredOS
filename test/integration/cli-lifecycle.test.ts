@@ -61,24 +61,22 @@ describe('CLI lifecycle integration', () => {
   })
 
   test('run step with echo and verify artifacts', async () => {
-    // Set up a sequence with a step that uses echo
     await initCommand(undefined, [], { json: false, help: false, watch: false })
 
-    // Manually write a sequence where the step command is 'echo'
     const seq = await readSequence(tmpDir)
     seq.steps = [{
       id: 'echo-test',
       name: 'Echo Test',
       type: 'base',
-      model: 'claude-code',
+      model: 'shell',
       prompt_file: '.threados/prompts/echo-test.md',
       depends_on: [],
       status: 'READY',
     }]
     await writeSequence(tmpDir, seq)
+    await mkdir(join(tmpDir, '.threados', 'prompts'), { recursive: true })
+    await writeFile(join(tmpDir, '.threados', 'prompts', 'echo-test.md'), '#!/bin/sh\necho hello-threados\n')
 
-    // The run command uses step.model as command, which is 'claude-code'
-    // This will fail since claude-code doesn't exist, but artifacts should still be created
     const logs: string[] = []
     const origLog = console.log
     const origErr = console.error
@@ -91,8 +89,8 @@ describe('CLI lifecycle integration', () => {
 
     try {
       await runCommand('step', ['echo-test'], jsonOpts)
-    } catch {
-      // expected - command will fail
+    } catch (error) {
+      throw error
     }
 
     console.log = origLog

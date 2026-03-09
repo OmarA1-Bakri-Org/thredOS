@@ -18,6 +18,7 @@ import type { ThreadSurfaceState } from '../../thread-surfaces/repository'
 import { readRuntimeEventLog, type RuntimeDelegationEvent } from '../../thread-surfaces/runtime-event-log'
 
 const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000 // 30 minutes
+const THREADOS_EVENT_EMITTER_COMMAND = 'thread event'
 
 interface CLIOptions {
   json: boolean
@@ -148,6 +149,7 @@ async function executeSingleStep(
           basePath,
           maxTokens: step.model === 'claude-code' ? 8000 : 4000,
           runtimeEventLogPath,
+          runtimeEventEmitterCommand: THREADOS_EVENT_EMITTER_COMMAND,
         })
 
     // 3. Dispatch to agent (writes temp prompt, resolves CLI, checks availability)
@@ -158,6 +160,7 @@ async function executeSingleStep(
       cwd: step.cwd || basePath,
       timeout: step.timeout_ms || DEFAULT_TIMEOUT_MS,
       runtimeEventLogPath,
+      runtimeEventEmitterCommand: THREADOS_EVENT_EMITTER_COMMAND,
     })
 
     // 4. Execute via runner

@@ -56,6 +56,7 @@ async function executeStep(bp: string, seq: Sequence, stepId: string, runId: str
       cwd: step.cwd,
       env: {
         THREADOS_EVENT_LOG: runtimeEventLogPath,
+        THREADOS_EVENT_EMITTER: 'thread event',
       },
     })
     const artifactPath = await runtime.saveRunArtifacts(bp, result)

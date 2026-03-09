@@ -204,6 +204,26 @@ describe('compilePrompt', () => {
     expect(result).toContain('/tmp/threados/runs/run-1/orchestrator-step/events.jsonl')
   })
 
+  test('prefers THREADOS_EVENT_EMITTER guidance when an emitter command is provided', async () => {
+    const step = makeStep({ id: 'orchestrator-step', type: 'b' })
+    const seq = makeSequence([step])
+
+    const result = await compilePrompt({
+      stepId: 'orchestrator-step',
+      step,
+      rawPrompt: 'Delegate work when needed.',
+      sequence: seq,
+      basePath: '/tmp/nonexistent',
+      runtimeEventLogPath: '/tmp/threados/runs/run-1/orchestrator-step/events.jsonl',
+      runtimeEventEmitterCommand: 'thread event',
+    })
+
+    expect(result).toContain('THREADOS_EVENT_EMITTER')
+    expect(result).toContain('thread event spawn-child')
+    expect(result).toContain('thread event merge-into')
+    expect(result).toContain('Prefer the emitter command')
+  })
+
   test('truncates within token budget', async () => {
     const step = makeStep()
     const seq = makeSequence([step])

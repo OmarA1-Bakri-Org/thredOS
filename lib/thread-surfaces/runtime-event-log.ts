@@ -71,6 +71,14 @@ export async function readRuntimeEventLog(
   return { events, invalidLines }
 }
 
+export async function appendRuntimeEventAtPath(
+  logPath: string,
+  event: RuntimeDelegationEvent,
+): Promise<void> {
+  await mkdir(dirname(logPath), { recursive: true })
+  await appendFile(logPath, `${JSON.stringify(event)}\n`, 'utf-8')
+}
+
 export async function appendRuntimeEvent(
   basePath: string,
   runId: string,
@@ -78,8 +86,12 @@ export async function appendRuntimeEvent(
   event: RuntimeDelegationEvent,
 ): Promise<void> {
   const logPath = getRuntimeEventLogPath(basePath, runId, stepId)
-  await mkdir(dirname(logPath), { recursive: true })
-  await appendFile(logPath, `${JSON.stringify(event)}\n`, 'utf-8')
+  await appendRuntimeEventAtPath(logPath, event)
 }
 
-export { getRuntimeEventLogPath }
+export {
+  getRuntimeEventLogPath,
+  MergeKindSchema,
+  RuntimeDelegationEventSchema,
+  SpawnKindSchema,
+}

@@ -90,6 +90,20 @@ describe('dispatch', () => {
     expect(config.env?.THREADOS_EVENT_LOG).toBe('/tmp/threados/events.jsonl')
   })
 
+  test('dispatch exposes THREADOS_EVENT_EMITTER to the child process when provided', async () => {
+    const config = await dispatch('shell', {
+      stepId: 'runtime-events',
+      runId: 'run-790',
+      compiledPrompt: 'echo "runtime"',
+      cwd: '/tmp',
+      timeout: 5000,
+      runtimeEventLogPath: '/tmp/threados/events.jsonl',
+      runtimeEventEmitterCommand: 'thread event',
+    })
+
+    expect(config.env?.THREADOS_EVENT_EMITTER).toBe('thread event')
+  })
+
   test('rejects unsupported model', async () => {
     await expect(
       dispatch('unknown-model' as unknown as Parameters<typeof dispatch>[0], {
