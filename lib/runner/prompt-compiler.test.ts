@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'bun:test'
 import { compilePrompt } from './prompt-compiler'
-import type { Sequence, Step } from '../sequence/schema'
+import type { Gate, Sequence, Step } from '../sequence/schema'
 
 function makeStep(overrides: Partial<Step> = {}): Step {
   return {
@@ -15,7 +15,7 @@ function makeStep(overrides: Partial<Step> = {}): Step {
   }
 }
 
-function makeSequence(steps: Step[] = [], gates: any[] = []): Sequence {
+function makeSequence(steps: Step[] = [], gates: Gate[] = []): Sequence {
   return {
     version: '1.0',
     name: 'test-seq',
@@ -183,6 +183,45 @@ describe('compilePrompt', () => {
     expect(result).toContain('Exit 0 on success')
     expect(result).toContain('Exit 42')
     expect(result).toContain('FILES_CREATED')
+  })
+
+  test('includes runtime delegation event contract when an event log path is provided', async () => {
+    const step = makeStep({ id: 'orchestrator-step', type: 'b' })
+    const seq = makeSequence([step])
+
+    const result = await compilePrompt({
+      stepId: 'orchestrator-step',
+      step,
+      rawPrompt: 'Delegate work when needed.',
+      sequence: seq,
+      basePath: '/tmp/nonexistent',
+      runtimeEventLogPath: '/tmp/threados/runs/run-1/orchestrator-step/events.jsonl',
+    })
+
+    expect(result).toContain('THREADOS_EVENT_LOG')
+    expect(result).toContain('spawn-child')
+    expect(result).toContain('merge-into')
+    expect(result).toContain('/tmp/threados/runs/run-1/orchestrator-step/events.jsonl')
+  })
+
+  test('prefers THREADOS_EVENT_EMITTER guidance when an emitter command is provided', async () => {
+    const step = makeStep({ id: 'orchestrator-step', type: 'b' })
+    const seq = makeSequence([step])
+
+    const result = await compilePrompt({
+      stepId: 'orchestrator-step',
+      step,
+      rawPrompt: 'Delegate work when needed.',
+      sequence: seq,
+      basePath: '/tmp/nonexistent',
+      runtimeEventLogPath: '/tmp/threados/runs/run-1/orchestrator-step/events.jsonl',
+      runtimeEventEmitterCommand: 'thread event',
+    })
+
+    expect(result).toContain('THREADOS_EVENT_EMITTER')
+    expect(result).toContain('thread event spawn-child')
+    expect(result).toContain('thread event merge-into')
+    expect(result).toContain('Prefer the emitter command')
   })
 
   test('truncates within token budget', async () => {

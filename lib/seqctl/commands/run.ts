@@ -4,14 +4,20 @@ import { validateDAG, topologicalSort } from '../../sequence/dag'
 import { MprocsClient } from '../../mprocs/client'
 import { updateStepProcess, readMprocsMap } from '../../mprocs/state'
 import { runStep } from '../../runner/wrapper'
-import { saveRunArtifacts } from '../../runner/artifacts'
+import { getRuntimeEventLogPath, saveRunArtifacts } from '../../runner/artifacts'
 import { compilePrompt } from '../../runner/prompt-compiler'
 import { dispatch, exitCodeToStatus } from '../../runner/dispatch'
 import { readPrompt, validatePromptExists } from '../../prompts/manager'
-import { StepNotFoundError, PromptNotFoundError } from '../../errors'
+import { StepNotFoundError } from '../../errors'
 import type { Step, Sequence, StepStatus } from '../../sequence/schema'
+import { ROOT_THREAD_SURFACE_ID } from '../../thread-surfaces/constants'
+import { readThreadSurfaceState, writeThreadSurfaceState } from '../../thread-surfaces/repository'
+import { completeRun, createReplacementRun, createRootThreadSurfaceRun } from '../../thread-surfaces/mutations'
+import { beginStepRunIfSurfaceExists, finalizeStepRunWithRuntimeEvents, type StepRunScope } from '../../thread-surfaces/step-run-runtime'
+import { readRuntimeEventLog, type RuntimeDelegationEvent } from '../../thread-surfaces/runtime-event-log'
 
 const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000 // 30 minutes
+const THREADOS_EVENT_EMITTER_COMMAND = 'thread event'
 
 interface CLIOptions {
   json: boolean
@@ -37,6 +43,23 @@ interface RunRunnableResult {
   error?: string
 }
 
+interface CLIRunRuntime {
+  dispatch: typeof dispatch
+  runStep: typeof runStep
+  saveRunArtifacts: typeof saveRunArtifacts
+}
+
+declare global {
+  var __THREADOS_CLI_RUN_RUNTIME__: CLIRunRuntime | undefined
+}
+
+function getCLIRunRuntime(): CLIRunRuntime {
+  return globalThis.__THREADOS_CLI_RUN_RUNTIME__ ?? {
+    dispatch,
+    runStep,
+    saveRunArtifacts,
+  }
+}
 /**
  * Get runnable steps (READY status with all dependencies satisfied)
  */
@@ -85,6 +108,8 @@ async function executeSingleStep(
     throw new StepNotFoundError(stepId)
   }
 
+  const stepRuntime = await createStepRunScope(basePath, sequence, step)
+
   // Validate prompt file exists \u2014 use step.prompt_file, not hardcoded stepId path
   const promptPath = step.prompt_file
   const promptExists = await validatePromptExists(basePath, stepId)
@@ -92,6 +117,7 @@ async function executeSingleStep(
     // Bug fix: persist FAILED status so step isn't re-selected by run runnable
     step.status = 'FAILED'
     await writeSequence(basePath, sequence)
+    await finalizeStepRunScope(basePath, step, stepRuntime, false, []).catch(() => {})
     return {
       success: false,
       stepId,
@@ -106,6 +132,8 @@ async function executeSingleStep(
   await writeSequence(basePath, sequence)
 
   try {
+    const runtime = getCLIRunRuntime()
+    const runtimeEventLogPath = getRuntimeEventLogPath(basePath, runId, stepId)
     // 1. Read raw prompt
     const rawPrompt = await readPrompt(basePath, stepId)
 
@@ -119,27 +147,33 @@ async function executeSingleStep(
           sequence,
           basePath,
           maxTokens: step.model === 'claude-code' ? 8000 : 4000,
+          runtimeEventLogPath,
+          runtimeEventEmitterCommand: THREADOS_EVENT_EMITTER_COMMAND,
         })
 
     // 3. Dispatch to agent (writes temp prompt, resolves CLI, checks availability)
-    const runnerConfig = await dispatch(step.model, {
+    const runnerConfig = await runtime.dispatch(step.model, {
       stepId,
       runId,
       compiledPrompt: promptForDispatch,
       cwd: step.cwd || basePath,
       timeout: step.timeout_ms || DEFAULT_TIMEOUT_MS,
+      runtimeEventLogPath,
+      runtimeEventEmitterCommand: THREADOS_EVENT_EMITTER_COMMAND,
     })
 
     // 4. Execute via runner
-    const result = await runStep(runnerConfig)
+    const result = await runtime.runStep(runnerConfig)
 
     // 5. Save artifacts
-    const artifactPath = await saveRunArtifacts(basePath, result)
+    const artifactPath = await runtime.saveRunArtifacts(basePath, result)
+    const runtimeEvents = await readRuntimeEventLog(basePath, runId, stepId)
 
     // 6. Map exit code to step status
     const newStatus = exitCodeToStatus(result.exitCode)
     step.status = newStatus
     await writeSequence(basePath, sequence)
+    await finalizeStepRunScope(basePath, step, stepRuntime, newStatus === 'DONE', runtimeEvents.events)
 
     return {
       success: newStatus === 'DONE',
@@ -160,6 +194,7 @@ async function executeSingleStep(
         writeError
       )
     }
+    await finalizeStepRunScope(basePath, step, stepRuntime, false, []).catch(() => {})
 
     return {
       success: false,
@@ -168,6 +203,79 @@ async function executeSingleStep(
       status: 'FAILED',
       error: error instanceof Error ? error.message : String(error),
     }
+  }
+}
+
+async function createRootRunScopeForCommand(basePath: string, sequenceName: string, runId: string, startedAt: string) {
+  const currentState = await readThreadSurfaceState(basePath)
+  const executionIndex = currentState.runs.length + 1
+  const nextState = currentState.threadSurfaces.some(surface => surface.id === ROOT_THREAD_SURFACE_ID)
+    ? createReplacementRun(currentState, {
+        threadSurfaceId: ROOT_THREAD_SURFACE_ID,
+        runId,
+        startedAt,
+        executionIndex,
+      }).state
+    : createRootThreadSurfaceRun(currentState, {
+        surfaceId: ROOT_THREAD_SURFACE_ID,
+        surfaceLabel: sequenceName,
+        createdAt: startedAt,
+        runId,
+        startedAt,
+        executionIndex,
+      }).state
+
+  await writeThreadSurfaceState(basePath, nextState)
+}
+
+async function finalizeRootRunScopeForCommand(basePath: string, runId: string, success: boolean, runSummary: string) {
+  const currentState = await readThreadSurfaceState(basePath)
+  const nextState = completeRun(currentState, {
+    runId,
+    runStatus: success ? 'successful' : 'failed',
+    endedAt: new Date().toISOString(),
+    runSummary,
+  }).state
+  await writeThreadSurfaceState(basePath, nextState)
+}
+
+async function createStepRunScope(basePath: string, _sequence: Sequence, step: Step): Promise<{ stepRun: StepRunScope | null }> {
+  const currentState = await readThreadSurfaceState(basePath)
+  const startedAt = new Date().toISOString()
+  const result = beginStepRunIfSurfaceExists(currentState, step, {
+    now: startedAt,
+    nextRunId: randomUUID(),
+    executionIndex: currentState.runs.length + 1,
+  })
+
+  if (result.state !== currentState) {
+    await writeThreadSurfaceState(basePath, result.state)
+  }
+
+  return { stepRun: result.stepRun }
+}
+
+async function finalizeStepRunScope(
+  basePath: string,
+  step: Step,
+  stepRuntime: Awaited<ReturnType<typeof createStepRunScope>>,
+  success: boolean,
+  runtimeEvents: RuntimeDelegationEvent[],
+) {
+  const currentState = await readThreadSurfaceState(basePath)
+  const finalized = finalizeStepRunWithRuntimeEvents(currentState, {
+    step,
+    stepRun: stepRuntime.stepRun,
+    success,
+    endedAt: new Date().toISOString(),
+    runtimeEvents,
+    nextRunId: randomUUID,
+    nextEventId: randomUUID,
+    nextMergeId: randomUUID,
+  })
+
+  if (finalized.stepRun != null) {
+    await writeThreadSurfaceState(basePath, finalized.state)
   }
 }
 
@@ -180,12 +288,10 @@ export async function runCommand(
   options: CLIOptions
 ): Promise<void> {
   const basePath = process.cwd()
-  const runId = randomUUID()
 
   // Read and validate sequence
   const sequence = await readSequence(basePath)
   validateDAG(sequence)
-
   const mprocsClient = new MprocsClient()
 
   if (subcommand === 'step') {
@@ -201,6 +307,10 @@ export async function runCommand(
       process.exit(1)
     }
 
+    const runId = randomUUID()
+    const startedAt = new Date().toISOString()
+    await createRootRunScopeForCommand(basePath, sequence.name, runId, startedAt)
+
     const result = await executeSingleStep(
       basePath,
       sequence,
@@ -208,6 +318,7 @@ export async function runCommand(
       runId,
       mprocsClient
     )
+    await finalizeRootRunScopeForCommand(basePath, runId, result.success, `step:${stepId}`)
 
     // Update mprocs map
     const mprocsMap = await readMprocsMap(basePath)
@@ -230,11 +341,11 @@ export async function runCommand(
     const runnableSteps = getRunnableSteps(sequence)
 
     if (runnableSteps.length === 0) {
-      const result: RunRunnableResult = {
-        success: true,
-        executed: [],
-        skipped: [],
-        error: 'No runnable steps found',
+    const result: RunRunnableResult = {
+      success: true,
+      executed: [],
+      skipped: [],
+      error: 'No runnable steps found',
       }
       if (options.json) {
         console.log(JSON.stringify(result))
@@ -243,6 +354,10 @@ export async function runCommand(
       }
       return
     }
+
+    const runId = randomUUID()
+    const startedAt = new Date().toISOString()
+    await createRootRunScopeForCommand(basePath, sequence.name, runId, startedAt)
 
     // Get topological order and filter to runnable
     const order = topologicalSort(sequence)
@@ -282,6 +397,7 @@ export async function runCommand(
       executed,
       skipped,
     }
+    await finalizeRootRunScopeForCommand(basePath, runId, result.success, 'mode:runnable')
 
     if (options.json) {
       console.log(JSON.stringify(result))
@@ -322,6 +438,10 @@ export async function runCommand(
       process.exit(1)
     }
 
+    const runId = randomUUID()
+    const startedAt = new Date().toISOString()
+    await createRootRunScopeForCommand(basePath, sequence.name, runId, startedAt)
+
     const runnableInGroup = groupSteps.filter(s => {
       if (s.status !== 'READY') return false
       const doneSteps = new Set(sequence.steps.filter(st => st.status === 'DONE').map(st => st.id))
@@ -331,18 +451,16 @@ export async function runCommand(
     })
 
     const executed: RunStepResult[] = []
-    // Run all in parallel
-    const promises = runnableInGroup.map(s =>
-      executeSingleStep(basePath, sequence, s.id, runId, mprocsClient)
-    )
-    const results = await Promise.all(promises)
-    executed.push(...results)
+    for (const step of runnableInGroup) {
+      executed.push(await executeSingleStep(basePath, sequence, step.id, runId, mprocsClient))
+    }
 
     const result: RunRunnableResult = {
       success: executed.every(e => e.success),
       executed,
       skipped: [],
     }
+    await finalizeRootRunScopeForCommand(basePath, runId, result.success, `group:${groupId}`)
 
     if (options.json) {
       console.log(JSON.stringify(result))

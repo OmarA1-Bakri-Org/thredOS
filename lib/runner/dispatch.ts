@@ -13,6 +13,8 @@ export interface DispatchOptions {
   cwd: string
   timeout: number
   env?: Record<string, string>
+  runtimeEventLogPath?: string
+  runtimeEventEmitterCommand?: string
 }
 
 /**
@@ -64,6 +66,8 @@ const dispatchers: Record<string, AgentDispatcher> = {
           THREADOS_STEP_ID: opts.stepId,
           THREADOS_RUN_ID: opts.runId,
           THREADOS_PROMPT_FILE: promptFilePath,
+          ...(opts.runtimeEventLogPath ? { THREADOS_EVENT_LOG: opts.runtimeEventLogPath } : {}),
+          ...(opts.runtimeEventEmitterCommand ? { THREADOS_EVENT_EMITTER: opts.runtimeEventEmitterCommand } : {}),
         },
       }
     },
@@ -88,6 +92,8 @@ const dispatchers: Record<string, AgentDispatcher> = {
           ...opts.env,
           THREADOS_STEP_ID: opts.stepId,
           THREADOS_RUN_ID: opts.runId,
+          ...(opts.runtimeEventLogPath ? { THREADOS_EVENT_LOG: opts.runtimeEventLogPath } : {}),
+          ...(opts.runtimeEventEmitterCommand ? { THREADOS_EVENT_EMITTER: opts.runtimeEventEmitterCommand } : {}),
         },
       }
     },
@@ -111,6 +117,8 @@ const dispatchers: Record<string, AgentDispatcher> = {
           ...opts.env,
           THREADOS_STEP_ID: opts.stepId,
           THREADOS_RUN_ID: opts.runId,
+          ...(opts.runtimeEventLogPath ? { THREADOS_EVENT_LOG: opts.runtimeEventLogPath } : {}),
+          ...(opts.runtimeEventEmitterCommand ? { THREADOS_EVENT_EMITTER: opts.runtimeEventEmitterCommand } : {}),
         },
       }
     },
@@ -132,6 +140,8 @@ const dispatchers: Record<string, AgentDispatcher> = {
           ...opts.env,
           THREADOS_STEP_ID: opts.stepId,
           THREADOS_RUN_ID: opts.runId,
+          ...(opts.runtimeEventLogPath ? { THREADOS_EVENT_LOG: opts.runtimeEventLogPath } : {}),
+          ...(opts.runtimeEventEmitterCommand ? { THREADOS_EVENT_EMITTER: opts.runtimeEventEmitterCommand } : {}),
         },
       }
     },

@@ -1,0 +1,123 @@
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { mkdtemp, mkdir, rm } from 'fs/promises'
+import { tmpdir } from 'os'
+import { join } from 'path'
+import { writeThreadSurfaceState } from '@/lib/thread-surfaces/repository'
+import type { MergeEvent, RunScope, ThreadSurface } from '@/lib/thread-surfaces/types'
+
+let basePath: string
+
+const threadSurfaces: ThreadSurface[] = [
+  {
+    id: 'thread-master',
+    parentSurfaceId: null,
+    parentAgentNodeId: null,
+    depth: 0,
+    surfaceLabel: 'Master',
+    surfaceDescription: 'Top-level orchestrator surface',
+    role: 'orchestrator',
+    createdAt: '2026-03-09T00:00:00.000Z',
+    childSurfaceIds: ['thread-research'],
+  },
+  {
+    id: 'thread-research',
+    parentSurfaceId: 'thread-master',
+    parentAgentNodeId: 'spawn-research',
+    depth: 1,
+    surfaceLabel: 'Research',
+    surfaceDescription: 'Research branch',
+    role: 'specialist',
+    createdAt: '2026-03-09T00:01:00.000Z',
+    childSurfaceIds: [],
+  },
+]
+
+const runs: RunScope[] = [
+  {
+    id: 'run-master-1',
+    threadSurfaceId: 'thread-master',
+    runStatus: 'successful',
+    startedAt: '2026-03-09T00:00:00.000Z',
+    endedAt: '2026-03-09T00:03:00.000Z',
+    executionIndex: 2,
+    runSummary: 'Master completed',
+  },
+  {
+    id: 'run-research-1',
+    threadSurfaceId: 'thread-research',
+    runStatus: 'running',
+    startedAt: '2026-03-09T00:01:00.000Z',
+    endedAt: null,
+    executionIndex: 1,
+    runSummary: 'Research in progress',
+  },
+]
+
+const mergeEvents: MergeEvent[] = [
+  {
+    id: 'merge-1',
+    runId: 'run-master-1',
+    destinationThreadSurfaceId: 'thread-master',
+    sourceThreadSurfaceIds: ['thread-research'],
+    mergeKind: 'single',
+    executionIndex: 2,
+    createdAt: '2026-03-09T00:03:00.000Z',
+    summary: 'Research merged into master',
+  },
+]
+
+describe('thread surface read routes', () => {
+  beforeEach(async () => {
+    basePath = await mkdtemp(join(tmpdir(), 'threados-thread-routes-'))
+    process.env.THREADOS_BASE_PATH = basePath
+    await mkdir(join(basePath, '.threados'), { recursive: true })
+    await writeThreadSurfaceState(basePath, {
+      version: 1,
+      threadSurfaces,
+      runs,
+      mergeEvents,
+      runEvents: [],
+    })
+  })
+
+  afterEach(async () => {
+    delete process.env.THREADOS_BASE_PATH
+    await rm(basePath, { recursive: true, force: true })
+  })
+
+  test('GET /api/thread-surfaces returns persisted surfaces', async () => {
+    const { GET } = await import('@/app/api/thread-surfaces/route')
+    const res = await GET()
+    expect(res.status).toBe(200)
+    const data = await res.json()
+    expect(data.threadSurfaces).toEqual(threadSurfaces)
+  })
+
+  test('GET /api/thread-runs returns runs and filters by threadSurfaceId', async () => {
+    const { GET } = await import('@/app/api/thread-runs/route')
+
+    const allRes = await GET(new Request('http://localhost/api/thread-runs'))
+    expect(allRes.status).toBe(200)
+    expect((await allRes.json()).runs).toEqual(runs)
+
+    const filteredRes = await GET(new Request('http://localhost/api/thread-runs?threadSurfaceId=thread-research'))
+    expect(filteredRes.status).toBe(200)
+    expect((await filteredRes.json()).runs).toEqual([runs[1]])
+  })
+
+  test('GET /api/thread-merges returns merge events and filters by runId', async () => {
+    const { GET } = await import('@/app/api/thread-merges/route')
+
+    const allRes = await GET(new Request('http://localhost/api/thread-merges'))
+    expect(allRes.status).toBe(200)
+    expect((await allRes.json()).mergeEvents).toEqual(mergeEvents)
+
+    const filteredRes = await GET(new Request('http://localhost/api/thread-merges?runId=run-master-1'))
+    expect(filteredRes.status).toBe(200)
+    expect((await filteredRes.json()).mergeEvents).toEqual(mergeEvents)
+
+    const emptyRes = await GET(new Request('http://localhost/api/thread-merges?runId=missing'))
+    expect(emptyRes.status).toBe(200)
+    expect((await emptyRes.json()).mergeEvents).toEqual([])
+  })
+})
