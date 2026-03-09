@@ -185,6 +185,25 @@ describe('compilePrompt', () => {
     expect(result).toContain('FILES_CREATED')
   })
 
+  test('includes runtime delegation event contract when an event log path is provided', async () => {
+    const step = makeStep({ id: 'orchestrator-step', type: 'b' })
+    const seq = makeSequence([step])
+
+    const result = await compilePrompt({
+      stepId: 'orchestrator-step',
+      step,
+      rawPrompt: 'Delegate work when needed.',
+      sequence: seq,
+      basePath: '/tmp/nonexistent',
+      runtimeEventLogPath: '/tmp/threados/runs/run-1/orchestrator-step/events.jsonl',
+    })
+
+    expect(result).toContain('THREADOS_EVENT_LOG')
+    expect(result).toContain('spawn-child')
+    expect(result).toContain('merge-into')
+    expect(result).toContain('/tmp/threados/runs/run-1/orchestrator-step/events.jsonl')
+  })
+
   test('truncates within token budget', async () => {
     const step = makeStep()
     const seq = makeSequence([step])
