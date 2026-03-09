@@ -3,10 +3,12 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { dirname, join } from 'path'
 import YAML from 'yaml'
+import { eventCommand } from '@/lib/seqctl/commands/event'
 import type { ThreadSurfaceState } from '@/lib/thread-surfaces/repository'
 
 let basePath = ''
 let runtimeEventLinesByStep: Record<string, string[]> = {}
+let runtimeEmitterCommandsByStep: Record<string, { subcommand: string; args: string[] }> = {}
 let capturedDispatchPrompt = ''
 let capturedDispatchEmitter = ''
 
@@ -29,10 +31,33 @@ async function readThreadSurfaceState(): Promise<ThreadSurfaceState> {
   return JSON.parse(content) as ThreadSurfaceState
 }
 
+async function emitRuntimeEventWithCommand(
+  command: string | undefined,
+  logPath: string | undefined,
+  subcommand: string,
+  args: string[],
+) {
+  expect(command).toBe('thread event')
+  expect(logPath).toBeTruthy()
+
+  const previousLogPath = process.env.THREADOS_EVENT_LOG
+  try {
+    process.env.THREADOS_EVENT_LOG = logPath
+    await eventCommand(subcommand, args, { json: false, help: false, watch: false })
+  } finally {
+    if (previousLogPath == null) {
+      delete process.env.THREADOS_EVENT_LOG
+    } else {
+      process.env.THREADOS_EVENT_LOG = previousLogPath
+    }
+  }
+}
+
 describe('thread runtime event persistence', () => {
   beforeEach(async () => {
     basePath = await mkdtemp(join(tmpdir(), 'threados-runtime-events-'))
     runtimeEventLinesByStep = {}
+    runtimeEmitterCommandsByStep = {}
     capturedDispatchPrompt = ''
     capturedDispatchEmitter = ''
     process.env.THREADOS_BASE_PATH = basePath
@@ -75,6 +100,15 @@ describe('thread runtime event persistence', () => {
         if (eventLogPath && lines.length > 0) {
           await mkdir(dirname(eventLogPath), { recursive: true })
           await writeFile(eventLogPath, `${lines.join('\n')}\n`, 'utf-8')
+        }
+        const emitterCommand = runtimeEmitterCommandsByStep[stepId]
+        if (eventLogPath && emitterCommand) {
+          await emitRuntimeEventWithCommand(
+            env?.THREADOS_EVENT_EMITTER,
+            eventLogPath,
+            emitterCommand.subcommand,
+            emitterCommand.args,
+          )
         }
 
         return {
@@ -319,6 +353,130 @@ describe('thread runtime event persistence', () => {
         destinationThreadSurfaceId: 'thread-fusion-synth',
         sourceThreadSurfaceIds: ['thread-candidate-a', 'thread-candidate-b'],
         mergeKind: 'block',
+      }),
+    ])
+  })
+
+  test('runtime event emitter command can record merge-into events through the api run path', async () => {
+    await setupSequence({
+      version: '1.0',
+      name: 'Emitter Merge Runtime',
+      steps: [
+        {
+          id: 'candidate-a',
+          name: 'Candidate A',
+          type: 'f',
+          model: 'codex',
+          prompt_file: '.threados/prompts/candidate-a.md',
+          depends_on: [],
+          status: 'DONE',
+        },
+        {
+          id: 'candidate-b',
+          name: 'Candidate B',
+          type: 'f',
+          model: 'codex',
+          prompt_file: '.threados/prompts/candidate-b.md',
+          depends_on: [],
+          status: 'DONE',
+        },
+        {
+          id: 'fusion-synth',
+          name: 'Fusion Synth',
+          type: 'f',
+          model: 'codex',
+          prompt_file: '.threados/prompts/fusion-synth.md',
+          depends_on: ['candidate-a', 'candidate-b'],
+          status: 'READY',
+        },
+      ],
+      gates: [],
+    })
+    await writePrompt('candidate-a')
+    await writePrompt('candidate-b')
+    await writePrompt('fusion-synth')
+    await writeThreadSurfaceState({
+      version: 1,
+      threadSurfaces: [
+        {
+          id: 'thread-root',
+          parentSurfaceId: null,
+          parentAgentNodeId: null,
+          depth: 0,
+          surfaceLabel: 'Emitter Merge Runtime',
+          createdAt: '2026-03-09T12:00:00.000Z',
+          childSurfaceIds: ['thread-candidate-a', 'thread-candidate-b'],
+        },
+        {
+          id: 'thread-candidate-a',
+          parentSurfaceId: 'thread-root',
+          parentAgentNodeId: 'candidate-a',
+          depth: 1,
+          surfaceLabel: 'Candidate A',
+          createdAt: '2026-03-09T12:00:01.000Z',
+          childSurfaceIds: [],
+        },
+        {
+          id: 'thread-candidate-b',
+          parentSurfaceId: 'thread-root',
+          parentAgentNodeId: 'candidate-b',
+          depth: 1,
+          surfaceLabel: 'Candidate B',
+          createdAt: '2026-03-09T12:00:02.000Z',
+          childSurfaceIds: [],
+        },
+      ],
+      runs: [
+        {
+          id: 'run-root-seed',
+          threadSurfaceId: 'thread-root',
+          runStatus: 'successful',
+          startedAt: '2026-03-09T12:00:00.000Z',
+          endedAt: '2026-03-09T12:00:15.000Z',
+          executionIndex: 1,
+        },
+        {
+          id: 'run-candidate-a',
+          threadSurfaceId: 'thread-candidate-a',
+          runStatus: 'successful',
+          startedAt: '2026-03-09T12:00:01.000Z',
+          endedAt: '2026-03-09T12:00:15.000Z',
+          executionIndex: 2,
+        },
+        {
+          id: 'run-candidate-b',
+          threadSurfaceId: 'thread-candidate-b',
+          runStatus: 'successful',
+          startedAt: '2026-03-09T12:00:02.000Z',
+          endedAt: '2026-03-09T12:00:15.000Z',
+          executionIndex: 3,
+        },
+      ],
+      mergeEvents: [],
+      runEvents: [],
+    })
+    runtimeEmitterCommandsByStep['fusion-synth'] = {
+      subcommand: 'merge-into',
+      args: ['fusion-synth', '--sources', 'candidate-a,candidate-b', '--kind', 'block', '--summary', 'Emitter merge'],
+    }
+
+    const { POST } = await import('@/app/api/run/route')
+    const response = await POST(new Request('http://localhost/api/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ stepId: 'fusion-synth' }),
+    }))
+
+    expect(response.status).toBe(200)
+    expect(capturedDispatchEmitter).toBe('thread event')
+
+    const state = await readThreadSurfaceState()
+    expect(state.mergeEvents).toEqual([
+      expect.objectContaining({
+        destinationThreadSurfaceId: 'thread-fusion-synth',
+        sourceThreadSurfaceIds: ['thread-candidate-a', 'thread-candidate-b'],
+        mergeKind: 'block',
+        summary: 'Emitter merge',
       }),
     ])
   })

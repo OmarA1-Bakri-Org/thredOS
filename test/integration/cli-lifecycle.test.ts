@@ -3,13 +3,36 @@ import { mkdir, writeFile } from 'fs/promises'
 import { dirname, join } from 'path'
 import { createTempDir, cleanTempDir } from '../helpers/setup'
 import { initCommand } from '../../lib/seqctl/commands/init'
+import { eventCommand } from '../../lib/seqctl/commands/event'
 import { stepCommand } from '../../lib/seqctl/commands/step'
 import { depCommand } from '../../lib/seqctl/commands/dep'
 import { runCommand } from '../../lib/seqctl/commands/run'
 import { readSequence, writeSequence } from '../../lib/sequence/parser'
-import { readThreadSurfaceState } from '../../lib/thread-surfaces/repository'
+import { readThreadSurfaceState, writeThreadSurfaceState } from '../../lib/thread-surfaces/repository'
 
 const jsonOpts = { json: true, help: false, watch: false }
+
+async function emitRuntimeEventWithCommand(
+  command: string | undefined,
+  logPath: string | undefined,
+  subcommand: string,
+  args: string[],
+) {
+  expect(command).toBe('thread event')
+  expect(logPath).toBeTruthy()
+
+  const previousLogPath = process.env.THREADOS_EVENT_LOG
+  try {
+    process.env.THREADOS_EVENT_LOG = logPath
+    await eventCommand(subcommand, args, { json: false, help: false, watch: false })
+  } finally {
+    if (previousLogPath == null) {
+      delete process.env.THREADOS_EVENT_LOG
+    } else {
+      process.env.THREADOS_EVENT_LOG = previousLogPath
+    }
+  }
+}
 
 describe('CLI lifecycle integration', () => {
   let tmpDir: string
@@ -346,5 +369,158 @@ describe('CLI lifecycle integration', () => {
         }),
       ]),
     )
+  })
+
+  test('runtime event emitter command can record merge-into events through the cli run path', async () => {
+    await initCommand(undefined, [], { json: false, help: false, watch: false })
+
+    const seq = await readSequence(tmpDir)
+    seq.name = 'CLI Merge Event Sequence'
+    seq.steps = [
+      {
+        id: 'candidate-a',
+        name: 'Candidate A',
+        type: 'f',
+        model: 'codex',
+        prompt_file: '.threados/prompts/candidate-a.md',
+        depends_on: [],
+        status: 'DONE',
+      },
+      {
+        id: 'candidate-b',
+        name: 'Candidate B',
+        type: 'f',
+        model: 'codex',
+        prompt_file: '.threados/prompts/candidate-b.md',
+        depends_on: [],
+        status: 'DONE',
+      },
+      {
+        id: 'fusion-synth',
+        name: 'Fusion Synth',
+        type: 'f',
+        model: 'codex',
+        prompt_file: '.threados/prompts/fusion-synth.md',
+        depends_on: ['candidate-a', 'candidate-b'],
+        status: 'READY',
+      },
+    ]
+    await writeSequence(tmpDir, seq)
+    await mkdir(join(tmpDir, '.threados', 'prompts'), { recursive: true })
+    await writeFile(join(tmpDir, '.threados', 'prompts', 'candidate-a.md'), '# candidate a')
+    await writeFile(join(tmpDir, '.threados', 'prompts', 'candidate-b.md'), '# candidate b')
+    await writeFile(join(tmpDir, '.threados', 'prompts', 'fusion-synth.md'), '# fusion')
+    await writeThreadSurfaceState(tmpDir, {
+      version: 1,
+      threadSurfaces: [
+        {
+          id: 'thread-root',
+          parentSurfaceId: null,
+          parentAgentNodeId: null,
+          depth: 0,
+          surfaceLabel: 'CLI Merge Event Sequence',
+          createdAt: '2026-03-09T10:00:00.000Z',
+          childSurfaceIds: ['thread-candidate-a', 'thread-candidate-b'],
+        },
+        {
+          id: 'thread-candidate-a',
+          parentSurfaceId: 'thread-root',
+          parentAgentNodeId: 'candidate-a',
+          depth: 1,
+          surfaceLabel: 'Candidate A',
+          createdAt: '2026-03-09T10:00:01.000Z',
+          childSurfaceIds: [],
+        },
+        {
+          id: 'thread-candidate-b',
+          parentSurfaceId: 'thread-root',
+          parentAgentNodeId: 'candidate-b',
+          depth: 1,
+          surfaceLabel: 'Candidate B',
+          createdAt: '2026-03-09T10:00:02.000Z',
+          childSurfaceIds: [],
+        },
+      ],
+      runs: [
+        {
+          id: 'run-root-seed',
+          threadSurfaceId: 'thread-root',
+          runStatus: 'successful',
+          startedAt: '2026-03-09T10:00:00.000Z',
+          endedAt: '2026-03-09T10:00:15.000Z',
+          executionIndex: 1,
+        },
+        {
+          id: 'run-candidate-a',
+          threadSurfaceId: 'thread-candidate-a',
+          runStatus: 'successful',
+          startedAt: '2026-03-09T10:00:01.000Z',
+          endedAt: '2026-03-09T10:00:15.000Z',
+          executionIndex: 2,
+        },
+        {
+          id: 'run-candidate-b',
+          threadSurfaceId: 'thread-candidate-b',
+          runStatus: 'successful',
+          startedAt: '2026-03-09T10:00:02.000Z',
+          endedAt: '2026-03-09T10:00:15.000Z',
+          executionIndex: 3,
+        },
+      ],
+      mergeEvents: [],
+      runEvents: [],
+    })
+
+    globalThis.__THREADOS_CLI_RUN_RUNTIME__ = {
+      dispatch: async (_model, opts) => ({
+        stepId: opts.stepId,
+        runId: opts.runId,
+        command: process.execPath,
+        args: ['-e', 'process.exit(0)'],
+        cwd: opts.cwd,
+        timeout: opts.timeout,
+        env: {
+          THREADOS_EVENT_LOG: opts.runtimeEventLogPath ?? '',
+          THREADOS_EVENT_EMITTER: opts.runtimeEventEmitterCommand ?? '',
+        },
+      }),
+      runStep: async config => {
+        await emitRuntimeEventWithCommand(
+          config.env?.THREADOS_EVENT_EMITTER,
+          config.env?.THREADOS_EVENT_LOG,
+          'merge-into',
+          ['fusion-synth', '--sources', 'candidate-a,candidate-b', '--kind', 'block', '--summary', 'CLI emitter merge'],
+        )
+
+        return {
+          stepId: config.stepId,
+          runId: config.runId,
+          command: config.command,
+          args: config.args,
+          cwd: config.cwd,
+          startTime: new Date('2026-03-09T10:00:00.000Z'),
+          endTime: new Date('2026-03-09T10:00:01.000Z'),
+          duration: 1000,
+          exitCode: 0,
+          stdout: 'ok',
+          stderr: '',
+          timedOut: false,
+          status: 'SUCCESS',
+        }
+      },
+      saveRunArtifacts: async () => '.threados/runs/mock',
+    }
+
+    await runCommand('step', ['fusion-synth'], jsonOpts)
+
+    const state = await readThreadSurfaceState(tmpDir)
+    expect(state.mergeEvents).toEqual([
+      expect.objectContaining({
+        destinationThreadSurfaceId: 'thread-fusion-synth',
+        sourceThreadSurfaceIds: ['thread-candidate-a', 'thread-candidate-b'],
+        mergeKind: 'block',
+        summary: 'CLI emitter merge',
+      }),
+    ])
   })
 })
