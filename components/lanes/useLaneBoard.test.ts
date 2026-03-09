@@ -1,6 +1,16 @@
+import { readFileSync } from 'node:fs'
 import { describe, expect, test } from 'bun:test'
 import type { MergeEvent, RunScope, ThreadSurface } from '@/lib/thread-surfaces/types'
 import { createLaneBoardModel } from './useLaneBoard'
+
+const multiThreadState = JSON.parse(
+  readFileSync(new URL('../../test/fixtures/thread-surfaces/multi-thread-state.json', import.meta.url), 'utf8'),
+) as {
+  threadSurfaces: ThreadSurface[]
+  runs: RunScope[]
+  mergeEvents: MergeEvent[]
+  laneRunIds: string[]
+}
 
 const threadSurfaces: ThreadSurface[] = [
   {
@@ -418,6 +428,41 @@ describe('createLaneBoardModel', () => {
         executionIndex: 25,
         destinationThreadSurfaceId: 'thread-review',
         orderedThreadSurfaceIds: ['thread-review', 'thread-synthesis'],
+      },
+    ])
+  })
+
+  test('uses the shared multi-thread fixture for destination-first ordering and both merge shapes', () => {
+    const laneBoard = createLaneBoardModel({
+      threadSurfaces: multiThreadState.threadSurfaces,
+      runs: multiThreadState.runs,
+      mergeEvents: multiThreadState.mergeEvents,
+      runIds: multiThreadState.laneRunIds,
+    })
+
+    expect(laneBoard.rows.map(row => row.threadSurfaceId)).toEqual([
+      'thread-synthesis',
+      'thread-research',
+      'thread-outreach',
+      'thread-master',
+      'thread-review',
+    ])
+    expect(laneBoard.mergeGroups).toEqual([
+      {
+        mergeEventId: 'merge-block-synthesis',
+        runId: 'run-synthesis',
+        mergeKind: 'block',
+        executionIndex: 20,
+        destinationThreadSurfaceId: 'thread-synthesis',
+        orderedThreadSurfaceIds: ['thread-synthesis', 'thread-research', 'thread-outreach'],
+      },
+      {
+        mergeEventId: 'merge-single-master',
+        runId: 'run-master',
+        mergeKind: 'single',
+        executionIndex: 40,
+        destinationThreadSurfaceId: 'thread-master',
+        orderedThreadSurfaceIds: ['thread-master', 'thread-review'],
       },
     ])
   })

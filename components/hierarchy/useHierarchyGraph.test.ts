@@ -1,6 +1,14 @@
+import { readFileSync } from 'node:fs'
 import { describe, expect, test } from 'bun:test'
 import type { RunScope, ThreadSurface } from '@/lib/thread-surfaces/types'
 import { useHierarchyGraph } from './useHierarchyGraph'
+
+const multiThreadState = JSON.parse(
+  readFileSync(new URL('../../test/fixtures/thread-surfaces/multi-thread-state.json', import.meta.url), 'utf8'),
+) as {
+  threadSurfaces: ThreadSurface[]
+  runs: RunScope[]
+}
 
 const threadSurfaces: ThreadSurface[] = [
   {
@@ -267,6 +275,45 @@ describe('useHierarchyGraph', () => {
         threadSurfaceId: 'thread-review',
         runId: null,
         runSelection: 'none',
+      },
+    })
+  })
+
+  test('supports fixture-backed multi-thread hierarchies with child edges and real default run context', () => {
+    const graph = useHierarchyGraph({
+      threadSurfaces: multiThreadState.threadSurfaces,
+      runs: multiThreadState.runs,
+      zoom: 1,
+    })
+
+    expect(graph.edges).toContainEqual({ source: 'thread-master', target: 'thread-synthesis' })
+    expect(graph.edges).toContainEqual({ source: 'thread-synthesis', target: 'thread-review' })
+    expect(graph.nodes.find(node => node.id === 'thread-master')).toMatchObject({
+      childSurfaceIds: ['thread-research', 'thread-outreach', 'thread-synthesis'],
+      metadata: {
+        childCount: 3,
+      },
+    })
+    expect(graph.nodes.find(node => node.id === 'thread-synthesis')).toMatchObject({
+      parentSurfaceId: 'thread-master',
+      metadata: {
+        childCount: 1,
+        surfaceDescription: 'Combines parallel work into a shared brief',
+        role: 'synthesizer',
+        runSummary: 'Synthesis merged research and outreach into a unified brief.',
+        displayRunStatus: 'running',
+      },
+      clickTarget: {
+        threadSurfaceId: 'thread-synthesis',
+        runId: 'run-synthesis',
+        runSelection: 'default',
+      },
+    })
+    expect(graph.nodes.find(node => node.id === 'thread-outreach')).toMatchObject({
+      runContext: {
+        defaultRunId: 'run-outreach',
+        displayRunId: 'run-outreach',
+        displayRunStatus: 'successful',
       },
     })
   })
