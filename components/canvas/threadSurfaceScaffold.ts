@@ -9,6 +9,17 @@ export interface ThreadSurfaceScaffold {
   mergeEvents: MergeEvent[]
 }
 
+export interface ResolveThreadSurfaceCanvasDataArgs {
+  status?: SequenceStatus | null
+  threadSurfaces?: ThreadSurface[] | null
+  runs?: RunScope[] | null
+  mergeEvents?: MergeEvent[] | null
+}
+
+export interface ThreadSurfaceCanvasData extends ThreadSurfaceScaffold {
+  source: 'api' | 'status-scaffold' | 'empty'
+}
+
 const CURRENT_THREAD_SURFACE_ID = 'thread-current'
 const CURRENT_RUN_ID = 'status:current-run'
 const STATUS_TIMESTAMP = '2026-03-09T00:00:00.000Z'
@@ -46,6 +57,36 @@ export function buildThreadSurfaceScaffold(status: SequenceStatus): ThreadSurfac
   }
 }
 
+export function resolveThreadSurfaceCanvasData({
+  status,
+  threadSurfaces,
+  runs,
+  mergeEvents,
+}: ResolveThreadSurfaceCanvasDataArgs): ThreadSurfaceCanvasData {
+  if (hasRealThreadSurfaceData(threadSurfaces, runs, mergeEvents)) {
+    return {
+      source: 'api',
+      threadSurfaces: threadSurfaces ?? [],
+      runs: runs ?? [],
+      mergeEvents: mergeEvents ?? [],
+    }
+  }
+
+  if (status) {
+    return {
+      source: 'status-scaffold',
+      ...buildThreadSurfaceScaffold(status),
+    }
+  }
+
+  return {
+    source: 'empty',
+    threadSurfaces: [],
+    runs: [],
+    mergeEvents: [],
+  }
+}
+
 function deriveRunStatus(status: SequenceStatus): Exclude<ThreadSurfaceHierarchyStatus, null> {
   if (status.summary.running > 0) return 'running'
   if (status.summary.failed > 0) return 'failed'
@@ -61,4 +102,12 @@ function buildRunSummary(status: SequenceStatus): string {
     `${status.summary.done} done`,
     `${status.summary.failed} failed`,
   ].join(' | ')
+}
+
+function hasRealThreadSurfaceData(
+  threadSurfaces?: ThreadSurface[] | null,
+  runs?: RunScope[] | null,
+  mergeEvents?: MergeEvent[] | null,
+): boolean {
+  return (threadSurfaces?.length ?? 0) > 0 || (runs?.length ?? 0) > 0 || (mergeEvents?.length ?? 0) > 0
 }
