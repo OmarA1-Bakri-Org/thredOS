@@ -48,6 +48,18 @@ describe('thread run lifecycle routes', () => {
     process.env.THREADOS_BASE_PATH = basePath
     await setupTestSequence()
     globalThis.__THREADOS_RUN_ROUTE_RUNTIME__ = {
+      dispatch: async (_model: string, opts: { stepId: string; runId: string; cwd: string; timeout: number; runtimeEventLogPath?: string; runtimeEventEmitterCommand?: string }) => ({
+        stepId: opts.stepId,
+        runId: opts.runId,
+        command: 'mock-agent',
+        args: [],
+        cwd: opts.cwd,
+        timeout: opts.timeout,
+        env: {
+          THREADOS_EVENT_LOG: opts.runtimeEventLogPath ?? '',
+          THREADOS_EVENT_EMITTER: opts.runtimeEventEmitterCommand ?? '',
+        },
+      }),
       runStep: async ({ stepId, runId }: { stepId: string; runId: string }) => ({
         stepId,
         runId,

@@ -8,12 +8,18 @@ import { jsonError, auditLog, checkPolicy, handleError } from '@/lib/api-helpers
 import type { Sequence, Step } from '@/lib/sequence/schema'
 import { runStep } from '@/lib/runner/wrapper'
 import { getRuntimeEventLogPath, saveRunArtifacts } from '@/lib/runner/artifacts'
+import { compilePrompt } from '@/lib/runner/prompt-compiler'
+import { dispatch, exitCodeToStatus } from '@/lib/runner/dispatch'
+import { readPrompt, validatePromptExists } from '@/lib/prompts/manager'
 import { readThreadSurfaceState, writeThreadSurfaceState } from '@/lib/thread-surfaces/repository'
 import { completeRun, createChildThreadSurfaceRun, createReplacementRun, createRootThreadSurfaceRun, recordChildAgentSpawnEvent, recordMergeEvent } from '@/lib/thread-surfaces/mutations'
 import { ROOT_THREAD_SURFACE_ID } from '@/lib/thread-surfaces/constants'
 import { deriveStepThreadSurfaceId } from '@/lib/thread-surfaces/step-runtime'
 import type { ThreadSurfaceState } from '@/lib/thread-surfaces/repository'
 import { readRuntimeEventLog, type RuntimeDelegationEvent } from '@/lib/thread-surfaces/runtime-event-log'
+
+const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000 // 30 minutes
+const THREADOS_EVENT_EMITTER_COMMAND = 'thread event'
 
 const BodySchema = z.union([
   z.object({ stepId: z.string() }),
@@ -22,6 +28,7 @@ const BodySchema = z.union([
 ])
 
 interface RunRouteRuntime {
+  dispatch: typeof dispatch
   runStep: typeof runStep
   saveRunArtifacts: typeof saveRunArtifacts
 }
@@ -43,27 +50,56 @@ async function executeStep(bp: string, seq: Sequence, stepId: string, runId: str
   if (!step) return { success: false, stepId, runId, status: 'FAILED' as const, error: 'Step not found' }
 
   const stepRuntime = await createStepRunScope(bp, seq, step)
+  const promptPath = step.prompt_file
+  const promptExists = await validatePromptExists(bp, stepId)
+
+  if (!promptExists) {
+    step.status = 'FAILED'
+    await writeSequence(bp, seq)
+    await finalizeStepRunScope(bp, step, stepRuntime, false, []).catch(() => {})
+    return {
+      success: false,
+      stepId,
+      runId,
+      status: 'FAILED' as const,
+      error: `Prompt file not found for step '${stepId}'. Expected: ${promptPath}`,
+    }
+  }
+
   step.status = 'RUNNING'
   await writeSequence(bp, seq)
   try {
     const runtime = getRunRouteRuntime()
     const runtimeEventLogPath = getRuntimeEventLogPath(bp, runId, stepId)
-    const result = await runtime.runStep({
+    const rawPrompt = await readPrompt(bp, stepId)
+    const promptForDispatch = step.model === 'shell'
+      ? rawPrompt
+      : await compilePrompt({
+          stepId,
+          step,
+          rawPrompt,
+          sequence: seq,
+          basePath: bp,
+          maxTokens: step.model === 'claude-code' ? 8000 : 4000,
+          runtimeEventLogPath,
+          runtimeEventEmitterCommand: THREADOS_EVENT_EMITTER_COMMAND,
+        })
+
+    const runnerConfig = await runtime.dispatch(step.model, {
       stepId,
       runId,
-      command: step.model,
-      args: ['--prompt-file', step.prompt_file],
-      cwd: step.cwd,
-      env: {
-        THREADOS_EVENT_LOG: runtimeEventLogPath,
-        THREADOS_EVENT_EMITTER: 'thread event',
-      },
+      compiledPrompt: promptForDispatch,
+      cwd: step.cwd || bp,
+      timeout: step.timeout_ms || DEFAULT_TIMEOUT_MS,
+      runtimeEventLogPath,
+      runtimeEventEmitterCommand: THREADOS_EVENT_EMITTER_COMMAND,
     })
+    const result = await runtime.runStep(runnerConfig)
     const artifactPath = await runtime.saveRunArtifacts(bp, result)
     const runtimeEvents = await readRuntimeEventLog(bp, runId, stepId)
-    step.status = result.status === 'SUCCESS' ? 'DONE' : 'FAILED'
+    step.status = exitCodeToStatus(result.exitCode)
     await writeSequence(bp, seq)
-    await finalizeStepRunScope(bp, step, stepRuntime, result.status === 'SUCCESS', runtimeEvents.events)
+    await finalizeStepRunScope(bp, step, stepRuntime, step.status === 'DONE', runtimeEvents.events)
     return { success: result.status === 'SUCCESS', stepId, runId, status: step.status, duration: result.duration, artifactPath }
   } catch (err) {
     step.status = 'FAILED'
@@ -75,6 +111,7 @@ async function executeStep(bp: string, seq: Sequence, stepId: string, runId: str
 
 function getRunRouteRuntime(): RunRouteRuntime {
   return globalThis.__THREADOS_RUN_ROUTE_RUNTIME__ ?? {
+    dispatch,
     runStep,
     saveRunArtifacts,
   }

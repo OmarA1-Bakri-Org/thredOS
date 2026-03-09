@@ -7,6 +7,8 @@ import type { ThreadSurfaceState } from '@/lib/thread-surfaces/repository'
 
 let basePath = ''
 let runtimeEventLinesByStep: Record<string, string[]> = {}
+let capturedDispatchPrompt = ''
+let capturedDispatchEmitter = ''
 
 async function setupSequence(sequence: object) {
   await mkdir(join(basePath, '.threados', 'prompts'), { recursive: true })
@@ -31,8 +33,34 @@ describe('thread runtime event persistence', () => {
   beforeEach(async () => {
     basePath = await mkdtemp(join(tmpdir(), 'threados-runtime-events-'))
     runtimeEventLinesByStep = {}
+    capturedDispatchPrompt = ''
+    capturedDispatchEmitter = ''
     process.env.THREADOS_BASE_PATH = basePath
     globalThis.__THREADOS_RUN_ROUTE_RUNTIME__ = {
+      dispatch: async (_model: string, opts: {
+        stepId: string
+        runId: string
+        compiledPrompt: string
+        cwd: string
+        timeout: number
+        runtimeEventLogPath?: string
+        runtimeEventEmitterCommand?: string
+      }) => {
+        capturedDispatchPrompt = opts.compiledPrompt
+        capturedDispatchEmitter = opts.runtimeEventEmitterCommand ?? ''
+        return {
+          stepId: opts.stepId,
+          runId: opts.runId,
+          command: 'mock-agent',
+          args: [],
+          cwd: opts.cwd,
+          timeout: opts.timeout,
+          env: {
+            THREADOS_EVENT_LOG: opts.runtimeEventLogPath ?? '',
+            THREADOS_EVENT_EMITTER: opts.runtimeEventEmitterCommand ?? '',
+          },
+        }
+      },
       runStep: async ({
         stepId,
         runId,
@@ -113,6 +141,39 @@ describe('thread runtime event persistence', () => {
       }),
     ])
     expect(state.runEvents).toEqual([])
+  })
+
+  test('api runs compile prompts with runtime emitter guidance for model-backed steps', async () => {
+    await setupSequence({
+      version: '1.0',
+      name: 'Compiled Prompt Sequence',
+      steps: [
+        {
+          id: 'step-a',
+          name: 'Step A',
+          type: 'b',
+          model: 'codex',
+          prompt_file: '.threados/prompts/step-a.md',
+          depends_on: [],
+          status: 'READY',
+        },
+      ],
+      gates: [],
+    })
+    await writePrompt('step-a')
+
+    const { POST } = await import('@/app/api/run/route')
+    const response = await POST(new Request('http://localhost/api/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ stepId: 'step-a' }),
+    }))
+
+    expect(response.status).toBe(200)
+    expect(capturedDispatchEmitter).toBe('thread event')
+    expect(capturedDispatchPrompt).toContain('THREADOS_EVENT_EMITTER')
+    expect(capturedDispatchPrompt).toContain('thread event spawn-child')
+    expect(capturedDispatchPrompt).toContain('thread event merge-into')
   })
 
   test('successful fusion synth step records a merge event using dependency order as source order', async () => {
