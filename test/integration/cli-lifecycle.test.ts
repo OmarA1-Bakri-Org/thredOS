@@ -1,4 +1,6 @@
 import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
+import { mkdir, writeFile } from 'fs/promises'
+import { join } from 'path'
 import { createTempDir, cleanTempDir } from '../helpers/setup'
 import { initCommand } from '../../lib/seqctl/commands/init'
 import { stepCommand } from '../../lib/seqctl/commands/step'
@@ -20,6 +22,7 @@ describe('CLI lifecycle integration', () => {
   })
 
   afterEach(async () => {
+    delete globalThis.__THREADOS_CLI_RUN_RUNTIME__
     process.chdir(origCwd)
     await cleanTempDir(tmpDir)
   })
@@ -135,32 +138,143 @@ describe('CLI lifecycle integration', () => {
     }
 
     const state = await readThreadSurfaceState(tmpDir)
+    expect(state.threadSurfaces).toEqual([
+      expect.objectContaining({
+        id: 'thread-root',
+        childSurfaceIds: [],
+      }),
+    ])
+    expect(state.runs).toEqual([
+      expect.objectContaining({
+        threadSurfaceId: 'thread-root',
+        runStatus: 'failed',
+      }),
+    ])
+    expect(state.runEvents).toEqual([])
+    expect(logs.length).toBeGreaterThan(0)
+  })
+
+  test('successful orchestrator CLI runs create delegated child surfaces and spawn events', async () => {
+    await initCommand(undefined, [], { json: false, help: false, watch: false })
+
+    const seq = await readSequence(tmpDir)
+    seq.name = 'CLI Spawn Sequence'
+    seq.steps = [
+      {
+        id: 'orchestrator',
+        name: 'Main Orchestrator',
+        type: 'b',
+        model: 'codex',
+        prompt_file: '.threados/prompts/orchestrator.md',
+        depends_on: [],
+        status: 'READY',
+      },
+      {
+        id: 'worker-a',
+        name: 'Worker A',
+        type: 'b',
+        model: 'codex',
+        prompt_file: '.threados/prompts/worker-a.md',
+        depends_on: ['orchestrator'],
+        status: 'READY',
+        orchestrator: 'orchestrator',
+      },
+      {
+        id: 'worker-b',
+        name: 'Worker B',
+        type: 'b',
+        model: 'codex',
+        prompt_file: '.threados/prompts/worker-b.md',
+        depends_on: ['orchestrator'],
+        status: 'READY',
+        orchestrator: 'orchestrator',
+      },
+    ]
+    await writeSequence(tmpDir, seq)
+    await mkdir(join(tmpDir, '.threados', 'prompts'), { recursive: true })
+    await writeFile(join(tmpDir, '.threados', 'prompts', 'orchestrator.md'), '# orchestrator')
+    await writeFile(join(tmpDir, '.threados', 'prompts', 'worker-a.md'), '# worker a')
+    await writeFile(join(tmpDir, '.threados', 'prompts', 'worker-b.md'), '# worker b')
+
+    globalThis.__THREADOS_CLI_RUN_RUNTIME__ = {
+      dispatch: async (_model, opts) => ({
+        stepId: opts.stepId,
+        runId: opts.runId,
+        command: process.execPath,
+        args: ['-e', 'process.exit(0)'],
+        cwd: opts.cwd,
+        timeout: opts.timeout,
+      }),
+      runStep: async config => ({
+        stepId: config.stepId,
+        runId: config.runId,
+        command: config.command,
+        args: config.args,
+        cwd: config.cwd,
+        startTime: new Date('2026-03-09T10:00:00.000Z'),
+        endTime: new Date('2026-03-09T10:00:01.000Z'),
+        duration: 1000,
+        exitCode: 0,
+        stdout: 'ok',
+        stderr: '',
+        timedOut: false,
+        status: 'SUCCESS',
+      }),
+      saveRunArtifacts: async () => '.threados/runs/mock',
+    }
+
+    const logs: string[] = []
+    const origLog = console.log
+    console.log = (msg: string) => logs.push(msg)
+
+    try {
+      await runCommand('step', ['orchestrator'], jsonOpts)
+    } finally {
+      console.log = origLog
+    }
+
+    const state = await readThreadSurfaceState(tmpDir)
     expect(state.threadSurfaces).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           id: 'thread-root',
-          childSurfaceIds: ['thread-runtime-step'],
+          childSurfaceIds: ['thread-orchestrator'],
         }),
         expect.objectContaining({
-          id: 'thread-runtime-step',
+          id: 'thread-orchestrator',
           parentSurfaceId: 'thread-root',
-          parentAgentNodeId: 'runtime-step',
-          surfaceLabel: 'Runtime Step',
+          childSurfaceIds: expect.arrayContaining(['thread-worker-a', 'thread-worker-b']),
+        }),
+        expect.objectContaining({
+          id: 'thread-worker-a',
+          parentSurfaceId: 'thread-orchestrator',
+          parentAgentNodeId: 'worker-a',
+        }),
+        expect.objectContaining({
+          id: 'thread-worker-b',
+          parentSurfaceId: 'thread-orchestrator',
+          parentAgentNodeId: 'worker-b',
         }),
       ]),
     )
-    expect(state.runs).toEqual(
+    expect(state.runEvents).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          threadSurfaceId: 'thread-root',
-          runStatus: 'failed',
+          eventType: 'child-agent-spawned',
+          threadSurfaceId: 'thread-orchestrator',
+          payload: expect.objectContaining({
+            childThreadSurfaceId: 'thread-worker-a',
+          }),
         }),
         expect.objectContaining({
-          threadSurfaceId: 'thread-runtime-step',
-          runStatus: 'failed',
+          eventType: 'child-agent-spawned',
+          threadSurfaceId: 'thread-orchestrator',
+          payload: expect.objectContaining({
+            childThreadSurfaceId: 'thread-worker-b',
+          }),
         }),
       ]),
     )
-    expect(logs.length).toBeGreaterThan(0)
+    expect(logs.some(message => message.includes('"success":true'))).toBe(true)
   })
 })
