@@ -1,5 +1,6 @@
 import type { Step } from '@/lib/sequence/schema'
-import { completeRun, createChildThreadSurfaceRun, createReplacementRun, recordChildAgentSpawnEvent, recordMergeEvent } from '@/lib/thread-surfaces/mutations'
+import { InvalidThreadSurfaceMergeError } from '@/lib/errors'
+import { completeRun, createChildThreadSurfaceRun, createReplacementRun, findLatestRunForSurface, recordChildAgentSpawnEvent, recordMergeEvent } from '@/lib/thread-surfaces/mutations'
 import type { ThreadSurfaceState } from '@/lib/thread-surfaces/repository'
 import type { RuntimeDelegationEvent } from '@/lib/thread-surfaces/runtime-event-log'
 import { deriveStepThreadSurfaceId, ROOT_THREAD_SURFACE_ID } from '@/lib/thread-surfaces/constants'
@@ -193,6 +194,14 @@ function persistRuntimeDelegationEvents(
       runId: stepRun.runId,
       destinationThreadSurfaceId: deriveStepThreadSurfaceId(event.destinationStepId),
       sourceThreadSurfaceIds: event.sourceStepIds.map(sourceStepId => deriveStepThreadSurfaceId(sourceStepId)),
+      sourceRunIds: event.sourceStepIds.map(sourceStepId => {
+        const sourceThreadSurfaceId = deriveStepThreadSurfaceId(sourceStepId)
+        const sourceRunId = findLatestRunForSurface(nextState.runs, sourceThreadSurfaceId)?.id
+        if (!sourceRunId) {
+          throw new InvalidThreadSurfaceMergeError(`Merge source run must exist for lane ${sourceThreadSurfaceId}`)
+        }
+        return sourceRunId
+      }),
       mergeKind: event.mergeKind,
       executionIndex: stepRun.executionIndex,
       createdAt: event.createdAt,

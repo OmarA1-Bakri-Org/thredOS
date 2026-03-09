@@ -38,7 +38,9 @@ export async function readThreadSurfaceState(basePath: string): Promise<ThreadSu
     version: 1,
     threadSurfaces: Array.isArray(raw.threadSurfaces) ? raw.threadSurfaces : [],
     runs: Array.isArray(raw.runs) ? raw.runs : [],
-    mergeEvents: Array.isArray(raw.mergeEvents) ? raw.mergeEvents : [],
+    mergeEvents: Array.isArray(raw.mergeEvents)
+      ? raw.mergeEvents.map(normalizeMergeEvent)
+      : [],
     runEvents: Array.isArray(raw.runEvents) ? raw.runEvents : [],
   }
 }
@@ -47,6 +49,20 @@ export async function writeThreadSurfaceState(basePath: string, state: ThreadSur
   const fullPath = getThreadSurfaceStatePath(basePath)
   await mkdir(join(basePath, '.threados/state'), { recursive: true })
   await writeFileAtomic(fullPath, `${JSON.stringify({ ...state, version: 1 }, null, 2)}\n`)
+}
+
+function normalizeMergeEvent(raw: Partial<MergeEvent>): MergeEvent {
+  return {
+    id: raw.id ?? '',
+    runId: raw.runId ?? '',
+    destinationThreadSurfaceId: raw.destinationThreadSurfaceId ?? '',
+    sourceThreadSurfaceIds: Array.isArray(raw.sourceThreadSurfaceIds) ? raw.sourceThreadSurfaceIds : [],
+    sourceRunIds: Array.isArray(raw.sourceRunIds) ? raw.sourceRunIds : [],
+    mergeKind: raw.mergeKind ?? 'single',
+    executionIndex: raw.executionIndex ?? 0,
+    createdAt: raw.createdAt ?? '',
+    ...(raw.summary ? { summary: raw.summary } : {}),
+  }
 }
 
 export async function updateThreadSurfaceState(

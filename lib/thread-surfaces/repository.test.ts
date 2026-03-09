@@ -41,6 +41,7 @@ const mergeEvent: MergeEvent = {
   runId: 'run-master-1',
   destinationThreadSurfaceId: 'thread-master',
   sourceThreadSurfaceIds: ['thread-research'],
+  sourceRunIds: ['run-research-1'],
   mergeKind: 'single',
   executionIndex: 2,
   createdAt: '2026-03-09T00:03:00.000Z',
@@ -128,6 +129,31 @@ describe('thread surface repository', () => {
       threadSurfaces: [threadSurface],
       runs: [run],
       mergeEvents: [mergeEvent],
+      runEvents: [],
+    })
+  })
+
+  test('readThreadSurfaceState defaults merge sourceRunIds to an empty array when missing on disk', async () => {
+    const filePath = getThreadSurfaceStatePath(basePath)
+    await Bun.write(filePath, JSON.stringify({
+      version: 1,
+      threadSurfaces: [threadSurface],
+      runs: [run],
+      mergeEvents: [{
+        ...mergeEvent,
+        sourceRunIds: undefined,
+      }],
+      runEvents: [],
+    }))
+
+    await expect(readThreadSurfaceState(basePath)).resolves.toEqual({
+      version: 1,
+      threadSurfaces: [threadSurface],
+      runs: [run],
+      mergeEvents: [{
+        ...mergeEvent,
+        sourceRunIds: [],
+      }],
       runEvents: [],
     })
   })

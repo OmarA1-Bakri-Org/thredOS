@@ -59,6 +59,7 @@ const mergeEvents: MergeEvent[] = [
     runId: 'run-master-1',
     destinationThreadSurfaceId: 'thread-master',
     sourceThreadSurfaceIds: ['thread-research'],
+    sourceRunIds: ['run-research-1'],
     mergeKind: 'single',
     executionIndex: 2,
     createdAt: '2026-03-09T00:03:00.000Z',

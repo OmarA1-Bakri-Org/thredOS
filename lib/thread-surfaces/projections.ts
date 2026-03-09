@@ -38,6 +38,7 @@ export interface LaneBoardMergeEvent {
   executionIndex: number
   destinationThreadSurfaceId: string
   sourceThreadSurfaceIds: string[]
+  sourceRunIds: string[]
   mergeKind: MergeEvent['mergeKind']
 }
 
@@ -133,7 +134,10 @@ export function projectLaneBoard({ threadSurfaces, runs, mergeEvents, runIds }: 
     }
 
     event.sourceThreadSurfaceIds.forEach((sourceId, sourcePosition) => {
-      const sourceRow = rowsBySurfaceId.get(sourceId)?.[0]
+      const sourceRunId = event.sourceRunIds?.[sourcePosition]
+      const sourceRow = sourceRunId
+        ? rowsBySurfaceId.get(sourceId)?.find(row => row.runId === sourceRunId)
+        : rowsBySurfaceId.get(sourceId)?.[0]
       if (!sourceRow) return
       sourceRow.laneTerminalState = 'merged'
       sourceRow.mergedIntoThreadSurfaceId = event.destinationThreadSurfaceId
@@ -177,6 +181,7 @@ export function projectLaneBoard({ threadSurfaces, runs, mergeEvents, runIds }: 
       executionIndex: event.executionIndex,
       destinationThreadSurfaceId: event.destinationThreadSurfaceId,
       sourceThreadSurfaceIds: [...event.sourceThreadSurfaceIds],
+      sourceRunIds: [...(event.sourceRunIds ?? [])],
       mergeKind: event.mergeKind,
     })),
   }

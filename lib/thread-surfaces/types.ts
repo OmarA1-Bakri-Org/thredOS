@@ -62,6 +62,7 @@ export interface RunEventPayloadByType {
     mergeKind: MergeKind
     destinationThreadSurfaceId: string
     sourceThreadSurfaceIds: string[]
+    sourceRunIds?: string[]
     laneTerminalState: LaneTerminalState
   }
   'run-cancelled': {
@@ -90,6 +91,7 @@ export interface MergeEvent {
   runId: string
   destinationThreadSurfaceId: string
   sourceThreadSurfaceIds: string[]
+  sourceRunIds?: string[]
   mergeKind: MergeKind
   executionIndex: number
   createdAt: string

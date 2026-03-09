@@ -352,6 +352,7 @@ describe.serial('thread runtime event persistence', () => {
       expect.objectContaining({
         destinationThreadSurfaceId: 'thread-fusion-synth',
         sourceThreadSurfaceIds: ['thread-candidate-a', 'thread-candidate-b'],
+        sourceRunIds: ['run-candidate-a', 'run-candidate-b'],
         mergeKind: 'block',
       }),
     ])
@@ -475,6 +476,7 @@ describe.serial('thread runtime event persistence', () => {
       expect.objectContaining({
         destinationThreadSurfaceId: 'thread-fusion-synth',
         sourceThreadSurfaceIds: ['thread-candidate-a', 'thread-candidate-b'],
+        sourceRunIds: ['run-candidate-a', 'run-candidate-b'],
         mergeKind: 'block',
         summary: 'Emitter merge',
       }),

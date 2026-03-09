@@ -518,6 +518,7 @@ describe('CLI lifecycle integration', () => {
       expect.objectContaining({
         destinationThreadSurfaceId: 'thread-fusion-synth',
         sourceThreadSurfaceIds: ['thread-candidate-a', 'thread-candidate-b'],
+        sourceRunIds: ['run-candidate-a', 'run-candidate-b'],
         mergeKind: 'block',
         summary: 'CLI emitter merge',
       }),

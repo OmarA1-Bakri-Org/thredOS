@@ -141,6 +141,7 @@ describe('thread surface lifecycle mutations', () => {
       runId: 'run-root-001',
       destinationThreadSurfaceId: 'thread-root',
       sourceThreadSurfaceIds: ['thread-review'],
+      sourceRunIds: ['run-review-001'],
       mergeKind: 'single',
       executionIndex: 10,
       createdAt: timestamp,
@@ -151,6 +152,7 @@ describe('thread surface lifecycle mutations', () => {
       id: 'merge-001',
       destinationThreadSurfaceId: 'thread-root',
       sourceThreadSurfaceIds: ['thread-review'],
+      sourceRunIds: ['run-review-001'],
       mergeKind: 'single',
     })
     expect(() =>
@@ -159,11 +161,24 @@ describe('thread surface lifecycle mutations', () => {
         runId: 'run-root-001',
         destinationThreadSurfaceId: 'thread-missing',
         sourceThreadSurfaceIds: ['thread-review'],
+        sourceRunIds: ['run-review-001'],
         mergeKind: 'single',
         executionIndex: 11,
         createdAt: timestamp,
       }),
     ).toThrow('destination lane')
+    expect(() =>
+      recordMergeEvent(stateWithChild, {
+        mergeId: 'merge-bad-run',
+        runId: 'run-root-001',
+        destinationThreadSurfaceId: 'thread-root',
+        sourceThreadSurfaceIds: ['thread-review'],
+        sourceRunIds: ['run-root-001'],
+        mergeKind: 'single',
+        executionIndex: 12,
+        createdAt: timestamp,
+      }),
+    ).toThrow('source run')
   })
 
   test('cancelRun marks the run cancelled without turning it into a restart', () => {

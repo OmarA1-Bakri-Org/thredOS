@@ -188,6 +188,7 @@ describe('step run runtime helpers', () => {
         runId: 'run-fusion',
         destinationThreadSurfaceId: 'thread-fusion-synth',
         sourceThreadSurfaceIds: ['thread-candidate-a', 'thread-candidate-b'],
+        sourceRunIds: ['run-a', 'run-b'],
         mergeKind: 'block',
         summary: 'merged summary',
       }),

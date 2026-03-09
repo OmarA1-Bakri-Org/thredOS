@@ -153,6 +153,7 @@ describe('thread surface projections', () => {
         runId: 'run-synthesis',
         destinationThreadSurfaceId: 'thread-synthesis',
         sourceThreadSurfaceIds: ['thread-research', 'thread-outreach'],
+        sourceRunIds: ['run-research', 'run-outreach'],
         mergeKind: 'block',
         executionIndex: 14,
         createdAt: '2026-03-09T00:06:00.000Z',
@@ -195,6 +196,92 @@ describe('thread surface projections', () => {
         executionIndex: 14,
         destinationThreadSurfaceId: 'thread-synthesis',
         sourceThreadSurfaceIds: ['thread-research', 'thread-outreach'],
+        sourceRunIds: ['run-research', 'run-outreach'],
+        mergeKind: 'block',
+      },
+    ])
+  })
+
+  test('projectLaneBoard uses source run identity when a source surface has multiple runs', () => {
+    const runs: RunScope[] = [
+      {
+        id: 'run-master',
+        threadSurfaceId: 'thread-master',
+        runStatus: 'successful',
+        startedAt: '2026-03-09T00:00:00.000Z',
+        endedAt: '2026-03-09T00:10:00.000Z',
+        executionIndex: 15,
+      },
+      {
+        id: 'run-research',
+        threadSurfaceId: 'thread-research',
+        runStatus: 'successful',
+        startedAt: '2026-03-09T00:01:00.000Z',
+        endedAt: '2026-03-09T00:04:00.000Z',
+        executionIndex: 12,
+      },
+      {
+        id: 'run-outreach-old',
+        threadSurfaceId: 'thread-outreach',
+        runStatus: 'failed',
+        startedAt: '2026-03-09T00:01:30.000Z',
+        endedAt: '2026-03-09T00:02:00.000Z',
+        executionIndex: 11,
+      },
+      {
+        id: 'run-outreach-current',
+        threadSurfaceId: 'thread-outreach',
+        runStatus: 'successful',
+        startedAt: '2026-03-09T00:02:00.000Z',
+        endedAt: '2026-03-09T00:05:00.000Z',
+        executionIndex: 13,
+      },
+      {
+        id: 'run-synthesis',
+        threadSurfaceId: 'thread-synthesis',
+        runStatus: 'running',
+        startedAt: '2026-03-09T00:03:00.000Z',
+        endedAt: null,
+        executionIndex: 14,
+      },
+    ]
+
+    const mergeEvents: MergeEvent[] = [
+      {
+        id: 'merge-block',
+        runId: 'run-synthesis',
+        destinationThreadSurfaceId: 'thread-synthesis',
+        sourceThreadSurfaceIds: ['thread-research', 'thread-outreach'],
+        sourceRunIds: ['run-research', 'run-outreach-current'],
+        mergeKind: 'block',
+        executionIndex: 14,
+        createdAt: '2026-03-09T00:06:00.000Z',
+      },
+    ]
+
+    const laneBoard = projectLaneBoard({
+      threadSurfaces: surfaces,
+      runs,
+      mergeEvents,
+      runIds: ['run-master', 'run-research', 'run-outreach-old', 'run-outreach-current', 'run-synthesis'],
+    })
+
+    expect(laneBoard.rows.find(row => row.runId === 'run-outreach-current')).toMatchObject({
+      laneTerminalState: 'merged',
+      mergedIntoThreadSurfaceId: 'thread-synthesis',
+    })
+    expect(laneBoard.rows.find(row => row.runId === 'run-outreach-old')).toMatchObject({
+      laneTerminalState: undefined,
+      mergedIntoThreadSurfaceId: undefined,
+    })
+    expect(laneBoard.events).toEqual([
+      {
+        type: 'merge',
+        runId: 'run-synthesis',
+        executionIndex: 14,
+        destinationThreadSurfaceId: 'thread-synthesis',
+        sourceThreadSurfaceIds: ['thread-research', 'thread-outreach'],
+        sourceRunIds: ['run-research', 'run-outreach-current'],
         mergeKind: 'block',
       },
     ])

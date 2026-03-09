@@ -72,6 +72,7 @@ describe('thread surface domain types', () => {
       runId: 'run-001',
       destinationThreadSurfaceId: 'thread-synthesis',
       sourceThreadSurfaceIds: ['thread-research', 'thread-outreach'],
+      sourceRunIds: ['run-research', 'run-outreach'],
       mergeKind: 'block',
       executionIndex: 14,
       createdAt: '2026-03-09T00:15:00.000Z',
@@ -80,6 +81,7 @@ describe('thread surface domain types', () => {
 
     expect(mergeEvent.destinationThreadSurfaceId).toBe('thread-synthesis')
     expect(mergeEvent.sourceThreadSurfaceIds).toEqual(['thread-research', 'thread-outreach'])
+    expect(mergeEvent.sourceRunIds).toEqual(['run-research', 'run-outreach'])
     expect(mergeEvent.sourceThreadSurfaceIds).not.toContain(mergeEvent.destinationThreadSurfaceId)
   })
 
@@ -96,6 +98,7 @@ describe('thread surface domain types', () => {
         mergeKind: 'single',
         destinationThreadSurfaceId: 'thread-synthesis',
         sourceThreadSurfaceIds: ['thread-research'],
+        sourceRunIds: ['run-research'],
         laneTerminalState: laneState,
       },
     }
@@ -106,6 +109,7 @@ describe('thread surface domain types', () => {
       destinationThreadSurfaceId: 'thread-synthesis',
       laneTerminalState: 'merged',
       sourceThreadSurfaceIds: ['thread-research'],
+      sourceRunIds: ['run-research'],
     })
   })
 })

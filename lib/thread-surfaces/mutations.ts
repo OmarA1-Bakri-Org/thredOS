@@ -53,6 +53,7 @@ interface RecordMergeEventArgs {
   runId: string
   destinationThreadSurfaceId: string
   sourceThreadSurfaceIds: string[]
+  sourceRunIds: string[]
   mergeKind: MergeKind
   executionIndex: number
   createdAt: string
@@ -202,6 +203,10 @@ export function recordMergeEvent(state: ThreadSurfaceState, args: RecordMergeEve
     throw new InvalidThreadSurfaceMergeError(`Merge destination lane must reference an existing thread surface: ${args.destinationThreadSurfaceId}`)
   }
 
+  if (args.sourceRunIds.length !== args.sourceThreadSurfaceIds.length) {
+    throw new InvalidThreadSurfaceMergeError('Merge source runs must align with merge source lanes')
+  }
+
   for (const sourceThreadSurfaceId of args.sourceThreadSurfaceIds) {
     if (!state.threadSurfaces.some(surface => surface.id === sourceThreadSurfaceId)) {
       throw new InvalidThreadSurfaceMergeError(`Merge source lane must reference an existing thread surface: ${sourceThreadSurfaceId}`)
@@ -211,11 +216,23 @@ export function recordMergeEvent(state: ThreadSurfaceState, args: RecordMergeEve
     }
   }
 
+  args.sourceThreadSurfaceIds.forEach((sourceThreadSurfaceId, index) => {
+    const sourceRunId = args.sourceRunIds[index]
+    const sourceRun = state.runs.find(run => run.id === sourceRunId)
+    if (!sourceRun) {
+      throw new InvalidThreadSurfaceMergeError(`Merge source run must reference an existing run scope: ${sourceRunId}`)
+    }
+    if (sourceRun.threadSurfaceId !== sourceThreadSurfaceId) {
+      throw new InvalidThreadSurfaceMergeError(`Merge source run must belong to the source lane: ${sourceRunId}`)
+    }
+  })
+
   const mergeEvent: MergeEvent = {
     id: args.mergeId,
     runId: args.runId,
     destinationThreadSurfaceId: args.destinationThreadSurfaceId,
     sourceThreadSurfaceIds: [...args.sourceThreadSurfaceIds],
+    sourceRunIds: [...args.sourceRunIds],
     mergeKind: args.mergeKind,
     executionIndex: args.executionIndex,
     createdAt: args.createdAt,
