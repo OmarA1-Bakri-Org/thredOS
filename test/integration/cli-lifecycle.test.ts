@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
 import { mkdir, writeFile } from 'fs/promises'
-import { join } from 'path'
+import { dirname, join } from 'path'
 import { createTempDir, cleanTempDir } from '../helpers/setup'
 import { initCommand } from '../../lib/seqctl/commands/init'
 import { stepCommand } from '../../lib/seqctl/commands/step'
@@ -276,5 +276,108 @@ describe('CLI lifecycle integration', () => {
       ]),
     )
     expect(logs.some(message => message.includes('"success":true'))).toBe(true)
+  })
+
+  test('runtime-emitted spawn-child events create child surfaces without static orchestrator metadata', async () => {
+    await initCommand(undefined, [], { json: false, help: false, watch: false })
+
+    const seq = await readSequence(tmpDir)
+    seq.name = 'CLI Runtime Event Sequence'
+    seq.steps = [
+      {
+        id: 'delegate-step',
+        name: 'Delegate Step',
+        type: 'base',
+        model: 'codex',
+        prompt_file: '.threados/prompts/delegate-step.md',
+        depends_on: [],
+        status: 'READY',
+      },
+    ]
+    await writeSequence(tmpDir, seq)
+    await mkdir(join(tmpDir, '.threados', 'prompts'), { recursive: true })
+    await writeFile(join(tmpDir, '.threados', 'prompts', 'delegate-step.md'), '# delegate')
+
+    globalThis.__THREADOS_CLI_RUN_RUNTIME__ = {
+      dispatch: async (_model, opts) => ({
+        stepId: opts.stepId,
+        runId: opts.runId,
+        command: process.execPath,
+        args: ['-e', 'process.exit(0)'],
+        cwd: opts.cwd,
+        timeout: opts.timeout,
+        env: {
+          THREADOS_EVENT_LOG: opts.runtimeEventLogPath ?? '',
+        },
+      }),
+      runStep: async config => {
+        const eventLogPath = config.env?.THREADOS_EVENT_LOG
+        if (eventLogPath) {
+          await mkdir(dirname(eventLogPath), { recursive: true })
+          await writeFile(
+            eventLogPath,
+            [
+              JSON.stringify({
+                eventType: 'spawn-child',
+                createdAt: '2026-03-09T10:00:02.000Z',
+                childStepId: 'delegate-child-a',
+                childLabel: 'Delegate Child A',
+                spawnKind: 'orchestrator',
+              }),
+              JSON.stringify({
+                eventType: 'spawn-child',
+                createdAt: '2026-03-09T10:00:03.000Z',
+                childStepId: 'delegate-child-b',
+                childLabel: 'Delegate Child B',
+                spawnKind: 'orchestrator',
+              }),
+            ].join('\n'),
+            'utf-8',
+          )
+        }
+
+        return {
+          stepId: config.stepId,
+          runId: config.runId,
+          command: config.command,
+          args: config.args,
+          cwd: config.cwd,
+          startTime: new Date('2026-03-09T10:00:00.000Z'),
+          endTime: new Date('2026-03-09T10:00:01.000Z'),
+          duration: 1000,
+          exitCode: 0,
+          stdout: 'ok',
+          stderr: '',
+          timedOut: false,
+          status: 'SUCCESS',
+        }
+      },
+      saveRunArtifacts: async () => '.threados/runs/mock',
+    }
+
+    await runCommand('step', ['delegate-step'], jsonOpts)
+
+    const state = await readThreadSurfaceState(tmpDir)
+    expect(state.threadSurfaces).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'thread-root',
+          childSurfaceIds: ['thread-delegate-step'],
+        }),
+        expect.objectContaining({
+          id: 'thread-delegate-step',
+          parentSurfaceId: 'thread-root',
+          childSurfaceIds: ['thread-delegate-child-a', 'thread-delegate-child-b'],
+        }),
+        expect.objectContaining({
+          id: 'thread-delegate-child-a',
+          parentSurfaceId: 'thread-delegate-step',
+        }),
+        expect.objectContaining({
+          id: 'thread-delegate-child-b',
+          parentSurfaceId: 'thread-delegate-step',
+        }),
+      ]),
+    )
   })
 })

@@ -70,7 +70,7 @@ async function executeStep(bp: string, seq: Sequence, stepId: string, runId: str
   } catch (err) {
     step.status = 'FAILED'
     await writeSequence(bp, seq).catch(() => {})
-    await finalizeStepRunScope(bp, seq, step, stepRuntime, false).catch(() => {})
+    await finalizeStepRunScope(bp, seq, step, stepRuntime, false, []).catch(() => {})
     return { success: false, stepId, runId, status: 'FAILED' as const, error: err instanceof Error ? err.message : String(err) }
   }
 }
