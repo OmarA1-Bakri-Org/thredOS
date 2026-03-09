@@ -43,6 +43,13 @@ export interface LaneBoardMergeEvent {
 
 export type LaneBoardEvent = LaneBoardMergeEvent
 
+interface LaneRowMergeSortKey {
+  clusterOrder: number
+  role: 0 | 1
+  mergeExecutionIndex: number
+  sourcePosition: number
+}
+
 interface ProjectLaneBoardArgs {
   threadSurfaces: ThreadSurface[]
   runs: RunScope[]
@@ -101,7 +108,7 @@ export function projectLaneBoard({ threadSurfaces, runs, mergeEvents, runIds }: 
       rowsBySurfaceId.set(row.threadSurfaceId, [row])
     }
   }
-  const destinationOrder = new Map<string, { destinationIndex: number; mergeIndex: number; sourcePosition: number }>()
+  const rowMergeOrder = new Map<string, LaneRowMergeSortKey>()
 
   const selectedMergeEvents = mergeEvents
     .filter(event => selectedRunIds.has(event.runId))
@@ -111,35 +118,49 @@ export function projectLaneBoard({ threadSurfaces, runs, mergeEvents, runIds }: 
     const destinationRow = rowsBySurfaceId.get(event.destinationThreadSurfaceId)?.find(row => row.runId === event.runId)
     if (!destinationRow) return
 
-    destinationOrder.set(destinationRow.runId, {
-      destinationIndex: mergeOrder,
-      mergeIndex: -1,
-      sourcePosition: -1,
-    })
+    const existingDestinationOrder = rowMergeOrder.get(destinationRow.runId)
+    if (
+      existingDestinationOrder == null
+      || existingDestinationOrder.role !== 0
+      || existingDestinationOrder.clusterOrder > mergeOrder
+    ) {
+      rowMergeOrder.set(destinationRow.runId, {
+        clusterOrder: mergeOrder,
+        role: 0,
+        mergeExecutionIndex: event.executionIndex,
+        sourcePosition: -1,
+      })
+    }
 
     event.sourceThreadSurfaceIds.forEach((sourceId, sourcePosition) => {
       const sourceRow = rowsBySurfaceId.get(sourceId)?.[0]
       if (!sourceRow) return
       sourceRow.laneTerminalState = 'merged'
       sourceRow.mergedIntoThreadSurfaceId = event.destinationThreadSurfaceId
-      destinationOrder.set(sourceRow.runId, {
-        destinationIndex: mergeOrder,
-        mergeIndex: event.executionIndex,
+      const existingSourceOrder = rowMergeOrder.get(sourceRow.runId)
+      if (existingSourceOrder?.role === 0) return
+      rowMergeOrder.set(sourceRow.runId, {
+        clusterOrder: mergeOrder,
+        role: 1,
+        mergeExecutionIndex: event.executionIndex,
         sourcePosition,
       })
     })
   })
 
   rows.sort((left, right) => {
-    const leftMerge = destinationOrder.get(left.runId)
-    const rightMerge = destinationOrder.get(right.runId)
+    const leftMerge = rowMergeOrder.get(left.runId)
+    const rightMerge = rowMergeOrder.get(right.runId)
 
     if (leftMerge && rightMerge) {
-      if (leftMerge.destinationIndex !== rightMerge.destinationIndex) {
-        return leftMerge.destinationIndex - rightMerge.destinationIndex
+      if (leftMerge.clusterOrder !== rightMerge.clusterOrder) {
+        return leftMerge.clusterOrder - rightMerge.clusterOrder
       }
-      if (leftMerge.mergeIndex !== rightMerge.mergeIndex) {
-        return leftMerge.mergeIndex - rightMerge.mergeIndex
+      if (leftMerge.role !== rightMerge.role) {
+        return leftMerge.role - rightMerge.role
+      }
+      if (leftMerge.mergeExecutionIndex !== rightMerge.mergeExecutionIndex) {
+        return leftMerge.mergeExecutionIndex - rightMerge.mergeExecutionIndex
       }
       return leftMerge.sourcePosition - rightMerge.sourcePosition
     }

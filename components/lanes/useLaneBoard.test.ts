@@ -432,6 +432,96 @@ describe('createLaneBoardModel', () => {
     ])
   })
 
+  test('keeps the destination lane on top when the same run receives multiple sequential merges', () => {
+    const runs: RunScope[] = [
+      {
+        id: 'run-master',
+        threadSurfaceId: 'thread-master',
+        runStatus: 'running',
+        startedAt: '2026-03-09T00:00:00.000Z',
+        endedAt: null,
+        executionIndex: 50,
+      },
+      {
+        id: 'run-research',
+        threadSurfaceId: 'thread-research',
+        runStatus: 'successful',
+        startedAt: '2026-03-09T00:01:00.000Z',
+        endedAt: '2026-03-09T00:04:00.000Z',
+        executionIndex: 12,
+      },
+      {
+        id: 'run-outreach',
+        threadSurfaceId: 'thread-outreach',
+        runStatus: 'successful',
+        startedAt: '2026-03-09T00:02:00.000Z',
+        endedAt: '2026-03-09T00:05:00.000Z',
+        executionIndex: 13,
+      },
+      {
+        id: 'run-synthesis',
+        threadSurfaceId: 'thread-synthesis',
+        runStatus: 'running',
+        startedAt: '2026-03-09T00:03:00.000Z',
+        endedAt: null,
+        executionIndex: 14,
+      },
+    ]
+
+    const mergeEvents: MergeEvent[] = [
+      {
+        id: 'merge-single-research',
+        runId: 'run-synthesis',
+        destinationThreadSurfaceId: 'thread-synthesis',
+        sourceThreadSurfaceIds: ['thread-research'],
+        mergeKind: 'single',
+        executionIndex: 14,
+        createdAt: '2026-03-09T00:06:00.000Z',
+      },
+      {
+        id: 'merge-single-outreach',
+        runId: 'run-synthesis',
+        destinationThreadSurfaceId: 'thread-synthesis',
+        sourceThreadSurfaceIds: ['thread-outreach'],
+        mergeKind: 'single',
+        executionIndex: 16,
+        createdAt: '2026-03-09T00:08:00.000Z',
+      },
+    ]
+
+    const laneBoard = createLaneBoardModel({
+      threadSurfaces,
+      runs,
+      mergeEvents,
+      runIds: ['run-master', 'run-research', 'run-outreach', 'run-synthesis'],
+    })
+
+    expect(laneBoard.rows.map(row => row.threadSurfaceId)).toEqual([
+      'thread-synthesis',
+      'thread-research',
+      'thread-outreach',
+      'thread-master',
+    ])
+    expect(laneBoard.mergeGroups).toEqual([
+      {
+        mergeEventId: 'merge-single-research',
+        runId: 'run-synthesis',
+        mergeKind: 'single',
+        executionIndex: 14,
+        destinationThreadSurfaceId: 'thread-synthesis',
+        orderedThreadSurfaceIds: ['thread-synthesis', 'thread-research'],
+      },
+      {
+        mergeEventId: 'merge-single-outreach',
+        runId: 'run-synthesis',
+        mergeKind: 'single',
+        executionIndex: 16,
+        destinationThreadSurfaceId: 'thread-synthesis',
+        orderedThreadSurfaceIds: ['thread-synthesis', 'thread-outreach'],
+      },
+    ])
+  })
+
   test('uses the shared multi-thread fixture for destination-first ordering and both merge shapes', () => {
     const laneBoard = createLaneBoardModel({
       threadSurfaces: multiThreadState.threadSurfaces,

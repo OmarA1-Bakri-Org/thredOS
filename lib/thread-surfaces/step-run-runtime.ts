@@ -2,8 +2,7 @@ import type { Step } from '@/lib/sequence/schema'
 import { completeRun, createChildThreadSurfaceRun, createReplacementRun, recordChildAgentSpawnEvent, recordMergeEvent } from '@/lib/thread-surfaces/mutations'
 import type { ThreadSurfaceState } from '@/lib/thread-surfaces/repository'
 import type { RuntimeDelegationEvent } from '@/lib/thread-surfaces/runtime-event-log'
-import { deriveStepThreadSurfaceId } from '@/lib/thread-surfaces/step-runtime'
-import { ROOT_THREAD_SURFACE_ID } from '@/lib/thread-surfaces/constants'
+import { deriveStepThreadSurfaceId, ROOT_THREAD_SURFACE_ID } from '@/lib/thread-surfaces/constants'
 
 export interface StepRunScope {
   runId: string
