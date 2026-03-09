@@ -1,11 +1,15 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
+import { randomUUID } from 'crypto'
 import { readSequence, writeSequence } from '@/lib/sequence/parser'
 import { getBasePath } from '@/lib/config'
 import { auditLog, handleError } from '@/lib/api-helpers'
 import { readMprocsMap } from '@/lib/mprocs/state'
 import { StepNotFoundError } from '@/lib/errors'
+import { readThreadSurfaceState, writeThreadSurfaceState } from '@/lib/thread-surfaces/repository'
+import { createReplacementRun } from '@/lib/thread-surfaces/mutations'
 
+const ROOT_THREAD_SURFACE_ID = 'thread-root'
 const BodySchema = z.object({ stepId: z.string() })
 
 export async function POST(request: Request) {
@@ -22,10 +26,20 @@ export async function POST(request: Request) {
       try {
         const { MprocsClient } = await import('@/lib/mprocs/client')
         await new MprocsClient().restartProcess(idx)
-      } catch { /* ok */ }
+      } catch {}
     }
     step.status = 'RUNNING'
     await writeSequence(bp, seq)
+
+    const currentState = await readThreadSurfaceState(bp)
+    const nextState = createReplacementRun(currentState, {
+      threadSurfaceId: ROOT_THREAD_SURFACE_ID,
+      runId: randomUUID(),
+      startedAt: new Date().toISOString(),
+      executionIndex: currentState.runs.length + 1,
+    }).state
+    await writeThreadSurfaceState(bp, nextState)
+
     await auditLog('restart', stepId)
     return NextResponse.json({ success: true, action: 'restart', stepId })
   } catch (err) {
