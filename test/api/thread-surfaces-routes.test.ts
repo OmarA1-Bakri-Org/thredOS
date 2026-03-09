@@ -76,6 +76,7 @@ describe('thread surface read routes', () => {
       threadSurfaces,
       runs,
       mergeEvents,
+      runEvents: [],
     })
   })
 

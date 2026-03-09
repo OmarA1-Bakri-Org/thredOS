@@ -31,6 +31,7 @@ function buildRootState(): ThreadSurfaceState {
     threadSurfaces: [rootSurface],
     runs: [rootRun],
     mergeEvents: [],
+    runEvents: [],
   }
 }
 

@@ -51,6 +51,7 @@ describe('thread annotation route', () => {
       threadSurfaces: [surface],
       runs,
       mergeEvents: [],
+      runEvents: [],
     })
   })
 

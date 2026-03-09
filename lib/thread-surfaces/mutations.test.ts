@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import type { RunScope, ThreadSurface } from './types'
+import type { RunEvent, RunScope, ThreadSurface } from './types'
 import type { ThreadSurfaceState } from './repository'
 import {
   cancelRun,
@@ -7,6 +7,7 @@ import {
   createReplacementRun,
   createRootThreadSurfaceRun,
   emptyThreadSurfaceState,
+  recordChildAgentSpawnEvent,
   recordMergeEvent,
 } from './mutations'
 
@@ -37,6 +38,7 @@ function buildRootState(): ThreadSurfaceState {
     threadSurfaces: [rootSurface],
     runs: [rootRun],
     mergeEvents: [],
+    runEvents: [],
   }
 }
 
@@ -179,6 +181,7 @@ describe('thread surface lifecycle mutations', () => {
         },
       ],
       mergeEvents: [],
+      runEvents: [],
     }
 
     const result = cancelRun(state, {
@@ -192,5 +195,40 @@ describe('thread surface lifecycle mutations', () => {
       endedAt: '2026-03-09T10:10:00.000Z',
     })
     expect(result.state.runs).toHaveLength(1)
+  })
+
+  test('recordChildAgentSpawnEvent appends a child-agent-spawned run event for existing surfaces', () => {
+    const stateWithChild = createChildThreadSurfaceRun(buildRootState(), {
+      parentSurfaceId: 'thread-root',
+      parentAgentNodeId: 'step-worker',
+      childSurfaceId: 'thread-worker',
+      childSurfaceLabel: 'Worker thread',
+      createdAt: timestamp,
+      runId: 'run-worker-001',
+      startedAt: timestamp,
+      executionIndex: 2,
+    }).state
+
+    const result = recordChildAgentSpawnEvent(stateWithChild, {
+      eventId: 'event-001',
+      runId: 'run-root-001',
+      threadSurfaceId: 'thread-root',
+      childThreadSurfaceId: 'thread-worker',
+      parentThreadSurfaceId: 'thread-root',
+      createdAt: timestamp,
+    })
+
+    expect(result.runEvent).toEqual<RunEvent>({
+      id: 'event-001',
+      runId: 'run-root-001',
+      eventType: 'child-agent-spawned',
+      createdAt: timestamp,
+      threadSurfaceId: 'thread-root',
+      payload: {
+        childThreadSurfaceId: 'thread-worker',
+        parentThreadSurfaceId: 'thread-root',
+      },
+    })
+    expect(result.state.runEvents).toEqual([result.runEvent])
   })
 })

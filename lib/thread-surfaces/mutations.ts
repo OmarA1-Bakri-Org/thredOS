@@ -1,4 +1,4 @@
-import type { MergeEvent, MergeKind, RunScope, RunStatus, ThreadSurface } from './types'
+import type { MergeEvent, MergeKind, RunEvent, RunScope, RunStatus, ThreadSurface } from './types'
 import type { ThreadSurfaceState } from './repository'
 
 const ACTIVE_RUN_STATUSES = new Set<RunStatus>(['pending', 'running'])
@@ -53,11 +53,21 @@ interface RecordMergeEventArgs {
   summary?: string
 }
 
+interface RecordChildAgentSpawnEventArgs {
+  eventId: string
+  runId: string
+  threadSurfaceId: string
+  childThreadSurfaceId: string
+  parentThreadSurfaceId: string
+  createdAt: string
+}
+
 export const emptyThreadSurfaceState: ThreadSurfaceState = {
   version: 1,
   threadSurfaces: [],
   runs: [],
   mergeEvents: [],
+  runEvents: [],
 }
 
 export function createRootThreadSurfaceRun(state: ThreadSurfaceState, args: CreateRootThreadSurfaceRunArgs) {
@@ -87,6 +97,7 @@ export function createRootThreadSurfaceRun(state: ThreadSurfaceState, args: Crea
       ...state,
       threadSurfaces: [...state.threadSurfaces, threadSurface],
       runs: [...state.runs, run],
+      runEvents: state.runEvents,
     },
     threadSurface,
     run,
@@ -132,6 +143,7 @@ export function createChildThreadSurfaceRun(state: ThreadSurfaceState, args: Cre
       ...state,
       threadSurfaces: nextThreadSurfaces,
       runs: [...state.runs, childRun],
+      runEvents: state.runEvents,
     },
     childSurface,
     childRun,
@@ -155,6 +167,7 @@ export function createReplacementRun(state: ThreadSurfaceState, args: CreateRepl
     state: {
       ...state,
       runs: [...state.runs, run],
+      runEvents: state.runEvents,
     },
     replacedRun,
     run,
@@ -207,8 +220,41 @@ export function recordMergeEvent(state: ThreadSurfaceState, args: RecordMergeEve
     state: {
       ...state,
       mergeEvents: [...state.mergeEvents, mergeEvent],
+      runEvents: state.runEvents,
     },
     mergeEvent,
+  }
+}
+
+export function recordChildAgentSpawnEvent(state: ThreadSurfaceState, args: RecordChildAgentSpawnEventArgs) {
+  if (!state.threadSurfaces.some(surface => surface.id === args.threadSurfaceId)) {
+    throw new Error(`Spawn event thread surface not found: ${args.threadSurfaceId}`)
+  }
+  if (!state.threadSurfaces.some(surface => surface.id === args.parentThreadSurfaceId)) {
+    throw new Error(`Spawn event parent thread surface not found: ${args.parentThreadSurfaceId}`)
+  }
+  if (!state.threadSurfaces.some(surface => surface.id === args.childThreadSurfaceId)) {
+    throw new Error(`Spawn event child thread surface not found: ${args.childThreadSurfaceId}`)
+  }
+
+  const runEvent: RunEvent = {
+    id: args.eventId,
+    runId: args.runId,
+    eventType: 'child-agent-spawned',
+    createdAt: args.createdAt,
+    threadSurfaceId: args.threadSurfaceId,
+    payload: {
+      childThreadSurfaceId: args.childThreadSurfaceId,
+      parentThreadSurfaceId: args.parentThreadSurfaceId,
+    },
+  }
+
+  return {
+    state: {
+      ...state,
+      runEvents: [...state.runEvents, runEvent],
+    },
+    runEvent,
   }
 }
 

@@ -180,6 +180,7 @@ describe('thread runtime event persistence', () => {
         },
       ],
       mergeEvents: [],
+      runEvents: [],
     })
 
     const { POST } = await import('@/app/api/run/route')
@@ -302,6 +303,7 @@ describe('thread runtime event persistence', () => {
         },
       ],
       mergeEvents: [],
+      runEvents: [],
     })
 
     const { POST } = await import('@/app/api/run/route')
