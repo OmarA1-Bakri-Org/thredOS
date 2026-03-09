@@ -6,7 +6,7 @@ type ButtonElement = ReactElement<{
   children?: ReactNode
   onClick?: () => void
   'data-thread-surface-id'?: string
-  'aria-pressed'?: boolean
+  'aria-current'?: string
 }>
 
 function collectButtons(node: ReactNode, acc: ButtonElement[] = []): ButtonElement[] {
@@ -100,7 +100,7 @@ describe('HierarchyView', () => {
     const selected = buttons.find(button => button.props['data-thread-surface-id'] === 'thread-review')
     const notSelected = buttons.find(button => button.props['data-thread-surface-id'] === 'thread-current')
 
-    expect(selected?.props['aria-pressed']).toBe(true)
-    expect(notSelected?.props['aria-pressed']).toBe(false)
+    expect(selected?.props['aria-current']).toBe('page')
+    expect(notSelected?.props['aria-current']).toBeUndefined()
   })
 })

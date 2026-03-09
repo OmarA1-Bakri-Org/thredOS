@@ -10,6 +10,7 @@ import { dispatch, exitCodeToStatus } from '../../runner/dispatch'
 import { readPrompt, validatePromptExists } from '../../prompts/manager'
 import { StepNotFoundError } from '../../errors'
 import type { Step, Sequence, StepStatus } from '../../sequence/schema'
+import { ROOT_THREAD_SURFACE_ID } from '../../thread-surfaces/constants'
 import { readThreadSurfaceState, writeThreadSurfaceState } from '../../thread-surfaces/repository'
 import { completeRun, createReplacementRun, createRootThreadSurfaceRun, recordMergeEvent } from '../../thread-surfaces/mutations'
 import { deriveMergeEventForSuccessfulStep } from '../../thread-surfaces/merge-runtime'
@@ -40,8 +41,6 @@ interface RunRunnableResult {
   skipped: string[]
   error?: string
 }
-
-const ROOT_THREAD_SURFACE_ID = 'thread-root'
 
 /**
  * Get runnable steps (READY status with all dependencies satisfied)
@@ -287,14 +286,10 @@ export async function runCommand(
   options: CLIOptions
 ): Promise<void> {
   const basePath = process.cwd()
-  const runId = randomUUID()
 
   // Read and validate sequence
   const sequence = await readSequence(basePath)
   validateDAG(sequence)
-  const startedAt = new Date().toISOString()
-  await createRootRunScopeForCommand(basePath, sequence.name, runId, startedAt)
-
   const mprocsClient = new MprocsClient()
 
   if (subcommand === 'step') {
@@ -309,6 +304,10 @@ export async function runCommand(
       }
       process.exit(1)
     }
+
+    const runId = randomUUID()
+    const startedAt = new Date().toISOString()
+    await createRootRunScopeForCommand(basePath, sequence.name, runId, startedAt)
 
     const result = await executeSingleStep(
       basePath,
@@ -353,6 +352,10 @@ export async function runCommand(
       }
       return
     }
+
+    const runId = randomUUID()
+    const startedAt = new Date().toISOString()
+    await createRootRunScopeForCommand(basePath, sequence.name, runId, startedAt)
 
     // Get topological order and filter to runnable
     const order = topologicalSort(sequence)
@@ -433,6 +436,10 @@ export async function runCommand(
       process.exit(1)
     }
 
+    const runId = randomUUID()
+    const startedAt = new Date().toISOString()
+    await createRootRunScopeForCommand(basePath, sequence.name, runId, startedAt)
+
     const runnableInGroup = groupSteps.filter(s => {
       if (s.status !== 'READY') return false
       const doneSteps = new Set(sequence.steps.filter(st => st.status === 'DONE').map(st => st.id))
@@ -442,12 +449,9 @@ export async function runCommand(
     })
 
     const executed: RunStepResult[] = []
-    // Run all in parallel
-    const promises = runnableInGroup.map(s =>
-      executeSingleStep(basePath, sequence, s.id, runId, mprocsClient)
-    )
-    const results = await Promise.all(promises)
-    executed.push(...results)
+    for (const step of runnableInGroup) {
+      executed.push(await executeSingleStep(basePath, sequence, step.id, runId, mprocsClient))
+    }
 
     const result: RunRunnableResult = {
       success: executed.every(e => e.success),

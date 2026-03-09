@@ -44,12 +44,16 @@ export function resolveThreadSurfaceFocusedDetail({
   const threadSurface = threadSurfaces.find(surface => surface.id === fallbackThreadSurfaceId)
   if (!threadSurface) return null
 
-  const row = rows.find(candidate => candidate.threadSurfaceId === fallbackThreadSurfaceId)
   const surfaceRuns = runs.filter(run => run.threadSurfaceId === fallbackThreadSurfaceId)
   const selectedRun = selectedRunId
     ? surfaceRuns.find(run => run.id === selectedRunId) ?? null
     : null
   const displayRun = selectedRun ?? resolveDefaultDisplayRun(surfaceRuns) ?? null
+  const row = rows.find(candidate =>
+    candidate.threadSurfaceId === fallbackThreadSurfaceId
+    && (displayRun ? candidate.runId === displayRun.id : true),
+  )
+  const displayRunId = displayRun?.id ?? null
 
   return {
     threadSurfaceId: threadSurface.id,
@@ -64,7 +68,13 @@ export function resolveThreadSurfaceFocusedDetail({
     runDiscussion: displayRun?.runDiscussion ?? null,
     laneTerminalState: row?.laneTerminalState ?? null,
     mergedIntoThreadSurfaceId: row?.mergedIntoThreadSurfaceId ?? null,
-    incomingMergeGroups: mergeGroups.filter(group => group.destinationThreadSurfaceId === threadSurface.id),
-    outgoingMergeEvents: mergeEvents.filter(event => event.sourceThreadSurfaceIds.includes(threadSurface.id)),
+    incomingMergeGroups: mergeGroups.filter(group =>
+      group.destinationThreadSurfaceId === threadSurface.id
+      && (displayRunId == null || group.runId === displayRunId),
+    ),
+    outgoingMergeEvents: mergeEvents.filter(event =>
+      event.sourceThreadSurfaceIds.includes(threadSurface.id)
+      && (displayRunId == null || event.runId === displayRunId),
+    ),
   }
 }

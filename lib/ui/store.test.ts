@@ -63,7 +63,7 @@ describe('useUIStore', () => {
     expect(useUIStore.getState().laneBoardState).toEqual({
       scrollLeft: 0,
       focusedThreadSurfaceId: 'thread-synthesis',
-      focusedRunId: 'run-research',
+      focusedRunId: null,
     })
 
     useUIStore.getState().setLaneFocusThreadSurfaceId(null)

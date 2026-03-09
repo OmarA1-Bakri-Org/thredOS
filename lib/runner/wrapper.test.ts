@@ -83,4 +83,27 @@ describe('runStep', () => {
     })
     expect(result.stdout.trim()).toBe('test-value')
   })
+
+  test('filters inherited sensitive env vars unless explicitly passed', async () => {
+    const { runStep } = await importActualWrapper()
+    const original = process.env.AWS_SECRET_ACCESS_KEY
+    process.env.AWS_SECRET_ACCESS_KEY = 'top-secret'
+
+    try {
+      const result = await runStep({
+        stepId: 'filtered-env-step',
+        runId: 'run-7',
+        command: process.execPath,
+        args: ['-e', "console.log(process.env.AWS_SECRET_ACCESS_KEY ?? '')"],
+      })
+
+      expect(result.stdout.trim()).toBe('')
+    } finally {
+      if (original === undefined) {
+        delete process.env.AWS_SECRET_ACCESS_KEY
+      } else {
+        process.env.AWS_SECRET_ACCESS_KEY = original
+      }
+    }
+  })
 })

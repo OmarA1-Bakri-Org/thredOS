@@ -80,7 +80,10 @@ export const useUIStore = create<UIStore>((set) => ({
       laneBoardState: {
         ...state.laneBoardState,
         focusedThreadSurfaceId: id,
-        focusedRunId: id == null ? null : state.laneBoardState.focusedRunId,
+        focusedRunId:
+          id == null || id !== state.laneBoardState.focusedThreadSurfaceId
+            ? null
+            : state.laneBoardState.focusedRunId,
       },
     })),
   laneBoardState: defaultLaneBoardState,

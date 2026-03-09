@@ -46,7 +46,7 @@ export function HierarchyView({ nodes, selectedThreadSurfaceId, onOpenLane }: Hi
               key={node.id}
               type="button"
               data-thread-surface-id={node.clickTarget.threadSurfaceId}
-              aria-pressed={isSelected}
+              aria-current={isSelected ? 'page' : undefined}
               onClick={() => onOpenLane(node.clickTarget.threadSurfaceId, node.clickTarget.runId)}
               className={[
                 'rounded-xl border px-4 py-3 text-left transition-colors',

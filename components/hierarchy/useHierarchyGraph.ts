@@ -6,7 +6,7 @@ export type HierarchyZoomBand = typeof HierarchyZoomBandValues[number]
 
 export type HierarchyVisibleField =
   | 'surfaceLabel'
-  | 'runStatus'
+  | 'displayRunStatus'
   | 'surfaceDescription'
   | 'role'
   | 'runSummary'
@@ -133,14 +133,14 @@ function deriveHierarchyMetadataDisclosure(zoomBand: HierarchyZoomBand): Hierarc
   if (zoomBand === 'macro') {
     return {
       zoomBand,
-      visibleFields: ['surfaceLabel', 'runStatus'],
+      visibleFields: ['surfaceLabel', 'displayRunStatus'],
     }
   }
 
   if (zoomBand === 'meso') {
     return {
       zoomBand,
-      visibleFields: ['surfaceLabel', 'runStatus', 'surfaceDescription', 'role', 'runSummary', 'childCount'],
+      visibleFields: ['surfaceLabel', 'displayRunStatus', 'surfaceDescription', 'role', 'runSummary', 'childCount'],
     }
   }
 
@@ -148,7 +148,7 @@ function deriveHierarchyMetadataDisclosure(zoomBand: HierarchyZoomBand): Hierarc
     zoomBand,
     visibleFields: [
       'surfaceLabel',
-      'runStatus',
+      'displayRunStatus',
       'surfaceDescription',
       'role',
       'runSummary',

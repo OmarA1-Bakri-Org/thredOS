@@ -141,7 +141,7 @@ describe('useHierarchyGraph', () => {
     const microGraph = useHierarchyGraph({ threadSurfaces, runs, zoom: 1.8 })
 
     expect(macroGraph.zoomBand).toBe('macro')
-    expect(macroGraph.metadataDisclosure.visibleFields).toEqual(['surfaceLabel', 'runStatus'])
+    expect(macroGraph.metadataDisclosure.visibleFields).toEqual(['surfaceLabel', 'displayRunStatus'])
     expect(macroGraph.nodes.find(node => node.id === 'thread-master')).toMatchObject({
       metadata: {
         childCount: 2,
@@ -157,7 +157,7 @@ describe('useHierarchyGraph', () => {
     expect(mesoGraph.zoomBand).toBe('meso')
     expect(mesoGraph.metadataDisclosure.visibleFields).toEqual([
       'surfaceLabel',
-      'runStatus',
+      'displayRunStatus',
       'surfaceDescription',
       'role',
       'runSummary',
@@ -178,7 +178,7 @@ describe('useHierarchyGraph', () => {
     expect(microGraph.zoomBand).toBe('micro')
     expect(microGraph.metadataDisclosure.visibleFields).toEqual([
       'surfaceLabel',
-      'runStatus',
+      'displayRunStatus',
       'surfaceDescription',
       'role',
       'runSummary',

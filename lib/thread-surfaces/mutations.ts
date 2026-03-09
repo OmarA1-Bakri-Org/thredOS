@@ -1,3 +1,9 @@
+import {
+  InvalidThreadSurfaceMergeError,
+  ThreadSurfaceAlreadyExistsError,
+  ThreadSurfaceNotFoundError,
+  ThreadSurfaceRunScopeNotFoundError,
+} from '@/lib/errors'
 import type { MergeEvent, MergeKind, RunScope, RunStatus, ThreadSurface } from './types'
 import type { ThreadSurfaceState } from './repository'
 
@@ -62,7 +68,7 @@ export const emptyThreadSurfaceState: ThreadSurfaceState = {
 
 export function createRootThreadSurfaceRun(state: ThreadSurfaceState, args: CreateRootThreadSurfaceRunArgs) {
   if (state.threadSurfaces.some(surface => surface.id === args.surfaceId)) {
-    throw new Error(`Root thread surface already exists: ${args.surfaceId}`)
+    throw new ThreadSurfaceAlreadyExistsError(args.surfaceId)
   }
 
   const threadSurface: ThreadSurface = {
@@ -96,10 +102,10 @@ export function createRootThreadSurfaceRun(state: ThreadSurfaceState, args: Crea
 export function createChildThreadSurfaceRun(state: ThreadSurfaceState, args: CreateChildThreadSurfaceRunArgs) {
   const parentIndex = state.threadSurfaces.findIndex(surface => surface.id === args.parentSurfaceId)
   if (parentIndex === -1) {
-    throw new Error(`Parent thread surface not found: ${args.parentSurfaceId}`)
+    throw new ThreadSurfaceNotFoundError(args.parentSurfaceId)
   }
   if (state.threadSurfaces.some(surface => surface.id === args.childSurfaceId)) {
-    throw new Error(`Child thread surface already exists: ${args.childSurfaceId}`)
+    throw new ThreadSurfaceAlreadyExistsError(args.childSurfaceId)
   }
 
   const parent = state.threadSurfaces[parentIndex]
@@ -140,7 +146,7 @@ export function createChildThreadSurfaceRun(state: ThreadSurfaceState, args: Cre
 
 export function createReplacementRun(state: ThreadSurfaceState, args: CreateReplacementRunArgs) {
   if (!state.threadSurfaces.some(surface => surface.id === args.threadSurfaceId)) {
-    throw new Error(`Thread surface not found: ${args.threadSurfaceId}`)
+    throw new ThreadSurfaceNotFoundError(args.threadSurfaceId)
   }
 
   const replacedRun = findLatestRunForSurface(state.runs, args.threadSurfaceId) ?? null
@@ -180,15 +186,15 @@ export function cancelRun(state: ThreadSurfaceState, args: CancelRunArgs) {
 
 export function recordMergeEvent(state: ThreadSurfaceState, args: RecordMergeEventArgs) {
   if (!state.threadSurfaces.some(surface => surface.id === args.destinationThreadSurfaceId)) {
-    throw new Error(`Merge destination lane must reference an existing thread surface: ${args.destinationThreadSurfaceId}`)
+    throw new InvalidThreadSurfaceMergeError(`Merge destination lane must reference an existing thread surface: ${args.destinationThreadSurfaceId}`)
   }
 
   for (const sourceThreadSurfaceId of args.sourceThreadSurfaceIds) {
     if (!state.threadSurfaces.some(surface => surface.id === sourceThreadSurfaceId)) {
-      throw new Error(`Merge source lane must reference an existing thread surface: ${sourceThreadSurfaceId}`)
+      throw new InvalidThreadSurfaceMergeError(`Merge source lane must reference an existing thread surface: ${sourceThreadSurfaceId}`)
     }
     if (sourceThreadSurfaceId === args.destinationThreadSurfaceId) {
-      throw new Error('Merge source lanes cannot include the destination lane')
+      throw new InvalidThreadSurfaceMergeError('Merge source lanes cannot include the destination lane')
     }
   }
 
@@ -248,7 +254,7 @@ function createRunScope({
 function mutateRun(state: ThreadSurfaceState, runId: string, transform: (run: RunScope) => RunScope) {
   const runIndex = state.runs.findIndex(run => run.id === runId)
   if (runIndex === -1) {
-    throw new Error(`Run not found: ${runId}`)
+    throw new ThreadSurfaceRunScopeNotFoundError(runId)
   }
 
   const run = transform(state.runs[runIndex])

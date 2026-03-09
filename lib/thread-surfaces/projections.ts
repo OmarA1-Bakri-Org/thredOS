@@ -57,7 +57,7 @@ export function projectHierarchy(threadSurfaces: ThreadSurface[]): HierarchyProj
       parentSurfaceId: surface.parentSurfaceId,
       depth: surface.depth,
       surfaceLabel: surface.surfaceLabel,
-      childSurfaceIds: surface.childSurfaceIds,
+      childSurfaceIds: [...surface.childSurfaceIds],
     })),
     edges: threadSurfaces
       .filter(surface => surface.parentSurfaceId != null)
@@ -92,7 +92,15 @@ export function projectLaneBoard({ threadSurfaces, runs, mergeEvents, runIds }: 
     mergedIntoThreadSurfaceId: undefined,
   }))
 
-  const rowMap = new Map(rows.map(row => [row.threadSurfaceId, row]))
+  const rowsBySurfaceId = new Map<string, LaneBoardRow[]>()
+  for (const row of rows) {
+    const surfaceRows = rowsBySurfaceId.get(row.threadSurfaceId)
+    if (surfaceRows) {
+      surfaceRows.push(row)
+    } else {
+      rowsBySurfaceId.set(row.threadSurfaceId, [row])
+    }
+  }
   const destinationOrder = new Map<string, { destinationIndex: number; mergeIndex: number; sourcePosition: number }>()
 
   const selectedMergeEvents = mergeEvents
@@ -100,21 +108,21 @@ export function projectLaneBoard({ threadSurfaces, runs, mergeEvents, runIds }: 
     .sort((left, right) => left.executionIndex - right.executionIndex)
 
   selectedMergeEvents.forEach((event, mergeOrder) => {
-    const destinationRow = rowMap.get(event.destinationThreadSurfaceId)
+    const destinationRow = rowsBySurfaceId.get(event.destinationThreadSurfaceId)?.find(row => row.runId === event.runId)
     if (!destinationRow) return
 
-    destinationOrder.set(event.destinationThreadSurfaceId, {
+    destinationOrder.set(destinationRow.runId, {
       destinationIndex: mergeOrder,
       mergeIndex: -1,
       sourcePosition: -1,
     })
 
     event.sourceThreadSurfaceIds.forEach((sourceId, sourcePosition) => {
-      const sourceRow = rowMap.get(sourceId)
+      const sourceRow = rowsBySurfaceId.get(sourceId)?.[0]
       if (!sourceRow) return
       sourceRow.laneTerminalState = 'merged'
       sourceRow.mergedIntoThreadSurfaceId = event.destinationThreadSurfaceId
-      destinationOrder.set(sourceId, {
+      destinationOrder.set(sourceRow.runId, {
         destinationIndex: mergeOrder,
         mergeIndex: event.executionIndex,
         sourcePosition,
@@ -123,8 +131,8 @@ export function projectLaneBoard({ threadSurfaces, runs, mergeEvents, runIds }: 
   })
 
   rows.sort((left, right) => {
-    const leftMerge = destinationOrder.get(left.threadSurfaceId)
-    const rightMerge = destinationOrder.get(right.threadSurfaceId)
+    const leftMerge = destinationOrder.get(left.runId)
+    const rightMerge = destinationOrder.get(right.runId)
 
     if (leftMerge && rightMerge) {
       if (leftMerge.destinationIndex !== rightMerge.destinationIndex) {
@@ -141,13 +149,13 @@ export function projectLaneBoard({ threadSurfaces, runs, mergeEvents, runIds }: 
   })
 
   return {
-    rows,
+    rows: rows.map(row => ({ ...row })),
     events: selectedMergeEvents.map(event => ({
       type: 'merge',
       runId: event.runId,
       executionIndex: event.executionIndex,
       destinationThreadSurfaceId: event.destinationThreadSurfaceId,
-      sourceThreadSurfaceIds: event.sourceThreadSurfaceIds,
+      sourceThreadSurfaceIds: [...event.sourceThreadSurfaceIds],
       mergeKind: event.mergeKind,
     })),
   }

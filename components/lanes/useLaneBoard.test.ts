@@ -20,7 +20,7 @@ const threadSurfaces: ThreadSurface[] = [
     depth: 0,
     surfaceLabel: 'Master',
     createdAt: '2026-03-09T00:00:00.000Z',
-    childSurfaceIds: ['thread-research', 'thread-outreach', 'thread-synthesis', 'thread-review'],
+    childSurfaceIds: ['thread-research', 'thread-outreach', 'thread-synthesis'],
   },
   {
     id: 'thread-research',

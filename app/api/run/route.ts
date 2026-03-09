@@ -10,10 +10,9 @@ import { runStep } from '@/lib/runner/wrapper'
 import { saveRunArtifacts } from '@/lib/runner/artifacts'
 import { readThreadSurfaceState, writeThreadSurfaceState } from '@/lib/thread-surfaces/repository'
 import { completeRun, createReplacementRun, createRootThreadSurfaceRun, recordMergeEvent } from '@/lib/thread-surfaces/mutations'
+import { ROOT_THREAD_SURFACE_ID } from '@/lib/thread-surfaces/constants'
 import { deriveMergeEventForSuccessfulStep } from '@/lib/thread-surfaces/merge-runtime'
 import { deriveStepThreadSurfaceId, resolveStepRuntimeState } from '@/lib/thread-surfaces/step-runtime'
-
-const ROOT_THREAD_SURFACE_ID = 'thread-root'
 
 const BodySchema = z.union([
   z.object({ stepId: z.string() }),
@@ -194,7 +193,10 @@ export async function POST(request: Request) {
     }
     if ('groupId' in body) {
       const groupSteps = getRunnableSteps(seq).filter(s => s.group_id === body.groupId)
-      const results = await Promise.all(groupSteps.map(s => executeStep(bp, seq, s.id, runId)))
+      const results = []
+      for (const step of groupSteps) {
+        results.push(await executeStep(bp, seq, step.id, runId))
+      }
       const success = results.every(r => r.success)
       await finalizeRunScope(bp, runId, success, `group:${body.groupId}`)
       await auditLog('run.group', body.groupId, { runId, count: results.length })

@@ -122,4 +122,44 @@ describe('thread annotation route', () => {
       runDiscussion: 'Updated discussion',
     })
   })
+
+  test('POST /api/thread-annotations returns 404 when the surface is missing', async () => {
+    const { POST } = await import('@/app/api/thread-annotations/route')
+    const req = new Request('http://localhost/api/thread-annotations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        surfaceId: 'thread-missing',
+        runId: 'run-research-failed',
+        runSummary: 'Ignored',
+      }),
+    })
+
+    const res = await POST(req)
+    expect(res.status).toBe(404)
+    expect(await res.json()).toMatchObject({
+      code: 'NOT_FOUND',
+      error: 'Thread surface thread-missing not found',
+    })
+  })
+
+  test('POST /api/thread-annotations returns 404 when the run is missing for the surface', async () => {
+    const { POST } = await import('@/app/api/thread-annotations/route')
+    const req = new Request('http://localhost/api/thread-annotations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        surfaceId: 'thread-research',
+        runId: 'run-missing',
+        runSummary: 'Ignored',
+      }),
+    })
+
+    const res = await POST(req)
+    expect(res.status).toBe(404)
+    expect(await res.json()).toMatchObject({
+      code: 'NOT_FOUND',
+      error: 'Run run-missing for surface thread-research not found',
+    })
+  })
 })

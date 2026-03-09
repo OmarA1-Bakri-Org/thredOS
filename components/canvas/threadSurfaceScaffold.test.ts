@@ -50,6 +50,8 @@ const mergeEvents: MergeEvent[] = []
 describe('thread surface scaffold resolution', () => {
   test('does not treat partial backend payloads as resolved api data', () => {
     expect(hasResolvedThreadSurfaceApiData(undefined, runs, mergeEvents)).toBeFalse()
+    expect(hasResolvedThreadSurfaceApiData(threadSurfaces, undefined, mergeEvents)).toBeFalse()
+    expect(hasResolvedThreadSurfaceApiData(threadSurfaces, runs, undefined)).toBeFalse()
 
     const result = resolveThreadSurfaceCanvasData({
       status,
