@@ -7,6 +7,31 @@ type ElementWithChildren = ReactElement<{
   [key: string]: unknown
 }>
 
+function collectButtonsByLabel(node: ReactNode, label: string, acc: ElementWithChildren[] = []): ElementWithChildren[] {
+  if (Array.isArray(node)) {
+    for (const child of node) collectButtonsByLabel(child, label, acc)
+    return acc
+  }
+
+  if (!node || typeof node !== 'object' || !('props' in node)) {
+    return acc
+  }
+
+  const element = node as ElementWithChildren
+  if (typeof element.type === 'function') {
+    const render = element.type as (props: typeof element.props) => ReactNode
+    collectButtonsByLabel(render(element.props), label, acc)
+    return acc
+  }
+
+  if (element.type === 'button' && element.props['aria-label'] === label) {
+    acc.push(element)
+  }
+
+  collectButtonsByLabel(element.props.children, label, acc)
+  return acc
+}
+
 function collectByDataRegion(node: ReactNode, target: string, acc: ElementWithChildren[] = []): ElementWithChildren[] {
   if (Array.isArray(node)) {
     for (const child of node) collectByDataRegion(child, target, acc)
@@ -58,5 +83,9 @@ describe('WorkbenchShell', () => {
 
     expect(collectByDataRegion(shell, 'left-rail-drawer')).toHaveLength(1)
     expect(collectByDataRegion(shell, 'inspector-drawer')).toHaveLength(1)
+    expect(collectByDataRegion(shell, 'left-rail-drawer-panel')).toHaveLength(1)
+    expect(collectByDataRegion(shell, 'inspector-drawer-panel')).toHaveLength(1)
+    expect(collectButtonsByLabel(shell, 'Close thread navigator')).toHaveLength(1)
+    expect(collectButtonsByLabel(shell, 'Close inspector')).toHaveLength(1)
   })
 })

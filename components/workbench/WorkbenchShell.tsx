@@ -1,6 +1,8 @@
 'use client'
 
 import type { ReactNode } from 'react'
+import { PanelLeftClose, PanelRightClose } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 
 interface WorkbenchShellProps {
   topBar: ReactNode
@@ -53,28 +55,46 @@ export function WorkbenchShell({
 
       {leftRailOpen ? (
         <div className="fixed inset-0 z-40 xl:hidden" data-workbench-region="left-rail-drawer">
-          <button
-            type="button"
-            className="absolute inset-0 bg-[#02050a]/76 backdrop-blur-sm"
-            onClick={onDismissLeftRail}
-            aria-label="Close thread navigator"
-          />
-          <aside className="absolute inset-y-0 left-0 w-[22rem] max-w-[90vw] border-r border-slate-800/80 bg-[#08101d] shadow-[0_28px_80px_rgba(0,0,0,0.55)]">
-            {leftRail}
+          <div className="absolute inset-0 bg-[#02050a]/76 backdrop-blur-sm" onClick={onDismissLeftRail} aria-hidden="true" />
+          <aside
+            data-workbench-region="left-rail-drawer-panel"
+            className="absolute inset-y-0 left-0 flex w-[22rem] max-w-[90vw] flex-col border-r border-slate-800/80 bg-[#08101d] shadow-[0_28px_80px_rgba(0,0,0,0.55)]"
+          >
+            <div className="flex items-center justify-between border-b border-slate-800/80 px-4 py-4">
+              <div>
+                <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-slate-500">Responsive rail</div>
+                <div className="mt-1 text-sm font-semibold text-white">Thread navigator</div>
+              </div>
+              <Button type="button" variant="outline" size="icon" onClick={onDismissLeftRail} aria-label="Close thread navigator">
+                <PanelLeftClose className="h-4 w-4" />
+              </Button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-auto">
+              {leftRail}
+            </div>
           </aside>
         </div>
       ) : null}
 
       {inspectorOpen ? (
         <div className="fixed inset-0 z-40 2xl:hidden" data-workbench-region="inspector-drawer">
-          <button
-            type="button"
-            className="absolute inset-0 bg-[#02050a]/76 backdrop-blur-sm"
-            onClick={onDismissInspector}
-            aria-label="Close inspector"
-          />
-          <aside className="absolute inset-y-0 right-0 w-[24rem] max-w-[92vw] border-l border-slate-800/80 bg-[#08101d] shadow-[0_28px_80px_rgba(0,0,0,0.55)]">
-            {inspector}
+          <div className="absolute inset-0 bg-[#02050a]/76 backdrop-blur-sm" onClick={onDismissInspector} aria-hidden="true" />
+          <aside
+            data-workbench-region="inspector-drawer-panel"
+            className="absolute inset-y-0 right-0 flex w-[24rem] max-w-[92vw] flex-col border-l border-slate-800/80 bg-[#08101d] shadow-[0_28px_80px_rgba(0,0,0,0.55)]"
+          >
+            <div className="flex items-center justify-between border-b border-slate-800/80 px-4 py-4">
+              <div>
+                <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-slate-500">Responsive rail</div>
+                <div className="mt-1 text-sm font-semibold text-white">Inspector</div>
+              </div>
+              <Button type="button" variant="outline" size="icon" onClick={onDismissInspector} aria-label="Close inspector">
+                <PanelRightClose className="h-4 w-4" />
+              </Button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-auto">
+              {inspector}
+            </div>
           </aside>
         </div>
       ) : null}

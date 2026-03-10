@@ -65,4 +65,10 @@ describe('ProductEntryScreen', () => {
     expect(threadRunnerButton).toBeDefined()
     expect(threadRunnerButton?.props.disabled).toBeTrue()
   })
+
+  test('does not nest an extra interactive button inside the ThreadOS entry card', () => {
+    const view = ProductEntryScreen({ onEnterThreadOS: () => {} })
+
+    expect(collectButtons(view)).toHaveLength(2)
+  })
 })

@@ -1,7 +1,8 @@
 'use client'
 
 import { ArrowRight, LockKeyhole, Network, Trophy } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { Button, buttonVariants } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 
 interface ProductEntryScreenProps {
   onEnterThreadOS: () => void
@@ -65,10 +66,15 @@ export function ProductEntryScreen({ onEnterThreadOS }: ProductEntryScreenProps)
 
             <div className="mt-8 flex items-center justify-between border-t border-slate-800/90 pt-6">
               <span className="text-sm text-slate-300">Open the engineering environment</span>
-              <Button type="button" variant="default" className="group-hover:border-sky-300/70">
+              <span
+                className={cn(
+                  buttonVariants({ variant: 'default' }),
+                  'pointer-events-none group-hover:border-sky-300/70',
+                )}
+              >
                 Enter ThreadOS
                 <ArrowRight className="h-4 w-4" />
-              </Button>
+              </span>
             </div>
           </button>
 

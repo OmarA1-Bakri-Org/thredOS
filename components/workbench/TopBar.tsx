@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useCallback } from 'react'
-import { Moon, PanelLeft, PanelRight, Search, Sun } from 'lucide-react'
+import { Moon, PanelLeft, PanelRight, Play, Search, Sun } from 'lucide-react'
 import { useTheme } from 'next-themes'
 import { useRunRunnable, useStatus } from '@/lib/ui/api'
 import { Button } from '@/components/ui/button'
@@ -69,7 +69,10 @@ export function TopBar() {
       </div>
 
       <div className="flex min-w-0 items-center gap-3">
-        <div className="hidden shrink-0 items-center gap-2 border border-slate-800 bg-[#0a101a] px-2 py-2 md:flex">
+        <div
+          data-workbench-cluster="product-entry"
+          className="hidden shrink-0 items-center gap-2 border border-slate-800 bg-[#0a101a] px-2 py-2 md:flex"
+        >
           {productEntries.map(entry => (
             <Button
               key={entry.value}
@@ -85,7 +88,10 @@ export function TopBar() {
           ))}
         </div>
 
-        <div className="hidden shrink-0 items-center gap-2 border border-slate-800 bg-[#0a101a] px-2 py-2 lg:flex">
+        <div
+          data-workbench-cluster="view-mode"
+          className="hidden shrink-0 items-center gap-2 border border-slate-800 bg-[#0a101a] px-2 py-2 lg:flex"
+        >
           {viewModes.map(mode => (
             <Button
               key={mode.value}
@@ -101,7 +107,10 @@ export function TopBar() {
           ))}
         </div>
 
-        <div className="flex min-w-0 flex-1 items-center gap-3 border border-[#16417C]/70 bg-[#16417C]/18 px-3 py-2 text-sm text-slate-300">
+        <div
+          data-workbench-cluster="command-search"
+          className="flex min-w-0 flex-1 items-center gap-3 border border-[#16417C]/70 bg-[#16417C]/18 px-3 py-2 text-sm text-slate-300"
+        >
           <Search className="h-4 w-4 shrink-0 text-slate-400" />
           <input
             type="text"
@@ -114,56 +123,61 @@ export function TopBar() {
       </div>
 
       <div className="flex items-center justify-end gap-2">
-        {status ? (
-          <div className="hidden items-center gap-2 border border-slate-800 bg-[#0a101a] px-2 py-2 2xl:flex">
-            <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-slate-500">{status.name}</span>
-            <span className="rounded-full border border-slate-700 bg-slate-950/65 px-3 py-1 font-mono text-[11px] uppercase tracking-[0.16em] text-slate-300">
-              Ready {status.summary.ready}
-            </span>
-            <span className="rounded-full border border-sky-500/35 bg-sky-500/10 px-3 py-1 font-mono text-[11px] uppercase tracking-[0.16em] text-sky-100">
-              Run {status.summary.running}
-            </span>
-            <span className="rounded-full border border-emerald-500/35 bg-emerald-500/10 px-3 py-1 font-mono text-[11px] uppercase tracking-[0.16em] text-emerald-100">
-              Done {status.summary.done}
-            </span>
-            <span className="rounded-full border border-rose-500/35 bg-rose-500/10 px-3 py-1 font-mono text-[11px] uppercase tracking-[0.16em] text-rose-100">
-              Fail {status.summary.failed}
-            </span>
-          </div>
-        ) : null}
-        <Button
-          type="button"
-          variant="default"
-          onClick={() => runRunnable.mutate()}
-          disabled={runRunnable.isPending}
-        >
-          {runRunnable.isPending ? 'Running' : 'Run'}
-        </Button>
-        <Button type="button" variant="secondary" onClick={toggleChat}>
-          Thread Chat
-        </Button>
-        <Button type="button" variant="outline" onClick={toggleInspector} className="hidden 2xl:inline-flex">
-          Inspector
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          size="icon"
-          className="2xl:hidden"
-          onClick={toggleInspector}
-          aria-label="Open inspector"
-        >
-          <PanelRight className="h-4 w-4" />
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-          aria-label="Toggle theme"
-        >
-          {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-        </Button>
+        <div data-workbench-cluster="primary-actions" className="flex items-center gap-2 border border-slate-800 bg-[#0a101a] px-2 py-2">
+          <Button
+            type="button"
+            variant="default"
+            onClick={() => runRunnable.mutate()}
+            disabled={runRunnable.isPending}
+          >
+            <Play className="h-4 w-4" />
+            {runRunnable.isPending ? 'Running' : 'Run'}
+          </Button>
+          <Button type="button" variant="secondary" onClick={toggleChat}>
+            Thread Chat
+          </Button>
+          <Button type="button" variant="outline" onClick={toggleInspector} className="hidden 2xl:inline-flex">
+            Inspector
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            className="2xl:hidden"
+            onClick={toggleInspector}
+            aria-label="Open inspector"
+          >
+            <PanelRight className="h-4 w-4" />
+          </Button>
+        </div>
+        <div data-workbench-cluster="utility-status" className="flex items-center gap-2 border border-slate-800 bg-[#0a101a] px-2 py-2">
+          {status ? (
+            <div className="hidden items-center gap-2 2xl:flex">
+              <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-slate-500">{status.name}</span>
+              <span className="rounded-full border border-slate-700 bg-slate-950/65 px-3 py-1 font-mono text-[11px] uppercase tracking-[0.16em] text-slate-300">
+                Ready {status.summary.ready}
+              </span>
+              <span className="rounded-full border border-sky-500/35 bg-sky-500/10 px-3 py-1 font-mono text-[11px] uppercase tracking-[0.16em] text-sky-100">
+                Run {status.summary.running}
+              </span>
+              <span className="rounded-full border border-emerald-500/35 bg-emerald-500/10 px-3 py-1 font-mono text-[11px] uppercase tracking-[0.16em] text-emerald-100">
+                Done {status.summary.done}
+              </span>
+              <span className="rounded-full border border-rose-500/35 bg-rose-500/10 px-3 py-1 font-mono text-[11px] uppercase tracking-[0.16em] text-rose-100">
+                Fail {status.summary.failed}
+              </span>
+            </div>
+          ) : null}
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+            aria-label="Toggle theme"
+          >
+            {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+          </Button>
+        </div>
       </div>
     </div>
   )
