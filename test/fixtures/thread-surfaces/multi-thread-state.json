@@ -1,0 +1,150 @@
+{
+  "threadSurfaces": [
+    {
+      "id": "thread-master",
+      "parentSurfaceId": null,
+      "parentAgentNodeId": null,
+      "depth": 0,
+      "surfaceLabel": "Master",
+      "surfaceDescription": "Top-level orchestrator surface",
+      "role": "orchestrator",
+      "createdAt": "2026-03-09T00:00:00.000Z",
+      "childSurfaceIds": ["thread-research", "thread-outreach", "thread-synthesis"]
+    },
+    {
+      "id": "thread-research",
+      "parentSurfaceId": "thread-master",
+      "parentAgentNodeId": "spawn-research",
+      "depth": 1,
+      "surfaceLabel": "Research",
+      "surfaceDescription": "Investigates the problem space",
+      "role": "specialist",
+      "createdAt": "2026-03-09T00:01:00.000Z",
+      "childSurfaceIds": []
+    },
+    {
+      "id": "thread-outreach",
+      "parentSurfaceId": "thread-master",
+      "parentAgentNodeId": "spawn-outreach",
+      "depth": 1,
+      "surfaceLabel": "Outreach",
+      "surfaceDescription": "Handles downstream communication",
+      "role": "specialist",
+      "createdAt": "2026-03-09T00:02:00.000Z",
+      "childSurfaceIds": []
+    },
+    {
+      "id": "thread-synthesis",
+      "parentSurfaceId": "thread-master",
+      "parentAgentNodeId": "spawn-synthesis",
+      "depth": 1,
+      "surfaceLabel": "Synthesis",
+      "surfaceDescription": "Combines parallel work into a shared brief",
+      "role": "synthesizer",
+      "createdAt": "2026-03-09T00:03:00.000Z",
+      "childSurfaceIds": ["thread-review"]
+    },
+    {
+      "id": "thread-review",
+      "parentSurfaceId": "thread-synthesis",
+      "parentAgentNodeId": "spawn-review",
+      "depth": 2,
+      "surfaceLabel": "Review",
+      "surfaceDescription": "Checks synthesis quality",
+      "role": "qa",
+      "createdAt": "2026-03-09T00:04:00.000Z",
+      "childSurfaceIds": []
+    }
+  ],
+  "runs": [
+    {
+      "id": "run-master",
+      "threadSurfaceId": "thread-master",
+      "runStatus": "running",
+      "startedAt": "2026-03-09T00:00:00.000Z",
+      "endedAt": null,
+      "executionIndex": 40,
+      "runSummary": "Master continues as the final owner.",
+      "runNotes": "Monitor final approvals.",
+      "runDiscussion": "Master discussion context."
+    },
+    {
+      "id": "run-research",
+      "threadSurfaceId": "thread-research",
+      "runStatus": "successful",
+      "startedAt": "2026-03-09T00:01:00.000Z",
+      "endedAt": "2026-03-09T00:04:00.000Z",
+      "executionIndex": 10,
+      "runSummary": "Research gathered evidence.",
+      "runNotes": "Research findings complete.",
+      "runDiscussion": "Research discussion context."
+    },
+    {
+      "id": "run-outreach-old",
+      "threadSurfaceId": "thread-outreach",
+      "runStatus": "failed",
+      "startedAt": "2026-03-09T00:02:00.000Z",
+      "endedAt": "2026-03-09T00:03:00.000Z",
+      "executionIndex": 9,
+      "runSummary": "Initial outreach branch failed."
+    },
+    {
+      "id": "run-outreach",
+      "threadSurfaceId": "thread-outreach",
+      "runStatus": "successful",
+      "startedAt": "2026-03-09T00:02:30.000Z",
+      "endedAt": "2026-03-09T00:05:00.000Z",
+      "executionIndex": 11,
+      "runSummary": "Outreach collected downstream feedback.",
+      "runNotes": "Outreach findings complete.",
+      "runDiscussion": "Outreach discussion context."
+    },
+    {
+      "id": "run-synthesis",
+      "threadSurfaceId": "thread-synthesis",
+      "runStatus": "running",
+      "startedAt": "2026-03-09T00:03:00.000Z",
+      "endedAt": null,
+      "executionIndex": 20,
+      "runSummary": "Synthesis merged research and outreach into a unified brief.",
+      "runNotes": "Synthesis is preparing the review packet.",
+      "runDiscussion": "Synthesis discussion context."
+    },
+    {
+      "id": "run-review",
+      "threadSurfaceId": "thread-review",
+      "runStatus": "successful",
+      "startedAt": "2026-03-09T00:06:00.000Z",
+      "endedAt": "2026-03-09T00:08:00.000Z",
+      "executionIndex": 30,
+      "runSummary": "Review cleared the synthesized brief.",
+      "runNotes": "Review approved the output.",
+      "runDiscussion": "Review discussion context."
+    }
+  ],
+  "mergeEvents": [
+    {
+      "id": "merge-block-synthesis",
+      "runId": "run-synthesis",
+      "destinationThreadSurfaceId": "thread-synthesis",
+      "sourceThreadSurfaceIds": ["thread-research", "thread-outreach"],
+      "sourceRunIds": ["run-research", "run-outreach"],
+      "mergeKind": "block",
+      "executionIndex": 20,
+      "createdAt": "2026-03-09T00:05:30.000Z",
+      "summary": "Research and outreach converge into synthesis."
+    },
+    {
+      "id": "merge-single-master",
+      "runId": "run-master",
+      "destinationThreadSurfaceId": "thread-master",
+      "sourceThreadSurfaceIds": ["thread-review"],
+      "sourceRunIds": ["run-review"],
+      "mergeKind": "single",
+      "executionIndex": 40,
+      "createdAt": "2026-03-09T00:08:30.000Z",
+      "summary": "Review is merged back into the master thread."
+    }
+  ],
+  "laneRunIds": ["run-master", "run-research", "run-outreach", "run-synthesis", "run-review"]
+}

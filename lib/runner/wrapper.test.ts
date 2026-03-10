@@ -1,9 +1,13 @@
 import { describe, test, expect } from 'bun:test'
-import { runStep } from './wrapper'
 import { ProcessTimeoutError } from '../errors'
+
+async function importActualWrapper() {
+  return import(new URL(`./wrapper.ts?cacheBust=${Date.now()}-${Math.random()}`, import.meta.url).href) as Promise<typeof import('./wrapper')>
+}
 
 describe('runStep', () => {
   test('successful command', async () => {
+    const { runStep } = await importActualWrapper()
     const result = await runStep({
       stepId: 'test-step',
       runId: 'run-1',
@@ -21,6 +25,7 @@ describe('runStep', () => {
   })
 
   test('failed command', async () => {
+    const { runStep } = await importActualWrapper()
     const result = await runStep({
       stepId: 'fail-step',
       runId: 'run-2',
@@ -32,6 +37,7 @@ describe('runStep', () => {
   })
 
   test('command with stderr', async () => {
+    const { runStep } = await importActualWrapper()
     const result = await runStep({
       stepId: 'stderr-step',
       runId: 'run-3',
@@ -42,6 +48,7 @@ describe('runStep', () => {
   })
 
   test('timeout kills process', async () => {
+    const { runStep } = await importActualWrapper()
     await expect(
       runStep({
         stepId: 'timeout-step',
@@ -54,6 +61,7 @@ describe('runStep', () => {
   })
 
   test('nonexistent command returns ERROR', async () => {
+    const { runStep } = await importActualWrapper()
     // shell: false means spawn emits an error event for not-found commands
     const result = await runStep({
       stepId: 'bad-cmd',
@@ -65,6 +73,7 @@ describe('runStep', () => {
   })
 
   test('custom env vars', async () => {
+    const { runStep } = await importActualWrapper()
     const result = await runStep({
       stepId: 'env-step',
       runId: 'run-6',
@@ -75,6 +84,7 @@ describe('runStep', () => {
     expect(result.stdout.trim()).toBe('test-value')
   })
 
+  test('inherited env vars filtered through allowlist', async () => {
   test('inherited env vars filtered through allowlist', async () => {
     const originalSensitive = process.env.AWS_SECRET_ACCESS_KEY
     process.env.AWS_SECRET_ACCESS_KEY = 'super-secret'

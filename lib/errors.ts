@@ -123,3 +123,52 @@ export class PromptNotFoundError extends ThreadOSError {
     this.name = 'PromptNotFoundError'
   }
 }
+
+export class ThreadSurfaceNotFoundError extends ThreadOSError {
+  constructor(surfaceId: string) {
+    super(`Thread surface ${surfaceId} not found`, 'THREAD_SURFACE_NOT_FOUND')
+    this.name = 'ThreadSurfaceNotFoundError'
+  }
+}
+
+export class ThreadSurfaceRunNotFoundError extends ThreadOSError {
+  constructor(surfaceId: string, runId: string) {
+    super(`Run ${runId} for surface ${surfaceId} not found`, 'THREAD_SURFACE_RUN_NOT_FOUND')
+    this.name = 'ThreadSurfaceRunNotFoundError'
+  }
+}
+
+export class ThreadSurfaceAlreadyExistsError extends ThreadOSError {
+  constructor(surfaceId: string) {
+    super(`Thread surface already exists: ${surfaceId}`, 'THREAD_SURFACE_ALREADY_EXISTS')
+    this.name = 'ThreadSurfaceAlreadyExistsError'
+  }
+}
+
+export class InvalidThreadSurfaceMergeError extends ThreadOSError {
+  constructor(message: string) {
+    super(message, 'INVALID_THREAD_SURFACE_MERGE')
+    this.name = 'InvalidThreadSurfaceMergeError'
+  }
+}
+
+export class ThreadSurfaceRunScopeNotFoundError extends ThreadOSError {
+  constructor(runId: string) {
+    super(`Run not found: ${runId}`, 'THREAD_SURFACE_RUN_NOT_FOUND')
+    this.name = 'ThreadSurfaceRunScopeNotFoundError'
+  }
+}
+
+export class InvalidLlmProviderError extends ThreadOSError {
+  constructor(provider: string) {
+    super(`Unsupported LLM provider: ${provider}`, 'INVALID_LLM_PROVIDER')
+    this.name = 'InvalidLlmProviderError'
+  }
+}
+
+export class MissingLlmProviderConfigError extends ThreadOSError {
+  constructor(envVar: string, provider: string) {
+    super(`Missing required ${provider} configuration: ${envVar}`, 'MISSING_LLM_PROVIDER_CONFIG')
+    this.name = 'MissingLlmProviderConfigError'
+  }
+}

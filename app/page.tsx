@@ -2,10 +2,12 @@
 
 import { useSyncExternalStore } from 'react'
 import dynamic from 'next/dynamic'
-import { Group, Panel, Separator } from 'react-resizable-panels'
-import { Toolbar } from '@/components/toolbar/Toolbar'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
+import { WorkbenchShell } from '@/components/workbench/WorkbenchShell'
+import { TopBar } from '@/components/workbench/TopBar'
+import { LeftRail } from '@/components/workbench/LeftRail'
+import { InspectorRail } from '@/components/workbench/InspectorRail'
 import { useUIStore } from '@/lib/ui/store'
 
 const SequenceCanvas = dynamic(
@@ -33,37 +35,32 @@ export default function Home() {
   const chatOpen = useUIStore(s => s.chatOpen)
 
   if (!mounted) return <div className="h-screen flex flex-col"><LoadingSpinner message="Loading..." /></div>
-
   return (
-    <div className="h-screen flex flex-col">
-      <Toolbar />
-      <Group orientation="vertical" className="flex-1">
-        <Panel defaultSize={chatOpen ? 70 : 100} minSize={30}>
-          <Group orientation="horizontal" className="h-full">
-            <Panel defaultSize={inspectorOpen ? 70 : 100} minSize={40}>
-              <ErrorBoundary>
-                <SequenceCanvas />
-              </ErrorBoundary>
-            </Panel>
-            <Separator className={inspectorOpen ? '' : 'hidden'} />
-            <Panel defaultSize={30} minSize={20} className={inspectorOpen ? '' : 'hidden'}>
-              <ErrorBoundary>
-                <div className="h-full overflow-auto border-l" style={{ display: inspectorOpen ? 'block' : 'none' }}>
-                  <StepInspector />
-                </div>
-              </ErrorBoundary>
-            </Panel>
-          </Group>
-        </Panel>
-        <Separator className={chatOpen ? '' : 'hidden'} />
-        <Panel defaultSize={30} minSize={15} className={chatOpen ? '' : 'hidden'}>
-          <div className="h-full border-t" style={{ display: chatOpen ? 'block' : 'none' }}>
-            <ErrorBoundary>
-              <ChatPanel />
-            </ErrorBoundary>
-          </div>
-        </Panel>
-      </Group>
-    </div>
+    <WorkbenchShell
+      topBar={<TopBar />}
+      leftRail={<LeftRail />}
+      board={
+        <ErrorBoundary>
+          <SequenceCanvas />
+        </ErrorBoundary>
+      }
+      inspector={
+        inspectorOpen ? (
+          <ErrorBoundary>
+            <InspectorRail>
+              <StepInspector />
+            </InspectorRail>
+          </ErrorBoundary>
+        ) : (
+          <div className="flex h-full items-center justify-center px-6 text-sm text-slate-500">Inspector hidden</div>
+        )
+      }
+      chat={
+        <ErrorBoundary>
+          <ChatPanel />
+        </ErrorBoundary>
+      }
+      chatOpen={chatOpen}
+    />
   )
 }

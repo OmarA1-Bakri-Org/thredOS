@@ -9,6 +9,8 @@ export interface CompileOptions {
   sequence: Sequence
   basePath: string
   maxTokens?: number
+  runtimeEventLogPath?: string
+  runtimeEventEmitterCommand?: string
 }
 
 interface DependencyArtifact {
@@ -96,6 +98,14 @@ export async function compilePrompt(opts: CompileOptions): Promise<string> {
   sections.push('- Exit 0 on success, non-zero on failure')
   sections.push('- Exit 42 if you need human review before continuing')
   sections.push('- If you create files, list them as: FILES_CREATED: path1, path2, ...')
+  if (opts.runtimeEventLogPath) {
+    sections.push(`- If you delegate work or merge work into another thread, append one JSON object per line to THREADOS_EVENT_LOG (${opts.runtimeEventLogPath})`)
+    sections.push('- Runtime event types: `spawn-child` with childStepId/childLabel/spawnKind, and `merge-into` with destinationStepId/sourceStepIds/mergeKind')
+    if (opts.runtimeEventEmitterCommand) {
+      sections.push(`- Prefer the emitter command exposed in THREADOS_EVENT_EMITTER. Use \`${opts.runtimeEventEmitterCommand} spawn-child <child-step-id> --label <child label> --kind <orchestrator|watchdog|fanout>\` for child delegation.`)
+      sections.push(`- Use \`${opts.runtimeEventEmitterCommand} merge-into <destination-step-id> --sources <source-a,source-b> --kind <single|block>\` for merges.`)
+    }
+  }
   sections.push('')
 
   let compiled = sections.join('\n')

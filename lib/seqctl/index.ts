@@ -11,6 +11,7 @@ import { gateCommand } from './commands/gate'
 import { controlCommand } from './commands/control'
 import { mprocsCommand } from './commands/mprocs'
 import { templateCommand } from './commands/template'
+import { eventCommand } from './commands/event'
 
 // Explicit CLI options interface
 interface CLIOptions {
@@ -39,6 +40,7 @@ const commands: Record<string, CommandHandler> = {
   restart: (sub, args, opts) => controlCommand('restart', sub ? [sub, ...args] : args, opts),
   mprocs: mprocsCommand,
   template: templateCommand,
+  event: eventCommand,
 }
 
 // Error formatting utility
@@ -88,6 +90,7 @@ Commands:
   restart <stepId>            Restart a step
   mprocs open|select          Manage mprocs sessions
   template apply <type>       Apply a thread template
+  event spawn-child|merge-into  Emit runtime delegation events
     Types: base, parallel, chained, fusion, orchestrated, long-autonomy
 
 Options:
