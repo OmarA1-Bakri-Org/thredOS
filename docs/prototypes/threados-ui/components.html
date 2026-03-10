@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ThreadOS UI Components</title>
+    <link rel="stylesheet" href="./prototype.css" />
+  </head>
+  <body class="prototype-page">
+    <div class="prototype-shell">
+      <div class="prototype-frame">
+        <div class="topbar">
+          <div class="brand">
+            <div class="brand-mark">T</div>
+            <div>
+              <div class="brand-name">ThreadOS</div>
+              <div class="subtle">Component library start</div>
+            </div>
+          </div>
+          <div class="topbar-block">
+            <div class="crumb">Master / Synthesis / Review</div>
+            <div class="mode-chip active">Hierarchy</div>
+            <div class="mode-chip">Lanes</div>
+            <div class="mode-chip">Layers</div>
+            <div class="mode-chip secondary">Thread Runner</div>
+          </div>
+          <div class="command-bar">Search threads, skills, runs, packs, commands</div>
+          <div class="topbar-actions">
+            <div class="status-chip verified">Verified VM</div>
+            <button class="mode-button">Mode</button>
+          </div>
+        </div>
+
+        <div class="center-pane">
+          <p class="kicker">Prototype Deliverable 01</p>
+          <h1 class="section-title">Beginnings of the ThreadOS component library</h1>
+          <p class="section-copy">
+            These components implement the research-backed UI grammar: Linear-like shell
+            discipline, VS Code-like workbench consistency, Honeycomb/Grafana-style
+            structure-to-detail flow, and a premium dark material treatment for thread
+            surfaces and proving artifacts.
+          </p>
+
+          <div class="component-grid" style="margin-top: 28px">
+            <section class="component-card">
+              <p class="panel-title">Mode Chips And Badges</p>
+              <div class="component-stack">
+                <div class="mode-chip active">Hierarchy</div>
+                <div class="mode-chip">Lanes</div>
+                <div class="mode-chip secondary">Thread Runner</div>
+                <div class="status-chip verified">Verified VM</div>
+                <div class="badge division">Frontline</div>
+                <div class="badge class">Closed Source</div>
+                <div class="badge place">1st</div>
+                <div class="badge runner">Advanced</div>
+              </div>
+            </section>
+
+            <section class="component-card">
+              <p class="panel-title">Thread Navigator Rows</p>
+              <div class="component-stack">
+                <div class="nav-item active">
+                  <span>Master Thread</span>
+                  <span class="subtle">Active</span>
+                </div>
+                <div class="nav-item nav-depth">
+                  <span>Research Thread</span>
+                  <span class="subtle">Ready</span>
+                </div>
+                <div class="nav-item nav-depth">
+                  <span>Synthesis Thread</span>
+                  <span class="subtle">Run 14</span>
+                </div>
+              </div>
+            </section>
+
+            <section class="component-card">
+              <p class="panel-title">Skill Inventory Icons</p>
+              <div class="inventory-row">
+                <div class="skill-icon" aria-label="Search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"></circle><path d="M16 16l4 4"></path></svg></div>
+                <div class="skill-icon" aria-label="Model"><svg viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10"></rect><path d="M9 1v4M15 1v4M9 19v4M15 19v4M1 9h4M1 15h4M19 9h4M19 15h4"></path></svg></div>
+                <div class="skill-icon" aria-label="Tools"><svg viewBox="0 0 24 24"><path d="M3 7l9-4 9 4-9 4-9-4z"></path><path d="M3 7v10l9 4 9-4V7"></path><path d="M12 11v10"></path></svg></div>
+                <div class="skill-icon" aria-label="Browser"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M3 12h18M12 3c2.5 2.5 4 5.7 4 9s-1.5 6.5-4 9c-2.5-2.5-4-5.7-4-9s1.5-6.5 4-9z"></path></svg></div>
+                <div class="skill-icon" aria-label="Review"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M8 12l2.5 2.5L16 9"></path></svg></div>
+                <div class="skill-icon inherited" aria-label="Files"><svg viewBox="0 0 24 24"><path d="M3 7h6l2 2h10v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"></path></svg></div>
+                <div class="skill-icon inherited" aria-label="Planner"><svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.5"></circle><circle cx="18" cy="7" r="2.5"></circle><circle cx="12" cy="18" r="2.5"></circle><path d="M8 7.5l7.5-.5M7.2 8l3.8 7"></path></svg></div>
+              </div>
+              <p class="subtle" style="margin: 14px 0 0">
+                Solid icons are local or directly attached. Muted icons are inherited from
+                the parent thread policy.
+              </p>
+            </section>
+
+            <section class="component-card">
+              <p class="panel-title">Compact Thread Card</p>
+              <div
+                class="thread-card compact"
+                style="position: relative; inset: auto; width: 210px"
+              >
+                <div class="eyebrow">Champion Pack</div>
+                <h2 class="card-name">Synthesis Thread</h2>
+                <div class="skill-icons">
+                  <div class="skill-icon" aria-label="Search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"></circle><path d="M16 16l4 4"></path></svg></div>
+                  <div class="skill-icon" aria-label="Model"><svg viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10"></rect><path d="M9 1v4M15 1v4M9 19v4M15 19v4M1 9h4M1 15h4M19 9h4M19 15h4"></path></svg></div>
+                  <div class="skill-icon" aria-label="Tools"><svg viewBox="0 0 24 24"><path d="M3 7l9-4 9 4-9 4-9-4z"></path><path d="M3 7v10l9 4 9-4V7"></path><path d="M12 11v10"></path></svg></div>
+                  <div class="skill-icon inherited" aria-label="Files"><svg viewBox="0 0 24 24"><path d="M3 7h6l2 2h10v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"></path></svg></div>
+                </div>
+                <div class="compact-meta">
+                  <span>TP 8.2</span>
+                  <span>W 6.4</span>
+                </div>
+              </div>
+            </section>
+
+            <section class="component-card">
+              <p class="panel-title">Score Panels</p>
+              <div class="score-stack">
+                <div class="score-panel">
+                  <div class="score-label">Thread Power</div>
+                  <div class="score-value">8.2</div>
+                  <div class="score-delta">+0.6 this cycle</div>
+                </div>
+                <div class="score-panel">
+                  <div class="score-label">Weight</div>
+                  <div class="score-value">6.4</div>
+                  <div class="subtle">Frontline division</div>
+                </div>
+              </div>
+            </section>
+
+            <section class="component-card">
+              <p class="panel-title">Rubric Bars</p>
+              <div class="rubric">
+                <div class="rubric-row">
+                  <div class="rubric-label">Tools</div>
+                  <div class="stat-bar">
+                    <div class="stat-cell fill"></div>
+                    <div class="stat-cell fill"></div>
+                    <div class="stat-cell fill"></div>
+                    <div class="stat-cell fill"></div>
+                    <div class="stat-cell fill"></div>
+                    <div class="stat-cell fill"></div>
+                    <div class="stat-cell fill"></div>
+                    <div class="stat-cell"></div>
+                    <div class="stat-cell"></div>
+                    <div class="stat-cell"></div>
+                  </div>
+                  <div class="subtle">7/10</div>
+                </div>
+                <div class="rubric-row">
+                  <div class="rubric-label">Model</div>
+                  <div class="stat-bar">
+                    <div class="stat-cell fill"></div>
+                    <div class="stat-cell fill"></div>
+                    <div class="stat-cell fill"></div>
+                    <div class="stat-cell fill"></div>
+                    <div class="stat-cell fill"></div>
+                    <div class="stat-cell fill"></div>
+                    <div class="stat-cell"></div>
+                    <div class="stat-cell"></div>
+                    <div class="stat-cell"></div>
+                    <div class="stat-cell"></div>
+                  </div>
+                  <div class="subtle">6/10</div>
+                </div>
+                <div class="rubric-row">
+                  <div class="rubric-label">Reliability</div>
+                  <div class="stat-bar">
+                    <div class="stat-cell fill"></div>
+                    <div class="stat-cell fill"></div>
+                    <div class="stat-cell fill"></div>
+                    <div class="stat-cell fill"></div>
+                    <div class="stat-cell fill"></div>
+                    <div class="stat-cell fill"></div>
+                    <div class="stat-cell fill"></div>
+                    <div class="stat-cell fill"></div>
+                    <div class="stat-cell"></div>
+                    <div class="stat-cell"></div>
+                  </div>
+                  <div class="subtle">8/10</div>
+                </div>
+              </div>
+            </section>
+
+            <section class="component-card">
+              <p class="panel-title">Inspector Blocks</p>
+              <div class="component-stack">
+                <div class="inspector-card">
+                  <div class="kicker">Selected Thread</div>
+                  <h3 style="margin: 10px 0 8px">Synthesis Thread</h3>
+                  <div class="subtle">Builder: Omar Al-Bakri</div>
+                  <div class="subtle">Pack: Champion's Pack</div>
+                </div>
+                <div class="inspector-card">
+                  <div class="kicker">Available Skills</div>
+                  <div class="inventory-row" style="margin-top: 12px">
+                    <div class="skill-icon" aria-label="Search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"></circle><path d="M16 16l4 4"></path></svg></div>
+                    <div class="skill-icon" aria-label="Model"><svg viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10"></rect><path d="M9 1v4M15 1v4M9 19v4M15 19v4M1 9h4M1 15h4M19 9h4M19 15h4"></path></svg></div>
+                    <div class="skill-icon" aria-label="Tools"><svg viewBox="0 0 24 24"><path d="M3 7l9-4 9 4-9 4-9-4z"></path><path d="M3 7v10l9 4 9-4V7"></path><path d="M12 11v10"></path></svg></div>
+                    <div class="skill-icon inherited" aria-label="Files"><svg viewBox="0 0 24 24"><path d="M3 7h6l2 2h10v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"></path></svg></div>
+                  </div>
+                </div>
+                <div class="inspector-card">
+                  <div class="kicker">Actions</div>
+                  <div class="action-row" style="margin-top: 12px">
+                    <button class="action-button primary">Run</button>
+                    <button class="action-button">Stop</button>
+                    <button class="action-button">Open Prompt</button>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section class="component-card">
+              <p class="panel-title">Thread Runner Race Row</p>
+              <div class="results-table">
+                <div class="result-row">
+                  <div>
+                    <strong>Qualifier A / Frontline / Closed Source</strong>
+                    <div class="subtle">Top 2 qualify. Verified VM race.</div>
+                  </div>
+                  <div class="result-meta">
+                    <span>6 entrants</span>
+                    <span>Top 2 qualify</span>
+                    <span>Locked</span>
+                  </div>
+                </div>
+                <div class="result-row">
+                  <div>
+                    <strong>Open Champion Invitational</strong>
+                    <div class="subtle">Closed invitational. Hero Pack at stake.</div>
+                  </div>
+                  <div class="result-meta">
+                    <span>Invited only</span>
+                    <span>Verified VM</span>
+                    <span>Open weights</span>
+                  </div>
+                </div>
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

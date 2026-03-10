@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ThreadOS UI Prototype Overview</title>
+    <link rel="stylesheet" href="./prototype.css" />
+    <style>
+      .overview-shell {
+        display: flex;
+        flex-direction: column;
+        gap: 24px;
+      }
+
+      .overview-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 22px;
+      }
+
+      .overview-card {
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.02);
+        box-shadow: var(--shadow-soft);
+      }
+
+      .overview-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 16px 18px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .overview-meta {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+
+      .overview-title {
+        margin: 0;
+        font-size: 1rem;
+        font-weight: 600;
+      }
+
+      .overview-frame {
+        width: 100%;
+        height: 620px;
+        border: 0;
+        background: #090b10;
+      }
+
+      .overview-link {
+        padding: 9px 14px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius-pill);
+        background: var(--chip);
+        color: var(--text);
+        text-decoration: none;
+        font-size: 0.8rem;
+        font-family: "Noto Sans Mono", monospace;
+      }
+
+      @media (max-width: 1400px) {
+        .overview-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body class="prototype-page">
+    <div class="prototype-shell">
+      <div class="prototype-frame">
+        <div class="topbar">
+          <div class="brand">
+            <div class="brand-mark">T</div>
+            <div>
+              <div class="brand-name">ThreadOS</div>
+              <div class="subtle">UI prototype overview</div>
+            </div>
+          </div>
+          <div class="topbar-block">
+            <div class="crumb">Prototype / Combined Review</div>
+            <div class="mode-chip active">Overview</div>
+          </div>
+          <div class="command-bar">This page puts the prototype surfaces together in one place.</div>
+          <div class="topbar-actions">
+            <div class="status-chip verified">Review Mode</div>
+          </div>
+        </div>
+
+        <div class="center-pane">
+          <div class="overview-shell">
+            <div>
+              <p class="kicker">Prototype Review</p>
+              <h1 class="section-title">Combined prototype pages</h1>
+              <p class="section-copy">
+                This overview page pulls the four HTML prototypes together so you can review
+                the component language, the main thread surface, the locked focused card,
+                and the wireframe side by side. The card should remain the reference object.
+              </p>
+            </div>
+
+            <div class="overview-grid">
+              <section class="overview-card">
+                <div class="overview-head">
+                  <div class="overview-meta">
+                    <h2 class="overview-title">Component Library</h2>
+                    <div class="subtle">Core primitives, tags, inventory, bars, and control blocks</div>
+                  </div>
+                  <a class="overview-link" href="./components.html" target="_blank" rel="noreferrer">Open page</a>
+                </div>
+                <iframe class="overview-frame" src="./components.html" title="Components"></iframe>
+              </section>
+
+              <section class="overview-card">
+                <div class="overview-head">
+                  <div class="overview-meta">
+                    <h2 class="overview-title">Main Thread Surface</h2>
+                    <div class="subtle">Hierarchy shell with centralized card and persistent inspector</div>
+                  </div>
+                  <a class="overview-link" href="./thread-surface.html" target="_blank" rel="noreferrer">Open page</a>
+                </div>
+                <iframe class="overview-frame" src="./thread-surface.html" title="Thread Surface"></iframe>
+              </section>
+
+              <section class="overview-card">
+                <div class="overview-head">
+                  <div class="overview-meta">
+                    <h2 class="overview-title">Focused Thread Card</h2>
+                    <div class="subtle">Locked reference object for the rest of the UI system</div>
+                  </div>
+                  <a class="overview-link" href="./thread-card.html" target="_blank" rel="noreferrer">Open page</a>
+                </div>
+                <iframe class="overview-frame" src="./thread-card.html" title="Thread Card"></iframe>
+              </section>
+
+              <section class="overview-card">
+                <div class="overview-head">
+                  <div class="overview-meta">
+                    <h2 class="overview-title">Wireframe</h2>
+                    <div class="subtle">Structure only: entry split, shell, center pane, left rail, inspector</div>
+                  </div>
+                  <a class="overview-link" href="./wireframe.html" target="_blank" rel="noreferrer">Open page</a>
+                </div>
+                <iframe class="overview-frame" src="./wireframe.html" title="Wireframe"></iframe>
+              </section>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

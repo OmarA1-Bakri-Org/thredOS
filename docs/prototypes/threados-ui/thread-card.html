@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ThreadOS Focused Thread Card</title>
+    <link rel="stylesheet" href="./prototype.css" />
+  </head>
+  <body class="prototype-page">
+    <div class="prototype-shell">
+      <div class="prototype-frame" style="max-width: 1120px">
+        <div class="center-pane">
+          <p class="kicker">Prototype Deliverable 03</p>
+          <h1 class="section-title">Focused thread card</h1>
+          <p class="section-copy">
+            This is the Top Trumps-like centerpiece of the hierarchy surface. It is meant
+            to be centralized, large, crisp, and instantly scannable. The card carries the
+            thread's engineering identity, performance profile, skill inventory, and pack /
+            builder provenance in one place.
+          </p>
+
+          <article
+            class="thread-card focused"
+            style="position: relative; inset: auto; margin: 36px auto 0"
+          >
+            <div class="card-badges">
+              <div class="badge division">Champion</div>
+              <div class="badge class">Prompting</div>
+              <div class="badge place">Finalist</div>
+              <div class="status-chip verified">Verified VM</div>
+            </div>
+
+            <div class="card-grid">
+              <div class="card-main">
+                <div class="hero-line">
+                  <div>
+                    <p class="kicker">Hero Pack</p>
+                    <h2 class="hero-title">Master Thread</h2>
+                    <div class="hero-subtitle">Builder: Omar Al-Bakri</div>
+                    <div class="hero-subtitle">Highest status shown only. Pack stays inside ThreadOS.</div>
+                  </div>
+
+                  <div class="score-stack">
+                    <div class="score-panel">
+                      <div class="score-label">Thread Power</div>
+                      <div class="score-value">9.1</div>
+                      <div class="score-delta">+0.9 from verified runs</div>
+                    </div>
+
+                    <div class="score-panel">
+                      <div class="score-label">Weight</div>
+                      <div class="score-value">8.0</div>
+                      <div class="subtle">Champion division</div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="mini-card">
+                  <div class="panel-title">Skill Inventory</div>
+                  <div class="inventory-row">
+                    <div class="skill-icon" aria-label="Search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"></circle><path d="M16 16l4 4"></path></svg></div>
+                    <div class="skill-icon" aria-label="Model"><svg viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10"></rect><path d="M9 1v4M15 1v4M9 19v4M15 19v4M1 9h4M1 15h4M19 9h4M19 15h4"></path></svg></div>
+                    <div class="skill-icon" aria-label="Tools"><svg viewBox="0 0 24 24"><path d="M3 7l9-4 9 4-9 4-9-4z"></path><path d="M3 7v10l9 4 9-4V7"></path><path d="M12 11v10"></path></svg></div>
+                    <div class="skill-icon" aria-label="Browser"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M3 12h18M12 3c2.5 2.5 4 5.7 4 9s-1.5 6.5-4 9c-2.5-2.5-4-5.7-4-9s1.5-6.5 4-9z"></path></svg></div>
+                    <div class="skill-icon" aria-label="Review"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M8 12l2.5 2.5L16 9"></path></svg></div>
+                    <div class="skill-icon" aria-label="Orchestration"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="2.5"></circle><circle cx="5" cy="7" r="2"></circle><circle cx="19" cy="7" r="2"></circle><circle cx="6" cy="18" r="2"></circle><circle cx="18" cy="18" r="2"></circle><path d="M10.2 10.7L6.8 8.2M13.8 10.7l3.4-2.5M10 13.6l-2.7 2.4M14 13.6l2.7 2.4"></path></svg></div>
+                    <div class="skill-icon inherited" aria-label="Files"><svg viewBox="0 0 24 24"><path d="M3 7h6l2 2h10v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"></path></svg></div>
+                    <div class="skill-icon inherited" aria-label="Planner"><svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.5"></circle><circle cx="18" cy="7" r="2.5"></circle><circle cx="12" cy="18" r="2.5"></circle><path d="M8 7.5l7.5-.5M7.2 8l3.8 7"></path></svg></div>
+                  </div>
+                </div>
+
+                <div class="rubric">
+                  <div class="rubric-row">
+                    <div class="rubric-label">Tools</div>
+                    <div class="stat-bar">
+                      <div class="stat-cell fill"></div><div class="stat-cell fill"></div>
+                      <div class="stat-cell fill"></div><div class="stat-cell fill"></div>
+                      <div class="stat-cell fill"></div><div class="stat-cell fill"></div>
+                      <div class="stat-cell fill"></div><div class="stat-cell fill"></div>
+                      <div class="stat-cell"></div><div class="stat-cell"></div>
+                    </div>
+                    <div class="subtle">8</div>
+                  </div>
+
+                  <div class="rubric-row">
+                    <div class="rubric-label">Model</div>
+                    <div class="stat-bar">
+                      <div class="stat-cell fill"></div><div class="stat-cell fill"></div>
+                      <div class="stat-cell fill"></div><div class="stat-cell fill"></div>
+                      <div class="stat-cell fill"></div><div class="stat-cell fill"></div>
+                      <div class="stat-cell fill"></div><div class="stat-cell"></div>
+                      <div class="stat-cell"></div><div class="stat-cell"></div>
+                    </div>
+                    <div class="subtle">7</div>
+                  </div>
+
+                  <div class="rubric-row">
+                    <div class="rubric-label">Autonomy</div>
+                    <div class="stat-bar">
+                      <div class="stat-cell fill"></div><div class="stat-cell fill"></div>
+                      <div class="stat-cell fill"></div><div class="stat-cell fill"></div>
+                      <div class="stat-cell fill"></div><div class="stat-cell fill"></div>
+                      <div class="stat-cell"></div><div class="stat-cell"></div>
+                      <div class="stat-cell"></div><div class="stat-cell"></div>
+                    </div>
+                    <div class="subtle">6</div>
+                  </div>
+
+                  <div class="rubric-row">
+                    <div class="rubric-label">Coordination</div>
+                    <div class="stat-bar">
+                      <div class="stat-cell fill"></div><div class="stat-cell fill"></div>
+                      <div class="stat-cell fill"></div><div class="stat-cell fill"></div>
+                      <div class="stat-cell fill"></div><div class="stat-cell fill"></div>
+                      <div class="stat-cell fill"></div><div class="stat-cell fill"></div>
+                      <div class="stat-cell fill"></div><div class="stat-cell"></div>
+                    </div>
+                    <div class="subtle">9</div>
+                  </div>
+
+                  <div class="rubric-row">
+                    <div class="rubric-label">Reliability</div>
+                    <div class="stat-bar">
+                      <div class="stat-cell fill"></div><div class="stat-cell fill"></div>
+                      <div class="stat-cell fill"></div><div class="stat-cell fill"></div>
+                      <div class="stat-cell fill"></div><div class="stat-cell fill"></div>
+                      <div class="stat-cell fill"></div><div class="stat-cell fill"></div>
+                      <div class="stat-cell"></div><div class="stat-cell"></div>
+                    </div>
+                    <div class="subtle">8</div>
+                  </div>
+
+                  <div class="rubric-row">
+                    <div class="rubric-label">Economy</div>
+                    <div class="stat-bar">
+                      <div class="stat-cell fill"></div><div class="stat-cell fill"></div>
+                      <div class="stat-cell fill"></div><div class="stat-cell fill"></div>
+                      <div class="stat-cell"></div><div class="stat-cell"></div>
+                      <div class="stat-cell"></div><div class="stat-cell"></div>
+                      <div class="stat-cell"></div><div class="stat-cell"></div>
+                    </div>
+                    <div class="subtle">4</div>
+                  </div>
+                </div>
+
+                <div class="stats-strip">
+                  <span><strong>Children:</strong> 4</span>
+                  <span><strong>Merges:</strong> 3</span>
+                  <span><strong>Alerts:</strong> 1</span>
+                  <span><strong>Run:</strong> 22 (active)</span>
+                </div>
+              </div>
+
+              <div class="component-stack">
+                <div class="inspector-card">
+                  <div class="panel-title">Status Ladder</div>
+                  <div class="component-stack">
+                    <div><span class="hero-pack">Hero status</span></div>
+                    <div class="subtle">Only highest status is surfaced at primary card level.</div>
+                  </div>
+                </div>
+
+                <div class="inspector-card">
+                  <div class="panel-title">Pack / Builder</div>
+                  <div class="component-stack">
+                    <div><strong>Asset:</strong> Hero Pack</div>
+                    <div><strong>Builder:</strong> Omar Al-Bakri</div>
+                    <div><strong>Title Track:</strong> Open Champion</div>
+                  </div>
+                </div>
+
+                <div class="inspector-card">
+                  <div class="panel-title">Provenance</div>
+                  <div class="component-stack">
+                    <div><strong>Registered Agent:</strong> agt_master_022</div>
+                    <div><strong>Created By:</strong> Run 22 / ThreadOS</div>
+                    <div><strong>Source:</strong> Verified VM run</div>
+                  </div>
+                </div>
+
+                <div class="inspector-card">
+                  <div class="panel-title">Why This Card Works</div>
+                  <p class="subtle" style="margin: 0">
+                    The layout combines a premium central object, icon-first inventory, fixed
+                    comparative bars, and explicit provenance. It is designed to feel serious
+                    enough for engineering use while remaining comparable and shareable.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </article>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>
