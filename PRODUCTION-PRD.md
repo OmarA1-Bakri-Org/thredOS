@@ -1,553 +1,461 @@
-# ThreadOS Production PRD — Thread-Based Engineering Runtime
+# ThreadOS Production PRD — ThreadOS Core + Thread Runner
 
-> **Version**: 2.0 | **Status**: Production Roadmap | **Last Updated**: 2026-02-07
-> **Builds on**: `.prd.md` (v1 concept PRD) and `plans/threados-mvp.md` (M0-M2 foundation)
+> **Version**: 3.0
+> **Status**: Product and implementation roadmap
+> **Last Updated**: 2026-03-10
 
 ---
 
 ## 1. Executive Summary
 
-ThreadOS is a local-first runtime that gives engineers and LLM orchestrators a structured, auditable way to create, execute, and manage multi-step engineering workflows ("threads"). It layers a DAG-based sequence model, deterministic CLI/API controls, a horizontal visual UI, and a chat orchestrator on top of **mprocs** — a parallel terminal process runner.
+ThreadOS is a local-first agentic engineering system built around registered thread surfaces, run-scoped execution truth, skill inventory, and provenance. It is not just a node canvas. It is a control environment for designing, executing, inspecting, and improving multi-agent engineering workflows.
 
-**Current state**: M0-M2 foundation is ~95% complete. The sequence engine, DAG validation, CLI (`seqctl`), mprocs adapter, runner wrappers, and artifact collection are fully implemented. The web UI is scaffolding only. There are no tests, no audit logging, no policy enforcement, no HTTP API, and no thread template logic.
+The product now has two deliberate entry points:
 
-**This PRD defines everything required to take ThreadOS from foundation to production-ready v1.0.**
+- **ThreadOS**: the core engineering environment for building, orchestrating, and improving thread systems
+- **Thread Runner**: a locked advanced proving mode for verified VM-based competitive runs, pack generation, and builder status
 
----
-
-## 2. What Exists Today (Baseline Audit)
-
-### 2.1 Complete (M0-M2)
-
-| Component | Files | Status |
-|-----------|-------|--------|
-| Sequence schema (Zod) | `lib/sequence/schema.ts` | Production-ready |
-| YAML parser + atomic writes | `lib/sequence/parser.ts`, `lib/fs/atomic.ts` | Production-ready |
-| DAG validation + topo sort | `lib/sequence/dag.ts` | Production-ready |
-| mprocs client (type-safe) | `lib/mprocs/client.ts` | Production-ready |
-| mprocs config generation | `lib/mprocs/config.ts` | Production-ready |
-| mprocs state mapping | `lib/mprocs/state.ts` | Production-ready |
-| Runner wrapper (spawn, timeout) | `lib/runner/wrapper.ts` | Production-ready |
-| Artifact collection | `lib/runner/artifacts.ts` | Production-ready |
-| Prompt management | `lib/prompts/manager.ts` | Production-ready |
-| Error hierarchy | `lib/errors.ts` | Production-ready |
-| CLI: `seqctl init` | `lib/seqctl/commands/init.ts` | Production-ready |
-| CLI: `seqctl step add/edit/rm/clone` | `lib/seqctl/commands/step.ts` | Production-ready |
-| CLI: `seqctl run step/runnable` | `lib/seqctl/commands/run.ts` | Production-ready |
-| CLI: `seqctl status [--watch]` | `lib/seqctl/commands/status.ts` | Production-ready |
-| CLI entry point + routing | `lib/seqctl/index.ts` | Production-ready |
-| shadcn/ui components | `components/ui/` | Scaffolded (button, card, input, separator, textarea) |
-
-### 2.2 Missing / Not Started
-
-| Component | Priority | Notes |
-|-----------|----------|-------|
-| Test suite | **Critical** | Only 1 trivial test (`hello.test.ts`). Zero coverage on core modules |
-| Thread templates (P/C/F/B/L) | **High** | `seqctl` supports types in schema but no template logic |
-| CLI: `dep`, `group`, `fusion`, `gate`, `mprocs` commands | **High** | Referenced in help text but not implemented |
-| Audit logging | **High** | `.threados/audit.log` mentioned everywhere but not implemented |
-| Policy / SAFE mode | **High** | `policy.yaml` enforcement not implemented |
-| HTTP API (Next.js routes) | **High** | Required for UI + chat orchestrator |
-| Horizontal Sequence UI | **High** | Only default Next.js template placeholder |
-| Chat Orchestrator | **Medium** | NL → structured actions → diff → apply flow |
-| State reconciliation | **Medium** | Recovery from crashed/orphaned processes |
-| Cross-platform support | **Medium** | Currently Windows-first, mprocs binary only for Windows |
-| Observability / metrics | **Low** | Per-run tracking not implemented |
-| README / user documentation | **Low** | Currently generic Next.js boilerplate |
+ThreadOS remains the primary product. Thread Runner exists to prove and improve agent capability, not to redefine the app as a game.
 
 ---
 
-## 3. Goals and Success Criteria
+## 2. Current Product Baseline
 
-### 3.1 Production v1.0 Goals
+### 2.1 What Is Real Today
 
-1. **Complete thread lifecycle**: Users can create and execute all six thread types (Base/P/C/F/B/L) from both CLI and UI
-2. **Visual workflow management**: Horizontal Sequence UI with real-time status, dependency visualization, and interactive controls
-3. **LLM orchestration**: Chat interface that converts natural language to structured sequence operations with SAFE-mode approval
-4. **Auditability**: Every mutation and execution is logged to an append-only audit trail
-5. **Safety**: Policy enforcement prevents unauthorized/destructive actions; SAFE mode requires explicit confirmation
-6. **Reliability**: Comprehensive test suite with >80% coverage on core modules; atomic operations prevent data loss
-7. **Developer experience**: Clear documentation, intuitive CLI, responsive UI
+The codebase is no longer at the earlier M0-M2 state described by older roadmap documents. The following foundations now exist or are materially underway:
 
-### 3.2 Acceptance Criteria (Definition of Done for v1.0)
+- Thread-surface domain model: structural `ThreadSurface`, execution `RunScope`, `RunEvent`, and merge history
+- Persistent thread-surface repository and APIs
+- UI state and prototype hierarchy/lane modeling
+- Runtime event contracts for delegated child-surface creation and merge recording
+- CLI and API execution paths aligned around runtime event emission and persistence
+- Production integration branch work proving green lint, typecheck, test, and build slices
+- UI prototype artifacts for the new shell, focused thread card, main thread surface, and wireframes
 
-- [ ] All six thread types (Base/P/C/F/B/L) work end-to-end via `seqctl` CLI
-- [ ] All six thread types are visualizable and controllable in the Sequence UI
-- [ ] Chat orchestrator converts NL to actions with diff preview and apply/discard
-- [ ] SAFE mode blocks all destructive operations without explicit user confirmation
-- [ ] `policy.yaml` enforces command allowlists, cwd restrictions, and fanout limits
-- [ ] Audit log captures every mutation with timestamp, actor, and action payload
-- [ ] Test suite: >80% line coverage on `lib/`, all critical paths have integration tests
-- [ ] E2E tests pass for Base, P, C (with gates), F (with fusion), B, and L thread flows
-- [ ] UI handles 100+ nodes without degraded responsiveness
-- [ ] Documentation covers installation, CLI reference, UI guide, and LLM integration
+### 2.2 What Is Still Missing
 
-### 3.3 Non-Goals (v1.0)
+These are the key remaining production gaps:
 
-- Cloud/multi-user collaboration or shared remote sessions
-- Fully autonomous "Z-thread" zero-touch deployments
-- Replacing Claude Code / Codex / Gemini (ThreadOS wraps them)
-- Mobile UI or responsive layouts for non-desktop
-- Plugin/extension marketplace
+- Full production UI implementation of the new shell and boards
+- Real VM-backed Thread Runner infrastructure
+- Registration, subscription, and eligibility gating for Thread Runner
+- Verified competition storage, ranking, and cup flow
+- First-class pack/status records and builder profiles
+- Complete documentation for the new product split and UI model
 
----
+### 2.3 Product Positioning
 
-## 4. Architecture
+ThreadOS should be presented as:
 
-### 4.1 System Architecture
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                         ThreadOS Runtime                            │
-│                                                                     │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────────┐  │
-│  │  Chat        │  │  Horizontal  │  │  seqctl CLI              │  │
-│  │  Orchestrator│  │  Sequence UI │  │  (LLM-addressable)       │  │
-│  └──────┬───────┘  └──────┬───────┘  └──────────┬───────────────┘  │
-│         │                 │                      │                  │
-│         └────────────┬────┴──────────────────────┘                  │
-│                      │                                              │
-│                      v                                              │
-│  ┌───────────────────────────────────────────────────────────────┐  │
-│  │              HTTP API (Next.js Route Handlers)                │  │
-│  │  POST /api/actions/apply  GET /api/sequence  POST /api/run   │  │
-│  │  POST /api/chat           GET /api/status    POST /api/stop  │  │
-│  └──────────────────────────────┬────────────────────────────────┘  │
-│                                 │                                   │
-│         ┌───────────────────────┼───────────────────────┐          │
-│         v                       v                       v          │
-│  ┌──────────────┐  ┌───────────────────┐  ┌──────────────────┐    │
-│  │  Sequence    │  │  Policy Engine    │  │  Audit Logger    │    │
-│  │  Engine      │  │  (SAFE/POWER)     │  │  (append-only)   │    │
-│  │  - Schema    │  │  - Allowlists     │  │  - Mutations     │    │
-│  │  - Parser    │  │  - CWD restrict   │  │  - Executions    │    │
-│  │  - DAG       │  │  - Fanout limits  │  │  - Gate actions  │    │
-│  └──────┬───────┘  └───────────────────┘  └──────────────────┘    │
-│         │                                                          │
-│         v                                                          │
-│  ┌──────────────┐  ┌───────────────────┐  ┌──────────────────┐    │
-│  │  Runner      │  │  mprocs Adapter   │  │  Prompt Manager  │    │
-│  │  - Wrapper   │<─│  - Client         │  │  - Templates     │    │
-│  │  - Artifacts │  │  - Config gen     │  │  - Per-step .md  │    │
-│  │  - Timeout   │  │  - State map      │  │                  │    │
-│  └──────────────┘  └────────┬──────────┘  └──────────────────┘    │
-│                             │                                      │
-└─────────────────────────────┼──────────────────────────────────────┘
-                              v
-                    ┌───────────────────┐
-                    │  mprocs           │
-                    │  (--server :4050) │
-                    │  Process pool     │
-                    └───────────────────┘
-                              │
-                    ┌─────────┼─────────┐
-                    v         v         v
-                [claude]  [codex]  [gemini]
-                 agents    agents   agents
-```
-
-### 4.2 Data Architecture
-
-```
-.threados/                          # All runtime state
-├── sequence.yaml                   # Source of truth (Zod-validated)
-├── policy.yaml                     # Security policy (NEW)
-├── prompts/                        # Per-step prompt files
-│   └── <stepId>.md
-├── templates/                      # Thread type templates (NEW)
-│   ├── base.yaml
-│   ├── parallel.yaml
-│   ├── chained.yaml
-│   ├── fusion.yaml
-│   ├── orchestrated.yaml
-│   └── long-autonomy.yaml
-├── runs/                           # Immutable run artifacts
-│   └── <runId>/
-│       └── <stepId>/
-│           ├── stdout.log
-│           ├── stderr.log
-│           ├── status.json
-│           ├── summary.md          # Optional AI-generated summary
-│           └── diff.patch          # Optional git diff
-├── state/                          # Mutable runtime state
-│   ├── mprocs-map.json            # stepId → process index
-│   └── mprocs-state.json         # Session state
-└── audit.log                       # Append-only audit trail (JSONL)
-```
-
-### 4.3 Schema Extensions for v1.0
-
-The existing `SequenceSchema` needs extensions to support thread templates and advanced features:
-
-```typescript
-// New fields on StepSchema
-group_id: z.string().optional(),          // P-thread group membership
-fanout: z.number().min(1).optional(),     // P-thread worker count
-fusion_candidates: z.array(z.string()).optional(), // F-thread candidate IDs
-fusion_synth: z.boolean().optional(),     // Is this the synth step?
-watchdog_for: z.string().optional(),      // L-thread: step being watched
-orchestrator: z.boolean().optional(),     // B-thread: is orchestrator step
-timeout_ms: z.number().optional(),        // Per-step timeout override
-fail_policy: z.enum(['fail_fast', 'best_effort']).optional(),
-
-// New top-level SequenceSchema fields
-metadata: z.object({
-  created_at: z.string(),
-  updated_at: z.string(),
-  created_by: z.string().optional(),
-  description: z.string().optional(),
-}).optional(),
-policy: z.object({
-  mode: z.enum(['SAFE', 'POWER']).default('SAFE'),
-  max_fanout: z.number().default(10),
-  max_concurrent: z.number().default(20),
-  allowed_commands: z.array(z.string()).optional(),
-  allowed_cwd: z.array(z.string()).optional(),
-  forbidden_patterns: z.array(z.string()).optional(),
-}).optional(),
-```
+1. A serious agentic engineering IDE/control surface
+2. A provenance-aware runtime for registered agents and threads
+3. An improvement system where skills and threads can be measured over time
+4. A premium proving layer via Thread Runner for advanced builders
 
 ---
 
-## 5. Feature Specifications
+## 3. Product Goals
 
-### 5.1 Thread Templates (M3)
+### 3.1 Core Product Goals
 
-Thread templates codify the six thread patterns as reusable sequence fragments.
+1. **Structural clarity**: users can understand parent/child thread structure, run context, and skill inventory quickly
+2. **Execution truth**: users can inspect run order, merges, and thread outcomes without ambiguity
+3. **Provenance**: all agents are registered through ThreadOS and traceable to builder, parent, run, and pack lineage
+4. **Skill visibility**: skills are visible as thread capability and as run-time usage events
+5. **Serious usability**: the shell should feel like a premium engineering tool, not a toy canvas
+6. **Upgradeable proving layer**: Thread Runner should build on the same runtime truth, not fork into a separate system
 
-#### 5.1.1 Base Thread
-- Single step with one mprocs process
-- CLI: `seqctl step add <id> --type base --model claude-code`
-- Template generates: 1 step, 1 prompt file
+### 3.2 UI Upgrade Goals
 
-#### 5.1.2 P-Thread (Parallel)
-- Fan-out to N workers running the same or varied prompts
-- CLI: `seqctl group parallelize <stepIds...>` or `seqctl step add <id> --type p --fanout 3`
-- Template generates: N steps sharing `group_id`, optional merge step
-- Configurable `fail_policy`: `fail_fast` (default) or `best_effort`
+1. Replace the old horizontal-sequence framing with a stable workbench shell
+2. Make `Hierarchy`, `Lanes`, and `Layers` first-class board modes inside ThreadOS
+3. Introduce a focused, top-trumps-style thread card as the core comparison object
+4. Surface skills, thread power, weight, status, and provenance directly in the UI
+5. Preserve one shell across all modes with a persistent inspector and disciplined left rail
 
-#### 5.1.3 C-Thread (Chained + Checkpoints)
-- Sequential phases connected by approval gates
-- CLI: `seqctl gate insert <gateId> --after <stepId> --before <stepId>`
-- CLI: `seqctl gate approve <gateId>` / `seqctl gate block <gateId>`
-- Template generates: N phases with N-1 gates between them
+### 3.3 Thread Runner Goals
 
-#### 5.1.4 F-Thread (Fusion)
-- Parallel candidates → synthesis step that merges outputs
-- CLI: `seqctl fusion create --candidates <stepIds...> --synth <synthId>`
-- Template generates: N candidate steps + 1 synth step depending on all candidates
-- Synth step receives all candidate artifacts as input
-
-#### 5.1.5 B-Thread (Big/Orchestrated)
-- Orchestrator step that dynamically spawns sub-steps via `seqctl`
-- CLI: `seqctl step add <id> --type b --orchestrator`
-- Orchestrator runs as a long-lived process that calls `seqctl step add` / `seqctl run step` internally
-
-#### 5.1.6 L-Thread (Long Autonomy)
-- Long-running agent with optional watchdog companion
-- CLI: `seqctl step add <id> --type l --timeout 7200000`
-- Optional: `seqctl step add <watchdogId> --type base --watchdog-for <id>`
-- Watchdog periodically checks main step output and can signal stop
-
-### 5.2 CLI Completion (Missing Commands)
-
-These commands are referenced in help text and PRD but not implemented:
-
-| Command | Purpose | Priority |
-|---------|---------|----------|
-| `seqctl dep add <stepId> <depId>` | Add dependency edge | High |
-| `seqctl dep rm <stepId> <depId>` | Remove dependency edge | High |
-| `seqctl group parallelize <ids...>` | Create P-thread group | High |
-| `seqctl fusion create <ids...>` | Create F-thread structure | High |
-| `seqctl gate insert <id>` | Insert approval gate | High |
-| `seqctl gate approve <id>` | Approve gate (unblock dependents) | High |
-| `seqctl gate block <id>` | Block gate | Medium |
-| `seqctl run group <groupId>` | Run all steps in a group | High |
-| `seqctl run all` | Run all steps in topo order | Medium |
-| `seqctl stop <stepId>` | Stop running step | High |
-| `seqctl restart <stepId>` | Restart step | High |
-| `seqctl mprocs open` | Launch mprocs with current config | Medium |
-| `seqctl mprocs select <stepId>` | Focus step in mprocs UI | Low |
-
-### 5.3 HTTP API (Next.js Route Handlers)
-
-The API bridges the UI/chat to the sequence engine. All endpoints return JSON.
-
-```
-GET  /api/sequence              → Current sequence definition
-GET  /api/status                → Current status snapshot
-GET  /api/status/stream         → SSE stream of status changes
-POST /api/run                   → { stepId? } Run step or runnable frontier
-POST /api/stop                  → { stepId } Stop step
-POST /api/restart               → { stepId } Restart step
-POST /api/step                  → { action: 'add'|'edit'|'rm'|'clone', ...params }
-POST /api/dep                   → { action: 'add'|'rm', stepId, depId }
-POST /api/gate                  → { action: 'insert'|'approve'|'block', gateId }
-POST /api/group                 → { action: 'parallelize', stepIds }
-POST /api/fusion                → { action: 'create', candidates, synthId }
-POST /api/chat                  → { message } → SSE stream of structured actions
-POST /api/actions/validate      → Dry-run: validate proposed actions
-POST /api/actions/apply         → Apply validated actions to sequence
-GET  /api/audit                 → { limit?, offset? } Audit log entries
-GET  /api/runs/:runId/:stepId   → Artifacts for a specific run
-```
-
-All mutating endpoints go through the policy engine and audit logger before execution.
-
-### 5.4 Horizontal Sequence UI
-
-#### Layout
-
-```
-┌──────────────────────────────────────────────────────────────────┐
-│ ▶ Run Runnable  │  SAFE ▾  │  Search...        │  ◧ Minimap    │
-├──────────────────────────────────────────────────────────────────┤
-│                                                 │                │
-│  ┌──────┐   ┌──────┐   ╔══════╗   ┌──────┐    │  Step Inspector│
-│  │step-1│──▶│step-2│──▶║gate-1║──▶│step-3│    │                │
-│  │ DONE │   │ RUN  │   ║PEND  ║   │BLOCK │    │  Name: step-2  │
-│  └──────┘   └──────┘   ╚══════╝   └──────┘    │  Type: base    │
-│                                                 │  Model: claude │
-│  ┌──────┐   ┌──────┐                           │  Status: RUN   │
-│  │step-4│──▶│step-5│──────────────▶ (merge)    │  CWD: ./src    │
-│  │ RUN  │   │ RUN  │                           │                │
-│  └──────┘   └──────┘                           │  [▶Run] [■Stop]│
-│                                                 │  [↻Restart]    │
-│        Horizontal Sequence Canvas               │  [📄 Logs]     │
-├──────────────────────────────────────────────────┤  [📝 Prompt]   │
-│  Chat Orchestrator (collapsible)                │                │
-│  > "Add a verification step after step-3"       │                │
-│  ┌────────────────────────────────────────┐     │                │
-│  │ Proposed: step add verify-3 --type base│     │                │
-│  │ + dep add verify-3 step-3              │     │                │
-│  │ [Apply] [Apply & Run] [Discard]        │     │                │
-│  └────────────────────────────────────────┘     │                │
-└──────────────────────────────────────────────────┴────────────────┘
-```
-
-#### Technology Choices
-- **Canvas rendering**: React Flow (https://reactflow.dev) for DAG visualization
-- **Layout**: Dagre or ELK for automatic graph layout (left-to-right)
-- **Panels**: Resizable panels via `react-resizable-panels`
-- **Real-time updates**: SSE from `/api/status/stream`, React Query for data fetching
-- **State management**: React Query (server state) + Zustand (UI state)
-
-#### Node Types
-| Node Type | Visual | Behavior |
-|-----------|--------|----------|
-| Step (base) | Rounded rectangle with status color | Click to inspect, double-click to edit |
-| Step (running) | Pulsing border animation | Shows elapsed time |
-| Gate | Diamond shape | Click to approve/block |
-| Group boundary | Dashed rectangle around P-thread members | Collapsible |
-| Fusion merge | Triangle/funnel merge point | Shows candidate count |
-| Dependency edge | Solid arrow (hard dep) | Animated flow when running |
-
-#### Status Colors
-| Status | Color | Description |
-|--------|-------|-------------|
-| READY | Blue | Can be executed |
-| RUNNING | Amber (pulsing) | Currently executing |
-| DONE | Green | Completed successfully |
-| FAILED | Red | Execution failed |
-| BLOCKED | Gray | Waiting on dependencies/gates |
-| NEEDS_REVIEW | Purple | Awaiting human review |
-
-### 5.5 Chat Orchestrator
-
-#### Interaction Model
-1. User types natural language request
-2. Orchestrator parses intent and generates structured actions (JSON array of `seqctl` commands)
-3. UI shows proposed actions as a diff card
-4. User clicks **Apply**, **Apply & Run**, or **Discard**
-5. On apply, actions are validated, executed, and audit-logged
-
-#### SAFE Mode Behavior
-- **SAFE (default)**: All proposed actions require explicit user confirmation. Destructive actions (rm, stop, restart) require double-confirmation.
-- **POWER**: Non-destructive actions auto-apply. Destructive actions still require single confirmation.
-
-#### Action Schema
-```typescript
-interface ProposedAction {
-  id: string;
-  command: string;          // seqctl command string
-  description: string;      // Human-readable explanation
-  destructive: boolean;     // Requires extra confirmation
-  reversible: boolean;      // Can be undone
-  dry_run_result?: string;  // Preview of what would change
-}
-
-interface ChatResponse {
-  message: string;          // Natural language response
-  actions: ProposedAction[];
-  sequence_diff?: string;   // Unified diff of sequence.yaml changes
-}
-```
-
-### 5.6 Audit Logging
-
-Append-only JSONL file at `.threados/audit.log`.
-
-```typescript
-interface AuditEntry {
-  timestamp: string;        // ISO 8601
-  actor: 'user' | 'orchestrator' | 'system';
-  action: string;           // e.g., 'step.add', 'run.start', 'gate.approve'
-  target: string;           // e.g., step ID, gate ID
-  payload: Record<string, unknown>; // Action-specific data
-  policy_mode: 'SAFE' | 'POWER';
-  result: 'success' | 'denied' | 'error';
-  error?: string;
-}
-```
-
-Every mutating operation (step CRUD, dep changes, run/stop/restart, gate approve/block, policy change) writes an entry.
-
-### 5.7 Policy Engine
-
-Policy file at `.threados/policy.yaml`:
-
-```yaml
-mode: SAFE                        # SAFE or POWER
-max_fanout: 10                    # Max parallel workers per P-thread
-max_concurrent: 20                # Max simultaneous running processes
-timeout_default_ms: 1800000       # 30 minutes
-
-allowed_commands:                 # Allowlist for runner commands
-  - "claude"
-  - "codex"
-  - "gemini"
-  - "bun"
-  - "npm"
-  - "npx"
-  - "node"
-  - "git"
-  - "tsc"
-
-allowed_cwd:                      # Allowed working directories (glob patterns)
-  - "./**"                        # Relative to project root
-
-forbidden_patterns:               # Blocked command patterns (regex)
-  - "rm\\s+-rf\\s+/"
-  - "sudo"
-  - "format\\s+[A-Z]:"
-
-confirmation_required:            # Actions requiring confirmation even in POWER mode
-  - "step.rm"
-  - "gate.block"
-  - "run.all"
-```
-
-The policy engine validates every action before execution and returns `denied` with reason if policy is violated.
-
-### 5.8 State Reconciliation
-
-On startup or reconnection:
-1. Read `.threados/state/mprocs-map.json` for last-known process mapping
-2. Query mprocs server for running processes
-3. For each step marked RUNNING in `sequence.yaml`:
-   - If corresponding mprocs process is alive → keep RUNNING
-   - If process is dead → mark FAILED with `reason: "orphaned_process"`
-4. Write reconciliation to audit log
+1. Keep Thread Runner locked and explicitly advanced
+2. Require registration and paid subscription for entry
+3. Run all competitive combatant runs in ThreadOS-managed, pre-configured VMs
+4. Use one authoritative time-based race score within a class and division
+5. Produce scarce, meaningful status awards and premium pack assets
+6. Keep the value and verified evidence inside ThreadOS
 
 ---
 
-## 6. Non-Functional Requirements
+## 4. Core Product Architecture
 
-### 6.1 Performance
-- UI responsive with 100+ nodes (React Flow virtualization)
-- Status polling ≤1s latency via SSE
-- CLI commands complete in <500ms for non-execution operations
-- Support 20-50 concurrent mprocs processes
+### 4.1 Entry Model
 
-### 6.2 Reliability
-- All state writes are atomic (temp-then-rename pattern)
-- UI crash does not lose sequence state (file-first design)
-- mprocs failure marks affected steps as FAILED with error context
-- Orphaned process detection on startup
+The entrance screen exposes exactly two product choices:
 
-### 6.3 Security
-- Policy engine enforces all allowlists before execution
-- SAFE mode is default, requires explicit opt-in to POWER
-- Secrets redaction in audit logs (pattern-based scrubbing)
-- No remote network access by default (local-first)
+- **ThreadOS**
+- **Thread Runner** (locked until eligible)
 
-### 6.4 Observability
-Track per-run metrics in `status.json`:
-- Thread count by type (Base/P/C/F/B/L)
-- Average step duration
-- Failure/restart rates
-- Fanout utilization (P/F threads)
-- Gate approval latency (C threads)
-- Fusion agreement rate (heuristic, F threads)
+This keeps the product split clean without making Thread Runner the primary identity.
 
----
+### 4.2 ThreadOS Workbench Shell
 
-## 7. Testing Strategy
+Inside ThreadOS, the app should behave like a control-system IDE.
 
-### 7.1 Unit Tests (Bun test runner)
-Target: >80% line coverage on `lib/`
+#### Stable shell regions
+- **Top bar**: breadcrumbs, active mode, run selector, command/search, options, top-right mode button
+- **Left rail**: `Thread Navigator`, `Tools / Activity`, `Skills`
+- **Center pane**: active board surface
+- **Right rail**: persistent inspector
 
-| Module | Test File | Key Cases |
-|--------|-----------|-----------|
-| `sequence/schema.ts` | `sequence/schema.test.ts` | Valid/invalid steps, gates, enums, edge cases |
-| `sequence/parser.ts` | `sequence/parser.test.ts` | Read/write roundtrip, malformed YAML, missing file |
-| `sequence/dag.ts` | `sequence/dag.test.ts` | Acyclic graph, single cycle, diamond dependency, isolated nodes |
-| `mprocs/client.ts` | `mprocs/client.test.ts` | Command serialization, error handling (mock shell) |
-| `mprocs/config.ts` | `mprocs/config.test.ts` | Config generation for each thread type |
-| `mprocs/state.ts` | `mprocs/state.test.ts` | Read/write/update map, missing file |
-| `runner/wrapper.ts` | `runner/wrapper.test.ts` | Success, failure, timeout, signal handling |
-| `runner/artifacts.ts` | `runner/artifacts.test.ts` | Directory creation, file writes, status JSON |
-| `prompts/manager.ts` | `prompts/manager.test.ts` | CRUD operations, missing files |
-| `errors.ts` | `errors.test.ts` | Error codes, messages, inheritance |
-| `seqctl/commands/*.ts` | `seqctl/commands/*.test.ts` | Each command with valid/invalid inputs |
-| `policy/engine.ts` | `policy/engine.test.ts` | Allow/deny decisions, mode switching |
-| `audit/logger.ts` | `audit/logger.test.ts` | Entry formatting, append behavior |
+#### Board modes
+- **Hierarchy**: structural truth, zoomable, clickable, focused-card interaction
+- **Lanes**: execution truth, structured horizontal lane board, run-scoped ordering and merge visibility
+- **Layers**: global map inside the same shell, derived from the same thread/run model
+- **Thread Runner**: separate proving mode accessed from the entrance screen or top-right mode control
 
-### 7.2 Integration Tests
-- Full `seqctl` CLI flows: `init → step add → dep add → run runnable → status`
-- mprocs lifecycle: start server → add process → run → stop → cleanup
-- Artifact pipeline: run step → verify stdout.log + stderr.log + status.json
-- Policy enforcement: attempt blocked command → verify denial + audit entry
+### 4.3 Data Model
 
-### 7.3 E2E Tests
-One test per thread type that exercises the full lifecycle:
-1. **Base**: Create → run → verify artifacts → done
-2. **P-Thread**: Create group of 3 → run parallel → verify all complete → check fail_policy
-3. **C-Thread**: Create phases → run phase 1 → gate pending → approve gate → run phase 2
-4. **F-Thread**: Create 3 candidates → run → synth merges → verify fusion output
-5. **B-Thread**: Create orchestrator → runs and spawns sub-steps → verify sub-step artifacts
-6. **L-Thread**: Create long-run + watchdog → run → watchdog signals → verify both logs
+The product model should stay grounded in these first-class objects:
 
-### 7.4 UI Tests
-- Component tests with React Testing Library
-- Visual regression tests for step nodes, gate nodes, status colors
-- Interaction tests: drag to reorder, click to inspect, approve gate
+- `ThreadSurface`: structural identity and parent/child relationships
+- `RunScope`: one execution attempt for a thread surface
+- `RunEvent`: spawn, step, merge, completion, cancellation, failure, skill-use events
+- `MergeEvent`: destination run plus source surface/run identities
+- `SkillAttachment`: capability available to a thread
+- `SkillUsage`: skill actually invoked during a run
+- `AgentRegistration`: canonical identity and provenance for each agent
+- `Pack`: premium asset assembled from verified build outputs and evidence
+- `BuilderProfile`: public/private author identity, highest earned status, pack ownership
+
+### 4.4 Provenance Rule
+
+All new agents must be registered through ThreadOS. No ad hoc or unregistered child agents should be allowed to participate in the hierarchy, run history, scoring, or proving layer.
 
 ---
 
-## 8. Risks and Mitigations
+## 5. UI Requirements
 
-| Risk | Impact | Likelihood | Mitigation |
-|------|--------|------------|------------|
-| mprocs process lifetime (exits = processes end) | High | Certain | File-first state; artifacts survive mprocs restart |
-| Windows quoting complexity for `cmd` arrays | Medium | Likely | Centralize command building; use `cmd` arrays not `shell` strings |
-| LLM-driven destructive actions | High | Likely | SAFE mode default; policy allowlists; audit trail; double-confirm |
-| State desync between UI and mprocs | Medium | Possible | SSE polling + reconciliation on reconnect |
-| React Flow performance at scale (100+ nodes) | Medium | Possible | Virtualization; collapse groups; lazy render off-screen |
-| Chat orchestrator hallucinating invalid actions | Medium | Likely | Validate actions via dry-run before showing to user; schema check |
-| Concurrent file writes to sequence.yaml | Medium | Possible | Atomic writes + file-level mutex for write operations |
-| Cross-platform mprocs binary availability | Low | Possible | Document platform-specific setup; consider Linux/Mac CI |
+### 5.1 Visual Direction
+
+The UI should feel precise, serious, and premium.
+
+#### Required characteristics
+- dark graphite shell
+- crisp hard-corner containers
+- rounded top informational pills only
+- restrained accent palette
+- strong focus hierarchy
+- fast, legible density
+
+#### Typography
+- shell/body UI: `IBM Plex Sans`
+- focal titles: `Inter` at thin 300 weight
+- technical/meta text: `Noto Sans Mono`
+
+#### Color system
+- neutral surfaces: graphite / charcoal / slate
+- active and verified accent: green
+- structural navigation accent: blue
+- award accent: amber
+- destructive accent: restrained red only
+
+### 5.2 Focused Thread Card
+
+The focused card is the visual center of the hierarchy surface. It is a large rectangular dossier, comparable across threads and shareable as a premium artifact.
+
+#### Card anatomy
+1. top pill row
+   - division badge
+   - classification badge
+   - placement badge
+   - verification badge
+2. identity block
+   - thread name
+   - pack attribution
+   - builder attribution
+3. headline scores
+   - `Thread Power`
+   - `Weight`
+4. skill inventory
+   - icon-first
+   - local vs inherited distinction
+5. rubric bars
+   - fixed 10-segment comparison bars
+6. operational stats
+   - children
+   - merges
+   - alerts
+   - run context
+7. provenance block
+   - registered agent
+   - created-by run
+   - source / verification context
+
+### 5.3 Hierarchy Board
+
+At rest, the hierarchy board shows compact cards in a structural map. On selection:
+
+- the chosen card centralizes
+- the topology dims and blurs slightly
+- adjacent cards remain visible as context
+- the inspector updates immediately
+
+This interaction is specific to hierarchy mode and should not be reused in lane mode.
+
+### 5.4 Lane Board
+
+The lane board is a structured scrollable execution surface.
+
+#### Rules
+- one row per thread lane
+- left-to-right sequence
+- row order is run-scoped and execution-based
+- destination lane remains above merged source lanes
+- merged source lanes stay visible as completed rows
+
+### 5.5 Inspector
+
+The inspector remains persistent across all modes. It should show:
+
+- selected thread
+- selected run
+- notes
+- AI discussion
+- artifacts
+- skill inventory
+- skills used in this run
+- actions
+- provenance
+
+### 5.6 Left Rail
+
+The left rail has three stable sections:
+
+1. **Thread Navigator**
+2. **Tools / Activity**
+3. **Skills**
+
+This should not collapse into a generic toolbar dump.
 
 ---
 
-## 9. Future Considerations (Post v1.0)
+## 6. Skill and Scoring Requirements
 
-- **Z-Thread**: Zero-touch autonomous deployments with governance hooks
-- **Cloud sync**: Optional sync of sequences/artifacts to cloud storage
-- **Team collaboration**: Shared sequences with role-based access
-- **Plugin system**: Custom step types, model adapters, output processors
-- **Mini-map**: Zoomed-out overview of large sequences
-- **Soft dependencies**: Dashed arrows for "nice-to-have-before" relationships
-- **Git integration**: Auto-create worktrees per step, branch per thread
-- **Richer synthesis**: AI-powered artifact comparison and merge tooling
-- **Notifications**: Desktop/Slack/webhook notifications on step completion/failure
+### 6.1 Skill Model
+
+Skills are dual-truth objects:
+
+- **Capability truth**: skills attached to a thread and optionally inherited by child threads
+- **Execution truth**: skills actually used during a run
+
+#### Rules
+- skills attach at the thread level
+- child threads may inherit skills if the parent allows it
+- child threads may add more local skills
+- inherited skills are not explicitly dropped
+- skills are visible on thread cards as icon inventory
+
+### 6.2 Thread Power and Weight
+
+#### Thread Power
+- live evolving score
+- changes over time based on demonstrated performance, not only static configuration
+- should reflect accumulated capability and operational outcomes
+
+#### Weight
+- operational burden, not prestige
+- influenced by model class, orchestration complexity, tool stack, and runtime burden
+- should help compare powerful but expensive builds against leaner builds
+
+### 6.3 Rubric
+
+Thread Power should be supported by visible rubric dimensions, rendered as 10-segment bars on the focused card. Candidate dimensions include:
+
+- tools
+- model
+- autonomy
+- coordination
+- reliability
+- economy
+- specialization
+- complexity
+
+The exact rubric formula can evolve, but the card should always explain the score through consistent dimensions.
+
+### 6.4 Skill Value
+
+Skill value should be driven primarily by impact on thread outcomes, not mere frequency. It must be able to reflect contextual affinity, especially:
+
+- model-to-skill pairing quality
+- thread-type-to-skill pairing quality
+- contribution to successful verified outcomes
+
+This creates the basis for long-term pack value and monetizable skill intelligence inside ThreadOS.
+
+### 6.5 Model Provider And Tracing Requirements
+
+ThreadOS needs a first-class provider layer rather than ad hoc model clients.
+
+#### Required providers
+- **OpenAI** via the official `openai` JavaScript SDK
+- **OpenRouter** as an alternate provider for model alternatives and routing, wired through the same provider abstraction
+
+#### Required architecture
+- one internal provider interface for model invocation
+- provider-specific configuration isolated from UI components
+- environment-backed provider credentials
+- the ability to select provider, model, and fallback policy per thread or run context
+
+#### OpenRouter requirement
+- OpenRouter should be integrated through its OpenAI-compatible API path rather than as a separate product architecture
+- model alternatives and routing should be available without duplicating the rest of the runtime model
+
+#### Tracing requirement
+- ThreadOS provenance and runtime history remain the source of truth
+- if the OpenAI Agents SDK is adopted, native tracing may be used as an additional signal for OpenAI-backed runs
+- plain `openai` SDK calls and OpenRouter calls should not be assumed to provide equivalent native tracing automatically
+- the system must support external or internal tracing for non-Agents-SDK providers without weakening ThreadOS provenance
+
+#### Product rule
+- provider integration must strengthen the runtime model, not bypass it
+- OpenAI and OpenRouter are execution providers inside ThreadOS, not separate product surfaces
+
+---
+
+## 7. Thread Runner Requirements
+
+### 7.1 Product Positioning
+
+Thread Runner is the advanced proving layer of ThreadOS. It is deliberately hard. It exists to push agent capability and surface winning engineering setups. It is not for novice users.
+
+### 7.2 Access Rules
+
+- visible from the entrance screen and top-right mode control
+- locked until registration and paid subscription are satisfied
+- local experimentation remains in ThreadOS core
+- all combatant runs must execute in ThreadOS-managed VMs
+
+### 7.3 Verified Environment
+
+A combatant run is valid only when executed in a ThreadOS-controlled VM image with a pre-configured environment. This is required for:
+
+- fair timing
+- comparable evidence
+- anti-cheat integrity
+- authoritative ranking
+- credible pack generation
+
+### 7.4 Competitive Structure
+
+#### Base format
+- 5 or 6 combatants per race
+- top 2 qualify
+- class and division constraints applied before the run
+- one authoritative time-based race score determines ranking within that race
+
+#### Divisions
+- `Micro`
+- `Mini`
+- `Frontline`
+- `Champion`
+
+#### Classifications
+- `Open Source`
+- `Closed Source`
+- `Prompting`
+- `Economical`
+- additional classes may be introduced later
+
+### 7.5 Status And Pack Ladder
+
+#### Class win
+- asset: `Challenger Pack`
+- reward: `Challenger status`
+
+#### Division win
+- asset: `Champion's Pack`
+- reward: `Champion status`
+
+#### Open Champion
+- asset: `Hero Pack`
+- reward: `Hero status`
+
+Rules:
+- only highest status is shown on primary builder surfaces
+- pack/status records do not artificially decay; prominence decays organically as new winners emerge
+- Open Champion is the apex closed invitational tier
+
+### 7.6 Open Champion
+
+Open Champion is a closed invitational. Entry comes from the top competitive field, not from open casual access. It should remain scarce and prestigious.
+
+### 7.7 Pack Economics
+
+The premium value must remain inside ThreadOS.
+
+- packs are native ThreadOS assets
+- public visibility can exist as teaser or status surfaces
+- full pack value stays gated
+- pack contents include structure, skill inventory, model pairing, provenance, and verified evidence
+
+---
+
+## 8. Non-Functional Requirements
+
+### 8.1 Product Discipline
+- ThreadOS remains serious and engineering-first
+- Thread Runner never takes over the beginner experience
+- scoring and status must always be explainable and provenance-backed
+
+### 8.2 Performance
+- UI should remain responsive with 100+ nodes/threads visible
+- hierarchy focus transitions should feel immediate
+- lane board must support dense but readable execution rows
+
+### 8.3 Reliability
+- runtime truth must remain consistent across CLI, API, UI, and proving flows
+- all scoring and pack outputs must be traceable to registered runs
+
+### 8.4 Security And Trust
+- all combatant runs execute in controlled VMs
+- all agents are registered
+- provenance is inspectable
+- status and packs must not be forgeable through local-only runs
+
+---
+
+## 9. Delivery Sequence
+
+### Phase 1: Backend truth completion
+- finalize runtime truth and provenance contracts
+- complete registered-agent and run identity rules
+- stabilize scoring inputs and pack metadata contracts
+
+### Phase 2: ThreadOS UI upgrade
+- implement the stable workbench shell
+- implement hierarchy, lanes, layers, inspector, and focused thread card
+- integrate skills and provenance into the shell
+
+### Phase 3: Thread Runner foundation
+- add entrance gating, registration, and eligibility checks
+- add VM-backed verified combatant run infrastructure
+- add race storage and qualification flows
+
+### Phase 4: Packs and status system
+- persist Challenger, Champion, and Hero assets/statuses
+- add builder profile and pack ownership views
+- keep premium value inside ThreadOS
+
+### Phase 5: Advanced proving layer
+- open cups
+- invitation logic for Open Champion
+- pack showcase and premium access refinement
+
+---
+
+## 10. Non-Goals For This Stage
+
+- turning ThreadOS into a generic marketplace
+- exposing pack internals publicly by default
+- making Thread Runner the primary first-run experience
+- designing for casual participation over serious capability proof
+- allowing unregistered agents or unverified combatant runs into the official proving layer
