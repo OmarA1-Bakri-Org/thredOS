@@ -1,6 +1,5 @@
-import { describe, expect, test } from 'bun:test'
+import { afterEach, describe, expect, mock, test } from 'bun:test'
 import type { ReactElement, ReactNode } from 'react'
-import { ThreadSurfaceInspector } from './ThreadSurfaceInspector'
 import type { ThreadSurfaceFocusedDetail } from '@/components/canvas/threadSurfaceFocus'
 import { contentCreatorWorkflow, getWorkflowStepById } from '@/lib/workflows'
 
@@ -51,8 +50,14 @@ const detail: ThreadSurfaceFocusedDetail = {
   outgoingMergeEvents: [],
 }
 
+const { ThreadSurfaceInspector } = await import('./ThreadSurfaceInspector')
+
+afterEach(() => {
+  mock.restore()
+})
+
 describe('ThreadSurfaceInspector', () => {
-  test('renders thread/run/provenance detail before a specific step is selected', () => {
+  test('renders thread/run/provenance detail and keeps workflow context in the inspector', () => {
     const panel = ThreadSurfaceInspector({
       detail,
       workflowStep: getWorkflowStepById(contentCreatorWorkflow, 'post_publish_analytics')!,
@@ -60,8 +65,13 @@ describe('ThreadSurfaceInspector', () => {
 
     expect(collectByTestId(panel, 'thread-surface-inspector')).toHaveLength(1)
     expect(collectByTestId(panel, 'thread-surface-summary')).toHaveLength(1)
+    expect(collectByTestId(panel, 'thread-surface-thread-context')).toHaveLength(1)
     expect(collectByTestId(panel, 'thread-surface-provenance')).toHaveLength(1)
     expect(collectByTestId(panel, 'thread-surface-run-context')).toHaveLength(1)
+    expect(collectByTestId(panel, 'thread-surface-run-notes')).toHaveLength(1)
+    expect(collectByTestId(panel, 'thread-surface-run-discussion')).toHaveLength(1)
+    expect(collectByTestId(panel, 'thread-surface-workflow-detail')).toHaveLength(1)
+    expect(collectByTestId(panel, 'thread-surface-workflow-blueprint')).toHaveLength(1)
     expect(collectByTestId(panel, 'workflow-step-context-panel')).toHaveLength(1)
     expect(collectByTestId(panel, 'workflow-blueprint-panel')).toHaveLength(1)
   })

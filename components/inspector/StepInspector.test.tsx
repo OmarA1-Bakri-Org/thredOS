@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, mock, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { renderToStaticMarkup } from 'react-dom/server'
 import type { SequenceStatus } from '@/app/api/status/route'
@@ -144,6 +144,10 @@ mock.module('@/lib/ui/store', () => ({
 
 const { StepInspector } = await import('./StepInspector')
 
+afterEach(() => {
+  mock.restore()
+})
+
 describe('StepInspector', () => {
   beforeEach(() => {
     useUIStoreMock.setState({
@@ -167,13 +171,20 @@ describe('StepInspector', () => {
     })
   })
 
-  test('keeps thread/run context visible when a specific workflow step is selected', () => {
+  test('promotes thread, run, provenance, and workflow detail into the inspector when a workflow step is selected', () => {
     const markup = renderToStaticMarkup(<StepInspector />)
 
     expect(markup).toContain('data-testid="step-inspector-thread-context"')
+    expect(markup).toContain('data-testid="step-inspector-thread-provenance"')
+    expect(markup).toContain('data-testid="step-inspector-run-notes"')
+    expect(markup).toContain('data-testid="step-inspector-run-discussion"')
+    expect(markup).toContain('data-testid="step-inspector-workflow-detail"')
     expect(markup).toContain('Synthesis')
     expect(markup).toContain('run-synthesis')
     expect(markup).toContain('Draft LinkedIn')
+    expect(markup).toContain('Synthesis is preparing the review packet.')
+    expect(markup).toContain('Synthesis discussion context.')
     expect(markup).toContain('Workflow step context')
+    expect(markup).toContain('Workflow blueprint')
   })
 })

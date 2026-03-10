@@ -7,6 +7,10 @@ export function WorkflowStepContextPanel({
   workflow: WorkflowDefinition
   step: WorkflowStep
 }) {
+  const dependencySummary = step.dependsOn.length > 0 ? step.dependsOn.join(', ') : 'No upstream dependencies'
+  const actionSummary = step.actionTypes.length > 0 ? step.actionTypes.join(', ') : 'No declared action types'
+  const outputSummary = step.outputKeys.length > 0 ? step.outputKeys.join(', ') : 'No explicit outputs'
+
   return (
     <div data-testid="workflow-step-context-panel" className="space-y-4">
       <section className="border border-[#16417C]/70 bg-[#16417C]/18 px-4 py-4">
@@ -15,21 +19,37 @@ export function WorkflowStepContextPanel({
         <p className="mt-2 text-sm text-slate-200">{step.description}</p>
       </section>
 
-      <section data-testid="workflow-step-metadata" className="border border-[#16417C]/70 bg-[#16417C]/16 px-4 py-4">
-        <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">Metadata</div>
-        <div className="mt-3 grid gap-3 xl:grid-cols-2 text-sm text-slate-100">
-          <div className="border border-slate-800/90 bg-[#08101d] px-3 py-3"><strong className="text-white">Workflow:</strong> {workflow.name}</div>
-          <div className="border border-slate-800/90 bg-[#08101d] px-3 py-3"><strong className="text-white">Phase:</strong> {step.phase}</div>
-          <div className="border border-slate-800/90 bg-[#08101d] px-3 py-3"><strong className="text-white">Execution:</strong> {step.execution.replace('_', ' ')}</div>
-          <div className="border border-slate-800/90 bg-[#08101d] px-3 py-3"><strong className="text-white">Timeout:</strong> {step.timeoutMs} ms</div>
-          <div className="border border-slate-800/90 bg-[#08101d] px-3 py-3"><strong className="text-white">Dependencies:</strong> {step.dependsOn.length > 0 ? step.dependsOn.join(', ') : 'None'}</div>
-          <div className="border border-slate-800/90 bg-[#08101d] px-3 py-3"><strong className="text-white">Format checks:</strong> {step.formatValidationCount}</div>
-          {step.condition ? <div className="border border-slate-800/90 bg-[#08101d] px-3 py-3 xl:col-span-2"><strong className="text-white">Condition:</strong> {step.condition}</div> : null}
+      <section data-testid="workflow-step-summary" className="border border-[#16417C]/70 bg-[#16417C]/16 px-4 py-4">
+        <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">Execution summary</div>
+        <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-3 text-sm text-slate-100">
+          <div className="border border-slate-800/90 bg-[#08101d] px-3 py-3">
+            <div className="font-mono text-[10px] uppercase tracking-[0.16em] text-slate-500">Workflow</div>
+            <div className="mt-2 font-medium text-white">{workflow.name}</div>
+          </div>
+          <div className="border border-slate-800/90 bg-[#08101d] px-3 py-3">
+            <div className="font-mono text-[10px] uppercase tracking-[0.16em] text-slate-500">Phase / execution</div>
+            <div className="mt-2 font-medium text-white">Phase {step.phase} · {step.execution.replace('_', ' ')}</div>
+          </div>
+          <div className="border border-slate-800/90 bg-[#08101d] px-3 py-3">
+            <div className="font-mono text-[10px] uppercase tracking-[0.16em] text-slate-500">Timeout / gates</div>
+            <div className="mt-2 font-medium text-white">{step.timeoutMs} ms · {step.gateCount} gate{step.gateCount === 1 ? '' : 's'}</div>
+          </div>
+          <div className="border border-slate-800/90 bg-[#08101d] px-3 py-3 sm:col-span-2 xl:col-span-3">
+            <div className="font-mono text-[10px] uppercase tracking-[0.16em] text-slate-500">Dependencies</div>
+            <div className="mt-2 text-slate-200">{dependencySummary}</div>
+          </div>
+          {step.condition ? (
+            <div className="border border-slate-800/90 bg-[#08101d] px-3 py-3 sm:col-span-2 xl:col-span-3">
+              <div className="font-mono text-[10px] uppercase tracking-[0.16em] text-slate-500">Condition</div>
+              <div className="mt-2 text-slate-200">{step.condition}</div>
+            </div>
+          ) : null}
         </div>
       </section>
 
       <section data-testid="workflow-step-actions" className="border border-slate-700 bg-slate-950/65 px-4 py-4">
         <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">Action types</div>
+        <p className="mt-2 text-sm text-slate-300">{actionSummary}</p>
         <div className="mt-3 flex flex-wrap gap-2 text-[11px] uppercase tracking-[0.18em]">
           {step.actionTypes.map(actionType => (
             <span key={actionType} className="rounded-full border border-slate-700 bg-slate-950/65 px-3 py-1 text-slate-300">
@@ -46,6 +66,7 @@ export function WorkflowStepContextPanel({
 
       <section data-testid="workflow-step-outputs" className="border border-slate-700 bg-slate-950/65 px-4 py-4">
         <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">Outputs</div>
+        <p className="mt-2 text-sm text-slate-300">{outputSummary}</p>
         <div className="mt-3 text-sm text-slate-100">
           {step.outputKeys.length > 0 ? (
             <div className="flex flex-wrap gap-2">

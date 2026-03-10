@@ -139,32 +139,59 @@ export function StepInspector() {
               ) : null}
             </div>
             {focusedThreadDetail.runId ? (
-              <span className="rounded-full border border-sky-500/35 bg-sky-500/10 px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-sky-100">
+              <span className="border border-sky-500/35 bg-sky-500/10 px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-sky-100">
                 {focusedThreadDetail.runId}
               </span>
             ) : null}
             {focusedThreadDetail.runStatus ? (
-              <span className="rounded-full border border-emerald-500/35 bg-emerald-500/10 px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-emerald-100">
+              <span className="border border-emerald-500/35 bg-emerald-500/10 px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-emerald-100">
                 {focusedThreadDetail.runStatus}
               </span>
             ) : null}
             {focusedThreadDetail.executionIndex != null ? (
-              <span className="rounded-full border border-slate-700 bg-slate-950/60 px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-slate-200">
+              <span className="border border-slate-700 bg-slate-950/60 px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-slate-200">
                 execIndex {focusedThreadDetail.executionIndex}
               </span>
             ) : null}
           </div>
-          <div className="mt-3 grid gap-3 md:grid-cols-2">
-            <div className="border border-slate-800/90 bg-[#08101d] px-3 py-3">
-              <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Run summary</div>
-              <div className="mt-2 text-sm text-slate-100">
-                {focusedThreadDetail.runSummary ?? 'No run summary recorded yet.'}
+          <div className="mt-3 grid gap-3 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]">
+            <div className="space-y-3">
+              <div className="border border-slate-800/90 bg-[#08101d] px-3 py-3">
+                <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Run summary</div>
+                <div className="mt-2 text-sm text-slate-100">
+                  {focusedThreadDetail.runSummary ?? 'No run summary recorded yet.'}
+                </div>
+              </div>
+              <div
+                data-testid="step-inspector-thread-provenance"
+                className="border border-slate-800/90 bg-[#08101d] px-3 py-3"
+              >
+                <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Thread provenance</div>
+                <div className="mt-2 space-y-2 text-sm text-slate-100">
+                  <div><strong className="text-white">Thread surface:</strong> {focusedThreadDetail.threadSurfaceId}</div>
+                  <div><strong className="text-white">Run:</strong> {focusedThreadDetail.runId ?? 'No run selected'}</div>
+                  <div><strong className="text-white">Workflow step context:</strong> {workflowStep ? workflowStep.name : 'Unavailable'}</div>
+                </div>
               </div>
             </div>
-            <div className="border border-slate-800/90 bg-[#08101d] px-3 py-3">
-              <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Workflow step context</div>
-              <div className="mt-2 text-sm text-slate-100">
-                {workflowStep ? workflowStep.name : 'Workflow context unavailable.'}
+            <div className="space-y-3">
+              <div
+                data-testid="step-inspector-run-notes"
+                className="border border-[#16417C]/70 bg-[#16417C]/16 px-3 py-3"
+              >
+                <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Run notes</div>
+                <div className="mt-2 text-sm text-slate-100">
+                  {focusedThreadDetail.runNotes ?? 'No run notes recorded yet.'}
+                </div>
+              </div>
+              <div
+                data-testid="step-inspector-run-discussion"
+                className="border border-[#16417C]/70 bg-[#16417C]/16 px-3 py-3"
+              >
+                <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Run discussion</div>
+                <div className="mt-2 text-sm text-slate-100">
+                  {focusedThreadDetail.runDiscussion ?? 'No run discussion recorded yet.'}
+                </div>
               </div>
             </div>
           </div>
@@ -172,12 +199,12 @@ export function StepInspector() {
       ) : null}
 
       <section className="border border-[#16417C]/70 bg-[#16417C]/18 px-4 py-4">
-        <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">Thread / Run detail</div>
+        <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">Step detail</div>
         <div className="mt-2 text-2xl font-semibold tracking-tight text-white">{step!.id}</div>
         <div className="mt-3 flex flex-wrap gap-2 text-[11px] uppercase tracking-[0.18em]">
-          <span className="rounded-full border border-sky-500/45 bg-sky-500/10 px-3 py-1 text-sky-100">{step!.type}</span>
-          <span className="rounded-full border border-slate-700 bg-slate-950/60 px-3 py-1 text-slate-200">{step!.model}</span>
-          <span className="rounded-full border border-emerald-500/35 bg-emerald-500/10 px-3 py-1 text-emerald-100">{step!.status}</span>
+          <span className="border border-sky-500/45 bg-sky-500/10 px-3 py-1 text-sky-100">{step!.type}</span>
+          <span className="border border-slate-700 bg-slate-950/60 px-3 py-1 text-slate-200">{step!.model}</span>
+          <span className="border border-emerald-500/35 bg-emerald-500/10 px-3 py-1 text-emerald-100">{step!.status}</span>
         </div>
       </section>
 
@@ -220,11 +247,12 @@ export function StepInspector() {
         <StepActions nodeId={step!.id} isGate={false} />
       </section>
 
-      {workflowStep ? (
-        <WorkflowStepContextPanel workflow={contentCreatorWorkflow} step={workflowStep} />
-      ) : (
+      <section data-testid="step-inspector-workflow-detail" className="space-y-4">
+        {workflowStep ? (
+          <WorkflowStepContextPanel workflow={contentCreatorWorkflow} step={workflowStep} />
+        ) : null}
         <WorkflowBlueprintPanel workflow={contentCreatorWorkflow} />
-      )}
+      </section>
     </div>
   )
 }

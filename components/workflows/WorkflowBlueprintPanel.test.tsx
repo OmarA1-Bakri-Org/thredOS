@@ -1,41 +1,20 @@
 import { describe, expect, test } from 'bun:test'
-import type { ReactElement, ReactNode } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
 import { WorkflowBlueprintPanel } from './WorkflowBlueprintPanel'
 import { contentCreatorWorkflow } from '@/lib/workflows/content-creator'
 
-type ElementWithChildren = ReactElement<{
-  children?: ReactNode
-  [key: string]: unknown
-}>
-
-function collectByTestId(node: ReactNode, target: string, acc: ElementWithChildren[] = []): ElementWithChildren[] {
-  if (Array.isArray(node)) {
-    for (const child of node) collectByTestId(child, target, acc)
-    return acc
-  }
-
-  if (!node || typeof node !== 'object' || !('props' in node)) {
-    return acc
-  }
-
-  const element = node as ElementWithChildren
-  if (element.props['data-testid'] === target) {
-    acc.push(element)
-  }
-
-  collectByTestId(element.props.children, target, acc)
-  return acc
+function countOccurrences(source: string, needle: string) {
+  return source.split(needle).length - 1
 }
 
 describe('WorkflowBlueprintPanel', () => {
-  test('renders the workflow blueprint, connections, and post-completion signals', () => {
-    const panel = WorkflowBlueprintPanel({
-      workflow: contentCreatorWorkflow,
-    })
+  test('renders a compact workflow blueprint summary with phase chips and context summaries', () => {
+    const markup = renderToStaticMarkup(<WorkflowBlueprintPanel workflow={contentCreatorWorkflow} />)
 
-    expect(collectByTestId(panel, 'workflow-blueprint-panel')).toHaveLength(1)
-    expect(collectByTestId(panel, 'workflow-phase-column')).toHaveLength(7)
-    expect(collectByTestId(panel, 'workflow-connections-panel')).toHaveLength(1)
-    expect(collectByTestId(panel, 'workflow-post-completion-panel')).toHaveLength(1)
+    expect(countOccurrences(markup, 'data-testid="workflow-blueprint-panel"')).toBe(1)
+    expect(countOccurrences(markup, 'data-testid="workflow-phase-chip"')).toBe(7)
+    expect(countOccurrences(markup, 'data-testid="workflow-summary-grid"')).toBe(1)
+    expect(countOccurrences(markup, 'data-testid="workflow-connections-panel"')).toBe(1)
+    expect(countOccurrences(markup, 'data-testid="workflow-post-completion-panel"')).toBe(1)
   })
 })

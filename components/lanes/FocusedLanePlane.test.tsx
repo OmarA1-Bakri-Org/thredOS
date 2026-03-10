@@ -62,7 +62,7 @@ function collectByTestId(node: ReactNode, target: string, acc: ElementWithChildr
 }
 
 describe('FocusedLanePlane', () => {
-  test('splits the lane plane into a primary execution surface and a blue context column', () => {
+  test('splits the lane plane into a primary execution brief and a compact blue context column', () => {
     const workflowStep = resolveWorkflowReferenceStep(contentCreatorWorkflow, {
       threadSurfaceLabel: detail.surfaceLabel,
       threadRole: detail.role,
@@ -77,10 +77,12 @@ describe('FocusedLanePlane', () => {
 
     expect(collectByTestId(plane, 'focused-lane-plane')).toHaveLength(1)
     expect(collectByTestId(plane, 'focused-lane-primary')).toHaveLength(1)
+    expect(collectByTestId(plane, 'lane-execution-brief')).toHaveLength(1)
     const contextColumns = collectByTestId(plane, 'focused-lane-context-column')
     expect(contextColumns).toHaveLength(1)
     expect(contextColumns[0]?.props.className).toContain('bg-[#16417C]/18')
-    expect(collectByTestId(plane, 'workflow-step-context-panel')).toHaveLength(1)
+    expect(collectByTestId(plane, 'workflow-step-context-panel')).toHaveLength(0)
+    expect(collectByTestId(plane, 'focused-lane-blueprint')).toHaveLength(1)
     expect(collectByTestId(plane, 'workflow-blueprint-panel')).toHaveLength(1)
     expect(collectByTestId(plane, 'lane-sequence-view')).toHaveLength(1)
   })
