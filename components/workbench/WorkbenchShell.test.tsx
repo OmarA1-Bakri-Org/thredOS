@@ -88,4 +88,19 @@ describe('WorkbenchShell', () => {
     expect(collectButtonsByLabel(shell, 'Close thread navigator')).toHaveLength(1)
     expect(collectButtonsByLabel(shell, 'Close inspector')).toHaveLength(1)
   })
+
+  test('keeps center board dominant by narrowing fixed rails on the default desktop shell', () => {
+    const shell = WorkbenchShell({
+      topBar: <div>top</div>,
+      leftRail: <div>left</div>,
+      board: <div>board</div>,
+      inspector: <div>inspector</div>,
+    })
+
+    const leftRail = collectByDataRegion(shell, 'left-rail')[0]
+    const inspector = collectByDataRegion(shell, 'inspector')[0]
+
+    expect(String(leftRail?.props.className ?? '')).toContain('w-64')
+    expect(String(inspector?.props.className ?? '')).toContain('w-[22rem]')
+  })
 })

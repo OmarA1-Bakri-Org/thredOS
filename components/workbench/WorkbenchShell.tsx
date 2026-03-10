@@ -35,7 +35,7 @@ export function WorkbenchShell({
         {topBar}
       </div>
       <div className="flex min-h-0 flex-1">
-        <aside data-workbench-region="left-rail" className="hidden w-72 shrink-0 border-r border-slate-800/80 bg-[#08101d] xl:block">
+        <aside data-workbench-region="left-rail" className="hidden w-64 shrink-0 border-r border-slate-800/80 bg-[#08101d] xl:block 2xl:w-72">
           {leftRail}
         </aside>
         <main className="flex min-w-0 flex-1 flex-col">
@@ -48,7 +48,7 @@ export function WorkbenchShell({
             </div>
           ) : null}
         </main>
-        <aside data-workbench-region="inspector" className="hidden w-[24rem] shrink-0 border-l border-slate-800/80 bg-[#08101d] 2xl:block">
+        <aside data-workbench-region="inspector" className="hidden w-[22rem] shrink-0 border-l border-slate-800/80 bg-[#08101d] 2xl:block">
           {inspector}
         </aside>
       </div>
@@ -81,7 +81,7 @@ export function WorkbenchShell({
           <div className="absolute inset-0 bg-[#02050a]/76 backdrop-blur-sm" onClick={onDismissInspector} aria-hidden="true" />
           <aside
             data-workbench-region="inspector-drawer-panel"
-            className="absolute inset-y-0 right-0 flex w-[24rem] max-w-[92vw] flex-col border-l border-slate-800/80 bg-[#08101d] shadow-[0_28px_80px_rgba(0,0,0,0.55)]"
+            className="absolute inset-y-0 right-0 flex w-[22rem] max-w-[92vw] flex-col border-l border-slate-800/80 bg-[#08101d] shadow-[0_28px_80px_rgba(0,0,0,0.55)]"
           >
             <div className="flex items-center justify-between border-b border-slate-800/80 px-4 py-4">
               <div>

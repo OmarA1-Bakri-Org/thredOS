@@ -8,6 +8,7 @@ describe('useUIStore', () => {
 
   test('product entry starts unset until the user selects a mode', () => {
     expect(useUIStore.getState().productEntry).toBeNull()
+    expect(useUIStore.getState().inspectorOpen).toBeFalse()
 
     useUIStore.getState().setProductEntry('threados')
     expect(useUIStore.getState().productEntry).toBe('threados')
@@ -30,7 +31,7 @@ describe('useUIStore', () => {
     useUIStore.getState().setViewMode('hierarchy')
 
     expect(useUIStore.getState().selectedThreadSurfaceId).toBe('thread-synthesis')
-    expect(useUIStore.getState().inspectorOpen).toBeTrue()
+    expect(useUIStore.getState().inspectorOpen).toBeFalse()
   })
 
   test('opening lane focus from a hierarchy node sets synchronized top-level and lane-board focus context', () => {
@@ -38,7 +39,7 @@ describe('useUIStore', () => {
     useUIStore.getState().openLaneViewForThreadSurface('thread-research', 'run-research')
 
     expect(useUIStore.getState().viewMode).toBe('lanes')
-    expect(useUIStore.getState().inspectorOpen).toBeTrue()
+    expect(useUIStore.getState().inspectorOpen).toBeFalse()
     expect(useUIStore.getState().selectedThreadSurfaceId).toBe('thread-research')
     expect(useUIStore.getState().selectedRunId).toBe('run-research')
     expect(useUIStore.getState().laneFocusThreadSurfaceId).toBe('thread-research')

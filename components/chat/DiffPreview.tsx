@@ -14,7 +14,7 @@ export const DiffPreview = memo(function DiffPreview({ diff }: DiffPreviewProps)
       <div className="bg-[#16417C]/18 px-3 py-2 font-mono text-[11px] uppercase tracking-[0.2em] text-slate-400">
         Preview Changes
       </div>
-      <pre className="overflow-x-auto bg-[#08101d] p-3 font-mono text-xs text-slate-200">
+      <pre className="overflow-x-auto bg-[#08101d] p-4 font-mono text-xs leading-6 text-slate-200">
         {lines.map((line, i) => {
           let className = ''
           if (line.startsWith('+')) className = 'text-emerald-300'

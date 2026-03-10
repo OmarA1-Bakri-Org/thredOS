@@ -69,7 +69,7 @@ export const useUIStore = create<UIStore>((set) => ({
   leftRailOpen: false,
   toggleLeftRail: () => set((s) => ({ leftRailOpen: !s.leftRailOpen })),
   closeLeftRail: () => set({ leftRailOpen: false }),
-  inspectorOpen: true,
+  inspectorOpen: false,
   toggleInspector: () => set((s) => ({ inspectorOpen: !s.inspectorOpen })),
   closeInspector: () => set({ inspectorOpen: false }),
   chatOpen: false,
@@ -84,7 +84,6 @@ export const useUIStore = create<UIStore>((set) => ({
   setSelectedThreadSurfaceId: (id) =>
     set({
       selectedThreadSurfaceId: id,
-      ...(id != null ? { inspectorOpen: true } : {}),
     }),
   selectedRunId: null,
   setSelectedRunId: (id) => set({ selectedRunId: id }),
@@ -112,7 +111,6 @@ export const useUIStore = create<UIStore>((set) => ({
   openLaneViewForThreadSurface: (threadSurfaceId, runId = null) =>
     set((state) => ({
       viewMode: 'lanes',
-      inspectorOpen: true,
       selectedThreadSurfaceId: threadSurfaceId,
       selectedRunId: runId,
       laneFocusThreadSurfaceId: threadSurfaceId,

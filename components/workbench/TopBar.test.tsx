@@ -57,4 +57,13 @@ describe('TopBar', () => {
     expect(markup).toContain('Thread Runner')
     expect(markup).toContain('disabled=""')
   })
+
+  test('compresses utility status into a single status summary and smaller-screen fallback pill', () => {
+    const markup = renderToStaticMarkup(<TopBar />)
+
+    expect(markup).toContain('data-testid="topbar-status-summary"')
+    expect(markup).toContain('Ready 4 · Active 1 · Completed 6 · Failed 0')
+    expect(markup).toContain('xl:hidden')
+    expect(markup).not.toContain('Thread Chat')
+  })
 })

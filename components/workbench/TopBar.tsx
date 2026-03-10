@@ -48,9 +48,13 @@ export function TopBar() {
     }
   }, [])
 
+  const statusSummary = status
+    ? `Ready ${status.summary.ready} · Active ${status.summary.running} · Completed ${status.summary.done} · Failed ${status.summary.failed}`
+    : null
+
   return (
-    <div className="grid min-h-[4.5rem] grid-cols-[minmax(0,auto)_minmax(0,1fr)_auto] items-center gap-4 px-5 py-3">
-      <div className="flex min-w-0 items-center gap-3">
+    <div className="grid min-h-[4.5rem] grid-cols-[minmax(0,auto)_minmax(0,1fr)_auto] items-center gap-3 px-4 py-3 2xl:px-5">
+      <div className="flex min-w-0 items-center gap-2.5">
         <Button
           type="button"
           variant="outline"
@@ -63,7 +67,7 @@ export function TopBar() {
         </Button>
 
         <div className="min-w-0">
-          <div className="text-[11px] uppercase tracking-[0.28em] text-sky-300/60">Agentic operating system</div>
+          <div className="font-mono text-[11px] uppercase tracking-[0.28em] text-sky-300/60">Agentic operating system</div>
           <div className="text-xl font-semibold tracking-tight text-white">threadOS</div>
         </div>
       </div>
@@ -90,7 +94,7 @@ export function TopBar() {
 
         <div
           data-workbench-cluster="view-mode"
-          className="hidden shrink-0 items-center gap-2 border border-slate-800 bg-[#0a101a] px-2 py-2 lg:flex"
+          className="hidden shrink-0 items-center gap-2 border border-slate-800 bg-[#0a101a] px-2 py-2 xl:flex"
         >
           {viewModes.map(mode => (
             <Button
@@ -134,7 +138,7 @@ export function TopBar() {
             {runRunnable.isPending ? 'Running' : 'Run'}
           </Button>
           <Button type="button" variant="secondary" onClick={toggleChat}>
-            Thread Chat
+            Chat
           </Button>
           <Button type="button" variant="outline" onClick={toggleInspector} className="hidden 2xl:inline-flex">
             Inspector
@@ -152,21 +156,20 @@ export function TopBar() {
         </div>
         <div data-workbench-cluster="utility-status" className="flex items-center gap-2 border border-slate-800 bg-[#0a101a] px-2 py-2">
           {status ? (
-            <div className="hidden items-center gap-2 2xl:flex">
+            <div className="hidden min-w-0 items-center gap-2 xl:flex">
               <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-slate-500">{status.name}</span>
-              <span className="rounded-full border border-slate-700 bg-slate-950/65 px-3 py-1 font-mono text-[11px] uppercase tracking-[0.16em] text-slate-300">
-                Ready {status.summary.ready}
-              </span>
-              <span className="rounded-full border border-sky-500/35 bg-sky-500/10 px-3 py-1 font-mono text-[11px] uppercase tracking-[0.16em] text-sky-100">
-                Run {status.summary.running}
-              </span>
-              <span className="rounded-full border border-emerald-500/35 bg-emerald-500/10 px-3 py-1 font-mono text-[11px] uppercase tracking-[0.16em] text-emerald-100">
-                Done {status.summary.done}
-              </span>
-              <span className="rounded-full border border-rose-500/35 bg-rose-500/10 px-3 py-1 font-mono text-[11px] uppercase tracking-[0.16em] text-rose-100">
-                Fail {status.summary.failed}
+              <span
+                data-testid="topbar-status-summary"
+                className="rounded-full border border-[#16417C]/70 bg-[#16417C]/18 px-3 py-1 font-mono text-[11px] uppercase tracking-[0.16em] text-slate-100"
+              >
+                {statusSummary}
               </span>
             </div>
+          ) : null}
+          {status ? (
+            <span className="rounded-full border border-slate-700 bg-slate-950/65 px-3 py-1 font-mono text-[11px] uppercase tracking-[0.16em] text-slate-300 xl:hidden">
+              {status.name}
+            </span>
           ) : null}
           <Button
             type="button"
