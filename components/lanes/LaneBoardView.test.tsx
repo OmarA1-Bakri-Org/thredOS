@@ -24,6 +24,44 @@ function collectByDataTestId(node: ReactNode, target: string, acc: ElementWithCh
 }
 
 describe('LaneBoardView', () => {
+  test('separates the lane roster from the focused execution surface', () => {
+    const view = LaneBoardView({
+      rows: [
+        {
+          threadSurfaceId: 'thread-synthesis',
+          surfaceLabel: 'Synthesis',
+          runId: 'run-synthesis',
+          executionIndex: 20,
+        },
+        {
+          threadSurfaceId: 'thread-review',
+          surfaceLabel: 'Review',
+          runId: 'run-review',
+          executionIndex: 40,
+          laneTerminalState: 'merged',
+        },
+      ],
+      focusedThreadSurfaceId: 'thread-synthesis',
+      selectedRunId: 'run-synthesis',
+      onFocusThread: () => {},
+      onBackToHierarchy: () => {},
+      focusedContent: <div data-testid="lane-focused-content">Focused lane content</div>,
+      workflowByThreadSurfaceId: {
+        'thread-synthesis': {
+          stepId: 'post_publish_analytics',
+          stepName: 'Post-Publish Analytics',
+          phaseLabel: 'Feedback',
+          executionLabel: 'sub agent',
+          hasCondition: true,
+        },
+      },
+    })
+
+    expect(collectByDataTestId(view, 'lane-board-roster')).toHaveLength(1)
+    expect(collectByDataTestId(view, 'lane-board-surface')).toHaveLength(1)
+    expect(collectByDataTestId(view, 'lane-focused-content')).toHaveLength(1)
+  })
+
   test('renders workflow phase and execution metadata for focused rows', () => {
     const view = LaneBoardView({
       rows: [

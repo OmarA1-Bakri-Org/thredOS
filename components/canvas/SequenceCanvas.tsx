@@ -17,6 +17,7 @@ import { useHierarchyGraph } from '@/components/hierarchy/useHierarchyGraph'
 import { HierarchyView } from '@/components/hierarchy/HierarchyView'
 import { LaneBoardView } from '@/components/lanes/LaneBoardView'
 import { createLaneBoardModel } from '@/components/lanes/useLaneBoard'
+import { WorkflowBlueprintPanel } from '@/components/workflows/WorkflowBlueprintPanel'
 import { WorkflowStepContextPanel } from '@/components/workflows/WorkflowStepContextPanel'
 import { resolveThreadSurfaceCanvasData } from './threadSurfaceScaffold'
 import { resolveThreadSurfaceFocusedDetail } from './threadSurfaceFocus'
@@ -206,7 +207,7 @@ function CanvasInner() {
       focusedContent={
         focusedDetail ? (
           <div className="flex h-full flex-col overflow-hidden">
-            <div className="border-b px-4 py-4">
+            <div className="border-b border-slate-800/80 bg-[#08101d] px-5 py-4">
               <div className="flex flex-wrap items-center gap-2">
                 <h3 className="text-base font-semibold text-white">{focusedDetail.surfaceLabel}</h3>
                 {focusedDetail.role ? (
@@ -231,25 +232,34 @@ function CanvasInner() {
                 {focusedDetail.mergedIntoThreadSurfaceId ? <span>merged into {focusedDetail.mergedIntoThreadSurfaceId}</span> : null}
               </div>
             </div>
-            <div className="grid min-h-0 flex-1 gap-4 overflow-auto p-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(20rem,0.75fr)]">
-              <div className="space-y-4">
-                <section className="border border-[#16417C]/70 bg-[#16417C]/18 p-4">
-                  <h4 className="font-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Run Summary</h4>
-                  <p className="mt-3 text-sm text-slate-100">{focusedDetail.runSummary ?? 'No run summary recorded yet.'}</p>
-                </section>
-                <section className="border border-slate-700 bg-slate-950/65 p-4">
-                  <h4 className="font-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Run Notes</h4>
-                  <p className="mt-3 whitespace-pre-wrap text-sm text-slate-100">{focusedDetail.runNotes ?? 'No run notes recorded yet.'}</p>
-                </section>
-                <section className="border border-slate-700 bg-slate-950/65 p-4">
-                  <h4 className="font-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">AI Discussion</h4>
-                  <p className="mt-3 whitespace-pre-wrap text-sm text-slate-100">{focusedDetail.runDiscussion ?? 'No discussion recorded for this run yet.'}</p>
-                </section>
-              </div>
+            <div className="grid min-h-0 flex-1 gap-4 overflow-auto p-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(22rem,0.85fr)]">
               <div className="space-y-4">
                 {workflowReferenceStep ? (
                   <WorkflowStepContextPanel workflow={contentCreatorWorkflow} step={workflowReferenceStep} />
+                ) : (
+                  <section className="border border-[#16417C]/70 bg-[#16417C]/18 p-4">
+                    <h4 className="font-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Execution context</h4>
+                    <p className="mt-3 text-sm text-slate-100">{focusedDetail.runSummary ?? 'No workflow step is currently mapped to this lane.'}</p>
+                  </section>
+                )}
+                {shouldRenderSequenceFlow ? (
+                  <section className="border border-slate-700 bg-slate-950/65 p-4">
+                    <h4 className="font-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Sequence view</h4>
+                    <div className="mt-3 h-[28rem] overflow-hidden border border-slate-800">
+                      <ReactFlowProvider>
+                        <LegacySequenceFlow
+                          minimapVisible={minimapVisible}
+                          status={status}
+                          isLoading={isLoading}
+                          isError={isError}
+                        />
+                      </ReactFlowProvider>
+                    </div>
+                  </section>
                 ) : null}
+              </div>
+              <div className="space-y-4">
+                <WorkflowBlueprintPanel workflow={contentCreatorWorkflow} />
                 <section className="border border-slate-700 bg-slate-950/65 p-4">
                   <h4 className="font-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Incoming Merges</h4>
                   {focusedDetail.incomingMergeGroups.length > 0 ? (
@@ -289,21 +299,6 @@ function CanvasInner() {
                     <p className="mt-3 text-sm text-slate-400">This thread has not merged into another lane.</p>
                   )}
                 </section>
-                {shouldRenderSequenceFlow ? (
-                  <section className="border border-slate-700 bg-slate-950/65 p-4">
-                    <h4 className="font-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Current Sequence</h4>
-                    <div className="mt-3 h-[28rem] overflow-hidden border border-slate-800">
-                      <ReactFlowProvider>
-                        <LegacySequenceFlow
-                          minimapVisible={minimapVisible}
-                          status={status}
-                          isLoading={isLoading}
-                          isError={isError}
-                        />
-                      </ReactFlowProvider>
-                    </div>
-                  </section>
-                ) : null}
               </div>
             </div>
           </div>
