@@ -14,7 +14,7 @@ export function WorkflowBlueprintPanel({ workflow }: { workflow: WorkflowDefinit
           <div
             key={phase.phase}
             data-testid="workflow-phase-column"
-            className="border border-slate-800 bg-slate-950/65 px-3 py-3"
+            className="border border-[#16417C]/70 bg-[#16417C]/16 px-3 py-3"
           >
             <div className="font-mono text-[11px] uppercase tracking-[0.2em] text-slate-500">
               Phase {phase.phase}
@@ -22,7 +22,7 @@ export function WorkflowBlueprintPanel({ workflow }: { workflow: WorkflowDefinit
             <div className="mt-1 text-sm font-semibold text-white">{phase.label}</div>
             <div className="mt-3 space-y-2">
               {phase.steps.map(step => (
-                <div key={step.id} className="border border-slate-800 bg-[#08101d] px-2 py-2">
+                <div key={step.id} className="border border-slate-800/90 bg-[#08101d] px-2 py-2">
                   <div className="text-sm font-medium text-white">{step.name}</div>
                   <div className="mt-1 flex flex-wrap gap-1 text-[10px] uppercase tracking-[0.18em]">
                     <span className="rounded-full border border-slate-700 bg-slate-950/60 px-2 py-0.5 text-slate-300">

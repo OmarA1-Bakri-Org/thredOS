@@ -15,16 +15,16 @@ export function WorkflowStepContextPanel({
         <p className="mt-2 text-sm text-slate-200">{step.description}</p>
       </section>
 
-      <section data-testid="workflow-step-metadata" className="border border-slate-700 bg-slate-950/65 px-4 py-4">
+      <section data-testid="workflow-step-metadata" className="border border-[#16417C]/70 bg-[#16417C]/16 px-4 py-4">
         <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">Metadata</div>
         <div className="mt-3 grid gap-3 xl:grid-cols-2 text-sm text-slate-100">
-          <div><strong className="text-white">Workflow:</strong> {workflow.name}</div>
-          <div><strong className="text-white">Phase:</strong> {step.phase}</div>
-          <div><strong className="text-white">Execution:</strong> {step.execution.replace('_', ' ')}</div>
-          <div><strong className="text-white">Timeout:</strong> {step.timeoutMs} ms</div>
-          <div><strong className="text-white">Dependencies:</strong> {step.dependsOn.length > 0 ? step.dependsOn.join(', ') : 'None'}</div>
-          <div><strong className="text-white">Format checks:</strong> {step.formatValidationCount}</div>
-          {step.condition ? <div className="xl:col-span-2"><strong className="text-white">Condition:</strong> {step.condition}</div> : null}
+          <div className="border border-slate-800/90 bg-[#08101d] px-3 py-3"><strong className="text-white">Workflow:</strong> {workflow.name}</div>
+          <div className="border border-slate-800/90 bg-[#08101d] px-3 py-3"><strong className="text-white">Phase:</strong> {step.phase}</div>
+          <div className="border border-slate-800/90 bg-[#08101d] px-3 py-3"><strong className="text-white">Execution:</strong> {step.execution.replace('_', ' ')}</div>
+          <div className="border border-slate-800/90 bg-[#08101d] px-3 py-3"><strong className="text-white">Timeout:</strong> {step.timeoutMs} ms</div>
+          <div className="border border-slate-800/90 bg-[#08101d] px-3 py-3"><strong className="text-white">Dependencies:</strong> {step.dependsOn.length > 0 ? step.dependsOn.join(', ') : 'None'}</div>
+          <div className="border border-slate-800/90 bg-[#08101d] px-3 py-3"><strong className="text-white">Format checks:</strong> {step.formatValidationCount}</div>
+          {step.condition ? <div className="border border-slate-800/90 bg-[#08101d] px-3 py-3 xl:col-span-2"><strong className="text-white">Condition:</strong> {step.condition}</div> : null}
         </div>
       </section>
 
