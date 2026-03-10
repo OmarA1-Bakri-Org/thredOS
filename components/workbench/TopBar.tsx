@@ -69,7 +69,7 @@ export function TopBar() {
       </div>
 
       <div className="flex min-w-0 items-center gap-3">
-        <div className="hidden shrink-0 items-center gap-2 border border-slate-800 bg-[#0a101a] px-2 py-2 lg:flex">
+        <div className="hidden shrink-0 items-center gap-2 border border-slate-800 bg-[#0a101a] px-2 py-2 md:flex">
           {productEntries.map(entry => (
             <Button
               key={entry.value}
@@ -85,7 +85,7 @@ export function TopBar() {
           ))}
         </div>
 
-        <div className="hidden shrink-0 items-center gap-2 border border-slate-800 bg-[#0a101a] px-2 py-2 xl:flex">
+        <div className="hidden shrink-0 items-center gap-2 border border-slate-800 bg-[#0a101a] px-2 py-2 lg:flex">
           {viewModes.map(mode => (
             <Button
               key={mode.value}
