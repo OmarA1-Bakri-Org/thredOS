@@ -1,6 +1,8 @@
 'use client'
 
 import { Bot, Folder, Globe, Search } from 'lucide-react'
+import { buttonVariants } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 import type { HierarchyViewNode } from './HierarchyView'
 
 interface CompactThreadCardProps {
@@ -18,7 +20,11 @@ export function CompactThreadCard({ node, selected, onSelect }: CompactThreadCar
       data-thread-surface-id={node.clickTarget.threadSurfaceId}
       aria-current={selected ? 'page' : undefined}
       onClick={() => onSelect(node.clickTarget.threadSurfaceId, node.clickTarget.runId)}
-      className={`flex w-56 shrink-0 flex-col border px-4 py-4 text-left transition ${selected ? 'border-sky-500/50 bg-sky-500/8 text-white' : 'border-slate-800 bg-slate-950/65 text-slate-300 hover:border-slate-600 hover:text-white'}`}
+      className={cn(
+        buttonVariants({ variant: selected ? 'secondary' : 'outline' }),
+        'flex h-auto w-56 shrink-0 flex-col items-start px-4 py-4 text-left normal-case tracking-normal',
+        selected ? 'border-sky-500/50 text-white shadow-[0_0_0_1px_rgba(96,165,250,0.15)]' : 'text-slate-300',
+      )}
       style={{ transform: selected ? 'scale(1.03)' : 'scale(1)' }}
     >
       <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">{node.runStatus ?? 'thread surface'}</div>

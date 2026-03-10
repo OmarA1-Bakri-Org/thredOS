@@ -1,6 +1,7 @@
 'use client'
 
 import { Box, Bot, Folder, Globe, Search, ShieldCheck, Sparkles, Wrench } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 import type { HierarchyViewNode } from './HierarchyView'
 
 export interface ThreadSkillBadge {
@@ -162,15 +163,17 @@ export function FocusedThreadCard({ node, profile, onOpenLane }: FocusedThreadCa
               <div><strong className="text-white">Source:</strong> {profile.verified ? 'Verified VM run' : 'ThreadOS local run'}</div>
             </div>
           </section>
-          <button
+          <Button
             type="button"
+            variant="default"
+            size="default"
             data-thread-surface-id={node.clickTarget.threadSurfaceId}
             aria-current="page"
             onClick={() => onOpenLane(node.clickTarget.threadSurfaceId, node.clickTarget.runId)}
-            className="w-full border border-sky-500/40 bg-sky-500/10 px-4 py-3 font-mono text-xs uppercase tracking-[0.22em] text-sky-100 transition hover:border-sky-400 hover:bg-sky-500/15"
+            className="w-full"
           >
             Open lane view
-          </button>
+          </Button>
         </div>
       </div>
     </article>

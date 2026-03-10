@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
-import { Button } from '@/components/ui/button'
+import { Button, buttonVariants } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 import type { WorkflowLaneContext } from '@/lib/workflows'
 
 interface LaneBoardRowView {
@@ -65,12 +66,11 @@ export function LaneBoardView({
                   data-thread-surface-id={row.threadSurfaceId}
                   aria-pressed={isFocused}
                   onClick={() => onFocusThread(row.threadSurfaceId, row.runId)}
-                  className={[
-                    'border px-4 py-4 text-left transition',
-                    isFocused
-                      ? 'border-sky-500/50 bg-[#16417C]/18 text-white shadow-[0_0_0_1px_rgba(96,165,250,0.15)]'
-                      : 'border-slate-800 bg-slate-950/60 text-slate-300 hover:border-slate-600 hover:text-white',
-                  ].join(' ')}
+                  className={cn(
+                    buttonVariants({ variant: isFocused ? 'secondary' : 'outline' }),
+                    'h-auto w-full items-start justify-start whitespace-normal px-4 py-4 text-left normal-case tracking-normal',
+                    isFocused ? 'border-sky-500/50 text-white shadow-[0_0_0_1px_rgba(96,165,250,0.15)]' : 'text-slate-300',
+                  )}
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="text-sm font-semibold tracking-tight">{row.surfaceLabel}</div>

@@ -1,8 +1,10 @@
 'use client'
 
 import { Layers3, Swords } from 'lucide-react'
+import { buttonVariants } from '@/components/ui/button'
 import { useThreadSurfaces } from '@/lib/ui/api'
 import { useUIStore } from '@/lib/ui/store'
+import { cn } from '@/lib/utils'
 
 export function LeftRail() {
   const { data: threadSurfaces } = useThreadSurfaces()
@@ -30,7 +32,11 @@ export function LeftRail() {
                   key={surface.id}
                   type="button"
                   onClick={() => setSelectedThreadSurfaceId(surface.id)}
-                  className={`flex w-full items-start justify-between border px-3 py-3 text-left transition ${selected ? 'border-sky-500/50 bg-sky-500/8 text-white' : 'border-slate-800 bg-slate-950/60 text-slate-300 hover:border-slate-600 hover:text-white'}`}
+                  className={cn(
+                    buttonVariants({ variant: selected ? 'secondary' : 'outline' }),
+                    'flex h-auto w-full items-start justify-between px-3 py-3 text-left normal-case tracking-normal',
+                    selected ? 'border-sky-500/50 text-white shadow-[0_0_0_1px_rgba(96,165,250,0.15)]' : 'text-slate-300',
+                  )}
                 >
                   <span>
                     <span className="block text-sm font-medium">{surface.surfaceLabel}</span>
