@@ -97,4 +97,31 @@ describe('LaneBoardView', () => {
     const conditionFlags = collectByDataTestId(view, 'lane-workflow-condition-flag').map(element => element.props.children)
     expect(conditionFlags).toContain('conditional')
   })
+
+  test('supports multiple runs for the same thread surface in the lane roster', () => {
+    const view = LaneBoardView({
+      rows: [
+        {
+          threadSurfaceId: 'thread-root',
+          surfaceLabel: 'New Sequence',
+          runId: 'run-a',
+          executionIndex: 1,
+        },
+        {
+          threadSurfaceId: 'thread-root',
+          surfaceLabel: 'New Sequence',
+          runId: 'run-b',
+          executionIndex: 2,
+        },
+      ],
+      focusedThreadSurfaceId: 'thread-root',
+      selectedRunId: 'run-b',
+      onFocusThread: () => {},
+      onBackToHierarchy: () => {},
+    })
+
+    const markup = JSON.stringify(view)
+    expect(markup).toContain('run-a')
+    expect(markup).toContain('run-b')
+  })
 })

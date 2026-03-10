@@ -125,6 +125,52 @@ export function StepInspector() {
 
   return (
     <div className="space-y-4">
+      {focusedThreadDetail ? (
+        <section
+          data-testid="step-inspector-thread-context"
+          className="border border-[#16417C]/70 bg-[#16417C]/18 px-4 py-4"
+        >
+          <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">Current thread / run</div>
+          <div className="mt-2 flex flex-wrap items-end gap-3">
+            <div>
+              <div className="text-2xl font-semibold tracking-tight text-white">{focusedThreadDetail.surfaceLabel}</div>
+              {focusedThreadDetail.role ? (
+                <div className="mt-1 text-sm text-slate-200">{focusedThreadDetail.role}</div>
+              ) : null}
+            </div>
+            {focusedThreadDetail.runId ? (
+              <span className="rounded-full border border-sky-500/35 bg-sky-500/10 px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-sky-100">
+                {focusedThreadDetail.runId}
+              </span>
+            ) : null}
+            {focusedThreadDetail.runStatus ? (
+              <span className="rounded-full border border-emerald-500/35 bg-emerald-500/10 px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-emerald-100">
+                {focusedThreadDetail.runStatus}
+              </span>
+            ) : null}
+            {focusedThreadDetail.executionIndex != null ? (
+              <span className="rounded-full border border-slate-700 bg-slate-950/60 px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-slate-200">
+                execIndex {focusedThreadDetail.executionIndex}
+              </span>
+            ) : null}
+          </div>
+          <div className="mt-3 grid gap-3 md:grid-cols-2">
+            <div className="border border-slate-800/90 bg-[#08101d] px-3 py-3">
+              <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Run summary</div>
+              <div className="mt-2 text-sm text-slate-100">
+                {focusedThreadDetail.runSummary ?? 'No run summary recorded yet.'}
+              </div>
+            </div>
+            <div className="border border-slate-800/90 bg-[#08101d] px-3 py-3">
+              <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Workflow step context</div>
+              <div className="mt-2 text-sm text-slate-100">
+                {workflowStep ? workflowStep.name : 'Workflow context unavailable.'}
+              </div>
+            </div>
+          </div>
+        </section>
+      ) : null}
+
       <section className="border border-[#16417C]/70 bg-[#16417C]/18 px-4 py-4">
         <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">Thread / Run detail</div>
         <div className="mt-2 text-2xl font-semibold tracking-tight text-white">{step!.id}</div>

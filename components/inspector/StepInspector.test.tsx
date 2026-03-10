@@ -1,0 +1,179 @@
+import { beforeEach, describe, expect, mock, test } from 'bun:test'
+import { readFileSync } from 'node:fs'
+import { renderToStaticMarkup } from 'react-dom/server'
+import type { SequenceStatus } from '@/app/api/status/route'
+import type { MergeEvent, RunScope, ThreadSurface } from '@/lib/thread-surfaces/types'
+import type { ProductEntryMode, ThreadSurfaceViewMode } from '@/lib/ui/store'
+
+type MultiThreadFixture = {
+  threadSurfaces: ThreadSurface[]
+  runs: RunScope[]
+  mergeEvents: MergeEvent[]
+}
+
+const multiThreadState = JSON.parse(
+  readFileSync(new URL('../../test/fixtures/thread-surfaces/multi-thread-state.json', import.meta.url), 'utf8'),
+) as MultiThreadFixture
+
+const status: SequenceStatus = {
+  name: 'Content Creator',
+  version: '1.0',
+  steps: [
+    {
+      id: 'draft_linkedin',
+      name: 'Draft LinkedIn',
+      type: 'p',
+      status: 'RUNNING',
+      model: 'claude-code',
+      dependsOn: ['research'],
+      processIndex: 1,
+      groupId: 'publishing',
+      fusionCandidates: false,
+      fusionSynth: false,
+    },
+  ],
+  gates: [],
+  summary: {
+    total: 1,
+    ready: 0,
+    running: 1,
+    done: 0,
+    failed: 0,
+    blocked: 0,
+    needsReview: 0,
+  },
+}
+
+mock.module('@/lib/ui/api', () => ({
+  useStatus: () => ({ data: status, isLoading: false }),
+  useThreadSurfaces: () => ({ data: multiThreadState.threadSurfaces }),
+  useThreadRuns: () => ({ data: multiThreadState.runs }),
+  useThreadMerges: () => ({ data: multiThreadState.mergeEvents }),
+  useRunStep: () => ({ mutate: () => {}, isPending: false, error: null }),
+  useRunRunnable: () => ({ mutate: () => {}, isPending: false, error: null }),
+  useStopStep: () => ({ mutate: () => {}, isPending: false, error: null }),
+  useRestartStep: () => ({ mutate: () => {}, isPending: false, error: null }),
+  useApproveGate: () => ({ mutate: () => {}, isPending: false, error: null }),
+  useBlockGate: () => ({ mutate: () => {}, isPending: false, error: null }),
+}))
+
+const uiState: {
+  productEntry: ProductEntryMode | null
+  selectedNodeId: string | null
+  leftRailOpen: boolean
+  inspectorOpen: boolean
+  chatOpen: boolean
+  searchQuery: string
+  minimapVisible: boolean
+  viewMode: ThreadSurfaceViewMode
+  selectedThreadSurfaceId: string | null
+  selectedRunId: string | null
+  hierarchyViewport: { x: number; y: number; zoom: number }
+  laneFocusThreadSurfaceId: string | null
+  laneBoardState: {
+    scrollLeft: number
+    focusedThreadSurfaceId: string | null
+    focusedRunId: string | null
+  }
+} = {
+  productEntry: 'threados',
+  selectedNodeId: 'draft_linkedin' as string | null,
+  leftRailOpen: false,
+  inspectorOpen: true,
+  chatOpen: false,
+  searchQuery: '',
+  minimapVisible: true,
+  viewMode: 'hierarchy' as const,
+  selectedThreadSurfaceId: 'thread-synthesis' as string | null,
+  selectedRunId: 'run-synthesis' as string | null,
+  hierarchyViewport: { x: 0, y: 0, zoom: 1 },
+  laneFocusThreadSurfaceId: null as string | null,
+  laneBoardState: {
+    scrollLeft: 0,
+    focusedThreadSurfaceId: null as string | null,
+    focusedRunId: null as string | null,
+  },
+}
+
+const applyState = (patch: Partial<typeof uiState>) => {
+  Object.assign(uiState, patch)
+}
+
+const useUIStoreMock = Object.assign(
+  <T,>(selector: (state: typeof uiState & Record<string, unknown>) => T) =>
+    selector({
+      ...uiState,
+      setProductEntry: () => {},
+      setSelectedNodeId: (id: string | null) => applyState({ selectedNodeId: id }),
+      toggleLeftRail: () => applyState({ leftRailOpen: !uiState.leftRailOpen }),
+      closeLeftRail: () => applyState({ leftRailOpen: false }),
+      toggleInspector: () => applyState({ inspectorOpen: !uiState.inspectorOpen }),
+      closeInspector: () => applyState({ inspectorOpen: false }),
+      toggleChat: () => applyState({ chatOpen: !uiState.chatOpen }),
+      setSearchQuery: (q: string) => applyState({ searchQuery: q }),
+      toggleMinimap: () => applyState({ minimapVisible: !uiState.minimapVisible }),
+      setViewMode: (mode: 'hierarchy' | 'lanes' | 'layers') => applyState({ viewMode: mode }),
+      setSelectedThreadSurfaceId: (id: string | null) => applyState({ selectedThreadSurfaceId: id }),
+      setSelectedRunId: (id: string | null) => applyState({ selectedRunId: id }),
+      setHierarchyViewport: (viewport: typeof uiState.hierarchyViewport) => applyState({ hierarchyViewport: viewport }),
+      setLaneFocusThreadSurfaceId: (id: string | null) => applyState({ laneFocusThreadSurfaceId: id }),
+      setLaneBoardState: (state: typeof uiState.laneBoardState) => applyState({ laneBoardState: state }),
+      openLaneViewForThreadSurface: (threadSurfaceId: string, runId: string | null = null) =>
+        applyState({
+          viewMode: 'lanes',
+          inspectorOpen: true,
+          selectedThreadSurfaceId: threadSurfaceId,
+          selectedRunId: runId,
+          laneFocusThreadSurfaceId: threadSurfaceId,
+          laneBoardState: {
+            ...uiState.laneBoardState,
+            focusedThreadSurfaceId: threadSurfaceId,
+            focusedRunId: runId,
+          },
+        }),
+    }),
+  {
+    setState: applyState,
+    getState: () => uiState,
+  },
+)
+
+mock.module('@/lib/ui/store', () => ({
+  useUIStore: useUIStoreMock,
+}))
+
+const { StepInspector } = await import('./StepInspector')
+
+describe('StepInspector', () => {
+  beforeEach(() => {
+    useUIStoreMock.setState({
+      productEntry: 'threados',
+      selectedNodeId: 'draft_linkedin',
+      leftRailOpen: false,
+      selectedThreadSurfaceId: 'thread-synthesis',
+      selectedRunId: 'run-synthesis',
+      inspectorOpen: true,
+      chatOpen: false,
+      searchQuery: '',
+      minimapVisible: true,
+      viewMode: 'hierarchy',
+      hierarchyViewport: { x: 0, y: 0, zoom: 1 },
+      laneFocusThreadSurfaceId: null,
+      laneBoardState: {
+        scrollLeft: 0,
+        focusedThreadSurfaceId: null,
+        focusedRunId: null,
+      },
+    })
+  })
+
+  test('keeps thread/run context visible when a specific workflow step is selected', () => {
+    const markup = renderToStaticMarkup(<StepInspector />)
+
+    expect(markup).toContain('data-testid="step-inspector-thread-context"')
+    expect(markup).toContain('Synthesis')
+    expect(markup).toContain('run-synthesis')
+    expect(markup).toContain('Draft LinkedIn')
+    expect(markup).toContain('Workflow step context')
+  })
+})

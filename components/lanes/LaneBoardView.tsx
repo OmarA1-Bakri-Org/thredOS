@@ -61,7 +61,7 @@ export function LaneBoardView({
               const workflowContext = workflowByThreadSurfaceId[row.threadSurfaceId]
               return (
                 <button
-                  key={row.threadSurfaceId}
+                  key={`${row.threadSurfaceId}:${row.runId}`}
                   type="button"
                   data-thread-surface-id={row.threadSurfaceId}
                   aria-pressed={isFocused}
