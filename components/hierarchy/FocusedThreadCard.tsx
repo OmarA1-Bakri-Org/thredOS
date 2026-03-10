@@ -162,10 +162,6 @@ export function FocusedThreadCard({ node, profile, onOpenLane }: FocusedThreadCa
               <div><strong className="text-white">Source:</strong> {profile.verified ? 'Verified VM run' : 'ThreadOS local run'}</div>
             </div>
           </section>
-          <section className="border border-slate-700 bg-slate-950/55 px-4 py-4">
-            <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">Why This Card Works</div>
-            <p className="mt-3 text-sm leading-6 text-slate-400">The layout combines a premium central object, icon-first inventory, fixed comparative bars, and explicit provenance. It is designed to feel serious enough for engineering use while remaining comparable and shareable.</p>
-          </section>
           <button
             type="button"
             data-thread-surface-id={node.clickTarget.threadSurfaceId}

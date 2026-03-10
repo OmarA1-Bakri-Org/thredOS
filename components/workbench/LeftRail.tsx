@@ -1,6 +1,6 @@
 'use client'
 
-import { Flag, Layers3, Sparkles, Swords } from 'lucide-react'
+import { Layers3, Swords } from 'lucide-react'
 import { useThreadSurfaces } from '@/lib/ui/api'
 import { useUIStore } from '@/lib/ui/store'
 
@@ -45,28 +45,6 @@ export function LeftRail() {
           </div>
         </section>
 
-        <section className="mt-8">
-          <div className="mb-3 flex items-center gap-2 text-[11px] uppercase tracking-[0.24em] text-slate-500">
-            <Flag className="h-3.5 w-3.5" />
-            Tools / Activity
-          </div>
-          <div className="space-y-2 text-sm text-slate-300">
-            <div className="border border-slate-800 bg-slate-950/60 px-3 py-3">Active runs</div>
-            <div className="border border-slate-800 bg-slate-950/60 px-3 py-3">Recent merges</div>
-            <div className="border border-slate-800 bg-slate-950/60 px-3 py-3">Verified VM results</div>
-          </div>
-        </section>
-
-        <section className="mt-8">
-          <div className="mb-3 flex items-center gap-2 text-[11px] uppercase tracking-[0.24em] text-slate-500">
-            <Sparkles className="h-3.5 w-3.5" />
-            Skills
-          </div>
-          <div className="space-y-2 text-sm text-slate-300">
-            <div className="border border-slate-800 bg-slate-950/60 px-3 py-3">Attached skills</div>
-            <div className="border border-slate-800 bg-slate-950/60 px-3 py-3">Inherited skills</div>
-          </div>
-        </section>
       </div>
 
       <div className="border-t border-slate-800 px-4 py-4">

@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { Button } from '@/components/ui/button'
 
 interface LaneBoardRowView {
   threadSurfaceId: string
@@ -26,24 +27,21 @@ export function LaneBoardView({
   focusedContent,
 }: LaneBoardViewProps) {
   return (
-    <div className="flex h-full flex-col overflow-hidden">
-      <div className="flex items-center justify-between border-b px-4 py-3">
-        <div>
-          <h2 className="text-sm font-semibold uppercase tracking-[0.2em] text-muted-foreground">Lane Board</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Execution lanes stay ordered by run truth. Focus follows the selected thread.
+    <div className="flex h-full flex-col overflow-hidden bg-[#050913]">
+      <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-800/80 bg-[#08101d] px-5 py-4">
+        <div className="max-w-2xl">
+          <h2 className="font-mono text-[11px] uppercase tracking-[0.24em] text-slate-500">Lane Board</h2>
+          <p className="mt-2 text-sm text-slate-300">
+            Execution lanes remain ordered by run truth. Focus follows the selected thread surface and preserves merge context.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={onBackToHierarchy}
-          className="rounded-md border border-border px-3 py-2 text-sm text-foreground transition-colors hover:border-primary/60"
-        >
+        <Button type="button" variant="outline" onClick={onBackToHierarchy}>
           Back To Hierarchy
-        </button>
+        </Button>
       </div>
-      <div className="border-b px-4 py-3">
-        <div className="flex gap-3 overflow-x-auto pb-2">
+
+      <div className="border-b border-slate-800/80 bg-[#0a101a] px-5 py-4">
+        <div className="flex gap-3 overflow-x-auto pb-1">
           {rows.map(row => {
             const isFocused = row.threadSurfaceId === focusedThreadSurfaceId
             return (
@@ -54,24 +52,37 @@ export function LaneBoardView({
                 aria-pressed={isFocused}
                 onClick={() => onFocusThread(row.threadSurfaceId, row.runId)}
                 className={[
-                  'min-w-64 rounded-xl border px-4 py-3 text-left transition-colors',
-                  isFocused ? 'border-primary bg-primary/10' : 'border-border bg-card hover:border-primary/60',
+                  'min-w-72 border px-4 py-4 text-left transition',
+                  isFocused
+                    ? 'border-sky-500/50 bg-[#16417C]/18 text-white shadow-[0_0_0_1px_rgba(96,165,250,0.15)]'
+                    : 'border-slate-800 bg-slate-950/60 text-slate-300 hover:border-slate-600 hover:text-white',
                 ].join(' ')}
               >
-                <div className="text-sm font-medium">{row.surfaceLabel}</div>
-                <div className="mt-1 text-xs text-muted-foreground">
-                  execIndex {row.executionIndex ?? 'draft'}
-                  {row.laneTerminalState ? ` | ${row.laneTerminalState}` : ''}
-                </div>
-                <div className="mt-1 text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
-                  {selectedRunId === row.runId ? 'Selected run' : row.runId}
+                <div className="text-sm font-semibold tracking-tight">{row.surfaceLabel}</div>
+                <div className="mt-2 flex flex-wrap gap-2 text-[11px] uppercase tracking-[0.16em]">
+                  <span className="rounded-full border border-slate-700 bg-slate-950/65 px-3 py-1 text-slate-300">
+                    execIndex {row.executionIndex ?? 'draft'}
+                  </span>
+                  {row.laneTerminalState ? (
+                    <span className="rounded-full border border-amber-500/35 bg-amber-500/10 px-3 py-1 text-amber-100">
+                      {row.laneTerminalState}
+                    </span>
+                  ) : null}
+                  <span
+                    className={`rounded-full border px-3 py-1 ${selectedRunId === row.runId
+                      ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-100'
+                      : 'border-slate-700 bg-slate-950/65 text-slate-400'}`}
+                  >
+                    {selectedRunId === row.runId ? 'Selected run' : row.runId}
+                  </span>
                 </div>
               </button>
             )
           })}
         </div>
       </div>
-      <div className="min-h-0 flex-1">{focusedContent}</div>
+
+      <div className="min-h-0 flex-1 overflow-hidden bg-[#050913]">{focusedContent}</div>
     </div>
   )
 }

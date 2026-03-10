@@ -1,6 +1,7 @@
 'use client'
 
 import { memo } from 'react'
+import { Button } from '@/components/ui/button'
 import type { ProposedAction } from '@/lib/chat/validator'
 
 interface ActionCardProps {
@@ -13,30 +14,24 @@ export const ActionCard = memo(function ActionCard({ actions, onApply, onDiscard
   if (actions.length === 0) return null
 
   return (
-    <div className="border rounded-lg p-3 my-2 bg-card">
-      <div className="text-xs font-medium text-muted-foreground mb-2">
+    <div className="my-3 border border-slate-700 bg-[#0a101a] px-4 py-4">
+      <div className="mb-3 font-mono text-[11px] uppercase tracking-[0.2em] text-slate-500">
         Proposed Actions ({actions.length})
       </div>
-      <ul className="space-y-1 mb-3">
+      <ul className="mb-4 space-y-2">
         {actions.map((action, i) => (
-          <li key={i} className="text-sm font-mono bg-muted px-2 py-1 rounded">
+          <li key={i} className="border border-slate-800 bg-slate-950/75 px-3 py-2 font-mono text-sm text-slate-200">
             {action.command} {JSON.stringify(action.args)}
           </li>
         ))}
       </ul>
       <div className="flex gap-2">
-        <button
-          onClick={() => onApply(actions)}
-          className="px-3 py-1 text-xs bg-primary text-primary-foreground rounded hover:opacity-90"
-        >
+        <Button type="button" variant="default" size="sm" onClick={() => onApply(actions)}>
           Apply
-        </button>
-        <button
-          onClick={onDiscard}
-          className="px-3 py-1 text-xs bg-secondary text-secondary-foreground rounded hover:opacity-90"
-        >
+        </Button>
+        <Button type="button" variant="outline" size="sm" onClick={onDiscard}>
           Discard
-        </button>
+        </Button>
       </div>
     </div>
   )

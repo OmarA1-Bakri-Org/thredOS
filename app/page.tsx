@@ -32,6 +32,9 @@ export default function Home() {
     () => false
   )
   const inspectorOpen = useUIStore(s => s.inspectorOpen)
+  const leftRailOpen = useUIStore(s => s.leftRailOpen)
+  const closeLeftRail = useUIStore(s => s.closeLeftRail)
+  const closeInspector = useUIStore(s => s.closeInspector)
   const chatOpen = useUIStore(s => s.chatOpen)
 
   if (!mounted) return <div className="h-screen flex flex-col"><LoadingSpinner message="Loading..." /></div>
@@ -39,6 +42,8 @@ export default function Home() {
     <WorkbenchShell
       topBar={<TopBar />}
       leftRail={<LeftRail />}
+      leftRailOpen={leftRailOpen}
+      onDismissLeftRail={closeLeftRail}
       board={
         <ErrorBoundary>
           <SequenceCanvas />
@@ -52,9 +57,11 @@ export default function Home() {
             </InspectorRail>
           </ErrorBoundary>
         ) : (
-          <div className="flex h-full items-center justify-center px-6 text-sm text-slate-500">Inspector hidden</div>
+          <div className="flex h-full items-center justify-center px-6 text-sm text-slate-500">Select a thread surface or node to inspect.</div>
         )
       }
+      inspectorOpen={inspectorOpen}
+      onDismissInspector={closeInspector}
       chat={
         <ErrorBoundary>
           <ChatPanel />

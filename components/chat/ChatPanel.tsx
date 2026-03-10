@@ -137,12 +137,15 @@ export function ChatPanel() {
   }, [])
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="px-3 py-2 border-b text-sm font-medium">Chat</div>
-      <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 space-y-1" aria-live="polite">
+    <div className="flex h-full flex-col bg-[#08101d]">
+      <div className="border-b border-slate-800/80 px-4 py-4">
+        <div className="font-mono text-[11px] uppercase tracking-[0.24em] text-slate-500">Thread Chat</div>
+        <div className="mt-2 text-lg font-semibold text-white">Agent dialogue</div>
+      </div>
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4" aria-live="polite">
         {messages.length === 0 && (
-          <div className="text-xs text-muted-foreground text-center mt-4">
-            Ask me to modify your sequence...
+          <div className="border border-[#16417C]/70 bg-[#16417C]/18 px-4 py-4 text-sm text-slate-200">
+            Ask ThreadOS to inspect, modify, or explain the active sequence.
           </div>
         )}
         {messages.map((msg) => (
@@ -159,7 +162,7 @@ export function ChatPanel() {
           </div>
         ))}
         {loading && (
-          <div className="text-xs text-muted-foreground animate-pulse">
+          <div className="font-mono text-[11px] uppercase tracking-[0.18em] text-slate-400 animate-pulse">
             Thinking...
           </div>
         )}

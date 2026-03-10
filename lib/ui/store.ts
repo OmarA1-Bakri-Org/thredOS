@@ -22,8 +22,12 @@ interface UIStore {
   setProductEntry: (entry: ProductEntryMode) => void
   selectedNodeId: string | null
   setSelectedNodeId: (id: string | null) => void
+  leftRailOpen: boolean
+  toggleLeftRail: () => void
+  closeLeftRail: () => void
   inspectorOpen: boolean
   toggleInspector: () => void
+  closeInspector: () => void
   chatOpen: boolean
   toggleChat: () => void
   searchQuery: string
@@ -62,8 +66,12 @@ export const useUIStore = create<UIStore>((set) => ({
   setProductEntry: (entry) => set({ productEntry: entry }),
   selectedNodeId: null,
   setSelectedNodeId: (id) => set({ selectedNodeId: id, ...(id != null ? { inspectorOpen: true } : {}) }),
+  leftRailOpen: false,
+  toggleLeftRail: () => set((s) => ({ leftRailOpen: !s.leftRailOpen })),
+  closeLeftRail: () => set({ leftRailOpen: false }),
   inspectorOpen: true,
   toggleInspector: () => set((s) => ({ inspectorOpen: !s.inspectorOpen })),
+  closeInspector: () => set({ inspectorOpen: false }),
   chatOpen: false,
   toggleChat: () => set((s) => ({ chatOpen: !s.chatOpen })),
   searchQuery: '',

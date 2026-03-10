@@ -43,4 +43,20 @@ describe('WorkbenchShell', () => {
     expect(collectByDataRegion(shell, 'inspector')).toHaveLength(1)
     expect(collectByDataRegion(shell, 'chat')).toHaveLength(1)
   })
+
+  test('renders mobile drawer regions when rail overlays are opened', () => {
+    const shell = WorkbenchShell({
+      topBar: <div>top</div>,
+      leftRail: <div>left</div>,
+      leftRailOpen: true,
+      onDismissLeftRail: () => {},
+      board: <div>board</div>,
+      inspector: <div>inspector</div>,
+      inspectorOpen: true,
+      onDismissInspector: () => {},
+    })
+
+    expect(collectByDataRegion(shell, 'left-rail-drawer')).toHaveLength(1)
+    expect(collectByDataRegion(shell, 'inspector-drawer')).toHaveLength(1)
+  })
 })

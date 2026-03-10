@@ -13,6 +13,7 @@ import {
   unwrapThreadSurfacesResponse,
 } from '@/lib/ui/api'
 import { useUIStore } from '@/lib/ui/store'
+import { contentCreatorWorkflow, resolveWorkflowReferenceStep } from '@/lib/workflows'
 import type { MergeEvent, RunScope, ThreadSurface } from '@/lib/thread-surfaces/types'
 
 type ButtonElement = ReactElement<{
@@ -188,5 +189,13 @@ describe('thread surface canvas flow', () => {
         }),
       ],
     })
+
+    expect(
+      resolveWorkflowReferenceStep(contentCreatorWorkflow, {
+        threadSurfaceLabel: focusedDetail?.surfaceLabel,
+        threadRole: focusedDetail?.role,
+        runSummary: focusedDetail?.runSummary,
+      })?.id,
+    ).toBe('post_publish_analytics')
   })
 })

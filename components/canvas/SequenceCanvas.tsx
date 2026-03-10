@@ -17,8 +17,11 @@ import { useHierarchyGraph } from '@/components/hierarchy/useHierarchyGraph'
 import { HierarchyView } from '@/components/hierarchy/HierarchyView'
 import { LaneBoardView } from '@/components/lanes/LaneBoardView'
 import { createLaneBoardModel } from '@/components/lanes/useLaneBoard'
+import { WorkflowBlueprintPanel } from '@/components/workflows/WorkflowBlueprintPanel'
+import { WorkflowStepContextPanel } from '@/components/workflows/WorkflowStepContextPanel'
 import { resolveThreadSurfaceCanvasData } from './threadSurfaceScaffold'
 import { resolveThreadSurfaceFocusedDetail } from './threadSurfaceFocus'
+import { contentCreatorWorkflow, resolveWorkflowReferenceStep } from '@/lib/workflows'
 
 const nodeTypes = {
   stepNode: StepNode,
@@ -80,6 +83,7 @@ function CanvasInner() {
   const selectedThreadSurfaceId = useUIStore(s => s.selectedThreadSurfaceId)
   const selectedRunId = useUIStore(s => s.selectedRunId)
   const laneFocusThreadSurfaceId = useUIStore(s => s.laneFocusThreadSurfaceId)
+  const selectedNodeId = useUIStore(s => s.selectedNodeId)
   const openLaneViewForThreadSurface = useUIStore(s => s.openLaneViewForThreadSurface)
   const laneBoardState = useUIStore(s => s.laneBoardState)
   const setLaneBoardState = useUIStore(s => s.setLaneBoardState)
@@ -120,6 +124,14 @@ function CanvasInner() {
     focusedThreadSurfaceId,
     selectedRunId,
   })
+  const workflowReferenceStep = focusedDetail
+    ? resolveWorkflowReferenceStep(contentCreatorWorkflow, {
+        selectedNodeId,
+        threadSurfaceLabel: focusedDetail.surfaceLabel,
+        threadRole: focusedDetail.role,
+        runSummary: focusedDetail.runSummary,
+      })
+    : undefined
   const shouldRenderSequenceFlow = threadSurfaceData.source !== 'api' && status != null
 
   if (isLoading && !hasRealThreadSurfaceData) return <LoadingSpinner message="Loading sequence..." />
@@ -174,22 +186,22 @@ function CanvasInner() {
           <div className="flex h-full flex-col overflow-hidden">
             <div className="border-b px-4 py-4">
               <div className="flex flex-wrap items-center gap-2">
-                <h3 className="text-base font-semibold text-foreground">{focusedDetail.surfaceLabel}</h3>
+                <h3 className="text-base font-semibold text-white">{focusedDetail.surfaceLabel}</h3>
                 {focusedDetail.role ? (
-                  <span className="rounded-full border border-border px-2 py-1 text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+                  <span className="rounded-full border border-slate-700 bg-slate-950/65 px-2 py-1 text-[11px] uppercase tracking-[0.16em] text-slate-300">
                     {focusedDetail.role}
                   </span>
                 ) : null}
                 {focusedDetail.runStatus ? (
-                  <span className="rounded-full border border-border px-2 py-1 text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+                  <span className="rounded-full border border-emerald-500/35 bg-emerald-500/10 px-2 py-1 text-[11px] uppercase tracking-[0.16em] text-emerald-100">
                     {focusedDetail.runStatus}
                   </span>
                 ) : null}
               </div>
               {focusedDetail.surfaceDescription ? (
-                <p className="mt-2 text-sm text-muted-foreground">{focusedDetail.surfaceDescription}</p>
+                <p className="mt-2 text-sm text-slate-300">{focusedDetail.surfaceDescription}</p>
               ) : null}
-              <div className="mt-3 flex flex-wrap gap-3 text-xs text-muted-foreground">
+              <div className="mt-3 flex flex-wrap gap-3 text-xs text-slate-400">
                 <span>thread {focusedDetail.threadSurfaceId}</span>
                 <span>run {focusedDetail.runId ?? 'none'}</span>
                 <span>execIndex {focusedDetail.executionIndex ?? 'draft'}</span>
@@ -199,49 +211,53 @@ function CanvasInner() {
             </div>
             <div className="grid min-h-0 flex-1 gap-4 overflow-auto p-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
               <div className="space-y-4">
-                <section className="rounded-xl border border-border bg-card p-4">
-                  <h4 className="text-sm font-semibold uppercase tracking-[0.16em] text-muted-foreground">Run Summary</h4>
-                  <p className="mt-3 text-sm text-foreground">{focusedDetail.runSummary ?? 'No run summary recorded yet.'}</p>
+                <section className="border border-[#16417C]/70 bg-[#16417C]/18 p-4">
+                  <h4 className="font-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Run Summary</h4>
+                  <p className="mt-3 text-sm text-slate-100">{focusedDetail.runSummary ?? 'No run summary recorded yet.'}</p>
                 </section>
-                <section className="rounded-xl border border-border bg-card p-4">
-                  <h4 className="text-sm font-semibold uppercase tracking-[0.16em] text-muted-foreground">Run Notes</h4>
-                  <p className="mt-3 whitespace-pre-wrap text-sm text-foreground">{focusedDetail.runNotes ?? 'No run notes recorded yet.'}</p>
+                <section className="border border-slate-700 bg-slate-950/65 p-4">
+                  <h4 className="font-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Run Notes</h4>
+                  <p className="mt-3 whitespace-pre-wrap text-sm text-slate-100">{focusedDetail.runNotes ?? 'No run notes recorded yet.'}</p>
                 </section>
-                <section className="rounded-xl border border-border bg-card p-4">
-                  <h4 className="text-sm font-semibold uppercase tracking-[0.16em] text-muted-foreground">AI Discussion</h4>
-                  <p className="mt-3 whitespace-pre-wrap text-sm text-foreground">{focusedDetail.runDiscussion ?? 'No discussion recorded for this run yet.'}</p>
+                <section className="border border-slate-700 bg-slate-950/65 p-4">
+                  <h4 className="font-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">AI Discussion</h4>
+                  <p className="mt-3 whitespace-pre-wrap text-sm text-slate-100">{focusedDetail.runDiscussion ?? 'No discussion recorded for this run yet.'}</p>
                 </section>
               </div>
               <div className="space-y-4">
-                <section className="rounded-xl border border-border bg-card p-4">
-                  <h4 className="text-sm font-semibold uppercase tracking-[0.16em] text-muted-foreground">Incoming Merges</h4>
+                {workflowReferenceStep ? (
+                  <WorkflowStepContextPanel workflow={contentCreatorWorkflow} step={workflowReferenceStep} />
+                ) : null}
+                <WorkflowBlueprintPanel workflow={contentCreatorWorkflow} />
+                <section className="border border-slate-700 bg-slate-950/65 p-4">
+                  <h4 className="font-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Incoming Merges</h4>
                   {focusedDetail.incomingMergeGroups.length > 0 ? (
                     <div className="mt-3 space-y-3">
                       {focusedDetail.incomingMergeGroups.map(group => (
-                        <div key={group.mergeEventId} className="rounded-lg border border-border px-3 py-3 text-sm text-foreground">
-                          <div className="font-medium">
+                        <div key={group.mergeEventId} className="border border-slate-800 bg-[#0a101a] px-3 py-3 text-sm text-slate-100">
+                          <div className="font-medium text-white">
                             {group.mergeKind} merge at execIndex {group.executionIndex}
                           </div>
-                          <div className="mt-1 text-muted-foreground">
+                          <div className="mt-1 text-slate-400">
                             {group.orderedThreadSurfaceIds.join(' <- ')}
                           </div>
                         </div>
                       ))}
                     </div>
                   ) : (
-                    <p className="mt-3 text-sm text-muted-foreground">No inbound merges recorded for this thread.</p>
+                    <p className="mt-3 text-sm text-slate-400">No inbound merges recorded for this thread.</p>
                   )}
                 </section>
-                <section className="rounded-xl border border-border bg-card p-4">
-                  <h4 className="text-sm font-semibold uppercase tracking-[0.16em] text-muted-foreground">Outgoing Merge Events</h4>
+                <section className="border border-slate-700 bg-slate-950/65 p-4">
+                  <h4 className="font-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Outgoing Merge Events</h4>
                   {focusedDetail.outgoingMergeEvents.length > 0 ? (
                     <div className="mt-3 space-y-3">
                       {focusedDetail.outgoingMergeEvents.map(event => (
-                        <div key={event.id} className="rounded-lg border border-border px-3 py-3 text-sm text-foreground">
-                          <div className="font-medium">
+                        <div key={event.id} className="border border-slate-800 bg-[#0a101a] px-3 py-3 text-sm text-slate-100">
+                          <div className="font-medium text-white">
                             {event.mergeKind} merge into {event.destinationThreadSurfaceId}
                           </div>
-                          <div className="mt-1 text-muted-foreground">
+                          <div className="mt-1 text-slate-400">
                             execIndex {event.executionIndex}
                             {event.summary ? ` | ${event.summary}` : ''}
                           </div>
@@ -249,13 +265,13 @@ function CanvasInner() {
                       ))}
                     </div>
                   ) : (
-                    <p className="mt-3 text-sm text-muted-foreground">This thread has not merged into another lane.</p>
+                    <p className="mt-3 text-sm text-slate-400">This thread has not merged into another lane.</p>
                   )}
                 </section>
                 {shouldRenderSequenceFlow ? (
-                  <section className="rounded-xl border border-border bg-card p-4">
-                    <h4 className="text-sm font-semibold uppercase tracking-[0.16em] text-muted-foreground">Current Sequence</h4>
-                    <div className="mt-3 h-[28rem] overflow-hidden rounded-lg border border-border">
+                  <section className="border border-slate-700 bg-slate-950/65 p-4">
+                    <h4 className="font-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Current Sequence</h4>
+                    <div className="mt-3 h-[28rem] overflow-hidden border border-slate-800">
                       <ReactFlowProvider>
                         <LegacySequenceFlow
                           minimapVisible={minimapVisible}
@@ -282,7 +298,7 @@ function CanvasInner() {
             </div>
           </ReactFlowProvider>
         ) : (
-          <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+          <div className="flex h-full items-center justify-center text-sm text-slate-400">
             Sequence status unavailable for the focused thread.
           </div>
         )
