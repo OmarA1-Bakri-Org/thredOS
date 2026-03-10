@@ -17,7 +17,6 @@ import { useHierarchyGraph } from '@/components/hierarchy/useHierarchyGraph'
 import { HierarchyView } from '@/components/hierarchy/HierarchyView'
 import { LaneBoardView } from '@/components/lanes/LaneBoardView'
 import { createLaneBoardModel } from '@/components/lanes/useLaneBoard'
-import { WorkflowBlueprintPanel } from '@/components/workflows/WorkflowBlueprintPanel'
 import { WorkflowStepContextPanel } from '@/components/workflows/WorkflowStepContextPanel'
 import { resolveThreadSurfaceCanvasData } from './threadSurfaceScaffold'
 import { resolveThreadSurfaceFocusedDetail } from './threadSurfaceFocus'
@@ -209,7 +208,7 @@ function CanvasInner() {
                 {focusedDetail.mergedIntoThreadSurfaceId ? <span>merged into {focusedDetail.mergedIntoThreadSurfaceId}</span> : null}
               </div>
             </div>
-            <div className="grid min-h-0 flex-1 gap-4 overflow-auto p-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
+            <div className="grid min-h-0 flex-1 gap-4 overflow-auto p-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(20rem,0.75fr)]">
               <div className="space-y-4">
                 <section className="border border-[#16417C]/70 bg-[#16417C]/18 p-4">
                   <h4 className="font-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Run Summary</h4>
@@ -228,7 +227,6 @@ function CanvasInner() {
                 {workflowReferenceStep ? (
                   <WorkflowStepContextPanel workflow={contentCreatorWorkflow} step={workflowReferenceStep} />
                 ) : null}
-                <WorkflowBlueprintPanel workflow={contentCreatorWorkflow} />
                 <section className="border border-slate-700 bg-slate-950/65 p-4">
                   <h4 className="font-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Incoming Merges</h4>
                   {focusedDetail.incomingMergeGroups.length > 0 ? (

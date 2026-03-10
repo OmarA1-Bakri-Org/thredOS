@@ -62,5 +62,6 @@ describe('ThreadSurfaceInspector', () => {
     expect(collectByTestId(panel, 'thread-surface-summary')).toHaveLength(1)
     expect(collectByTestId(panel, 'thread-surface-provenance')).toHaveLength(1)
     expect(collectByTestId(panel, 'workflow-step-context-panel')).toHaveLength(1)
+    expect(collectByTestId(panel, 'workflow-blueprint-panel')).toHaveLength(1)
   })
 })

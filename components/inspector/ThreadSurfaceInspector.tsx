@@ -1,5 +1,6 @@
 import type { ThreadSurfaceFocusedDetail } from '@/components/canvas/threadSurfaceFocus'
 import type { WorkflowStep } from '@/lib/workflows'
+import { WorkflowBlueprintPanel } from '@/components/workflows/WorkflowBlueprintPanel'
 import { WorkflowStepContextPanel } from '@/components/workflows/WorkflowStepContextPanel'
 import { contentCreatorWorkflow } from '@/lib/workflows'
 
@@ -63,6 +64,8 @@ export function ThreadSurfaceInspector({
       {workflowStep ? (
         <WorkflowStepContextPanel workflow={contentCreatorWorkflow} step={workflowStep} />
       ) : null}
+
+      <WorkflowBlueprintPanel workflow={contentCreatorWorkflow} />
     </div>
   )
 }
