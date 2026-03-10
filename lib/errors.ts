@@ -158,3 +158,17 @@ export class ThreadSurfaceRunScopeNotFoundError extends ThreadOSError {
     this.name = 'ThreadSurfaceRunScopeNotFoundError'
   }
 }
+
+export class InvalidLlmProviderError extends ThreadOSError {
+  constructor(provider: string) {
+    super(`Unsupported LLM provider: ${provider}`, 'INVALID_LLM_PROVIDER')
+    this.name = 'InvalidLlmProviderError'
+  }
+}
+
+export class MissingLlmProviderConfigError extends ThreadOSError {
+  constructor(envVar: string, provider: string) {
+    super(`Missing required ${provider} configuration: ${envVar}`, 'MISSING_LLM_PROVIDER_CONFIG')
+    this.name = 'MissingLlmProviderConfigError'
+  }
+}

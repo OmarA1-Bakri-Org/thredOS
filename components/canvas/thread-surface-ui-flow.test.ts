@@ -59,6 +59,12 @@ function collectButtons(node: ReactNode, acc: ButtonElement[] = []): ButtonEleme
   }
 
   const element = node as ReactElement<{ children?: ReactNode; [key: string]: unknown }>
+  if (typeof element.type === 'function') {
+    const render = element.type as (props: typeof element.props) => ReactNode
+    collectButtons(render(element.props), acc)
+    return acc
+  }
+
   if (element.type === 'button') {
     acc.push(element as ButtonElement)
   }

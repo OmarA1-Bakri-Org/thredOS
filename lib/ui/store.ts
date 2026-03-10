@@ -2,7 +2,8 @@
 
 import { create } from 'zustand'
 
-export type ThreadSurfaceViewMode = 'hierarchy' | 'lanes'
+export type ThreadSurfaceViewMode = 'hierarchy' | 'lanes' | 'layers'
+export type ProductEntryMode = 'threados' | 'thread-runner'
 
 export interface HierarchyViewportState {
   x: number
@@ -17,6 +18,8 @@ export interface LaneBoardState {
 }
 
 interface UIStore {
+  productEntry: ProductEntryMode
+  setProductEntry: (entry: ProductEntryMode) => void
   selectedNodeId: string | null
   setSelectedNodeId: (id: string | null) => void
   inspectorOpen: boolean
@@ -55,6 +58,8 @@ const defaultLaneBoardState: LaneBoardState = {
 }
 
 export const useUIStore = create<UIStore>((set) => ({
+  productEntry: 'threados',
+  setProductEntry: (entry) => set({ productEntry: entry }),
   selectedNodeId: null,
   setSelectedNodeId: (id) => set({ selectedNodeId: id, ...(id != null ? { inspectorOpen: true } : {}) }),
   inspectorOpen: true,

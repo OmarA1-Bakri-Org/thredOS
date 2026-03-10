@@ -141,6 +141,8 @@ function CanvasInner() {
           childCount: node.metadata.childCount,
           runStatus: node.metadata.displayRunStatus,
           runSummary: node.metadata.runSummary,
+          role: node.metadata.role,
+          surfaceDescription: node.metadata.surfaceDescription,
           clickTarget: {
             threadSurfaceId: node.clickTarget.threadSurfaceId,
             runId: node.clickTarget.runId,
