@@ -85,7 +85,7 @@ describe('runStep', () => {
   })
 
   test('inherited env vars filtered through allowlist', async () => {
-  test('inherited env vars filtered through allowlist', async () => {
+    const { runStep } = await importActualWrapper()
     const originalSensitive = process.env.AWS_SECRET_ACCESS_KEY
     process.env.AWS_SECRET_ACCESS_KEY = 'super-secret'
 
