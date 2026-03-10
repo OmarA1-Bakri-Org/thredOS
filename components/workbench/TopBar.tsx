@@ -49,7 +49,7 @@ export function TopBar() {
   }, [])
 
   return (
-    <div className="grid h-18 grid-cols-[auto_auto_minmax(18rem,1fr)_auto] items-center gap-4 px-5 py-3 2xl:grid-cols-[auto_auto_minmax(22rem,1fr)_auto_auto]">
+    <div className="grid min-h-[4.5rem] grid-cols-[minmax(0,auto)_minmax(0,1fr)_auto] items-center gap-4 px-5 py-3">
       <div className="flex min-w-0 items-center gap-3">
         <Button
           type="button"
@@ -68,39 +68,39 @@ export function TopBar() {
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
-        {productEntries.map(entry => (
-          <Button
-            key={entry.value}
-            type="button"
-            variant={productEntry === entry.value ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => !entry.disabled && setProductEntry(entry.value)}
-            disabled={entry.disabled}
-            className={`rounded-full px-3 ${entry.disabled ? 'opacity-45' : ''}`}
-          >
-            {entry.label}
-          </Button>
-        ))}
-
-        <div className="hidden h-6 border-l border-slate-800 lg:block" />
-
-        {viewModes.map(mode => (
-          <Button
-            key={mode.value}
-            type="button"
-            variant={viewMode === mode.value ? 'success' : 'outline'}
-            size="sm"
-            onClick={() => !mode.disabled && setViewMode(mode.value)}
-            disabled={mode.disabled}
-            className={`rounded-full px-3 ${mode.disabled ? 'opacity-45' : ''}`}
-          >
-            {mode.label}
-          </Button>
-        ))}
-      </div>
-
       <div className="flex min-w-0 items-center gap-3">
+        <div className="hidden shrink-0 items-center gap-2 border border-slate-800 bg-[#0a101a] px-2 py-2 lg:flex">
+          {productEntries.map(entry => (
+            <Button
+              key={entry.value}
+              type="button"
+              variant={productEntry === entry.value ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => !entry.disabled && setProductEntry(entry.value)}
+              disabled={entry.disabled}
+              className={`rounded-full px-3 ${entry.disabled ? 'opacity-45' : ''}`}
+            >
+              {entry.label}
+            </Button>
+          ))}
+        </div>
+
+        <div className="hidden shrink-0 items-center gap-2 border border-slate-800 bg-[#0a101a] px-2 py-2 xl:flex">
+          {viewModes.map(mode => (
+            <Button
+              key={mode.value}
+              type="button"
+              variant={viewMode === mode.value ? 'success' : 'outline'}
+              size="sm"
+              onClick={() => !mode.disabled && setViewMode(mode.value)}
+              disabled={mode.disabled}
+              className={`rounded-full px-3 ${mode.disabled ? 'opacity-45' : ''}`}
+            >
+              {mode.label}
+            </Button>
+          ))}
+        </div>
+
         <div className="flex min-w-0 flex-1 items-center gap-3 border border-[#16417C]/70 bg-[#16417C]/18 px-3 py-2 text-sm text-slate-300">
           <Search className="h-4 w-4 shrink-0 text-slate-400" />
           <input
@@ -111,21 +111,26 @@ export function TopBar() {
             className="w-full bg-transparent text-sm text-slate-100 outline-none placeholder:text-slate-500"
           />
         </div>
-
-        {status ? (
-          <div className="hidden min-w-[16rem] border border-slate-800 bg-[#0a101a] px-3 py-2 text-right font-mono text-[11px] uppercase tracking-[0.16em] text-slate-400 2xl:block">
-            <div className="text-slate-500">{status.name}</div>
-            <div className="mt-2 flex justify-end gap-3">
-              <span className="text-slate-300">Ready {status.summary.ready}</span>
-              <span className="text-sky-300">Run {status.summary.running}</span>
-              <span className="text-emerald-300">Done {status.summary.done}</span>
-              <span className="text-rose-300">Fail {status.summary.failed}</span>
-            </div>
-          </div>
-        ) : null}
       </div>
 
       <div className="flex items-center justify-end gap-2">
+        {status ? (
+          <div className="hidden items-center gap-2 border border-slate-800 bg-[#0a101a] px-2 py-2 2xl:flex">
+            <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-slate-500">{status.name}</span>
+            <span className="rounded-full border border-slate-700 bg-slate-950/65 px-3 py-1 font-mono text-[11px] uppercase tracking-[0.16em] text-slate-300">
+              Ready {status.summary.ready}
+            </span>
+            <span className="rounded-full border border-sky-500/35 bg-sky-500/10 px-3 py-1 font-mono text-[11px] uppercase tracking-[0.16em] text-sky-100">
+              Run {status.summary.running}
+            </span>
+            <span className="rounded-full border border-emerald-500/35 bg-emerald-500/10 px-3 py-1 font-mono text-[11px] uppercase tracking-[0.16em] text-emerald-100">
+              Done {status.summary.done}
+            </span>
+            <span className="rounded-full border border-rose-500/35 bg-rose-500/10 px-3 py-1 font-mono text-[11px] uppercase tracking-[0.16em] text-rose-100">
+              Fail {status.summary.failed}
+            </span>
+          </div>
+        ) : null}
         <Button
           type="button"
           variant="default"
@@ -137,7 +142,7 @@ export function TopBar() {
         <Button type="button" variant="secondary" onClick={toggleChat}>
           Thread Chat
         </Button>
-        <Button type="button" variant="outline" onClick={toggleInspector}>
+        <Button type="button" variant="outline" onClick={toggleInspector} className="hidden 2xl:inline-flex">
           Inspector
         </Button>
         <Button

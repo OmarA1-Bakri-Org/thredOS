@@ -61,3 +61,11 @@ export interface WorkflowDefinition {
   steps: WorkflowStep[]
   phases: WorkflowPhase[]
 }
+
+export interface WorkflowLaneContext {
+  stepId: string
+  stepName: string
+  phaseLabel: string
+  executionLabel: string
+  hasCondition: boolean
+}

@@ -1,5 +1,5 @@
 import rawWorkflow from './data/content-creator.json'
-import type { WorkflowDefinition, WorkflowPhase, WorkflowStep } from './types'
+import type { WorkflowDefinition, WorkflowLaneContext, WorkflowPhase, WorkflowStep } from './types'
 
 type RawWorkflow = typeof rawWorkflow
 
@@ -155,4 +155,14 @@ export function resolveWorkflowReferenceStep(
   }
 
   return workflow.steps[0]
+}
+
+export function buildWorkflowLaneContext(workflow: WorkflowDefinition, step: WorkflowStep): WorkflowLaneContext {
+  return {
+    stepId: step.id,
+    stepName: step.name,
+    phaseLabel: workflow.phases.find(phase => phase.phase === step.phase)?.label ?? `Phase ${step.phase}`,
+    executionLabel: step.execution.replace('_', ' '),
+    hasCondition: Boolean(step.condition),
+  }
 }

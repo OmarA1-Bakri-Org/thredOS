@@ -17,17 +17,21 @@ describe('useUIStore', () => {
   })
 
   test('selectedThreadSurfaceId persists across view changes', () => {
+    useUIStore.getState().closeInspector()
     useUIStore.getState().setSelectedThreadSurfaceId('thread-synthesis')
     useUIStore.getState().setViewMode('lanes')
     useUIStore.getState().setViewMode('hierarchy')
 
     expect(useUIStore.getState().selectedThreadSurfaceId).toBe('thread-synthesis')
+    expect(useUIStore.getState().inspectorOpen).toBeTrue()
   })
 
   test('opening lane focus from a hierarchy node sets synchronized top-level and lane-board focus context', () => {
+    useUIStore.getState().closeInspector()
     useUIStore.getState().openLaneViewForThreadSurface('thread-research', 'run-research')
 
     expect(useUIStore.getState().viewMode).toBe('lanes')
+    expect(useUIStore.getState().inspectorOpen).toBeTrue()
     expect(useUIStore.getState().selectedThreadSurfaceId).toBe('thread-research')
     expect(useUIStore.getState().selectedRunId).toBe('run-research')
     expect(useUIStore.getState().laneFocusThreadSurfaceId).toBe('thread-research')

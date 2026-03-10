@@ -20,7 +20,7 @@ import { createLaneBoardModel } from '@/components/lanes/useLaneBoard'
 import { WorkflowStepContextPanel } from '@/components/workflows/WorkflowStepContextPanel'
 import { resolveThreadSurfaceCanvasData } from './threadSurfaceScaffold'
 import { resolveThreadSurfaceFocusedDetail } from './threadSurfaceFocus'
-import { contentCreatorWorkflow, resolveWorkflowReferenceStep } from '@/lib/workflows'
+import { buildWorkflowLaneContext, contentCreatorWorkflow, resolveWorkflowReferenceStep } from '@/lib/workflows'
 
 const nodeTypes = {
   stepNode: StepNode,
@@ -131,6 +131,28 @@ function CanvasInner() {
         runSummary: focusedDetail.runSummary,
       })
     : undefined
+  const workflowByThreadSurfaceId: Record<string, ReturnType<typeof buildWorkflowLaneContext>> = {}
+  for (const row of laneBoard.rows) {
+    const detail = resolveThreadSurfaceFocusedDetail({
+      threadSurfaces: threadSurfaceData.threadSurfaces,
+      runs: threadSurfaceData.runs,
+      mergeEvents: threadSurfaceData.mergeEvents,
+      rows: laneBoard.rows,
+      mergeGroups: laneBoard.mergeGroups,
+      focusedThreadSurfaceId: row.threadSurfaceId,
+      selectedRunId: row.runId,
+    })
+
+    const workflowStep = resolveWorkflowReferenceStep(contentCreatorWorkflow, {
+      threadSurfaceLabel: detail?.surfaceLabel,
+      threadRole: detail?.role,
+      runSummary: detail?.runSummary,
+    })
+
+    if (workflowStep) {
+      workflowByThreadSurfaceId[row.threadSurfaceId] = buildWorkflowLaneContext(contentCreatorWorkflow, workflowStep)
+    }
+  }
   const shouldRenderSequenceFlow = threadSurfaceData.source !== 'api' && status != null
 
   if (isLoading && !hasRealThreadSurfaceData) return <LoadingSpinner message="Loading sequence..." />
@@ -170,6 +192,7 @@ function CanvasInner() {
       rows={laneBoard.rows}
       focusedThreadSurfaceId={focusedThreadSurfaceId}
       selectedRunId={selectedRunId}
+      workflowByThreadSurfaceId={workflowByThreadSurfaceId}
       onFocusThread={(threadSurfaceId, runId) => {
         setLaneBoardState({
           ...laneBoardState,

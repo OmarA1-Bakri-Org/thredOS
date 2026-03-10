@@ -81,7 +81,11 @@ export const useUIStore = create<UIStore>((set) => ({
   viewMode: 'hierarchy',
   setViewMode: (mode) => set({ viewMode: mode }),
   selectedThreadSurfaceId: null,
-  setSelectedThreadSurfaceId: (id) => set({ selectedThreadSurfaceId: id }),
+  setSelectedThreadSurfaceId: (id) =>
+    set({
+      selectedThreadSurfaceId: id,
+      ...(id != null ? { inspectorOpen: true } : {}),
+    }),
   selectedRunId: null,
   setSelectedRunId: (id) => set({ selectedRunId: id }),
   hierarchyViewport: defaultHierarchyViewport,
@@ -108,6 +112,7 @@ export const useUIStore = create<UIStore>((set) => ({
   openLaneViewForThreadSurface: (threadSurfaceId, runId = null) =>
     set((state) => ({
       viewMode: 'lanes',
+      inspectorOpen: true,
       selectedThreadSurfaceId: threadSurfaceId,
       selectedRunId: runId,
       laneFocusThreadSurfaceId: threadSurfaceId,

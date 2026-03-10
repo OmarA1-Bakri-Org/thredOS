@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { Button } from '@/components/ui/button'
+import type { WorkflowLaneContext } from '@/lib/workflows'
 
 interface LaneBoardRowView {
   threadSurfaceId: string
@@ -13,6 +14,7 @@ interface LaneBoardViewProps {
   rows: LaneBoardRowView[]
   focusedThreadSurfaceId: string | null
   selectedRunId: string | null
+  workflowByThreadSurfaceId?: Record<string, WorkflowLaneContext>
   onFocusThread: (threadSurfaceId: string, runId: string) => void
   onBackToHierarchy: () => void
   focusedContent?: ReactNode
@@ -22,6 +24,7 @@ export function LaneBoardView({
   rows,
   focusedThreadSurfaceId,
   selectedRunId,
+  workflowByThreadSurfaceId = {},
   onFocusThread,
   onBackToHierarchy,
   focusedContent,
@@ -44,6 +47,7 @@ export function LaneBoardView({
         <div className="flex gap-3 overflow-x-auto pb-1">
           {rows.map(row => {
             const isFocused = row.threadSurfaceId === focusedThreadSurfaceId
+            const workflowContext = workflowByThreadSurfaceId[row.threadSurfaceId]
             return (
               <button
                 key={row.threadSurfaceId}
@@ -59,6 +63,26 @@ export function LaneBoardView({
                 ].join(' ')}
               >
                 <div className="text-sm font-semibold tracking-tight">{row.surfaceLabel}</div>
+                {workflowContext ? (
+                  <div className="mt-2 space-y-2">
+                    <div data-testid="lane-workflow-step-name" className="text-xs font-medium uppercase tracking-[0.16em] text-slate-400">
+                      {workflowContext.stepName}
+                    </div>
+                    <div className="flex flex-wrap gap-2 text-[11px] uppercase tracking-[0.16em]">
+                      <span data-testid="lane-workflow-badge" className="rounded-full border border-sky-500/35 bg-sky-500/10 px-3 py-1 text-sky-100">
+                        {workflowContext.phaseLabel}
+                      </span>
+                      <span data-testid="lane-workflow-badge" className="rounded-full border border-slate-700 bg-slate-950/65 px-3 py-1 text-slate-300">
+                        {workflowContext.executionLabel}
+                      </span>
+                      {workflowContext.hasCondition ? (
+                        <span data-testid="lane-workflow-condition-flag" className="rounded-full border border-amber-500/35 bg-amber-500/10 px-3 py-1 text-amber-100">
+                          conditional
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : null}
                 <div className="mt-2 flex flex-wrap gap-2 text-[11px] uppercase tracking-[0.16em]">
                   <span className="rounded-full border border-slate-700 bg-slate-950/65 px-3 py-1 text-slate-300">
                     execIndex {row.executionIndex ?? 'draft'}
