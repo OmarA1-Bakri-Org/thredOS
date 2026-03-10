@@ -18,7 +18,7 @@ export interface LaneBoardState {
 }
 
 interface UIStore {
-  productEntry: ProductEntryMode
+  productEntry: ProductEntryMode | null
   setProductEntry: (entry: ProductEntryMode) => void
   selectedNodeId: string | null
   setSelectedNodeId: (id: string | null) => void
@@ -62,7 +62,7 @@ const defaultLaneBoardState: LaneBoardState = {
 }
 
 export const useUIStore = create<UIStore>((set) => ({
-  productEntry: 'threados',
+  productEntry: null,
   setProductEntry: (entry) => set({ productEntry: entry }),
   selectedNodeId: null,
   setSelectedNodeId: (id) => set({ selectedNodeId: id, ...(id != null ? { inspectorOpen: true } : {}) }),

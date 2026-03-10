@@ -6,6 +6,13 @@ describe('useUIStore', () => {
     useUIStore.setState(useUIStore.getInitialState(), true)
   })
 
+  test('product entry starts unset until the user selects a mode', () => {
+    expect(useUIStore.getState().productEntry).toBeNull()
+
+    useUIStore.getState().setProductEntry('threados')
+    expect(useUIStore.getState().productEntry).toBe('threados')
+  })
+
   test('viewMode can switch between hierarchy and lanes', () => {
     expect(useUIStore.getState().viewMode).toBe('hierarchy')
 

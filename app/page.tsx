@@ -4,6 +4,7 @@ import { useSyncExternalStore } from 'react'
 import dynamic from 'next/dynamic'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
+import { ProductEntryScreen } from '@/components/entry/ProductEntryScreen'
 import { WorkbenchShell } from '@/components/workbench/WorkbenchShell'
 import { TopBar } from '@/components/workbench/TopBar'
 import { LeftRail } from '@/components/workbench/LeftRail'
@@ -36,8 +37,14 @@ export default function Home() {
   const closeLeftRail = useUIStore(s => s.closeLeftRail)
   const closeInspector = useUIStore(s => s.closeInspector)
   const chatOpen = useUIStore(s => s.chatOpen)
+  const productEntry = useUIStore(s => s.productEntry)
+  const setProductEntry = useUIStore(s => s.setProductEntry)
 
   if (!mounted) return <div className="h-screen flex flex-col"><LoadingSpinner message="Loading..." /></div>
+  if (productEntry == null) {
+    return <ProductEntryScreen onEnterThreadOS={() => setProductEntry('threados')} />
+  }
+
   return (
     <WorkbenchShell
       topBar={<TopBar />}
