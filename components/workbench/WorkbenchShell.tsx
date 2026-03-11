@@ -48,14 +48,14 @@ export function WorkbenchShell({
             </div>
           ) : null}
         </main>
-        <aside data-workbench-region="inspector" className="hidden w-[22rem] shrink-0 border-l border-slate-800/80 bg-[#08101d] 2xl:block">
+        <aside data-workbench-region="inspector" className="hidden w-[22rem] shrink-0 border-l border-slate-800/80 bg-[#08101d] xl:block">
           {inspector}
         </aside>
       </div>
 
       {leftRailOpen ? (
         <div className="fixed inset-0 z-40 xl:hidden" data-workbench-region="left-rail-drawer">
-          <div className="absolute inset-0 bg-[#02050a]/76 backdrop-blur-sm" onClick={onDismissLeftRail} aria-hidden="true" />
+          <div className="absolute inset-0 bg-[#02050a]/52 backdrop-blur-sm" onClick={onDismissLeftRail} aria-hidden="true" />
           <aside
             data-workbench-region="left-rail-drawer-panel"
             className="absolute inset-y-0 left-0 flex w-[22rem] max-w-[90vw] flex-col border-r border-slate-800/80 bg-[#08101d] shadow-[0_28px_80px_rgba(0,0,0,0.55)]"
@@ -77,8 +77,8 @@ export function WorkbenchShell({
       ) : null}
 
       {inspectorOpen ? (
-        <div className="fixed inset-0 z-40 2xl:hidden" data-workbench-region="inspector-drawer">
-          <div className="absolute inset-0 bg-[#02050a]/76 backdrop-blur-sm" onClick={onDismissInspector} aria-hidden="true" />
+        <div className="fixed inset-0 z-40 xl:hidden" data-workbench-region="inspector-drawer">
+          <div className="absolute inset-0 bg-[#02050a]/52 backdrop-blur-sm" onClick={onDismissInspector} aria-hidden="true" />
           <aside
             data-workbench-region="inspector-drawer-panel"
             className="absolute inset-y-0 right-0 flex w-[22rem] max-w-[92vw] flex-col border-l border-slate-800/80 bg-[#08101d] shadow-[0_28px_80px_rgba(0,0,0,0.55)]"

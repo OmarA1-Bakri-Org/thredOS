@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useCallback } from 'react'
-import { Moon, PanelLeft, PanelRight, Play, Search, Sun } from 'lucide-react'
+import { MessageSquare, Moon, PanelLeft, PanelRight, Play, Search, Sun } from 'lucide-react'
 import { useTheme } from 'next-themes'
 import { useRunRunnable, useStatus } from '@/lib/ui/api'
 import { Button } from '@/components/ui/button'
@@ -137,17 +137,27 @@ export function TopBar() {
             <Play className="h-4 w-4" />
             {runRunnable.isPending ? 'Running' : 'Run'}
           </Button>
-          <Button type="button" variant="secondary" onClick={toggleChat}>
+          <Button type="button" variant="secondary" onClick={toggleChat} className="hidden lg:inline-flex">
             Chat
           </Button>
-          <Button type="button" variant="outline" onClick={toggleInspector} className="hidden 2xl:inline-flex">
+          <Button
+            type="button"
+            variant="secondary"
+            size="icon"
+            className="lg:hidden"
+            onClick={toggleChat}
+            aria-label="Open chat"
+          >
+            <MessageSquare className="h-4 w-4" />
+          </Button>
+          <Button type="button" variant="outline" onClick={toggleInspector} className="hidden xl:inline-flex">
             Inspector
           </Button>
           <Button
             type="button"
             variant="outline"
             size="icon"
-            className="2xl:hidden"
+            className="xl:hidden"
             onClick={toggleInspector}
             aria-label="Open inspector"
           >

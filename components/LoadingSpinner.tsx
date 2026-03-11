@@ -10,3 +10,17 @@ export function LoadingSpinner({ message = 'Loading...' }: { message?: string })
     </div>
   )
 }
+
+export function LoadingSkeleton({ lines = 3 }: { lines?: number }) {
+  return (
+    <div className="space-y-3 p-4">
+      {Array.from({ length: lines }, (_, i) => (
+        <div
+          key={i}
+          className="h-4 animate-pulse rounded bg-slate-800/60"
+          style={{ width: `${85 - i * 15}%` }}
+        />
+      ))}
+    </div>
+  )
+}

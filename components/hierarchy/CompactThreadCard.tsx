@@ -1,6 +1,7 @@
 'use client'
 
-import { Bot, Folder, Globe, Search } from 'lucide-react'
+import { Layers3, Play, Search, ShieldCheck, Sparkles } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import { buttonVariants } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import type { HierarchyViewNode } from './HierarchyView'
@@ -11,7 +12,15 @@ interface CompactThreadCardProps {
   onSelect: (threadSurfaceId: string, runId: string | null) => void
 }
 
-const compactIcons = [Search, Globe, Bot, Folder]
+function deriveIcons(node: HierarchyViewNode): LucideIcon[] {
+  const icons: LucideIcon[] = []
+  if (node.role === 'orchestrator') icons.push(Sparkles)
+  if (node.childCount > 0) icons.push(Layers3)
+  if (node.runStatus === 'running') icons.push(Play)
+  if (node.runStatus === 'successful') icons.push(ShieldCheck)
+  if (!icons.includes(Search)) icons.push(Search)
+  return icons.slice(0, 4)
+}
 
 export function CompactThreadCard({ node, selected, onSelect }: CompactThreadCardProps) {
   return (
@@ -31,7 +40,7 @@ export function CompactThreadCard({ node, selected, onSelect }: CompactThreadCar
       <div className="mt-2 text-lg font-semibold leading-tight">{node.surfaceLabel}</div>
       <div className="mt-2 text-sm text-slate-400">{node.childCount} child surface{node.childCount === 1 ? '' : 's'}</div>
       <div className="mt-4 flex gap-2 text-slate-400">
-        {compactIcons.map((Icon, index) => (
+        {deriveIcons(node).map((Icon, index) => (
           <span key={index} className="grid h-7 w-7 place-items-center border border-slate-800 bg-slate-900/80">
             <Icon className="h-3.5 w-3.5" />
           </span>
