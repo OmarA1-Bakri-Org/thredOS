@@ -9,6 +9,7 @@ import { WorkbenchShell } from '@/components/workbench/WorkbenchShell'
 import { TopBar } from '@/components/workbench/TopBar'
 import { LeftRail } from '@/components/workbench/LeftRail'
 import { InspectorRail } from '@/components/workbench/InspectorRail'
+import { CreateNodeDialog } from '@/components/command/CreateNodeDialog'
 import { useUIStore } from '@/lib/ui/store'
 
 const SequenceCanvas = dynamic(
@@ -39,6 +40,9 @@ export default function Home() {
   const chatOpen = useUIStore(s => s.chatOpen)
   const productEntry = useUIStore(s => s.productEntry)
   const setProductEntry = useUIStore(s => s.setProductEntry)
+  const createDialogOpen = useUIStore(s => s.createDialogOpen)
+  const createDialogKind = useUIStore(s => s.createDialogKind)
+  const closeCreateDialog = useUIStore(s => s.closeCreateDialog)
 
   if (!mounted) return <div className="h-screen flex flex-col"><LoadingSpinner message="Loading..." /></div>
   if (productEntry == null) {
@@ -46,6 +50,8 @@ export default function Home() {
   }
 
   return (
+    <>
+    <CreateNodeDialog open={createDialogOpen} onClose={closeCreateDialog} initialKind={createDialogKind} />
     <WorkbenchShell
       topBar={<TopBar />}
       leftRail={<LeftRail />}
@@ -76,5 +82,6 @@ export default function Home() {
       }
       chatOpen={chatOpen}
     />
+    </>
   )
 }

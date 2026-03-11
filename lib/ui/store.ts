@@ -17,6 +17,8 @@ export interface LaneBoardState {
   focusedRunId: string | null
 }
 
+export type CreateNodeKind = 'step' | 'gate'
+
 interface UIStore {
   productEntry: ProductEntryMode | null
   setProductEntry: (entry: ProductEntryMode) => void
@@ -47,6 +49,10 @@ interface UIStore {
   laneBoardState: LaneBoardState
   setLaneBoardState: (state: LaneBoardState) => void
   openLaneViewForThreadSurface: (threadSurfaceId: string, runId?: string | null) => void
+  createDialogOpen: boolean
+  createDialogKind: CreateNodeKind
+  openCreateDialog: (kind: CreateNodeKind) => void
+  closeCreateDialog: () => void
 }
 
 const defaultHierarchyViewport: HierarchyViewportState = {
@@ -121,4 +127,8 @@ export const useUIStore = create<UIStore>((set) => ({
         focusedRunId: runId,
       },
     })),
+  createDialogOpen: false,
+  createDialogKind: 'step',
+  openCreateDialog: (kind) => set({ createDialogOpen: true, createDialogKind: kind }),
+  closeCreateDialog: () => set({ createDialogOpen: false }),
 }))

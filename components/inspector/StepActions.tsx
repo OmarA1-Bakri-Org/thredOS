@@ -1,12 +1,13 @@
 'use client'
 
-import { useMemo, useState } from 'react'
-import { AlertTriangle, Play, RotateCcw, ShieldCheck, Square, StopCircle } from 'lucide-react'
+import { useMemo, useState, useCallback } from 'react'
+import { AlertTriangle, Copy, Play, RotateCcw, ShieldCheck, Square, StopCircle, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
-import { useApproveGate, useBlockGate, useRestartStep, useRunStep, useStopStep } from '@/lib/ui/api'
+import { useApproveGate, useBlockGate, useRestartStep, useRunStep, useStopStep, useRemoveStep, useCloneStep } from '@/lib/ui/api'
+import { useUIStore } from '@/lib/ui/store'
 
-type PendingAction = 'block-gate' | 'stop-step' | null
+type PendingAction = 'block-gate' | 'stop-step' | 'delete-node' | null
 
 export function StepActions({ nodeId, isGate }: { nodeId: string; isGate: boolean }) {
   const runStep = useRunStep()
@@ -14,6 +15,9 @@ export function StepActions({ nodeId, isGate }: { nodeId: string; isGate: boolea
   const restartStep = useRestartStep()
   const approveGate = useApproveGate()
   const blockGate = useBlockGate()
+  const removeStep = useRemoveStep()
+  const cloneStep = useCloneStep()
+  const setSelectedNodeId = useUIStore(s => s.setSelectedNodeId)
   const [pendingAction, setPendingAction] = useState<PendingAction>(null)
 
   const errorMessage = useMemo(() => {
@@ -22,10 +26,26 @@ export function StepActions({ nodeId, isGate }: { nodeId: string; isGate: boolea
       stopStep.error ??
       restartStep.error ??
       approveGate.error ??
-      blockGate.error
+      blockGate.error ??
+      removeStep.error ??
+      cloneStep.error
 
     return error instanceof Error ? error.message : null
-  }, [approveGate.error, blockGate.error, restartStep.error, runStep.error, stopStep.error])
+  }, [approveGate.error, blockGate.error, restartStep.error, runStep.error, stopStep.error, removeStep.error, cloneStep.error])
+
+  const handleDelete = useCallback(() => {
+    setPendingAction(null)
+    removeStep.mutate(nodeId, {
+      onSuccess: () => setSelectedNodeId(null),
+    })
+  }, [nodeId, removeStep, setSelectedNodeId])
+
+  const handleClone = useCallback(() => {
+    const newId = `${nodeId}-copy`
+    cloneStep.mutate({ sourceId: nodeId, newId }, {
+      onSuccess: () => setSelectedNodeId(newId),
+    })
+  }, [nodeId, cloneStep, setSelectedNodeId])
 
   if (isGate) {
     return (
@@ -116,6 +136,30 @@ export function StepActions({ nodeId, isGate }: { nodeId: string; isGate: boolea
         </Button>
       </div>
 
+      <div className="flex flex-wrap gap-2 border-t border-slate-800/60 pt-3">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={handleClone}
+          disabled={cloneStep.isPending}
+        >
+          <Copy className="h-3.5 w-3.5" />
+          {cloneStep.isPending ? 'Cloning...' : 'Clone'}
+        </Button>
+
+        <Button
+          type="button"
+          variant="destructive"
+          size="sm"
+          onClick={() => setPendingAction('delete-node')}
+          disabled={removeStep.isPending}
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+          {removeStep.isPending ? 'Deleting...' : 'Delete'}
+        </Button>
+      </div>
+
       {errorMessage ? (
         <div className="border border-rose-500/35 bg-rose-500/8 px-3 py-3 text-sm text-rose-100">
           {errorMessage}
@@ -141,6 +185,24 @@ export function StepActions({ nodeId, isGate }: { nodeId: string; isGate: boolea
           setPendingAction(null)
           stopStep.mutate(nodeId)
         }}
+      />
+
+      <ConfirmDialog
+        open={pendingAction === 'delete-node'}
+        title={`Delete step ${nodeId}?`}
+        description="This permanently removes the step from the sequence. Steps that depend on this one will need to be updated."
+        confirmLabel="Delete step"
+        tone="destructive"
+        details={
+          <div className="space-y-2 text-sm">
+            <div className="flex items-center gap-2 text-rose-100">
+              <AlertTriangle className="h-4 w-4" />
+              This action cannot be undone.
+            </div>
+          </div>
+        }
+        onCancel={() => setPendingAction(null)}
+        onConfirm={handleDelete}
       />
     </div>
   )

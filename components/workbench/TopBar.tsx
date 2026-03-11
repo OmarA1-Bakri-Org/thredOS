@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useCallback } from 'react'
-import { MessageSquare, Moon, PanelLeft, PanelRight, Play, Search, Sun } from 'lucide-react'
+import { MessageSquare, Moon, PanelLeft, PanelRight, Play, Plus, Search, ShieldCheck, Sun } from 'lucide-react'
 import { useTheme } from 'next-themes'
 import { useRunRunnable, useStatus } from '@/lib/ui/api'
 import { Button } from '@/components/ui/button'
@@ -29,6 +29,7 @@ export function TopBar() {
   const toggleLeftRail = useUIStore(s => s.toggleLeftRail)
   const toggleInspector = useUIStore(s => s.toggleInspector)
   const toggleChat = useUIStore(s => s.toggleChat)
+  const openCreateDialog = useUIStore(s => s.openCreateDialog)
   const { theme, setTheme } = useTheme()
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -127,6 +128,24 @@ export function TopBar() {
 
       <div className="flex flex-wrap items-center justify-end gap-2 lg:flex-nowrap">
         <div data-workbench-cluster="primary-actions" className="flex items-center gap-2 border border-slate-800 bg-[#0a101a] px-2 py-2">
+          <Button
+            type="button"
+            variant="warning"
+            size="sm"
+            onClick={() => openCreateDialog('step')}
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Step
+          </Button>
+          <Button
+            type="button"
+            variant="success"
+            size="sm"
+            onClick={() => openCreateDialog('gate')}
+          >
+            <ShieldCheck className="h-3.5 w-3.5" />
+            Gate
+          </Button>
           <Button
             type="button"
             variant="default"

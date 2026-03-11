@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo } from 'react'
+import { useCallback, useEffect, useMemo } from 'react'
 import { ReactFlow, ReactFlowProvider, MiniMap, Controls, Background, useReactFlow } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { useStatus, useThreadMerges, useThreadRuns, useThreadSurfaces } from '@/lib/ui/api'
@@ -11,6 +11,7 @@ import { GateNode } from './GateNode'
 import { GroupBoundary } from './GroupBoundary'
 import { FusionMerge } from './FusionMerge'
 import { DependencyEdge } from './DependencyEdge'
+import { CanvasContextMenu, useCanvasContextMenu } from './CanvasContextMenu'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { EmptyState } from '@/components/EmptyState'
 import { useHierarchyGraph } from '@/components/hierarchy/useHierarchyGraph'
@@ -43,6 +44,7 @@ function SequenceFlowGraph({
   const searchQuery = useUIStore(s => s.searchQuery)
   const { nodes, edges } = useSequenceGraph(status, searchQuery)
   const { fitView } = useReactFlow()
+  const { menu, openMenu, closeMenu } = useCanvasContextMenu()
 
   useEffect(() => {
     if (nodes.length > 0) {
@@ -51,31 +53,52 @@ function SequenceFlowGraph({
     }
   }, [nodes.length, fitView])
 
+  const onNodeContextMenu = useCallback(
+    (event: React.MouseEvent, node: { id: string }) => {
+      event.preventDefault()
+      openMenu(event.clientX, event.clientY, node.id)
+    },
+    [openMenu],
+  )
+
+  const onPaneContextMenu = useCallback(
+    (event: React.MouseEvent | MouseEvent) => {
+      event.preventDefault()
+      openMenu((event as React.MouseEvent).clientX, (event as React.MouseEvent).clientY, null)
+    },
+    [openMenu],
+  )
+
   if (isLoading) return <LoadingSpinner message="Loading sequence..." />
   if (isError) return <div className="flex h-full items-center justify-center text-sm text-destructive">Failed to load sequence status</div>
   if (!status || (status.steps.length === 0 && status.gates.length === 0)) return <EmptyState />
 
   return (
-    <ReactFlow
-      nodes={nodes}
-      edges={edges}
-      nodeTypes={nodeTypes}
-      edgeTypes={edgeTypes}
-      fitView
-      proOptions={{ hideAttribution: true }}
-      className="bg-[#07101b]"
-      style={{ background: 'radial-gradient(ellipse at 50% 50%, #0b1420, #060a12)' }}
-    >
-      <Controls className="[&_button]:border-slate-700 [&_button]:bg-[#0a101a] [&_button]:text-slate-300 [&_button]:hover:bg-[#0f1a2e]" />
-      <Background color="rgba(255,255,255,0.025)" gap={28} />
-      {minimapVisible && (
-        <MiniMap
-          nodeColor="#1e293b"
-          maskColor="rgba(7,16,27,0.85)"
-          style={{ background: '#0a101a', border: '1px solid rgba(51,65,85,0.4)' }}
-        />
-      )}
-    </ReactFlow>
+    <>
+      <ReactFlow
+        nodes={nodes}
+        edges={edges}
+        nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
+        fitView
+        proOptions={{ hideAttribution: true }}
+        className="bg-[#07101b]"
+        style={{ background: 'radial-gradient(ellipse at 50% 50%, #0b1420, #060a12)' }}
+        onNodeContextMenu={onNodeContextMenu}
+        onPaneContextMenu={onPaneContextMenu}
+      >
+        <Controls className="[&_button]:border-slate-700 [&_button]:bg-[#0a101a] [&_button]:text-slate-300 [&_button]:hover:bg-[#0f1a2e]" />
+        <Background color="rgba(255,255,255,0.025)" gap={28} />
+        {minimapVisible && (
+          <MiniMap
+            nodeColor="#1e293b"
+            maskColor="rgba(7,16,27,0.85)"
+            style={{ background: '#0a101a', border: '1px solid rgba(51,65,85,0.4)' }}
+          />
+        )}
+      </ReactFlow>
+      <CanvasContextMenu menu={menu} onClose={closeMenu} />
+    </>
   )
 }
 

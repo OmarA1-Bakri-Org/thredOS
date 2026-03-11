@@ -137,3 +137,91 @@ export function useBlockGate() {
     onError: (error) => { console.error('Block gate failed:', error) },
   })
 }
+
+// ── Construction mutations ──────────────────────────────────────────
+
+export interface AddStepInput {
+  stepId: string
+  name?: string
+  type?: string
+  model?: string
+  prompt?: string
+  dependsOn?: string[]
+}
+
+export function useAddStep() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (input: AddStepInput) => postJson('/api/step', { action: 'add', ...input }),
+    onSuccess: () => invalidateRuntimeQueries(qc),
+    onError: (error) => { console.error('Add step failed:', error) },
+  })
+}
+
+export interface EditStepInput {
+  stepId: string
+  name?: string
+  type?: string
+  model?: string
+  prompt?: string
+  status?: string
+  dependsOn?: string[]
+}
+
+export function useEditStep() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (input: EditStepInput) => postJson('/api/step', { action: 'edit', ...input }),
+    onSuccess: () => invalidateRuntimeQueries(qc),
+    onError: (error) => { console.error('Edit step failed:', error) },
+  })
+}
+
+export function useRemoveStep() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (stepId: string) => postJson('/api/step', { action: 'rm', stepId }),
+    onSuccess: () => invalidateRuntimeQueries(qc),
+    onError: (error) => { console.error('Remove step failed:', error) },
+  })
+}
+
+export function useCloneStep() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ sourceId, newId }: { sourceId: string; newId: string }) =>
+      postJson('/api/step', { action: 'clone', sourceId, newId }),
+    onSuccess: () => invalidateRuntimeQueries(qc),
+    onError: (error) => { console.error('Clone step failed:', error) },
+  })
+}
+
+export function useInsertGate() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (input: { gateId: string; name?: string; dependsOn?: string[] }) =>
+      postJson('/api/gate', { action: 'insert', ...input }),
+    onSuccess: () => invalidateRuntimeQueries(qc),
+    onError: (error) => { console.error('Insert gate failed:', error) },
+  })
+}
+
+export function useAddDep() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ stepId, depId }: { stepId: string; depId: string }) =>
+      postJson('/api/dep', { action: 'add', stepId, depId }),
+    onSuccess: () => invalidateRuntimeQueries(qc),
+    onError: (error) => { console.error('Add dependency failed:', error) },
+  })
+}
+
+export function useRemoveDep() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ stepId, depId }: { stepId: string; depId: string }) =>
+      postJson('/api/dep', { action: 'rm', stepId, depId }),
+    onSuccess: () => invalidateRuntimeQueries(qc),
+    onError: (error) => { console.error('Remove dependency failed:', error) },
+  })
+}
