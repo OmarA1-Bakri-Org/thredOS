@@ -14,19 +14,17 @@ function GroupBoundaryComponent({ data }: NodeProps<Node<GroupBoundaryData>>) {
   const d = data as GroupBoundaryData
   return (
     <div
-      className="rounded-lg pointer-events-none"
+      className="pointer-events-none"
       style={{
         width: d.width,
         height: d.height,
-        border: '2px dashed rgba(99, 102, 241, 0.4)',
-        background: 'rgba(99, 102, 241, 0.05)',
+        border: '1px dashed rgba(99, 102, 241, 0.25)',
+        background: 'rgba(99, 102, 241, 0.04)',
         position: 'relative',
       }}
     >
-      <span
-        className="absolute -top-5 left-2 text-[10px] font-mono text-indigo-400 opacity-70"
-      >
-        group: {d.groupId}
+      <span className="absolute -top-5 left-2 font-mono text-[9px] uppercase tracking-[0.16em] text-indigo-400/50">
+        {d.groupId}
       </span>
     </div>
   )

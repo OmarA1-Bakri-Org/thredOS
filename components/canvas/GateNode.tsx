@@ -24,7 +24,7 @@ function GateNodeComponent({ id, data }: NodeProps<Node<GateNodeData>>) {
         handleSelect()
       }
     },
-    [handleSelect]
+    [handleSelect],
   )
 
   return (
@@ -34,24 +34,32 @@ function GateNodeComponent({ id, data }: NodeProps<Node<GateNodeData>>) {
       aria-label={`Gate ${d.name}, status ${d.status}`}
       onClick={handleSelect}
       onKeyDown={handleKeyDown}
-      className="cursor-pointer flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 rounded"
+      className="cursor-pointer flex items-center justify-center focus:outline-none"
       style={{ width: 80, height: 80 }}
     >
-      <Handle type="target" position={Position.Left} />
+      <Handle type="target" position={Position.Left} className="bg-slate-500! border-slate-700! w-2! h-2!" />
       <div
-        className="flex flex-col items-center justify-center shadow-sm hover:shadow-md transition-shadow"
+        className="flex flex-col items-center justify-center transition-shadow hover:shadow-lg"
         style={{
-          width: 60, height: 60, background: 'hsl(var(--card))',
+          width: 56,
+          height: 56,
+          background: '#0a101a',
           border: `2px solid ${d.color}`,
           transform: 'rotate(45deg)',
+          boxShadow: `0 0 8px ${d.color}22`,
         }}
       >
         <div style={{ transform: 'rotate(-45deg)' }} className="text-center">
-          <div className="text-[9px] font-mono">{d.id}</div>
-          <div className="text-[8px]" style={{ color: d.color }}>{d.status}</div>
+          <div className="font-mono text-[9px] tracking-wide text-slate-400">{d.id}</div>
+          <div
+            className="font-mono text-[8px] uppercase tracking-[0.1em]"
+            style={{ color: d.color }}
+          >
+            {d.status}
+          </div>
         </div>
       </div>
-      <Handle type="source" position={Position.Right} />
+      <Handle type="source" position={Position.Right} className="bg-slate-500! border-slate-700! w-2! h-2!" />
     </div>
   )
 }

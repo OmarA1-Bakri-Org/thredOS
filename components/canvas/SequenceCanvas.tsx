@@ -14,7 +14,6 @@ import { DependencyEdge } from './DependencyEdge'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { EmptyState } from '@/components/EmptyState'
 import { useHierarchyGraph } from '@/components/hierarchy/useHierarchyGraph'
-import { HierarchyView } from '@/components/hierarchy/HierarchyView'
 import { LaneBoardView } from '@/components/lanes/LaneBoardView'
 import { FocusedLanePlane } from '@/components/lanes/FocusedLanePlane'
 import { createLaneBoardModel } from '@/components/lanes/useLaneBoard'
@@ -30,7 +29,7 @@ const nodeTypes = {
 }
 const edgeTypes = { depEdge: DependencyEdge }
 
-function LegacySequenceFlow({
+function SequenceFlowGraph({
   minimapVisible,
   status,
   isLoading,
@@ -47,7 +46,7 @@ function LegacySequenceFlow({
 
   useEffect(() => {
     if (nodes.length > 0) {
-      const t = setTimeout(() => fitView({ padding: 0.1 }), 50)
+      const t = setTimeout(() => fitView({ padding: 0.15 }), 80)
       return () => clearTimeout(t)
     }
   }, [nodes.length, fitView])
@@ -64,10 +63,18 @@ function LegacySequenceFlow({
       edgeTypes={edgeTypes}
       fitView
       proOptions={{ hideAttribution: true }}
+      className="bg-[#07101b]"
+      style={{ background: '#07101b' }}
     >
-      <Controls />
-      <Background />
-      {minimapVisible && <MiniMap />}
+      <Controls className="[&_button]:border-slate-700 [&_button]:bg-[#0a101a] [&_button]:text-slate-300 [&_button]:hover:bg-[#0f1a2e]" />
+      <Background color="rgba(255,255,255,0.03)" gap={24} />
+      {minimapVisible && (
+        <MiniMap
+          nodeColor="#1e293b"
+          maskColor="rgba(7,16,27,0.85)"
+          style={{ background: '#0a101a', border: '1px solid rgba(51,65,85,0.4)' }}
+        />
+      )}
     </ReactFlow>
   )
 }
@@ -100,7 +107,7 @@ function CanvasInner() {
     [selectedRunId, selectedThreadSurfaceId],
   )
 
-  const hierarchyGraph = useHierarchyGraph({
+  useHierarchyGraph({
     threadSurfaces: threadSurfaceData.threadSurfaces,
     runs: threadSurfaceData.runs,
     zoom: 1,
@@ -153,7 +160,7 @@ function CanvasInner() {
       workflowByThreadSurfaceId[row.threadSurfaceId] = buildWorkflowLaneContext(contentCreatorWorkflow, workflowStep)
     }
   }
-  const shouldRenderSequenceFlow = threadSurfaceData.source !== 'api' && status != null
+  const shouldRenderSequenceFlow = status != null
 
   if (isLoading && !hasRealThreadSurfaceData) return <LoadingSpinner message="Loading sequence..." />
   if (isError && !hasRealThreadSurfaceData) return <div className="flex h-full items-center justify-center text-sm text-destructive">Failed to load sequence status</div>
@@ -166,34 +173,19 @@ function CanvasInner() {
 
   if (viewMode === 'hierarchy') {
     return (
-      <HierarchyView
-        nodes={hierarchyGraph.nodes.map(node => ({
-          id: node.id,
-          surfaceLabel: node.surfaceLabel,
-          depth: node.depth,
-          childCount: node.metadata.childCount,
-          runStatus: node.metadata.displayRunStatus,
-          runSummary: node.metadata.runSummary,
-          role: node.metadata.role,
-          surfaceDescription: node.metadata.surfaceDescription,
-          clickTarget: {
-            threadSurfaceId: node.clickTarget.threadSurfaceId,
-            runId: node.clickTarget.runId,
-          },
-        }))}
-        edges={hierarchyGraph.edges}
-        selectedThreadSurfaceId={selectedThreadSurfaceId}
-        onSelectThread={(threadSurfaceId, runId) => {
-          setSelectedThreadSurfaceId(threadSurfaceId)
-          if (runId) setSelectedRunId(runId)
-        }}
-        onOpenLane={openLaneViewForThreadSurface}
-      />
+      <ReactFlowProvider>
+        <SequenceFlowGraph
+          minimapVisible={minimapVisible}
+          status={status}
+          isLoading={isLoading}
+          isError={isError}
+        />
+      </ReactFlowProvider>
     )
   }
 
-    return (
-      <LaneBoardView
+  return (
+    <LaneBoardView
       rows={laneBoard.rows}
       focusedThreadSurfaceId={focusedThreadSurfaceId}
       selectedRunId={selectedRunId}
@@ -215,7 +207,7 @@ function CanvasInner() {
             workflowStep={workflowReferenceStep}
             sequenceView={shouldRenderSequenceFlow ? (
               <ReactFlowProvider>
-                <LegacySequenceFlow
+                <SequenceFlowGraph
                   minimapVisible={minimapVisible}
                   status={status}
                   isLoading={isLoading}
@@ -227,7 +219,7 @@ function CanvasInner() {
         ) : status ? (
           <ReactFlowProvider>
             <div className="h-full">
-              <LegacySequenceFlow
+              <SequenceFlowGraph
                 minimapVisible={minimapVisible}
                 status={status}
                 isLoading={isLoading}
