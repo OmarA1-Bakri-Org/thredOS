@@ -6,12 +6,12 @@ import type { Node, Edge } from '@xyflow/react'
 import type { SequenceStatus } from '@/app/api/status/route'
 import { STATUS_COLORS } from '@/lib/ui/constants'
 
-const NODE_WIDTH = 200
-const NODE_HEIGHT = 60
-const GATE_SIZE = 80
-const FUSION_WIDTH = 200
+const NODE_WIDTH = 220
+const NODE_HEIGHT = 68
+const GATE_SIZE = 96
+const FUSION_WIDTH = 220
 const FUSION_HEIGHT = 80
-const GROUP_PADDING = 30
+const GROUP_PADDING = 36
 
 const elk = new ELK()
 
@@ -76,8 +76,8 @@ export function useSequenceGraph(status: SequenceStatus | undefined, searchQuery
       layoutOptions: {
         'elk.algorithm': 'layered',
         'elk.direction': 'RIGHT',
-        'elk.spacing.nodeNode': '40',
-        'elk.layered.spacing.nodeNodeBetweenLayers': '80',
+        'elk.spacing.nodeNode': '50',
+        'elk.layered.spacing.nodeNodeBetweenLayers': '100',
         'elk.layered.crossingMinimization.strategy': 'LAYER_SWEEP',
       },
       children: elkNodes,

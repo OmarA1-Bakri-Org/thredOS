@@ -191,3 +191,13 @@
     letter-spacing: var(--tracking-normal);
   }
 }
+
+/* ThreadOS canvas — edge flow animation for RUNNING edges */
+.threados-edge-flow {
+  animation: threados-edge-flow 0.8s linear infinite;
+}
+
+@keyframes threados-edge-flow {
+  from { stroke-dashoffset: 10; }
+  to { stroke-dashoffset: 0; }
+}

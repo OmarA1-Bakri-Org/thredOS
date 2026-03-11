@@ -64,10 +64,10 @@ function SequenceFlowGraph({
       fitView
       proOptions={{ hideAttribution: true }}
       className="bg-[#07101b]"
-      style={{ background: '#07101b' }}
+      style={{ background: 'radial-gradient(ellipse at 50% 50%, #0b1420, #060a12)' }}
     >
       <Controls className="[&_button]:border-slate-700 [&_button]:bg-[#0a101a] [&_button]:text-slate-300 [&_button]:hover:bg-[#0f1a2e]" />
-      <Background color="rgba(255,255,255,0.03)" gap={24} />
+      <Background color="rgba(255,255,255,0.025)" gap={28} />
       {minimapVisible && (
         <MiniMap
           nodeColor="#1e293b"
