@@ -12,6 +12,8 @@ import { WorkflowStepContextPanel } from '@/components/workflows/WorkflowStepCon
 import { contentCreatorWorkflow, resolveWorkflowReferenceStep } from '@/lib/workflows'
 import { createLaneBoardModel } from '@/components/lanes/useLaneBoard'
 import { resolveThreadSurfaceFocusedDetail } from '@/components/canvas/threadSurfaceFocus'
+import { useHierarchyGraph } from '@/components/hierarchy/useHierarchyGraph'
+import type { HierarchyViewNode } from '@/components/hierarchy/HierarchyView'
 
 function EmptyInspectorState({ message }: { message: string }) {
   return (
@@ -25,10 +27,42 @@ export function StepInspector() {
   const selectedNodeId = useUIStore(s => s.selectedNodeId)
   const selectedThreadSurfaceId = useUIStore(s => s.selectedThreadSurfaceId)
   const selectedRunId = useUIStore(s => s.selectedRunId)
+  const setSelectedThreadSurfaceId = useUIStore(s => s.setSelectedThreadSurfaceId)
+  const setSelectedRunId = useUIStore(s => s.setSelectedRunId)
   const { data: status, isLoading } = useStatus()
   const { data: threadSurfaces } = useThreadSurfaces()
   const { data: runs } = useThreadRuns()
   const { data: mergeEvents } = useThreadMerges()
+
+  const selectedRunIdBySurfaceId = selectedThreadSurfaceId && selectedRunId
+    ? { [selectedThreadSurfaceId]: selectedRunId }
+    : {}
+  const hierarchyGraph = useHierarchyGraph({
+    threadSurfaces: threadSurfaces ?? [],
+    runs: runs ?? [],
+    zoom: 1,
+    selectedRunIdBySurfaceId,
+  })
+  const hierarchyNodes: HierarchyViewNode[] = hierarchyGraph.nodes.map(node => ({
+    id: node.id,
+    surfaceLabel: node.surfaceLabel,
+    depth: node.depth,
+    childCount: node.metadata.childCount,
+    runStatus: node.metadata.displayRunStatus,
+    runSummary: node.metadata.runSummary,
+    role: node.metadata.role,
+    surfaceDescription: node.metadata.surfaceDescription,
+    clickTarget: {
+      threadSurfaceId: node.clickTarget.threadSurfaceId,
+      runId: node.clickTarget.runId,
+    },
+  }))
+  const hierarchyEdges = hierarchyGraph.edges
+
+  const handleSelectNode = (threadSurfaceId: string, runId: string | null) => {
+    setSelectedThreadSurfaceId(threadSurfaceId)
+    if (runId) setSelectedRunId(runId)
+  }
 
   const laneBoard = threadSurfaces && runs && mergeEvents
     ? createLaneBoardModel({
@@ -58,7 +92,16 @@ export function StepInspector() {
       runSummary: focusedThreadDetail.runSummary,
     })
 
-    return <ThreadSurfaceInspector detail={focusedThreadDetail} workflowStep={workflowStep} />
+    return (
+      <ThreadSurfaceInspector
+        detail={focusedThreadDetail}
+        workflowStep={workflowStep}
+        hierarchyNodes={hierarchyNodes}
+        hierarchyEdges={hierarchyEdges}
+        selectedThreadSurfaceId={selectedThreadSurfaceId}
+        onSelectNode={handleSelectNode}
+      />
+    )
   }
 
   if (!selectedNodeId) {

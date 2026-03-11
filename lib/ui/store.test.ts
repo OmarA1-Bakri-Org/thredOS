@@ -31,7 +31,7 @@ describe('useUIStore', () => {
     useUIStore.getState().setViewMode('hierarchy')
 
     expect(useUIStore.getState().selectedThreadSurfaceId).toBe('thread-synthesis')
-    expect(useUIStore.getState().inspectorOpen).toBeFalse()
+    expect(useUIStore.getState().inspectorOpen).toBeTrue()
   })
 
   test('opening lane focus from a hierarchy node sets synchronized top-level and lane-board focus context', () => {
