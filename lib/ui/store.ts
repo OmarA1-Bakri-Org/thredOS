@@ -2,7 +2,7 @@
 
 import { create } from 'zustand'
 
-export type ThreadSurfaceViewMode = 'hierarchy' | 'lanes' | 'layers'
+export type ThreadSurfaceViewMode = 'hierarchy' | 'lanes'
 export type ProductEntryMode = 'threados' | 'thread-runner'
 
 export interface HierarchyViewportState {

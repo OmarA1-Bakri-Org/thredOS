@@ -15,7 +15,6 @@ const productEntries: Array<{ value: ProductEntryMode; label: string; disabled?:
 const viewModes: Array<{ value: ThreadSurfaceViewMode; label: string; disabled?: boolean }> = [
   { value: 'hierarchy', label: 'Hierarchy' },
   { value: 'lanes', label: 'Lanes' },
-  { value: 'layers', label: 'Layers', disabled: true },
 ]
 
 export function TopBar() {
