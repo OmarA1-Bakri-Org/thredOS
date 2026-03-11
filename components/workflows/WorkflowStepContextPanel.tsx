@@ -7,16 +7,16 @@ export function WorkflowStepContextPanel({
   workflow: WorkflowDefinition
   step: WorkflowStep
 }) {
-  const dependencySummary = step.dependsOn.length > 0 ? step.dependsOn.join(', ') : 'No upstream dependencies'
-  const actionSummary = step.actionTypes.length > 0 ? step.actionTypes.join(', ') : 'No declared action types'
-  const outputSummary = step.outputKeys.length > 0 ? step.outputKeys.join(', ') : 'No explicit outputs'
+  const dependencySummary = step.dependsOn.length > 0 ? step.dependsOn.join(', ') : '—'
+  const actionSummary = step.actionTypes.length > 0 ? step.actionTypes.join(', ') : '—'
+  const outputSummary = step.outputKeys.length > 0 ? step.outputKeys.join(', ') : '—'
 
   return (
     <div data-testid="workflow-step-context-panel" className="space-y-4">
       <section className="border border-[#16417C]/70 bg-[#16417C]/18 px-4 py-4">
-        <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">Workflow step context</div>
+        <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">Step context</div>
         <h4 className="mt-2 text-lg font-semibold tracking-tight text-white">{step.name}</h4>
-        <p className="mt-2 text-sm text-slate-200">{step.description}</p>
+        <p className="mt-1 text-sm text-slate-400">{step.description}</p>
       </section>
 
       <section data-testid="workflow-step-summary" className="border border-[#16417C]/70 bg-[#16417C]/16 px-4 py-4">
@@ -77,7 +77,7 @@ export function WorkflowStepContextPanel({
               ))}
             </div>
           ) : (
-            <span className="text-slate-400">No explicit outputs recorded for this workflow step.</span>
+            <span className="text-slate-400">—</span>
           )}
         </div>
       </section>

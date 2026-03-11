@@ -41,12 +41,14 @@ export function FocusedLanePlane({
           ) : null}
         </div>
         {detail.surfaceDescription ? <p className="mt-2 text-sm text-slate-300">{detail.surfaceDescription}</p> : null}
-        <div className="mt-3 flex flex-wrap gap-3 text-xs text-slate-400">
-          <span>thread {detail.threadSurfaceId}</span>
-          <span>run {detail.runId ?? 'none'}</span>
-          <span>execIndex {detail.executionIndex ?? 'draft'}</span>
-          {detail.laneTerminalState ? <span>{detail.laneTerminalState}</span> : null}
-          {detail.mergedIntoThreadSurfaceId ? <span>merged into {detail.mergedIntoThreadSurfaceId}</span> : null}
+        <div className="mt-2 flex flex-wrap gap-2 font-mono text-[10px] uppercase tracking-[0.16em] text-slate-500">
+          <span>{detail.threadSurfaceId}</span>
+          <span>·</span>
+          <span>{detail.runId ?? '—'}</span>
+          <span>·</span>
+          <span>idx {detail.executionIndex ?? '—'}</span>
+          {detail.laneTerminalState ? <><span>·</span><span>{detail.laneTerminalState}</span></> : null}
+          {detail.mergedIntoThreadSurfaceId ? <><span>·</span><span>→ {detail.mergedIntoThreadSurfaceId}</span></> : null}
         </div>
       </div>
 
@@ -55,7 +57,7 @@ export function FocusedLanePlane({
           <section data-testid="lane-execution-brief" className="border border-[#16417C]/70 bg-[#16417C]/18 p-4">
             <h4 className="font-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Execution brief</h4>
             <p className="mt-3 text-sm text-slate-100">
-              {detail.runSummary ?? 'No workflow step is currently mapped to this lane.'}
+              {detail.runSummary ?? '—'}
             </p>
             {compactStepSummary ? (
               <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -91,7 +93,7 @@ export function FocusedLanePlane({
 
           <section className="border border-slate-700 bg-slate-950/65 p-4">
             <h4 className="font-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Run notes</h4>
-            <p className="mt-3 text-sm text-slate-100">{detail.runNotes ?? 'No run notes recorded yet.'}</p>
+            <p className="mt-3 text-sm text-slate-100">{detail.runNotes ?? '—'}</p>
             {detail.runDiscussion ? (
               <div className="mt-3 border border-slate-800 bg-[#0a101a] px-3 py-3 text-sm text-slate-300">
                 {detail.runDiscussion}
@@ -102,7 +104,7 @@ export function FocusedLanePlane({
           {sequenceView ? (
             <section className="border border-slate-700 bg-slate-950/65 p-4">
               <h4 className="font-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Sequence view</h4>
-              <div className="mt-3 h-[28rem] overflow-hidden border border-slate-800">{sequenceView}</div>
+              <div className="mt-3 h-112 overflow-hidden border border-slate-800">{sequenceView}</div>
             </section>
           ) : null}
         </div>
@@ -125,7 +127,7 @@ export function FocusedLanePlane({
                 ))}
               </div>
             ) : (
-              <p className="mt-3 text-sm text-slate-400">No inbound merges recorded for this thread.</p>
+              <p className="mt-3 text-sm text-slate-400">—</p>
             )}
           </section>
 
@@ -141,7 +143,7 @@ export function FocusedLanePlane({
                 ))}
               </div>
             ) : (
-              <p className="mt-3 text-sm text-slate-400">This thread has not merged into another lane.</p>
+              <p className="mt-3 text-sm text-slate-400">—</p>
             )}
           </section>
         </aside>

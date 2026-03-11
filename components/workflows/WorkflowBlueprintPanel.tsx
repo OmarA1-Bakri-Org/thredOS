@@ -19,9 +19,9 @@ export function WorkflowBlueprintPanel({ workflow }: { workflow: WorkflowDefinit
   return (
     <div data-testid="workflow-blueprint-panel" className="space-y-4">
       <section className="border border-[#16417C]/70 bg-[#16417C]/18 px-4 py-4">
-        <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">Workflow blueprint</div>
+        <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">Blueprint</div>
         <h4 className="mt-2 text-lg font-semibold tracking-tight text-white">{workflow.name}</h4>
-        <p className="mt-2 max-w-3xl text-sm text-slate-200">{workflow.description}</p>
+        <p className="mt-1 text-sm text-slate-400">{workflow.description}</p>
       </section>
 
       <section data-testid="workflow-phase-chip-row" className="flex flex-wrap gap-2">
@@ -35,7 +35,7 @@ export function WorkflowBlueprintPanel({ workflow }: { workflow: WorkflowDefinit
               Phase {phase.phase}
             </div>
             <div className="mt-1 text-sm font-semibold text-white">{phase.label}</div>
-            <div className="mt-1 text-xs text-slate-300">{phase.steps.length} step{phase.steps.length === 1 ? '' : 's'}</div>
+            <div className="mt-1 text-xs text-slate-300">{phase.steps.length}S</div>
           </div>
         ))}
       </section>
@@ -43,23 +43,21 @@ export function WorkflowBlueprintPanel({ workflow }: { workflow: WorkflowDefinit
       <section data-testid="workflow-summary-grid" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <div className="border border-slate-800 bg-[#0a101a] px-3 py-3">
           <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Structure</div>
-          <div className="mt-2 text-sm font-semibold text-white">{workflow.phases.length} phases · {totalSteps} steps</div>
-          <div className="mt-1 text-xs text-slate-400">{conditionalStepCount} conditional branches in play</div>
+          <div className="mt-2 text-sm font-semibold text-white">{workflow.phases.length}P · {totalSteps}S</div>
+          <div className="mt-1 text-xs text-slate-400">{conditionalStepCount} conditional</div>
         </div>
         <div className="border border-slate-800 bg-[#0a101a] px-3 py-3">
           <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Prerequisites</div>
-          <div className="mt-2 text-sm font-semibold text-white">{connectionCount} integrations</div>
-          <div className="mt-1 text-xs text-slate-400">{requiredConnectionCount} required · {optionalConnectionCount} optional</div>
+          <div className="mt-2 text-sm font-semibold text-white">{connectionCount} integ.</div>
+          <div className="mt-1 text-xs text-slate-400">{requiredConnectionCount} req · {optionalConnectionCount} opt</div>
         </div>
         <div className="border border-slate-800 bg-[#0a101a] px-3 py-3">
-          <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Quality gates</div>
-          <div className="mt-2 text-sm font-semibold text-white">{qualityGateCount} validation checkpoints</div>
-          <div className="mt-1 text-xs text-slate-400">Formatting and approval checks stay outside the lane body</div>
+          <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Gates</div>
+          <div className="mt-2 text-sm font-semibold text-white">{qualityGateCount} checkpoints</div>
         </div>
         <div className="border border-slate-800 bg-[#0a101a] px-3 py-3">
-          <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Post-completion</div>
-          <div className="mt-2 text-sm font-semibold text-white">{postCompletionCount} cross-channel signals</div>
-          <div className="mt-1 text-xs text-slate-400">Telemetry and publication feedback remain visible here</div>
+          <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Signals</div>
+          <div className="mt-2 text-sm font-semibold text-white">{postCompletionCount} post-run</div>
         </div>
       </section>
 

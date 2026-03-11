@@ -19,7 +19,7 @@ export function ThreadSurfaceInspector({
         data-testid={`${testIdPrefix}-summary`}
         className="border border-[#16417C]/70 bg-[#16417C]/18 px-4 py-4"
       >
-        <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">Thread / run detail</div>
+        <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">Thread detail</div>
         <div className="mt-2 text-2xl font-semibold tracking-tight text-white">{detail.surfaceLabel}</div>
         <div className="mt-3 flex flex-wrap gap-2 text-[11px] uppercase tracking-[0.18em]">
           {detail.role ? (
@@ -52,33 +52,33 @@ export function ThreadSurfaceInspector({
             <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">Thread context</div>
             <div className="mt-3 grid gap-3 text-sm text-slate-100 md:grid-cols-2">
               <div className="border border-slate-800/90 bg-[#08101d] px-3 py-3">
-                <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Thread surface</div>
+                <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Surface</div>
                 <div className="mt-2 break-all font-medium text-white">{detail.threadSurfaceId}</div>
               </div>
               <div className="border border-slate-800/90 bg-[#08101d] px-3 py-3">
                 <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Role</div>
-                <div className="mt-2 text-white">{detail.role ?? 'No role assigned'}</div>
+                <div className="mt-2 text-white">{detail.role ?? '—'}</div>
               </div>
               <div className="border border-slate-800/90 bg-[#08101d] px-3 py-3 md:col-span-2">
-                <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Thread brief</div>
+                <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Brief</div>
                 <div className="mt-2 text-slate-200">
-                  {detail.surfaceDescription ?? 'No thread context recorded yet.'}
+                  {detail.surfaceDescription ?? '—'}
                 </div>
               </div>
               <div className="border border-slate-800/90 bg-[#08101d] px-3 py-3">
-                <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Incoming merges</div>
+                <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Merges in</div>
                 <div className="mt-2 text-white">
                   {detail.incomingMergeGroups.length > 0
-                    ? `${detail.incomingMergeGroups.length} merge group${detail.incomingMergeGroups.length === 1 ? '' : 's'} active`
-                    : 'No inbound merges selected.'}
+                    ? `${detail.incomingMergeGroups.length} active`
+                    : '—'}
                 </div>
               </div>
               <div className="border border-slate-800/90 bg-[#08101d] px-3 py-3">
-                <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Outgoing merges</div>
+                <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Merges out</div>
                 <div className="mt-2 text-white">
                   {detail.outgoingMergeEvents.length > 0
-                    ? `${detail.outgoingMergeEvents.length} downstream merge event${detail.outgoingMergeEvents.length === 1 ? '' : 's'}`
-                    : 'No downstream merges recorded.'}
+                    ? `${detail.outgoingMergeEvents.length} downstream`
+                    : '—'}
                 </div>
               </div>
             </div>
@@ -91,16 +91,16 @@ export function ThreadSurfaceInspector({
             <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">Provenance</div>
             <div className="mt-3 grid gap-3 text-sm text-slate-100 md:grid-cols-2">
               <div className="border border-slate-800/90 bg-[#08101d] px-3 py-3">
-                <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Thread surface</div>
+                <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Surface</div>
                 <div className="mt-2 break-all font-medium text-white">{detail.threadSurfaceId}</div>
               </div>
               <div className="border border-slate-800/90 bg-[#08101d] px-3 py-3">
                 <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Run</div>
-                <div className="mt-2 break-all font-medium text-white">{detail.runId ?? 'No run selected'}</div>
+                <div className="mt-2 break-all font-medium text-white">{detail.runId ?? '—'}</div>
               </div>
               <div className="border border-slate-800/90 bg-[#08101d] px-3 py-3 md:col-span-2">
                 <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Summary</div>
-                <div className="mt-2 text-slate-200">{detail.runSummary ?? 'No run summary recorded yet.'}</div>
+                <div className="mt-2 text-slate-200">{detail.runSummary ?? '—'}</div>
               </div>
               {detail.laneTerminalState ? (
                 <div className="border border-slate-800/90 bg-[#08101d] px-3 py-3">
@@ -124,15 +124,15 @@ export function ThreadSurfaceInspector({
             <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">Run context</div>
             <div className="mt-3 space-y-3">
               <div className="border border-slate-800/90 bg-[#08101d] px-3 py-3">
-                <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Selected run</div>
-                <div className="mt-2 break-all text-sm text-white">{detail.runId ?? 'No run selected'}</div>
+                <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Run</div>
+                <div className="mt-2 break-all text-sm text-white">{detail.runId ?? '—'}</div>
               </div>
               <div
                 data-testid={`${testIdPrefix}-run-notes`}
                 className="border border-[#16417C]/70 bg-[#16417C]/16 px-3 py-3"
               >
                 <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Notes</div>
-                <div className="mt-2 text-sm text-slate-100">{detail.runNotes ?? 'No run notes recorded yet.'}</div>
+                <div className="mt-2 text-sm text-slate-100">{detail.runNotes ?? '—'}</div>
               </div>
               <div
                 data-testid={`${testIdPrefix}-run-discussion`}
@@ -140,7 +140,7 @@ export function ThreadSurfaceInspector({
               >
                 <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Discussion</div>
                 <div className="mt-2 text-sm text-slate-100">
-                  {detail.runDiscussion ?? 'No run discussion recorded yet.'}
+                  {detail.runDiscussion ?? '—'}
                 </div>
               </div>
             </div>

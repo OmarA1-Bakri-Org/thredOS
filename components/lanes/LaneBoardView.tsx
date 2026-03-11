@@ -33,11 +33,8 @@ export function LaneBoardView({
   return (
     <div className="flex h-full flex-col overflow-hidden bg-[#050913]">
       <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-800/80 bg-[#08101d] px-5 py-4">
-        <div className="max-w-2xl">
+        <div>
           <h2 className="font-mono text-[11px] uppercase tracking-[0.24em] text-slate-500">Lane Board</h2>
-          <p className="mt-2 text-sm text-slate-300">
-            Execution lanes remain ordered by run truth. Focus follows the selected thread surface and preserves merge context.
-          </p>
         </div>
         <Button type="button" variant="outline" onClick={onBackToHierarchy}>
           Back To Hierarchy
@@ -49,11 +46,8 @@ export function LaneBoardView({
           data-testid="lane-board-roster"
           className="w-104 shrink-0 border-r border-slate-800/80 bg-[#08101d]"
         >
-          <div className="border-b border-slate-800/80 px-5 py-4">
-            <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">Lane roster</div>
-            <p className="mt-2 text-sm text-slate-300">
-              Each lane remains persistent. Focus a thread to inspect its execution plane without collapsing merge truth.
-            </p>
+          <div className="border-b border-slate-800/80 px-5 py-3">
+            <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">Roster</div>
           </div>
           <div className="flex max-h-full flex-col gap-2 overflow-y-auto px-3 py-3">
             {rows.map(row => {
@@ -109,7 +103,7 @@ export function LaneBoardView({
                         ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-100'
                         : 'border-slate-700 bg-slate-950/65 text-slate-400'}`}
                     >
-                      {selectedRunId === row.runId ? 'Selected run' : row.runId}
+                      {selectedRunId === row.runId ? '✓ active' : row.runId}
                     </span>
                   </div>
                 </button>
