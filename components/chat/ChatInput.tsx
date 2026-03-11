@@ -39,7 +39,7 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
   )
 
   return (
-    <div className="flex items-end gap-3 border-t border-slate-800/80 bg-[#08101d] px-4 py-4">
+    <div className="flex items-end gap-3 border-t border-slate-800/80 bg-[#050c17] px-4 py-4">
       <textarea
         ref={textareaRef}
         value={value}
@@ -48,7 +48,7 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
         placeholder="Ask about your sequence..."
         disabled={disabled}
         rows={1}
-        className="min-h-[44px] flex-1 resize-none border border-[#16417C]/70 bg-[#16417C]/18 px-3 py-3 text-sm text-slate-100 outline-none placeholder:text-slate-500 focus:border-sky-500/70 disabled:opacity-50"
+        className="min-h-[44px] flex-1 resize-none border border-[#16417C]/70 bg-[#16417C]/12 px-3 py-3 text-sm text-slate-100 outline-none placeholder:text-slate-500 focus:border-sky-500/70 disabled:opacity-50"
       />
       <Button
         type="button"

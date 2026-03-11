@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import type { ReactElement, ReactNode } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
 import { ActionCard } from './ActionCard'
 import type { ProposedAction } from '@/lib/chat/validator'
 
@@ -43,6 +44,16 @@ function collectButtons(node: ReactNode, acc: ButtonElement[] = []): ButtonEleme
 
 describe('ActionCard', () => {
   const actions: ProposedAction[] = [{ command: 'step.add', args: { id: 'draft-step' } }]
+
+  test('renders the review shell markers for the workbench surface', () => {
+    const markup = renderToStaticMarkup(
+      <ActionCard actions={actions} onApply={() => {}} onDiscard={() => {}} />
+    )
+
+    expect(markup).toContain('data-testid="chat-action-card"')
+    expect(markup).toContain('data-testid="chat-action-card-pill"')
+    expect(markup).toContain('Review required')
+  })
 
   test('apply forwards the proposed actions', () => {
     const applied: ProposedAction[][] = []

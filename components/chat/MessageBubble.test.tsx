@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import type { ReactElement, ReactNode } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
 import { MessageBubble } from './MessageBubble'
 
 type ElementWithChildren = ReactElement<{
@@ -47,5 +48,13 @@ describe('MessageBubble', () => {
 
     expect(collectByTestId(user, 'chat-message-user')).toHaveLength(1)
     expect(collectByTestId(assistant, 'chat-message-assistant')).toHaveLength(1)
+  })
+
+  test('keeps the builder and assistant labels in the message shell', () => {
+    const userMarkup = renderToStaticMarkup(<MessageBubble role="user" content="Ship it." />)
+    const assistantMarkup = renderToStaticMarkup(<MessageBubble role="assistant" content="Inspecting the sequence." />)
+
+    expect(userMarkup).toContain('Builder prompt')
+    expect(assistantMarkup).toContain('ThreadOS response')
   })
 })
