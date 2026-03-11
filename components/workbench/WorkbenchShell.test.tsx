@@ -85,6 +85,8 @@ describe('WorkbenchShell', () => {
     expect(collectByDataRegion(shell, 'inspector-drawer')).toHaveLength(1)
     expect(collectByDataRegion(shell, 'left-rail-drawer-panel')).toHaveLength(1)
     expect(collectByDataRegion(shell, 'inspector-drawer-panel')).toHaveLength(1)
+    expect(JSON.stringify(shell)).toContain('Thread navigator')
+    expect(JSON.stringify(shell)).toContain('Inspector')
     expect(collectButtonsByLabel(shell, 'Close thread navigator')).toHaveLength(1)
     expect(collectButtonsByLabel(shell, 'Close inspector')).toHaveLength(1)
   })
@@ -101,6 +103,6 @@ describe('WorkbenchShell', () => {
     const inspector = collectByDataRegion(shell, 'inspector')[0]
 
     expect(String(leftRail?.props.className ?? '')).toContain('w-64')
-    expect(String(inspector?.props.className ?? '')).toContain('w-[22rem]')
+    expect(String(inspector?.props.className ?? '')).toContain('w-md')
   })
 })

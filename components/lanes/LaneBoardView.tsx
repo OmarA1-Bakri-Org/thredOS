@@ -47,7 +47,7 @@ export function LaneBoardView({
       <div className="min-h-0 flex flex-1 overflow-hidden">
         <aside
           data-testid="lane-board-roster"
-          className="w-[22rem] shrink-0 border-r border-slate-800/80 bg-[#08101d]"
+          className="w-104 shrink-0 border-r border-slate-800/80 bg-[#08101d]"
         >
           <div className="border-b border-slate-800/80 px-5 py-4">
             <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">Lane roster</div>
@@ -55,7 +55,7 @@ export function LaneBoardView({
               Each lane remains persistent. Focus a thread to inspect its execution plane without collapsing merge truth.
             </p>
           </div>
-          <div className="flex max-h-full flex-col gap-3 overflow-y-auto px-4 py-4">
+          <div className="flex max-h-full flex-col gap-2 overflow-y-auto px-3 py-3">
             {rows.map(row => {
               const isFocused = row.threadSurfaceId === focusedThreadSurfaceId
               const workflowContext = workflowByThreadSurfaceId[row.threadSurfaceId]
@@ -68,7 +68,7 @@ export function LaneBoardView({
                   onClick={() => onFocusThread(row.threadSurfaceId, row.runId)}
                   className={cn(
                     buttonVariants({ variant: isFocused ? 'secondary' : 'outline' }),
-                    'h-auto w-full items-start justify-start whitespace-normal px-4 py-4 text-left normal-case tracking-normal',
+                    'h-auto w-full items-start justify-start whitespace-normal px-3 py-3 text-left normal-case tracking-normal',
                     isFocused ? 'border-sky-500/50 text-white shadow-[0_0_0_1px_rgba(96,165,250,0.15)]' : 'text-slate-300',
                   )}
                 >

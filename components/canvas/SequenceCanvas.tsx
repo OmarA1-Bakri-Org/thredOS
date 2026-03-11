@@ -181,7 +181,12 @@ function CanvasInner() {
             runId: node.clickTarget.runId,
           },
         }))}
+        edges={hierarchyGraph.edges}
         selectedThreadSurfaceId={selectedThreadSurfaceId}
+        onSelectThread={(threadSurfaceId, runId) => {
+          setSelectedThreadSurfaceId(threadSurfaceId)
+          if (runId) setSelectedRunId(runId)
+        }}
         onOpenLane={openLaneViewForThreadSurface}
       />
     )
