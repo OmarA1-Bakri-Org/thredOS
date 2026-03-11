@@ -1,0 +1,16 @@
+{
+  "review_id": "full-ui-review_20260310",
+  "target": "components/**",
+  "focus_areas": ["visual", "usability", "code", "performance"],
+  "context": "Engineering dashboard / agentic workbench",
+  "platform": "responsive",
+  "status": "complete",
+  "started_at": "2026-03-10T00:00:00Z",
+  "issues_found": 18,
+  "severity_counts": {
+    "critical": 2,
+    "major": 5,
+    "minor": 7,
+    "suggestion": 4
+  }
+}

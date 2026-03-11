@@ -53,7 +53,7 @@ export function TopBar() {
     : null
 
   return (
-    <div className="grid min-h-[4.5rem] grid-cols-[minmax(0,auto)_minmax(0,1fr)_auto] items-center gap-3 px-4 py-3 2xl:px-5">
+    <div className="grid min-h-[4.5rem] grid-cols-1 gap-3 px-4 py-3 lg:grid-cols-[minmax(0,auto)_minmax(0,1fr)_auto] lg:items-center 2xl:px-5">
       <div className="flex min-w-0 items-center gap-2.5">
         <Button
           type="button"
@@ -72,7 +72,7 @@ export function TopBar() {
         </div>
       </div>
 
-      <div className="flex min-w-0 items-center gap-3">
+      <div className="flex min-w-0 flex-wrap items-center gap-3 lg:flex-nowrap">
         <div
           data-workbench-cluster="product-entry"
           className="hidden shrink-0 items-center gap-2 border border-slate-800 bg-[#0a101a] px-2 py-2 md:flex"
@@ -113,7 +113,7 @@ export function TopBar() {
 
         <div
           data-workbench-cluster="command-search"
-          className="flex min-w-0 flex-1 items-center gap-3 border border-[#16417C]/70 bg-[#16417C]/18 px-3 py-2 text-sm text-slate-300"
+          className="flex min-w-0 flex-1 items-center gap-3 border border-slate-800 bg-[#0a101a] px-3 py-2 text-sm text-slate-300"
         >
           <Search className="h-4 w-4 shrink-0 text-slate-400" />
           <input
@@ -126,7 +126,7 @@ export function TopBar() {
         </div>
       </div>
 
-      <div className="flex items-center justify-end gap-2">
+      <div className="flex flex-wrap items-center justify-end gap-2 lg:flex-nowrap">
         <div data-workbench-cluster="primary-actions" className="flex items-center gap-2 border border-slate-800 bg-[#0a101a] px-2 py-2">
           <Button
             type="button"
@@ -154,7 +154,7 @@ export function TopBar() {
             <PanelRight className="h-4 w-4" />
           </Button>
         </div>
-        <div data-workbench-cluster="utility-status" className="flex items-center gap-2 border border-slate-800 bg-[#0a101a] px-2 py-2">
+        <div data-workbench-cluster="utility-status" className="flex min-w-0 items-center gap-2 border border-slate-800 bg-[#0a101a] px-2 py-2">
           {status ? (
             <div className="hidden min-w-0 items-center gap-2 xl:flex">
               <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-slate-500">{status.name}</span>

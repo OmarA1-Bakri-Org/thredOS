@@ -19,11 +19,12 @@ interface ChatMessage {
 export function ChatPanel() {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [loading, setLoading] = useState(false)
+  const [applyingMessageId, setApplyingMessageId] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight })
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
   }, [messages])
 
   const sendMessage = useCallback(async (text: string) => {
@@ -105,7 +106,8 @@ export function ChatPanel() {
     }
   }, [])
 
-  const handleApply = useCallback(async (actions: ProposedAction[]) => {
+  const handleApply = useCallback(async (messageId: string, actions: ProposedAction[]) => {
+    setApplyingMessageId(messageId)
     try {
       const res = await fetch('/api/apply', {
         method: 'POST',
@@ -116,16 +118,15 @@ export function ChatPanel() {
       if (!result.success) {
         console.error('Apply failed:', result)
       }
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: crypto.randomUUID(),
-          role: 'assistant',
-          content: result.success
-            ? `Applied ${actions.length} action(s) successfully.`
-            : `Apply failed: ${result.errors?.join(', ') || 'Unknown error'}`,
-        },
-      ])
+      setMessages((prev) => prev.map(m =>
+        m.id === messageId ? { ...m, actions: undefined, diff: undefined } : m
+      ).concat({
+        id: crypto.randomUUID(),
+        role: 'assistant',
+        content: result.success
+          ? `Applied ${actions.length} action(s) successfully.`
+          : `Apply failed: ${result.errors?.join(', ') || 'Unknown error'}`,
+      }))
     } catch (error) {
       console.error('Apply error:', error)
       setMessages((prev) => [
@@ -136,16 +137,20 @@ export function ChatPanel() {
           content: `Apply error: ${(error as Error).message}`,
         },
       ])
+    } finally {
+      setApplyingMessageId(null)
     }
   }, [])
 
-  const handleDiscard = useCallback(() => {
-    // No-op, just dismisses
+  const handleDiscard = useCallback((messageId: string) => {
+    setMessages(prev => prev.map(m =>
+      m.id === messageId ? { ...m, actions: undefined, diff: undefined } : m
+    ))
   }, [])
 
   return (
-    <div data-testid="chat-panel" className="flex h-full flex-col bg-[#08101d]" aria-busy={loading}>
-      <div className="border-b border-slate-800/80 bg-[#060c16] px-4 py-4">
+    <div data-testid="chat-panel" className="flex h-full flex-col bg-[#07101d]" aria-busy={loading}>
+      <div data-testid="chat-header" className="border-b border-slate-800/80 bg-[#050c17] px-4 py-4">
         <div className="flex items-start justify-between gap-4">
           <div>
             <div data-testid="chat-top-pills" className="mb-3 flex flex-wrap items-center gap-2">
@@ -164,10 +169,13 @@ export function ChatPanel() {
               Ask for sequence inspection, rationale, and controlled mutations against the active thread and run context.
             </p>
           </div>
-          <div className="hidden border border-slate-700 bg-slate-950/65 px-3 py-3 md:block">
+          <div
+            data-testid="chat-mode-card"
+            className="hidden border border-[#16417C]/70 bg-[#16417C]/18 px-3 py-3 md:block"
+          >
             <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Mode</div>
             <div className="mt-2 flex items-center gap-2 text-sm text-slate-100">
-              <Sparkles className="h-4 w-4 text-sky-300" />
+              <Sparkles className="h-4 w-4 text-emerald-300" />
               Context-bound assistant
             </div>
           </div>
@@ -184,7 +192,7 @@ export function ChatPanel() {
           <div data-testid="chat-empty-state" className="border border-[#16417C]/70 bg-[#16417C]/18 px-4 py-4 text-sm text-slate-200">
             <div className="font-mono text-[11px] uppercase tracking-[0.2em] text-slate-500">Ready for bounded guidance</div>
             <div className="mt-3 text-base font-medium text-white">Ask ThreadOS to inspect, modify, or explain the active sequence.</div>
-            <div className="mt-3 grid gap-2 text-sm text-slate-300 lg:grid-cols-2">
+            <div data-testid="chat-empty-example-grid" className="mt-3 grid gap-2 text-sm text-slate-300 lg:grid-cols-2">
               <div className="border border-slate-800/90 bg-[#08101d] px-3 py-3">Summarize the selected thread and current run context.</div>
               <div className="border border-slate-800/90 bg-[#08101d] px-3 py-3">Propose a controlled change and review the diff before applying it.</div>
             </div>
@@ -196,15 +204,16 @@ export function ChatPanel() {
             {msg.actions && (
               <ActionCard
                 actions={msg.actions}
-                onApply={handleApply}
-                onDiscard={handleDiscard}
+                applying={applyingMessageId === msg.id}
+                onApply={(actions) => handleApply(msg.id, actions)}
+                onDiscard={() => handleDiscard(msg.id)}
               />
             )}
             {msg.diff && <DiffPreview diff={msg.diff} />}
           </div>
         ))}
         {loading && (
-          <div className="border border-slate-700 bg-slate-950/65 px-4 py-4 font-mono text-[11px] uppercase tracking-[0.18em] text-slate-400 animate-pulse">
+          <div className="border border-slate-700 bg-[#050c17] px-4 py-4 font-mono text-[11px] uppercase tracking-[0.18em] text-slate-400 animate-pulse">
             ThreadOS is reasoning over the active thread surface...
           </div>
         )}

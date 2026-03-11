@@ -58,15 +58,22 @@ function SkillIcon({ skill }: { skill: ThreadSkillBadge }) {
   )
 }
 
+function segmentColor(index: number, total: number): string {
+  if (total <= 3) return 'border-rose-400/25 bg-rose-400/60'
+  if (total <= 5) return 'border-amber-400/25 bg-amber-400/60'
+  if (total <= 7) return 'border-sky-400/25 bg-sky-400/60'
+  return 'border-emerald-400/25 bg-emerald-400/60'
+}
+
 function StatBar({ value }: { value: number }) {
   return (
     <div className="grid grid-cols-10 gap-1">
       {Array.from({ length: 10 }, (_, index) => (
         <div
           key={index}
-          className={index < value
-            ? 'h-3 border border-emerald-300/20 bg-gradient-to-r from-sky-300 to-emerald-300 shadow-[0_0_14px_rgba(83,245,138,0.14)]'
-            : 'h-3 border border-slate-900 bg-slate-900/80'}
+          className={`h-3 border ${index < value
+            ? segmentColor(index, value)
+            : 'border-slate-900 bg-slate-900/80'}`}
         />
       ))}
     </div>
@@ -90,7 +97,7 @@ export function FocusedThreadCard({ node, profile, onOpenLane }: FocusedThreadCa
           <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
             <div>
               <div className="font-mono text-[11px] uppercase tracking-[0.24em] text-slate-500">{profile.pack}</div>
-              <h2 className="mt-2 font-['Inter'] text-5xl leading-[0.95] font-light tracking-[-0.06em] text-white">{node.surfaceLabel}</h2>
+              <h2 className="mt-2 text-5xl leading-[0.95] font-light tracking-[-0.06em] text-white">{node.surfaceLabel}</h2>
               <div className="mt-3 space-y-1 text-sm text-slate-300">
                 <div>Builder: {profile.builder}</div>
                 <div>{node.surfaceDescription ?? 'Registered thread surface inside ThreadOS.'}</div>
