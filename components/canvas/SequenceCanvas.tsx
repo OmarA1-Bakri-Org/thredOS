@@ -90,7 +90,6 @@ function CanvasInner() {
   const selectedRunId = useUIStore(s => s.selectedRunId)
   const laneFocusThreadSurfaceId = useUIStore(s => s.laneFocusThreadSurfaceId)
   const selectedNodeId = useUIStore(s => s.selectedNodeId)
-  const openLaneViewForThreadSurface = useUIStore(s => s.openLaneViewForThreadSurface)
   const laneBoardState = useUIStore(s => s.laneBoardState)
   const setLaneBoardState = useUIStore(s => s.setLaneBoardState)
   const setSelectedThreadSurfaceId = useUIStore(s => s.setSelectedThreadSurfaceId)

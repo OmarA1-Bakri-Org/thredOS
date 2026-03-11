@@ -24,10 +24,7 @@ export function useSequenceGraph(status: SequenceStatus | undefined, searchQuery
   }, [status, searchQuery])
 
   useEffect(() => {
-    if (!status || !inputKey) {
-      setLayoutResult({ nodes: [], edges: [] })
-      return
-    }
+    if (!status || !inputKey) return
 
     let cancelled = false
     const lowerQuery = searchQuery.toLowerCase()
@@ -171,5 +168,6 @@ export function useSequenceGraph(status: SequenceStatus | undefined, searchQuery
     return () => { cancelled = true }
   }, [inputKey, status, searchQuery])
 
+  if (!status) return { nodes: [] as Node[], edges: [] as Edge[] }
   return layoutResult
 }
