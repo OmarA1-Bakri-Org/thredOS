@@ -12,6 +12,7 @@ interface ChatMessage {
   id: string
   role: 'user' | 'assistant'
   content: string
+  timestamp: number
   actions?: ProposedAction[]
   diff?: string
 }
@@ -33,6 +34,7 @@ export function ChatPanel() {
       id: crypto.randomUUID(),
       role: 'user',
       content: text,
+      timestamp: Date.now(),
     }
     setMessages((prev) => [...prev, userMsg])
     setLoading(true)
@@ -95,6 +97,7 @@ export function ChatPanel() {
         id: crypto.randomUUID(),
         role: 'assistant',
         content: assistantContent,
+        timestamp: Date.now(),
         actions: actions.length > 0 ? actions : undefined,
         diff: diff || undefined,
       }
@@ -126,6 +129,7 @@ export function ChatPanel() {
         content: result.success
           ? `Applied ${actions.length} action(s) successfully.`
           : `Apply failed: ${result.errors?.join(', ') || 'Unknown error'}`,
+        timestamp: Date.now(),
       }))
     } catch (error) {
       console.error('Apply error:', error)
@@ -135,6 +139,7 @@ export function ChatPanel() {
           id: crypto.randomUUID(),
           role: 'assistant',
           content: `Apply error: ${(error as Error).message}`,
+          timestamp: Date.now(),
         },
       ])
     } finally {
@@ -200,7 +205,7 @@ export function ChatPanel() {
         )}
         {messages.map((msg) => (
           <div key={msg.id}>
-            <MessageBubble role={msg.role} content={msg.content} />
+            <MessageBubble role={msg.role} content={msg.content} timestamp={msg.timestamp} />
             {msg.actions && (
               <ActionCard
                 actions={msg.actions}

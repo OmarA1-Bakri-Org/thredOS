@@ -1,16 +1,18 @@
 import type { ReactNode } from 'react'
 import type { ThreadSurfaceFocusedDetail } from '@/components/canvas/threadSurfaceFocus'
-import type { WorkflowStep } from '@/lib/workflows'
+import type { WorkflowStep, WorkflowDefinition } from '@/lib/workflows'
 import { WorkflowBlueprintPanel } from '@/components/workflows/WorkflowBlueprintPanel'
 import { contentCreatorWorkflow } from '@/lib/workflows'
 
 export function FocusedLanePlane({
   detail,
   workflowStep,
+  workflow,
   sequenceView,
 }: {
   detail: ThreadSurfaceFocusedDetail
   workflowStep?: WorkflowStep
+  workflow?: WorkflowDefinition
   sequenceView?: ReactNode
 }) {
   const compactStepSummary = workflowStep
@@ -112,7 +114,7 @@ export function FocusedLanePlane({
         <aside data-testid="focused-lane-context-column" className="space-y-4 border border-[#16417C]/70 bg-[#16417C]/18 p-4">
           <section data-testid="focused-lane-blueprint" className="space-y-4">
             <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">Workflow context</div>
-            <WorkflowBlueprintPanel workflow={contentCreatorWorkflow} />
+            <WorkflowBlueprintPanel workflow={workflow ?? contentCreatorWorkflow} />
           </section>
 
           <section className="border border-slate-800 bg-[#0a101a] p-4">

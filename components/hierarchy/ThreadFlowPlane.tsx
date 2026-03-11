@@ -35,8 +35,22 @@ function groupByLayer(nodes: HierarchyViewNode[]) {
     .map(([depth, layerNodes]) => ({ depth, nodes: layerNodes }))
 }
 
+function buildParentMap(edges: { source: string; target: string }[], nodes: HierarchyViewNode[]) {
+  const labelById = new Map(nodes.map(n => [n.clickTarget.threadSurfaceId, n.surfaceLabel]))
+  const parentMap = new Map<string, string[]>()
+  for (const edge of edges) {
+    const parentLabel = labelById.get(edge.source)
+    if (!parentLabel) continue
+    const existing = parentMap.get(edge.target) ?? []
+    existing.push(parentLabel)
+    parentMap.set(edge.target, existing)
+  }
+  return parentMap
+}
+
 export function ThreadFlowPlane({ nodes, edges, selectedThreadSurfaceId, onSelectNode }: ThreadFlowPlaneProps) {
   const layers = groupByLayer(nodes)
+  const parentMap = buildParentMap(edges, nodes)
 
   if (layers.length === 0) return null
 
@@ -56,6 +70,7 @@ export function ThreadFlowPlane({ nodes, edges, selectedThreadSurfaceId, onSelec
             </div>
             {layer.nodes.map(node => {
               const isSelected = node.clickTarget.threadSurfaceId === selectedThreadSurfaceId
+              const parents = parentMap.get(node.clickTarget.threadSurfaceId)
               return (
                 <button
                   key={node.id}
@@ -77,6 +92,11 @@ export function ThreadFlowPlane({ nodes, edges, selectedThreadSurfaceId, onSelec
                   <div className="mt-1 font-mono text-[10px] text-slate-500">
                     {node.childCount} child{node.childCount !== 1 ? 'ren' : ''} · {node.runStatus ?? 'draft'}
                   </div>
+                  {parents && parents.length > 0 && (
+                    <div className="mt-1 font-mono text-[10px] text-slate-600">
+                      ← {parents.join(', ')}
+                    </div>
+                  )}
                 </button>
               )
             })}

@@ -35,7 +35,7 @@ export function WorkbenchShell({
         {topBar}
       </div>
       <div className="flex min-h-0 flex-1">
-        <aside data-workbench-region="left-rail" className="hidden w-64 shrink-0 border-r border-slate-800/80 bg-[#08101d] xl:block 2xl:w-72">
+        <aside data-workbench-region="left-rail" className="hidden w-72 shrink-0 border-r border-slate-800/80 bg-[#08101d] xl:block">
           {leftRail}
         </aside>
         <main className="flex min-w-0 flex-1 flex-col">
@@ -58,7 +58,7 @@ export function WorkbenchShell({
           <div className="absolute inset-0 bg-[#02050a]/52 backdrop-blur-sm" onClick={onDismissLeftRail} aria-hidden="true" />
           <aside
             data-workbench-region="left-rail-drawer-panel"
-            className="absolute inset-y-0 left-0 flex w-[22rem] max-w-[90vw] flex-col border-r border-slate-800/80 bg-[#08101d] shadow-[0_28px_80px_rgba(0,0,0,0.55)]"
+            className="absolute inset-y-0 left-0 flex w-72 max-w-[90vw] flex-col border-r border-slate-800/80 bg-[#08101d] shadow-[0_28px_80px_rgba(0,0,0,0.55)]"
           >
             <div className="flex items-center justify-between border-b border-slate-800/80 px-4 py-4">
               <div>

@@ -44,12 +44,12 @@ export function LaneBoardView({
       <div className="min-h-0 flex flex-1 overflow-hidden">
         <aside
           data-testid="lane-board-roster"
-          className="w-104 shrink-0 border-r border-slate-800/80 bg-[#08101d]"
+          className="flex w-104 shrink-0 flex-col border-r border-slate-800/80 bg-[#08101d]"
         >
-          <div className="border-b border-slate-800/80 px-5 py-3">
+          <div className="shrink-0 border-b border-slate-800/80 px-5 py-3">
             <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">Roster</div>
           </div>
-          <div className="flex max-h-full flex-col gap-2 overflow-y-auto px-3 py-3">
+          <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-3 py-3">
             {rows.map(row => {
               const isFocused = row.threadSurfaceId === focusedThreadSurfaceId
               const workflowContext = workflowByThreadSurfaceId[row.threadSurfaceId]

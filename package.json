@@ -29,6 +29,7 @@
     "openai": "^6.27.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
+    "react-markdown": "^10.1.0",
     "react-resizable-panels": "^4.6.2",
     "tailwind-merge": "^3.4.0",
     "yaml": "^2.8.2",

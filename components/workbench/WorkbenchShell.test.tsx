@@ -102,7 +102,7 @@ describe('WorkbenchShell', () => {
     const leftRail = collectByDataRegion(shell, 'left-rail')[0]
     const inspector = collectByDataRegion(shell, 'inspector')[0]
 
-    expect(String(leftRail?.props.className ?? '')).toContain('w-64')
+    expect(String(leftRail?.props.className ?? '')).toContain('w-72')
     expect(String(inspector?.props.className ?? '')).toContain('w-md')
   })
 })

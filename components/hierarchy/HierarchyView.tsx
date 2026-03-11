@@ -77,8 +77,7 @@ export function HierarchyView({ nodes, edges = [], selectedThreadSurfaceId, onSe
       </div>
 
       <div className="relative min-h-0 flex-1 overflow-y-auto">
-        <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.025)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.025)_1px,transparent_1px)] bg-size-[40px_40px] opacity-35" />
-        <div className="absolute inset-0 bg-black/26 backdrop-blur-[5px]" />
+        <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.018)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.018)_1px,transparent_1px)] bg-size-[40px_40px] opacity-20" />
 
         <div className="relative z-10 space-y-4 px-6 py-5">
           {nodes.length > 0 && (
