@@ -22,7 +22,8 @@ export function ProductEntryScreen({ onEnterThreadOS }: ProductEntryScreenProps)
             </h1>
             <p className="max-w-3xl text-sm leading-7 text-slate-300">
               ThreadOS is the engineering workbench for building, inspecting, and improving agentic
-              systems. Thread Runner is the locked proving layer for verified competitive runs.
+              systems. Thread Runner is the competitive arena where you perfect your agents through
+              head-to-head thread runs.
             </p>
           </div>
         </div>
@@ -78,7 +79,11 @@ export function ProductEntryScreen({ onEnterThreadOS }: ProductEntryScreenProps)
             </div>
           </button>
 
-          <div className="flex h-full flex-col justify-between border border-slate-800/90 bg-[#08101d] p-8 shadow-[0_28px_80px_rgba(0,0,0,0.45)]">
+          <div className="relative flex h-full flex-col justify-between overflow-hidden border border-slate-800/90 bg-[#08101d] p-8 shadow-[0_28px_80px_rgba(0,0,0,0.45)]">
+            {/* Coming Soon banner */}
+            <div className="absolute -right-9.5 top-7 z-10 rotate-45 bg-amber-500 px-10 py-1 text-center font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-black shadow-md">
+              Coming Soon
+            </div>
             <div className="space-y-6">
               <div className="flex items-center justify-between">
                 <span
@@ -90,18 +95,18 @@ export function ProductEntryScreen({ onEnterThreadOS }: ProductEntryScreenProps)
                 <Trophy className="h-5 w-5 text-amber-300" />
               </div>
               <div className="space-y-3">
-                <h2 className="text-3xl font-light tracking-[-0.04em] text-white">Locked proving layer</h2>
+                <h2 className="text-3xl font-light tracking-[-0.04em] text-white">Competitive thread arena</h2>
                 <p className="text-sm leading-7 text-slate-300">
-                  Verified VM runs, qualifiers, and pack-grade records live here. Registration and an
-                  active subscription are required before entry.
+                  Improve and perfect your agents through competitive thread runs. Benchmark against
+                  verified baselines, compare execution strategies, and earn pack-grade rankings.
                 </p>
               </div>
-              <div className="space-y-3 border border-[#16417C]/55 bg-[#16417C]/16 px-5 py-5">
-                <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-sky-300/70">Requirements</div>
+              <div className="space-y-3 border border-amber-500/25 bg-amber-500/5 px-5 py-5">
+                <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-amber-300/70">What you get</div>
                 <ul className="space-y-2 text-sm text-slate-200">
-                  <li>Verified ThreadOS identity</li>
-                  <li>Managed VM runtime access</li>
-                  <li>Active paid subscription</li>
+                  <li>Head-to-head agent benchmarking</li>
+                  <li>Verified VM execution with provenance</li>
+                  <li>Leaderboards and pack-grade records</li>
                 </ul>
               </div>
             </div>
@@ -109,16 +114,16 @@ export function ProductEntryScreen({ onEnterThreadOS }: ProductEntryScreenProps)
             <div className="mt-8 flex items-center justify-between border-t border-slate-800/90 pt-6">
               <span className="flex items-center gap-2 text-sm text-slate-400">
                 <LockKeyhole className="h-4 w-4 text-amber-300" />
-                Locked until eligible
+                Available soon
               </span>
               <Button
                 type="button"
                 variant="warning"
                 disabled
                 data-entry-option="thread-runner"
-                aria-label="Thread Runner is locked until eligible"
+                aria-label="Thread Runner is coming soon"
               >
-                Locked
+                Coming Soon
               </Button>
             </div>
           </div>
