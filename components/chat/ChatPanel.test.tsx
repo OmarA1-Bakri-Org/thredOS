@@ -1,6 +1,21 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, test, mock } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { ChatPanel } from './ChatPanel'
+
+// Mock the store before importing ChatPanel
+const chatUiState = {
+  chatOpen: true,
+  toggleChat: () => {},
+  chatPosition: { x: 0, y: 0 },
+  setChatPosition: () => {},
+  chatSize: { width: 400, height: 500 },
+  setChatSize: () => {},
+}
+
+mock.module('@/lib/ui/store', () => ({
+  useUIStore: (selector: (s: typeof chatUiState) => unknown) => selector(chatUiState),
+}))
+
+const { ChatPanel } = await import('./ChatPanel')
 
 describe('ChatPanel', () => {
   test('renders the hardened empty state and contextual shell copy', () => {
@@ -56,5 +71,17 @@ describe('ChatPanel', () => {
   test('renders the flex column layout container', () => {
     const markup = renderToStaticMarkup(<ChatPanel />)
     expect(markup).toContain('flex h-full flex-col')
+  })
+
+  test('renders with floating positioning classes', () => {
+    const markup = renderToStaticMarkup(<ChatPanel />)
+    expect(markup).toContain('fixed')
+    expect(markup).toContain('chat-floating-container')
+  })
+
+  test('renders a close button', () => {
+    const markup = renderToStaticMarkup(<ChatPanel />)
+    expect(markup).toContain('chat-close-button')
+    expect(markup).toContain('Close chat')
   })
 })

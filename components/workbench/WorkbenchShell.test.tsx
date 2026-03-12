@@ -1,6 +1,31 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, test, mock } from 'bun:test'
 import type { ReactElement, ReactNode } from 'react'
-import { WorkbenchShell } from './WorkbenchShell'
+
+// Mock the store before importing WorkbenchShell
+const shellUiState = {
+  chatOpen: false,
+  toggleChat: () => {},
+  chatPosition: { x: 0, y: 0 },
+  setChatPosition: () => {},
+  chatSize: { width: 400, height: 500 },
+  setChatSize: () => {},
+}
+
+mock.module('@/lib/ui/store', () => ({
+  useUIStore: (selector: (s: typeof shellUiState) => unknown) => selector(shellUiState),
+}))
+
+// Mock next/dynamic to just render nothing (ChatPanel is dynamically imported)
+mock.module('next/dynamic', () => ({
+  default: () => () => null,
+}))
+
+// Mock FloatingChatTrigger
+mock.module('@/components/chat/FloatingChatTrigger', () => ({
+  FloatingChatTrigger: () => null,
+}))
+
+const { WorkbenchShell } = await import('./WorkbenchShell')
 
 type ElementWithChildren = ReactElement<{
   children?: ReactNode
@@ -58,15 +83,12 @@ describe('WorkbenchShell', () => {
       leftRail: <div>left</div>,
       board: <div>board</div>,
       inspector: <div>inspector</div>,
-      chat: <div>chat</div>,
-      chatOpen: true,
     })
 
     expect(collectByDataRegion(shell, 'top-bar')).toHaveLength(1)
     expect(collectByDataRegion(shell, 'left-rail')).toHaveLength(1)
     expect(collectByDataRegion(shell, 'board')).toHaveLength(1)
     expect(collectByDataRegion(shell, 'inspector')).toHaveLength(1)
-    expect(collectByDataRegion(shell, 'chat')).toHaveLength(1)
   })
 
   test('renders mobile drawer regions when rail overlays are opened', () => {

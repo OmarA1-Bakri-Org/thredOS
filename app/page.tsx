@@ -23,11 +23,6 @@ const StepInspector = dynamic(
   { loading: () => <LoadingSpinner message="Loading inspector..." /> }
 )
 
-const ChatPanel = dynamic(
-  () => import('@/components/chat/ChatPanel').then(m => m.ChatPanel),
-  { loading: () => <LoadingSpinner message="Loading chat..." /> }
-)
-
 export default function Home() {
   const mounted = useSyncExternalStore(
     () => () => {},
@@ -38,7 +33,6 @@ export default function Home() {
   const leftRailOpen = useUIStore(s => s.leftRailOpen)
   const closeLeftRail = useUIStore(s => s.closeLeftRail)
   const closeInspector = useUIStore(s => s.closeInspector)
-  const chatOpen = useUIStore(s => s.chatOpen)
   const productEntry = useUIStore(s => s.productEntry)
   const setProductEntry = useUIStore(s => s.setProductEntry)
   const createDialogOpen = useUIStore(s => s.createDialogOpen)
@@ -79,12 +73,6 @@ export default function Home() {
       }
       inspectorOpen={inspectorOpen}
       onDismissInspector={closeInspector}
-      chat={
-        <ErrorBoundary>
-          <ChatPanel />
-        </ErrorBoundary>
-      }
-      chatOpen={chatOpen}
     />
     </>
   )

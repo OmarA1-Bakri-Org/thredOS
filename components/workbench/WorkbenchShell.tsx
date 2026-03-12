@@ -1,8 +1,13 @@
 'use client'
 
 import type { ReactNode } from 'react'
+import dynamic from 'next/dynamic'
 import { PanelLeftClose, PanelRightClose } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { useUIStore } from '@/lib/ui/store'
+import { FloatingChatTrigger } from '@/components/chat/FloatingChatTrigger'
+
+const ChatPanel = dynamic(() => import('@/components/chat/ChatPanel').then(m => m.ChatPanel), { ssr: false })
 
 interface WorkbenchShellProps {
   topBar: ReactNode
@@ -13,8 +18,6 @@ interface WorkbenchShellProps {
   inspector: ReactNode
   inspectorOpen?: boolean
   onDismissInspector?: () => void
-  chat?: ReactNode
-  chatOpen?: boolean
 }
 
 export function WorkbenchShell({
@@ -26,9 +29,8 @@ export function WorkbenchShell({
   inspector,
   inspectorOpen = true,
   onDismissInspector,
-  chat,
-  chatOpen = false,
 }: WorkbenchShellProps) {
+  const chatOpen = useUIStore(s => s.chatOpen)
   return (
     <div className="flex h-screen flex-col bg-[#060a12] text-slate-100">
       <div data-workbench-region="top-bar" className="shrink-0 border-b border-slate-800/80 bg-[#08101d]">
@@ -42,11 +44,6 @@ export function WorkbenchShell({
           <div data-workbench-region="board" className="min-h-0 flex-1 bg-[#050913]">
             {board}
           </div>
-          {chatOpen && chat ? (
-            <div data-workbench-region="chat" className="h-72 shrink-0 border-t border-slate-800/80 bg-[#08101d]">
-              {chat}
-            </div>
-          ) : null}
         </main>
         <aside data-workbench-region="inspector" className="hidden w-md shrink-0 border-l border-slate-800/80 bg-[#08101d] xl:block">
           {inspector}
@@ -98,6 +95,9 @@ export function WorkbenchShell({
           </aside>
         </div>
       ) : null}
+
+      <FloatingChatTrigger />
+      {chatOpen && <ChatPanel />}
     </div>
   )
 }

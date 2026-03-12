@@ -1,11 +1,12 @@
 'use client'
 
 import { useState, useCallback, useRef, useEffect } from 'react'
-import { Sparkles } from 'lucide-react'
+import { Sparkles, X } from 'lucide-react'
 import { ChatInput } from './ChatInput'
 import { MessageBubble } from './MessageBubble'
 import { ActionCard } from './ActionCard'
 import { DiffPreview } from './DiffPreview'
+import { useUIStore } from '@/lib/ui/store'
 import type { ProposedAction } from '@/lib/chat/validator'
 
 interface ChatMessage {
@@ -153,11 +154,14 @@ export function ChatPanel() {
     ))
   }, [])
 
+  const toggleChat = useUIStore(s => s.toggleChat)
+
   return (
-    <div data-testid="chat-panel" className="flex h-full flex-col bg-[#07101d]" aria-busy={loading}>
-      <div data-testid="chat-header" className="border-b border-slate-800/80 bg-[#050c17] px-4 py-4">
+    <div data-testid="chat-floating-container" className="fixed bottom-16 right-4 z-50 w-[400px] h-[500px] rounded-lg border border-slate-700/80 bg-[#08101d]/95 shadow-2xl backdrop-blur-sm">
+    <div data-testid="chat-panel" className="flex h-full flex-col bg-transparent" aria-busy={loading}>
+      <div data-testid="chat-header" className="border-b border-slate-800/80 bg-[#050c17] rounded-t-lg px-4 py-4">
         <div className="flex items-start justify-between gap-4">
-          <div>
+          <div className="flex-1 min-w-0">
             <div data-testid="chat-top-pills" className="mb-3 flex flex-wrap items-center gap-2">
               <span className="rounded-full border border-slate-700 bg-slate-950/65 px-3 py-1 font-mono text-[10px] uppercase tracking-[0.18em] text-slate-300">
                 Thread Chat
@@ -184,6 +188,15 @@ export function ChatPanel() {
               Context-bound assistant
             </div>
           </div>
+          <button
+            data-testid="chat-close-button"
+            type="button"
+            onClick={toggleChat}
+            className="shrink-0 rounded p-1 text-slate-400 transition-colors hover:bg-slate-800 hover:text-white"
+            aria-label="Close chat"
+          >
+            <X className="h-4 w-4" />
+          </button>
         </div>
       </div>
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4" aria-live="polite">
@@ -224,6 +237,7 @@ export function ChatPanel() {
         )}
       </div>
       <ChatInput onSend={sendMessage} disabled={loading} />
+    </div>
     </div>
   )
 }
