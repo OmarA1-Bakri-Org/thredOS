@@ -87,4 +87,204 @@ describe('useUIStore', () => {
       focusedRunId: null,
     })
   })
+
+  // ── selectedNodeId and inspector side-effect ──────────────────────
+
+  test('selectedNodeId defaults to null', () => {
+    expect(useUIStore.getState().selectedNodeId).toBeNull()
+  })
+
+  test('setSelectedNodeId with a non-null id opens the inspector', () => {
+    expect(useUIStore.getState().inspectorOpen).toBeFalse()
+
+    useUIStore.getState().setSelectedNodeId('step-build')
+    expect(useUIStore.getState().selectedNodeId).toBe('step-build')
+    expect(useUIStore.getState().inspectorOpen).toBeTrue()
+  })
+
+  test('setSelectedNodeId with null does not force-open the inspector', () => {
+    useUIStore.getState().setSelectedNodeId('step-build')
+    expect(useUIStore.getState().inspectorOpen).toBeTrue()
+
+    useUIStore.getState().closeInspector()
+    useUIStore.getState().setSelectedNodeId(null)
+    expect(useUIStore.getState().selectedNodeId).toBeNull()
+    expect(useUIStore.getState().inspectorOpen).toBeFalse()
+  })
+
+  // ── setSelectedThreadSurfaceId inspector side-effect ──────────────
+
+  test('setSelectedThreadSurfaceId with null does not force-open the inspector', () => {
+    useUIStore.getState().setSelectedThreadSurfaceId('thread-x')
+    expect(useUIStore.getState().inspectorOpen).toBeTrue()
+
+    useUIStore.getState().closeInspector()
+    useUIStore.getState().setSelectedThreadSurfaceId(null)
+    expect(useUIStore.getState().selectedThreadSurfaceId).toBeNull()
+    expect(useUIStore.getState().inspectorOpen).toBeFalse()
+  })
+
+  // ── Left rail ─────────────────────────────────────────────────────
+
+  test('leftRailOpen starts closed and toggles', () => {
+    expect(useUIStore.getState().leftRailOpen).toBeFalse()
+
+    useUIStore.getState().toggleLeftRail()
+    expect(useUIStore.getState().leftRailOpen).toBeTrue()
+
+    useUIStore.getState().toggleLeftRail()
+    expect(useUIStore.getState().leftRailOpen).toBeFalse()
+  })
+
+  test('closeLeftRail forces it closed regardless of current state', () => {
+    useUIStore.getState().toggleLeftRail()
+    expect(useUIStore.getState().leftRailOpen).toBeTrue()
+
+    useUIStore.getState().closeLeftRail()
+    expect(useUIStore.getState().leftRailOpen).toBeFalse()
+
+    // calling closeLeftRail when already closed is a no-op
+    useUIStore.getState().closeLeftRail()
+    expect(useUIStore.getState().leftRailOpen).toBeFalse()
+  })
+
+  // ── Inspector toggle ──────────────────────────────────────────────
+
+  test('toggleInspector flips inspector open state', () => {
+    expect(useUIStore.getState().inspectorOpen).toBeFalse()
+
+    useUIStore.getState().toggleInspector()
+    expect(useUIStore.getState().inspectorOpen).toBeTrue()
+
+    useUIStore.getState().toggleInspector()
+    expect(useUIStore.getState().inspectorOpen).toBeFalse()
+  })
+
+  // ── Chat toggle ───────────────────────────────────────────────────
+
+  test('chatOpen starts closed and toggleChat flips it', () => {
+    expect(useUIStore.getState().chatOpen).toBeFalse()
+
+    useUIStore.getState().toggleChat()
+    expect(useUIStore.getState().chatOpen).toBeTrue()
+
+    useUIStore.getState().toggleChat()
+    expect(useUIStore.getState().chatOpen).toBeFalse()
+  })
+
+  // ── Search query ──────────────────────────────────────────────────
+
+  test('searchQuery starts empty and setSearchQuery updates it', () => {
+    expect(useUIStore.getState().searchQuery).toBe('')
+
+    useUIStore.getState().setSearchQuery('deploy')
+    expect(useUIStore.getState().searchQuery).toBe('deploy')
+
+    useUIStore.getState().setSearchQuery('')
+    expect(useUIStore.getState().searchQuery).toBe('')
+  })
+
+  // ── Minimap toggle ────────────────────────────────────────────────
+
+  test('minimapVisible starts true and toggleMinimap flips it', () => {
+    expect(useUIStore.getState().minimapVisible).toBeTrue()
+
+    useUIStore.getState().toggleMinimap()
+    expect(useUIStore.getState().minimapVisible).toBeFalse()
+
+    useUIStore.getState().toggleMinimap()
+    expect(useUIStore.getState().minimapVisible).toBeTrue()
+  })
+
+  // ── selectedRunId ─────────────────────────────────────────────────
+
+  test('selectedRunId starts null and setSelectedRunId updates it', () => {
+    expect(useUIStore.getState().selectedRunId).toBeNull()
+
+    useUIStore.getState().setSelectedRunId('run-alpha')
+    expect(useUIStore.getState().selectedRunId).toBe('run-alpha')
+
+    useUIStore.getState().setSelectedRunId(null)
+    expect(useUIStore.getState().selectedRunId).toBeNull()
+  })
+
+  // ── Create dialog ─────────────────────────────────────────────────
+
+  test('createDialog starts closed with default kind "step"', () => {
+    expect(useUIStore.getState().createDialogOpen).toBeFalse()
+    expect(useUIStore.getState().createDialogKind).toBe('step')
+  })
+
+  test('openCreateDialog opens dialog and sets the kind', () => {
+    useUIStore.getState().openCreateDialog('gate')
+    expect(useUIStore.getState().createDialogOpen).toBeTrue()
+    expect(useUIStore.getState().createDialogKind).toBe('gate')
+  })
+
+  test('openCreateDialog can switch from gate kind to step kind', () => {
+    useUIStore.getState().openCreateDialog('gate')
+    useUIStore.getState().openCreateDialog('step')
+    expect(useUIStore.getState().createDialogOpen).toBeTrue()
+    expect(useUIStore.getState().createDialogKind).toBe('step')
+  })
+
+  test('closeCreateDialog closes the dialog but preserves the kind', () => {
+    useUIStore.getState().openCreateDialog('gate')
+    useUIStore.getState().closeCreateDialog()
+
+    expect(useUIStore.getState().createDialogOpen).toBeFalse()
+    // kind remains as last set value
+    expect(useUIStore.getState().createDialogKind).toBe('gate')
+  })
+
+  // ── openLaneViewForThreadSurface with no runId ────────────────────
+
+  test('openLaneViewForThreadSurface defaults runId to null when omitted', () => {
+    useUIStore.getState().openLaneViewForThreadSurface('thread-solo')
+
+    expect(useUIStore.getState().viewMode).toBe('lanes')
+    expect(useUIStore.getState().selectedThreadSurfaceId).toBe('thread-solo')
+    expect(useUIStore.getState().selectedRunId).toBeNull()
+    expect(useUIStore.getState().laneFocusThreadSurfaceId).toBe('thread-solo')
+    expect(useUIStore.getState().laneBoardState.focusedRunId).toBeNull()
+    expect(useUIStore.getState().laneBoardState.focusedThreadSurfaceId).toBe('thread-solo')
+  })
+
+  // ── setLaneFocusThreadSurfaceId preserves runId when re-focusing same thread ──
+
+  test('setLaneFocusThreadSurfaceId preserves focusedRunId when re-focusing the same thread', () => {
+    useUIStore.getState().openLaneViewForThreadSurface('thread-a', 'run-a')
+
+    // Re-focus the same thread surface — should preserve the runId
+    useUIStore.getState().setLaneFocusThreadSurfaceId('thread-a')
+
+    expect(useUIStore.getState().laneFocusThreadSurfaceId).toBe('thread-a')
+    expect(useUIStore.getState().laneBoardState.focusedRunId).toBe('run-a')
+  })
+
+  // ── setProductEntry can switch between modes ──────────────────────
+
+  test('setProductEntry switches from threados to thread-runner', () => {
+    useUIStore.getState().setProductEntry('threados')
+    expect(useUIStore.getState().productEntry).toBe('threados')
+
+    useUIStore.getState().setProductEntry('thread-runner')
+    expect(useUIStore.getState().productEntry).toBe('thread-runner')
+  })
+
+  // ── Default hierarchy viewport ────────────────────────────────────
+
+  test('hierarchyViewport defaults to origin with zoom 1', () => {
+    expect(useUIStore.getState().hierarchyViewport).toEqual({ x: 0, y: 0, zoom: 1 })
+  })
+
+  // ── Default lane board state ──────────────────────────────────────
+
+  test('laneBoardState defaults to zero scroll and null focus', () => {
+    expect(useUIStore.getState().laneBoardState).toEqual({
+      scrollLeft: 0,
+      focusedThreadSurfaceId: null,
+      focusedRunId: null,
+    })
+  })
 })

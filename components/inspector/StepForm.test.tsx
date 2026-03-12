@@ -1,4 +1,4 @@
-import { describe, test, expect, mock } from 'bun:test'
+import { describe, test, expect, mock, afterEach } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
 
 mock.module('@/lib/ui/api', () => ({
@@ -32,6 +32,7 @@ mock.module('@/lib/ui/api', () => ({
   useRemoveDep: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
 }))
 
+afterEach(() => { mock.restore() })
 
 const { StepForm } = await import('./StepForm')
 
@@ -84,5 +85,66 @@ describe('StepForm — read mode', () => {
     const stepNoDeps = { ...step, dependsOn: [] }
     const markup = renderToStaticMarkup(<StepForm step={stepNoDeps} />)
     expect(markup).toContain('None')
+  })
+
+  test('renders field section labels: Name, Type, Model, Status, Dependencies', () => {
+    const markup = renderToStaticMarkup(<StepForm step={step} />)
+    expect(markup).toContain('Name')
+    expect(markup).toContain('Type')
+    expect(markup).toContain('Model')
+    expect(markup).toContain('Status')
+    expect(markup).toContain('Dependencies')
+  })
+
+  test('renders "Fields" header label', () => {
+    const markup = renderToStaticMarkup(<StepForm step={step} />)
+    expect(markup).toContain('Fields')
+  })
+
+  test('renders available deps that are not already in dependsOn', () => {
+    // step-a depends on gate-1, so available deps should be step-b only
+    // (step-a is excluded because it is the current step)
+    const markup = renderToStaticMarkup(<StepForm step={step} />)
+    expect(markup).toContain('step-b')
+  })
+
+  test('renders remove dependency button with aria-label', () => {
+    const markup = renderToStaticMarkup(<StepForm step={step} />)
+    expect(markup).toContain('aria-label="Remove dependency gate-1"')
+  })
+
+  test('renders Pencil icon in Edit button', () => {
+    const markup = renderToStaticMarkup(<StepForm step={step} />)
+    expect(markup).toContain('<svg')
+  })
+
+  test('does not render error message when there is no error', () => {
+    const markup = renderToStaticMarkup(<StepForm step={step} />)
+    expect(markup).not.toContain('border-rose-500/35')
+  })
+
+  test('renders multiple dependencies when present', () => {
+    const stepMultiDeps = { ...step, dependsOn: ['gate-1', 'step-b'] }
+    const markup = renderToStaticMarkup(<StepForm step={stepMultiDeps} />)
+    expect(markup).toContain('gate-1')
+    expect(markup).toContain('step-b')
+  })
+
+  test('does not render Add dependency when no available deps remain', () => {
+    // If the step depends on everything except itself, no available deps
+    const stepAllDeps = { ...step, dependsOn: ['step-b', 'gate-1'] }
+    const markup = renderToStaticMarkup(<StepForm step={stepAllDeps} />)
+    expect(markup).not.toContain('+ Add dependency')
+  })
+
+  test('renders the step status with monospace font', () => {
+    const markup = renderToStaticMarkup(<StepForm step={step} />)
+    // Status is rendered with font-mono uppercase
+    expect(markup).toContain('font-mono uppercase')
+  })
+
+  test('renders name inside a blue-bordered card', () => {
+    const markup = renderToStaticMarkup(<StepForm step={step} />)
+    expect(markup).toContain('border-[#16417C]/70')
   })
 })

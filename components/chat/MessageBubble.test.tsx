@@ -57,4 +57,65 @@ describe('MessageBubble', () => {
     expect(userMarkup).toContain('Builder prompt')
     expect(assistantMarkup).toContain('ThreadOS response')
   })
+
+  test('renders user content as plain text', () => {
+    const markup = renderToStaticMarkup(<MessageBubble role="user" content="Deploy the service now." />)
+    expect(markup).toContain('Deploy the service now.')
+  })
+
+  test('renders assistant content through Markdown', () => {
+    const markup = renderToStaticMarkup(<MessageBubble role="assistant" content="This is **bold** text." />)
+    expect(markup).toContain('<strong>')
+    expect(markup).toContain('bold')
+  })
+
+  test('renders timestamp as relative time (just now)', () => {
+    const recentTimestamp = Date.now() - 5000 // 5 seconds ago
+    const markup = renderToStaticMarkup(<MessageBubble role="user" content="Test" timestamp={recentTimestamp} />)
+    expect(markup).toContain('just now')
+  })
+
+  test('renders timestamp as minutes ago', () => {
+    const minutesAgo = Date.now() - 120_000 // 2 minutes ago
+    const markup = renderToStaticMarkup(<MessageBubble role="user" content="Test" timestamp={minutesAgo} />)
+    expect(markup).toContain('2m ago')
+  })
+
+  test('renders timestamp as hours ago', () => {
+    const hoursAgo = Date.now() - 7_200_000 // 2 hours ago
+    const markup = renderToStaticMarkup(<MessageBubble role="user" content="Test" timestamp={hoursAgo} />)
+    expect(markup).toContain('2h ago')
+  })
+
+  test('renders timestamp as days ago', () => {
+    const daysAgo = Date.now() - 172_800_000 // 2 days ago
+    const markup = renderToStaticMarkup(<MessageBubble role="user" content="Test" timestamp={daysAgo} />)
+    expect(markup).toContain('2d ago')
+  })
+
+  test('omits timestamp span when timestamp is not provided', () => {
+    const markup = renderToStaticMarkup(<MessageBubble role="user" content="Test" />)
+    expect(markup).not.toContain('ago')
+    expect(markup).not.toContain('just now')
+  })
+
+  test('user bubble has blue border styling', () => {
+    const markup = renderToStaticMarkup(<MessageBubble role="user" content="Test" />)
+    expect(markup).toContain('border-[#16417C]')
+  })
+
+  test('assistant bubble has slate border styling', () => {
+    const markup = renderToStaticMarkup(<MessageBubble role="assistant" content="Test" />)
+    expect(markup).toContain('border-slate-700')
+  })
+
+  test('user bubble is right-aligned', () => {
+    const markup = renderToStaticMarkup(<MessageBubble role="user" content="Test" />)
+    expect(markup).toContain('justify-end')
+  })
+
+  test('assistant bubble is left-aligned', () => {
+    const markup = renderToStaticMarkup(<MessageBubble role="assistant" content="Test" />)
+    expect(markup).toContain('justify-start')
+  })
 })
