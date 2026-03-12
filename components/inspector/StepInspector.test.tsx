@@ -55,6 +55,13 @@ mock.module('@/lib/ui/api', () => ({
   useRestartStep: () => ({ mutate: () => {}, isPending: false, error: null }),
   useApproveGate: () => ({ mutate: () => {}, isPending: false, error: null }),
   useBlockGate: () => ({ mutate: () => {}, isPending: false, error: null }),
+  useEditStep: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false, error: null }),
+  useRemoveStep: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false, error: null }),
+  useCloneStep: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false, error: null }),
+  useAddDep: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false, error: null }),
+  useRemoveDep: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false, error: null }),
+  useAddStep: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false, error: null }),
+  useInsertGate: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false, error: null }),
 }))
 
 const uiState: {

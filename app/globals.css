@@ -1,3 +1,4 @@
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Inter:wght@300;400&family=Noto+Sans+Mono:wght@400;500&display=swap');
 @import "tailwindcss";
 @import "tw-animate-css";
 
@@ -6,8 +7,8 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: Geist Mono, ui-monospace, monospace;
-  --font-mono: JetBrains Mono, monospace;
+  --font-sans: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'Noto Sans Mono', ui-monospace, monospace;
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -105,9 +106,9 @@
   --sidebar-border: oklch(0.9276 0.0058 264.5313);
   --sidebar-ring: oklch(0.6716 0.1368 48.5130);
   --destructive-foreground: oklch(0.9851 0 0);
-  --font-sans: Geist Mono, ui-monospace, monospace;
+  --font-sans: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
   --font-serif: serif;
-  --font-mono: JetBrains Mono, monospace;
+  --font-mono: 'Noto Sans Mono', ui-monospace, monospace;
   --shadow-color: #000000;
   --shadow-opacity: 0.05;
   --shadow-blur: 4px;
@@ -161,9 +162,9 @@
   --sidebar-ring: oklch(0.7214 0.1337 49.9802);
   --destructive-foreground: oklch(0.1797 0.0043 308.1928);
   --radius: 0.75rem;
-  --font-sans: Geist Mono, ui-monospace, monospace;
+  --font-sans: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
   --font-serif: serif;
-  --font-mono: JetBrains Mono, monospace;
+  --font-mono: 'Noto Sans Mono', ui-monospace, monospace;
   --shadow-color: #000000;
   --shadow-opacity: 0.05;
   --shadow-blur: 4px;

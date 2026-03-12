@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useState, useCallback, useRef, useMemo } from 'react'
 import { Plus, ShieldCheck, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useAddStep, useInsertGate, useStatus } from '@/lib/ui/api'
@@ -46,22 +46,10 @@ export function CreateNodeDialog({ open, onClose, initialKind = 'step' }: Create
 
   const idRef = useRef<HTMLInputElement>(null)
 
-  useEffect(() => {
-    if (open) {
-      setKind(initialKind)
-      setNodeId('')
-      setName('')
-      setStepType('base')
-      setModel('claude-code')
-      setSelectedDeps([])
-      setError(null)
-      setTimeout(() => idRef.current?.focus(), 50)
-    }
-  }, [open, initialKind])
-
-  const existingNodes = status
-    ? [...status.steps.map(s => s.id), ...status.gates.map(g => g.id)]
-    : []
+  const existingNodes = useMemo(
+    () => status ? [...status.steps.map(s => s.id), ...status.gates.map(g => g.id)] : [],
+    [status],
+  )
 
   const toggleDep = useCallback((dep: string) => {
     setSelectedDeps(prev => prev.includes(dep) ? prev.filter(d => d !== dep) : [...prev, dep])

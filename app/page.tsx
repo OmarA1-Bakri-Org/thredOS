@@ -51,7 +51,7 @@ export default function Home() {
 
   return (
     <>
-    <CreateNodeDialog open={createDialogOpen} onClose={closeCreateDialog} initialKind={createDialogKind} />
+    {createDialogOpen && <CreateNodeDialog open onClose={closeCreateDialog} initialKind={createDialogKind} />}
     <WorkbenchShell
       topBar={<TopBar />}
       leftRail={<LeftRail />}
