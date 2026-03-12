@@ -139,4 +139,80 @@ describe('GateNode', () => {
     // Selected border uses color + 'bb' suffix
     expect(markup).toContain('#94a3b8bb')
   })
+
+  test('renders unselected state with lower opacity border', () => {
+    uiState.selectedNodeId = 'other-node'
+    const markup = renderToStaticMarkup(<GateNode {...baseProps} />)
+    // Unselected border uses color + '60' suffix
+    expect(markup).toContain('#94a3b860')
+  })
+
+  test('selected diamond background gradient uses node color', () => {
+    uiState.selectedNodeId = 'gate-1'
+    const markup = renderToStaticMarkup(<GateNode {...baseProps} />)
+    expect(markup).toContain(`${baseProps.data.color}10`)
+  })
+
+  test('unselected diamond background gradient uses node color', () => {
+    uiState.selectedNodeId = null
+    const markup = renderToStaticMarkup(<GateNode {...baseProps} />)
+    expect(markup).toContain(`${baseProps.data.color}10`)
+  })
+
+  test('selected box shadow uses larger glow radius', () => {
+    uiState.selectedNodeId = 'gate-1'
+    const markup = renderToStaticMarkup(<GateNode {...baseProps} />)
+    // Selected: 0 0 28px color25
+    expect(markup).toContain(`0 0 28px ${baseProps.data.color}25`)
+  })
+
+  test('unselected box shadow uses smaller glow radius', () => {
+    uiState.selectedNodeId = null
+    const markup = renderToStaticMarkup(<GateNode {...baseProps} />)
+    // Unselected: 0 0 12px color10
+    expect(markup).toContain(`0 0 12px ${baseProps.data.color}10`)
+  })
+
+  test('renders role=button and tabIndex=0 for accessibility', () => {
+    const markup = renderToStaticMarkup(<GateNode {...baseProps} />)
+    expect(markup).toContain('role="button"')
+    expect(markup).toContain('tabindex="0"')
+  })
+
+  test('renders fixed dimensions 96x96', () => {
+    const markup = renderToStaticMarkup(<GateNode {...baseProps} />)
+    expect(markup).toContain('width:96px')
+    expect(markup).toContain('height:96px')
+  })
+
+  test('renders inner diamond dimensions 64x64', () => {
+    const markup = renderToStaticMarkup(<GateNode {...baseProps} />)
+    expect(markup).toContain('width:64px')
+    expect(markup).toContain('height:64px')
+  })
+
+  test('renders counter-rotation for inner text', () => {
+    const markup = renderToStaticMarkup(<GateNode {...baseProps} />)
+    // Inner text is rotated -45deg to remain readable inside the diamond
+    expect(markup).toContain('rotate(-45deg)')
+  })
+
+  test('renders with BLOCKED status and custom color', () => {
+    const props = {
+      ...baseProps,
+      data: { ...baseProps.data, status: 'BLOCKED', color: '#ef4444' },
+    }
+    const markup = renderToStaticMarkup(<GateNode {...props} />)
+    expect(markup).toContain('BLOCKED')
+    expect(markup).toContain('#ef4444')
+  })
+
+  test('renders gate name in aria-label with different name', () => {
+    const props = {
+      ...baseProps,
+      data: { ...baseProps.data, name: 'Security Check' },
+    }
+    const markup = renderToStaticMarkup(<GateNode {...props} />)
+    expect(markup).toContain('aria-label="Gate Security Check, status PENDING"')
+  })
 })

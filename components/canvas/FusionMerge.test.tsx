@@ -145,4 +145,79 @@ describe('FusionMerge', () => {
     const markup = renderToStaticMarkup(<FusionMerge {...baseProps} />)
     expect(markup).toContain('fg-synth-1')
   })
+
+  test('renders selected state when nodeId matches', () => {
+    uiState.selectedNodeId = 'synth-1'
+    const markup = renderToStaticMarkup(<FusionMerge {...baseProps} />)
+    // Selected polygon uses thicker stroke (1.5) and higher opacity (0.7)
+    expect(markup).toContain('stroke-width="1.5"')
+    expect(markup).toContain('stroke-opacity="0.7"')
+  })
+
+  test('renders unselected state with thinner stroke', () => {
+    uiState.selectedNodeId = 'other-node'
+    const markup = renderToStaticMarkup(<FusionMerge {...baseProps} />)
+    // Unselected polygon uses thinner stroke (1) and lower opacity (0.35)
+    expect(markup).toContain('stroke-width="1"')
+    expect(markup).toContain('stroke-opacity="0.35"')
+  })
+
+  test('selected polygon stroke uses node color', () => {
+    uiState.selectedNodeId = 'synth-1'
+    const markup = renderToStaticMarkup(<FusionMerge {...baseProps} />)
+    expect(markup).toContain(`stroke="${baseProps.data.color}"`)
+  })
+
+  test('unselected polygon stroke still uses node color', () => {
+    uiState.selectedNodeId = null
+    const markup = renderToStaticMarkup(<FusionMerge {...baseProps} />)
+    expect(markup).toContain(`stroke="${baseProps.data.color}"`)
+  })
+
+  test('renders with different status text', () => {
+    const props = {
+      ...baseProps,
+      data: { ...baseProps.data, status: 'RUNNING', color: '#22c55e' },
+    }
+    const markup = renderToStaticMarkup(<FusionMerge {...props} />)
+    expect(markup).toContain('RUNNING')
+    expect(markup).toContain('#22c55e')
+  })
+
+  test('renders with different model name', () => {
+    const props = {
+      ...baseProps,
+      data: { ...baseProps.data, model: 'gpt-4o' },
+    }
+    const markup = renderToStaticMarkup(<FusionMerge {...props} />)
+    expect(markup).toContain('gpt-4o')
+  })
+
+  test('renders role=button and tabIndex=0 for accessibility', () => {
+    const markup = renderToStaticMarkup(<FusionMerge {...baseProps} />)
+    expect(markup).toContain('role="button"')
+    expect(markup).toContain('tabindex="0"')
+  })
+
+  test('renders fixed dimensions 220x80', () => {
+    const markup = renderToStaticMarkup(<FusionMerge {...baseProps} />)
+    expect(markup).toContain('width:220px')
+    expect(markup).toContain('height:80px')
+  })
+
+  test('renders SVG viewBox 0 0 220 80', () => {
+    const markup = renderToStaticMarkup(<FusionMerge {...baseProps} />)
+    expect(markup).toContain('viewBox="0 0 220 80"')
+  })
+
+  test('gradient stop uses node color with opacity', () => {
+    const markup = renderToStaticMarkup(<FusionMerge {...baseProps} />)
+    expect(markup).toContain(`stop-color="${baseProps.data.color}"`)
+    expect(markup).toContain('stop-opacity="0.1"')
+  })
+
+  test('status dot uses node color with glow', () => {
+    const markup = renderToStaticMarkup(<FusionMerge {...baseProps} />)
+    expect(markup).toContain(`0 0 6px ${baseProps.data.color}80`)
+  })
 })

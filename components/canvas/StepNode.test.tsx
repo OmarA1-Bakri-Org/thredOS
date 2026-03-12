@@ -164,4 +164,115 @@ describe('StepNode', () => {
     // Selected state uses the node color for corner accents and handles
     expect(markup).toContain('#3b82f6')
   })
+
+  test('renders unselected corner accents with slate fallback', () => {
+    uiState.selectedNodeId = 'other-node'
+    const markup = renderToStaticMarkup(<StepNode {...baseProps} />)
+    // Unselected corner accents use rgba(148,163,184,0.18)
+    expect(markup).toContain('rgba(148,163,184,0.18)')
+  })
+
+  test('selected state applies color-based box shadow glow', () => {
+    uiState.selectedNodeId = 'step-1'
+    const markup = renderToStaticMarkup(<StepNode {...baseProps} />)
+    // Selected box shadow: 0 0 24px color1a
+    expect(markup).toContain(`0 0 24px ${baseProps.data.color}1a`)
+  })
+
+  test('non-selected non-running state uses static shadow', () => {
+    uiState.selectedNodeId = null
+    const markup = renderToStaticMarkup(<StepNode {...baseProps} />)
+    expect(markup).toContain('0 2px 10px rgba(0,0,0,0.35)')
+  })
+
+  test('renders c (convergent) type with correct color', () => {
+    const props = {
+      ...baseProps,
+      data: { ...baseProps.data, type: 'c' },
+    }
+    const markup = renderToStaticMarkup(<StepNode {...props} />)
+    expect(markup).toContain('#38bdf8')
+  })
+
+  test('renders f (fusion) type with correct color', () => {
+    const props = {
+      ...baseProps,
+      data: { ...baseProps.data, type: 'f' },
+    }
+    const markup = renderToStaticMarkup(<StepNode {...props} />)
+    expect(markup).toContain('#fbbf24')
+  })
+
+  test('renders b (bridge) type with correct color', () => {
+    const props = {
+      ...baseProps,
+      data: { ...baseProps.data, type: 'b' },
+    }
+    const markup = renderToStaticMarkup(<StepNode {...props} />)
+    expect(markup).toContain('#a78bfa')
+  })
+
+  test('renders l (loop) type with correct color', () => {
+    const props = {
+      ...baseProps,
+      data: { ...baseProps.data, type: 'l' },
+    }
+    const markup = renderToStaticMarkup(<StepNode {...props} />)
+    expect(markup).toContain('#34d399')
+  })
+
+  test('renders unknown type with base fallback color', () => {
+    const props = {
+      ...baseProps,
+      data: { ...baseProps.data, type: 'unknown' },
+    }
+    const markup = renderToStaticMarkup(<StepNode {...props} />)
+    // Unknown type defaults to #64748b (same as base)
+    expect(markup).toContain('#64748b')
+  })
+
+  test('non-RUNNING status does not have animate-pulse', () => {
+    const markup = renderToStaticMarkup(<StepNode {...baseProps} />)
+    expect(markup).not.toContain('animate-pulse')
+  })
+
+  test('selected border uses color with 70 opacity suffix', () => {
+    uiState.selectedNodeId = 'step-1'
+    const markup = renderToStaticMarkup(<StepNode {...baseProps} />)
+    expect(markup).toContain(`${baseProps.data.color}70`)
+  })
+
+  test('unselected border uses rgba slate color', () => {
+    uiState.selectedNodeId = null
+    const markup = renderToStaticMarkup(<StepNode {...baseProps} />)
+    expect(markup).toContain('rgba(51,65,85,0.45)')
+  })
+
+  test('renders role=button and tabIndex=0 for accessibility', () => {
+    const markup = renderToStaticMarkup(<StepNode {...baseProps} />)
+    expect(markup).toContain('role="button"')
+    expect(markup).toContain('tabindex="0"')
+  })
+
+  test('renders fixed width 220', () => {
+    const markup = renderToStaticMarkup(<StepNode {...baseProps} />)
+    expect(markup).toContain('width:220px')
+  })
+
+  test('RUNNING status applies glow box shadow', () => {
+    const props = {
+      ...baseProps,
+      data: { ...baseProps.data, status: 'RUNNING' },
+    }
+    uiState.selectedNodeId = null
+    const markup = renderToStaticMarkup(<StepNode {...props} />)
+    // RUNNING non-selected uses 0 0 16px color12
+    expect(markup).toContain(`0 0 16px ${baseProps.data.color}12`)
+  })
+
+  test('renders top accent bar with gradient from node color', () => {
+    const markup = renderToStaticMarkup(<StepNode {...baseProps} />)
+    expect(markup).toContain(`${baseProps.data.color}cc`)
+    expect(markup).toContain(`${baseProps.data.color}15`)
+  })
 })

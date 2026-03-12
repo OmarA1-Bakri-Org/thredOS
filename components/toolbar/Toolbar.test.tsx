@@ -84,4 +84,54 @@ describe('Toolbar', () => {
     const markup = renderToStaticMarkup(<Toolbar />)
     expect(markup).toContain('Toggle dark mode')
   })
+
+  test('renders h-12 toolbar container with border-b', () => {
+    const markup = renderToStaticMarkup(<Toolbar />)
+    expect(markup).toContain('h-12')
+    expect(markup).toContain('border-b')
+  })
+
+  test('renders search input with w-48 width class', () => {
+    const markup = renderToStaticMarkup(<Toolbar />)
+    expect(markup).toContain('w-48')
+  })
+
+  test('Run Runnable button has blue-600 background', () => {
+    const markup = renderToStaticMarkup(<Toolbar />)
+    expect(markup).toContain('bg-blue-600')
+  })
+
+  test('renders MessageSquare icon alongside Chat text', () => {
+    const markup = renderToStaticMarkup(<Toolbar />)
+    // The Chat button has flex items-center gap-1 for icon alignment
+    expect(markup).toContain('gap-1')
+    expect(markup).toContain('Chat')
+  })
+
+  test('status summary section has ml-auto for right alignment', () => {
+    const markup = renderToStaticMarkup(<Toolbar />)
+    expect(markup).toContain('ml-auto')
+  })
+
+  test('status summary items use semantic color classes', () => {
+    const markup = renderToStaticMarkup(<Toolbar />)
+    expect(markup).toContain('text-blue-600')
+    expect(markup).toContain('text-green-600')
+    expect(markup).toContain('text-red-600')
+  })
+
+  test('search input type is text', () => {
+    const markup = renderToStaticMarkup(<Toolbar />)
+    expect(markup).toContain('type="text"')
+  })
+
+  test('toolbar buttons have muted-foreground text style', () => {
+    const markup = renderToStaticMarkup(<Toolbar />)
+    expect(markup).toContain('text-muted-foreground')
+  })
+
+  test('status summary is hidden on small screens with max-md:hidden', () => {
+    const markup = renderToStaticMarkup(<Toolbar />)
+    expect(markup).toContain('max-md:hidden')
+  })
 })

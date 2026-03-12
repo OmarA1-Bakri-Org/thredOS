@@ -1,6 +1,8 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, test, afterEach } from 'bun:test'
 import type { MergeEvent, RunScope, ThreadSurface } from '@/lib/thread-surfaces/types'
 import {
+  fetchJson,
+  postJson,
   unwrapThreadMergesResponse,
   unwrapThreadRunsResponse,
   unwrapThreadSurfacesResponse,
@@ -205,5 +207,95 @@ describe('thread surface api response unwrappers', () => {
     const mergeEvents: MergeEvent[] = []
     const result = unwrapThreadMergesResponse({ mergeEvents })
     expect(result).toBe(mergeEvents)
+  })
+})
+
+// ── fetchJson / postJson ──────────────────────────────────────────────
+
+describe('fetchJson', () => {
+  const originalFetch = globalThis.fetch
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+  })
+
+  test('returns parsed JSON on a successful response', async () => {
+    const payload = { id: 1, name: 'test-step' }
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify(payload), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    ) as unknown as typeof fetch
+
+    const result = await fetchJson<{ id: number; name: string }>('/api/fake')
+    expect(result).toEqual(payload)
+  })
+
+  test('throws with body.error when response is not ok and body has error field', async () => {
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify({ error: 'Step not found' }), { status: 404, statusText: 'Not Found' })
+    ) as unknown as typeof fetch
+
+    await expect(fetchJson('/api/fake')).rejects.toThrow('Step not found')
+  })
+
+  test('throws with statusText when response is not ok and body.error is empty', async () => {
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify({ error: '' }), { status: 500, statusText: 'Internal Server Error' })
+    ) as unknown as typeof fetch
+
+    await expect(fetchJson('/api/fake')).rejects.toThrow('Internal Server Error')
+  })
+
+  test('throws with statusText when response body cannot be parsed as JSON', async () => {
+    globalThis.fetch = (async () =>
+      new Response('not json', { status: 502, statusText: 'Bad Gateway' })
+    ) as unknown as typeof fetch
+
+    await expect(fetchJson('/api/fake')).rejects.toThrow('Bad Gateway')
+  })
+
+  test('passes RequestInit through to the underlying fetch call', async () => {
+    let capturedInit: RequestInit | undefined
+    globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+      capturedInit = init
+      return new Response(JSON.stringify({ ok: true }), { status: 200 })
+    }) as unknown as typeof fetch
+
+    await fetchJson('/api/fake', { method: 'DELETE', headers: { 'X-Custom': 'yes' } })
+    expect(capturedInit?.method).toBe('DELETE')
+    expect((capturedInit?.headers as Record<string, string>)['X-Custom']).toBe('yes')
+  })
+})
+
+describe('postJson', () => {
+  const originalFetch = globalThis.fetch
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+  })
+
+  test('sends POST with correct method, content-type, and JSON body', async () => {
+    let capturedUrl = ''
+    let capturedInit: RequestInit | undefined
+    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+      capturedUrl = String(url)
+      capturedInit = init
+      return new Response(JSON.stringify({ created: true }), { status: 200 })
+    }) as unknown as typeof fetch
+
+    const result = await postJson<{ created: boolean }>('/api/step', { stepId: 'abc', action: 'add' })
+
+    expect(result).toEqual({ created: true })
+    expect(capturedUrl).toBe('/api/step')
+    expect(capturedInit?.method).toBe('POST')
+    expect((capturedInit?.headers as Record<string, string>)['Content-Type']).toBe('application/json')
+    expect(capturedInit?.body).toBe(JSON.stringify({ stepId: 'abc', action: 'add' }))
+  })
+
+  test('propagates errors from fetchJson when the server returns an error', async () => {
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify({ error: 'Validation failed' }), { status: 422, statusText: 'Unprocessable Entity' })
+    ) as unknown as typeof fetch
+
+    await expect(postJson('/api/step', { bad: true })).rejects.toThrow('Validation failed')
   })
 })

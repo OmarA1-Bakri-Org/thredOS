@@ -3,10 +3,13 @@ import type { RunEvent, RunScope, ThreadSurface } from './types'
 import type { ThreadSurfaceState } from './repository'
 import {
   cancelRun,
+  completeRun,
   createChildThreadSurfaceRun,
   createReplacementRun,
   createRootThreadSurfaceRun,
   emptyThreadSurfaceState,
+  findLatestActiveRunForSurface,
+  findLatestRunForSurface,
   recordChildAgentSpawnEvent,
   recordMergeEvent,
 } from './mutations'
@@ -245,5 +248,169 @@ describe('thread surface lifecycle mutations', () => {
       },
     })
     expect(result.state.runEvents).toEqual([result.runEvent])
+  })
+
+  test('completeRun sets status to successful with endedAt timestamp', () => {
+    const state: ThreadSurfaceState = {
+      version: 1,
+      threadSurfaces: buildRootState().threadSurfaces,
+      runs: [
+        {
+          id: 'run-active',
+          threadSurfaceId: 'thread-root',
+          runStatus: 'running',
+          startedAt: timestamp,
+          endedAt: null,
+          executionIndex: 1,
+        },
+      ],
+      mergeEvents: [],
+      runEvents: [],
+    }
+
+    const result = completeRun(state, {
+      runId: 'run-active',
+      runStatus: 'successful',
+      endedAt: '2026-03-09T10:30:00.000Z',
+      runSummary: 'Completed without errors',
+    })
+
+    expect(result.run).toMatchObject({
+      id: 'run-active',
+      runStatus: 'successful',
+      endedAt: '2026-03-09T10:30:00.000Z',
+      runSummary: 'Completed without errors',
+    })
+    expect(result.state.runs).toHaveLength(1)
+  })
+
+  test('completeRun sets status to failed without optional runSummary', () => {
+    const state: ThreadSurfaceState = {
+      version: 1,
+      threadSurfaces: buildRootState().threadSurfaces,
+      runs: [
+        {
+          id: 'run-failing',
+          threadSurfaceId: 'thread-root',
+          runStatus: 'running',
+          startedAt: timestamp,
+          endedAt: null,
+        },
+      ],
+      mergeEvents: [],
+      runEvents: [],
+    }
+
+    const result = completeRun(state, {
+      runId: 'run-failing',
+      runStatus: 'failed',
+      endedAt: '2026-03-09T10:45:00.000Z',
+    })
+
+    expect(result.run).toMatchObject({
+      id: 'run-failing',
+      runStatus: 'failed',
+      endedAt: '2026-03-09T10:45:00.000Z',
+    })
+    expect(result.run.runSummary).toBeUndefined()
+  })
+
+  test('completeRun throws when run ID does not exist', () => {
+    expect(() =>
+      completeRun(buildRootState(), {
+        runId: 'run-nonexistent',
+        runStatus: 'successful',
+        endedAt: '2026-03-09T10:30:00.000Z',
+      }),
+    ).toThrow('run-nonexistent')
+  })
+})
+
+describe('run query helpers', () => {
+  const runs: RunScope[] = [
+    {
+      id: 'run-old',
+      threadSurfaceId: 'thread-root',
+      runStatus: 'successful',
+      startedAt: '2026-03-09T08:00:00.000Z',
+      endedAt: '2026-03-09T08:30:00.000Z',
+    },
+    {
+      id: 'run-mid',
+      threadSurfaceId: 'thread-root',
+      runStatus: 'failed',
+      startedAt: '2026-03-09T09:00:00.000Z',
+      endedAt: '2026-03-09T09:30:00.000Z',
+    },
+    {
+      id: 'run-active',
+      threadSurfaceId: 'thread-root',
+      runStatus: 'running',
+      startedAt: '2026-03-09T10:00:00.000Z',
+      endedAt: null,
+    },
+    {
+      id: 'run-other-surface',
+      threadSurfaceId: 'thread-child',
+      runStatus: 'pending',
+      startedAt: '2026-03-09T11:00:00.000Z',
+      endedAt: null,
+    },
+  ]
+
+  test('findLatestRunForSurface returns the most recent run by timestamp', () => {
+    const latest = findLatestRunForSurface(runs, 'thread-root')
+    expect(latest).toBeDefined()
+    expect(latest!.id).toBe('run-active')
+  })
+
+  test('findLatestRunForSurface returns undefined for unknown surface', () => {
+    const result = findLatestRunForSurface(runs, 'thread-nonexistent')
+    expect(result).toBeUndefined()
+  })
+
+  test('findLatestRunForSurface returns undefined for empty runs array', () => {
+    const result = findLatestRunForSurface([], 'thread-root')
+    expect(result).toBeUndefined()
+  })
+
+  test('findLatestActiveRunForSurface returns only pending or running runs', () => {
+    const active = findLatestActiveRunForSurface(runs, 'thread-root')
+    expect(active).toBeDefined()
+    expect(active!.id).toBe('run-active')
+    expect(active!.runStatus).toBe('running')
+  })
+
+  test('findLatestActiveRunForSurface returns pending run for child surface', () => {
+    const active = findLatestActiveRunForSurface(runs, 'thread-child')
+    expect(active).toBeDefined()
+    expect(active!.id).toBe('run-other-surface')
+    expect(active!.runStatus).toBe('pending')
+  })
+
+  test('findLatestActiveRunForSurface returns undefined when no active runs exist', () => {
+    const completedRuns: RunScope[] = [
+      {
+        id: 'run-done',
+        threadSurfaceId: 'thread-root',
+        runStatus: 'successful',
+        startedAt: '2026-03-09T08:00:00.000Z',
+        endedAt: '2026-03-09T08:30:00.000Z',
+      },
+      {
+        id: 'run-cancelled',
+        threadSurfaceId: 'thread-root',
+        runStatus: 'cancelled',
+        startedAt: '2026-03-09T09:00:00.000Z',
+        endedAt: '2026-03-09T09:30:00.000Z',
+      },
+    ]
+    const result = findLatestActiveRunForSurface(completedRuns, 'thread-root')
+    expect(result).toBeUndefined()
+  })
+
+  test('findLatestActiveRunForSurface returns undefined for unknown surface', () => {
+    const result = findLatestActiveRunForSurface(runs, 'thread-nonexistent')
+    expect(result).toBeUndefined()
   })
 })

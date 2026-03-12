@@ -489,4 +489,63 @@ describe('CanvasContextMenu', () => {
     )
     expect(markup).toContain('border-t')
   })
+
+  test('MenuItem renders button with mono text and uppercase tracking', () => {
+    const markup = renderToStaticMarkup(
+      <CanvasContextMenu menu={{ x: 0, y: 0, nodeId: null }} onClose={() => {}} />
+    )
+    // MenuItem uses font-mono, text-[11px], uppercase, tracking-[0.16em]
+    expect(markup).toContain('font-mono')
+    expect(markup).toContain('uppercase')
+  })
+
+  test('MenuItem renders with type=button attribute', () => {
+    const markup = renderToStaticMarkup(
+      <CanvasContextMenu menu={{ x: 0, y: 0, nodeId: null }} onClose={() => {}} />
+    )
+    expect(markup).toContain('type="button"')
+  })
+
+  test('Delete menu item has rose-colored text class', () => {
+    const markup = renderToStaticMarkup(
+      <CanvasContextMenu menu={{ x: 0, y: 0, nodeId: 'step-1' }} onClose={() => {}} />
+    )
+    expect(markup).toContain('text-rose-300')
+  })
+
+  test('Add Step icon has amber-400 text class', () => {
+    const markup = renderToStaticMarkup(
+      <CanvasContextMenu menu={{ x: 0, y: 0, nodeId: null }} onClose={() => {}} />
+    )
+    expect(markup).toContain('text-amber-400')
+  })
+
+  test('Add Gate icon has emerald-400 text class', () => {
+    const markup = renderToStaticMarkup(
+      <CanvasContextMenu menu={{ x: 0, y: 0, nodeId: null }} onClose={() => {}} />
+    )
+    expect(markup).toContain('text-emerald-400')
+  })
+
+  test('menu container has dark background and shadow styling', () => {
+    const markup = renderToStaticMarkup(
+      <CanvasContextMenu menu={{ x: 10, y: 20, nodeId: null }} onClose={() => {}} />
+    )
+    expect(markup).toContain('bg-[#08101d]')
+    expect(markup).toContain('border-slate-700')
+  })
+
+  test('canvas menu does not render MenuDivider', () => {
+    const markup = renderToStaticMarkup(
+      <CanvasContextMenu menu={{ x: 0, y: 0, nodeId: null }} onClose={() => {}} />
+    )
+    expect(markup).not.toContain('border-t border-slate-800/60')
+  })
+
+  test('menu renders at large coordinate values correctly', () => {
+    const menu = { x: 9999, y: 8888, nodeId: null }
+    const markup = renderToStaticMarkup(<CanvasContextMenu menu={menu} onClose={() => {}} />)
+    expect(markup).toContain('left:9999px')
+    expect(markup).toContain('top:8888px')
+  })
 })
