@@ -4,6 +4,7 @@ import { completeRun, createChildThreadSurfaceRun, createReplacementRun, findLat
 import type { ThreadSurfaceState } from '@/lib/thread-surfaces/repository'
 import type { RuntimeDelegationEvent } from '@/lib/thread-surfaces/runtime-event-log'
 import { deriveStepThreadSurfaceId, ROOT_THREAD_SURFACE_ID } from '@/lib/thread-surfaces/constants'
+import { deriveMergeEventForSuccessfulStep } from '@/lib/thread-surfaces/merge-runtime'
 
 export interface StepRunScope {
   runId: string
@@ -93,6 +94,10 @@ export function finalizeStepRunWithRuntimeEvents(
       nextEventId: opts.nextEventId,
       nextMergeId: opts.nextMergeId,
     })
+  }
+
+  if (opts.success) {
+    nextState = deriveFusionMergeIfApplicable(nextState, opts.step, effectiveStepRun, opts.nextMergeId)
   }
 
   return { state: nextState, stepRun: effectiveStepRun }
@@ -210,6 +215,55 @@ function persistRuntimeDelegationEvents(
   }
 
   return nextState
+}
+
+function deriveFusionMergeIfApplicable(
+  state: ThreadSurfaceState,
+  step: Step,
+  stepRun: StepRunScope,
+  nextMergeId: () => string,
+): ThreadSurfaceState {
+  const stepThreadSurfaceIds: Record<string, string> = {
+    [step.id]: deriveStepThreadSurfaceId(step.id),
+  }
+  for (const depId of step.depends_on) {
+    stepThreadSurfaceIds[depId] = deriveStepThreadSurfaceId(depId)
+  }
+
+  const mergeEvent = deriveMergeEventForSuccessfulStep({
+    step,
+    threadSurfaces: state.threadSurfaces,
+    stepThreadSurfaceIds,
+    runId: stepRun.runId,
+    mergeId: nextMergeId(),
+    executionIndex: stepRun.executionIndex,
+    createdAt: stepRun.startedAt,
+    summary: step.name,
+  })
+
+  if (mergeEvent == null) {
+    return state
+  }
+
+  const sourceRunIds = mergeEvent.sourceThreadSurfaceIds.map(sourceThreadSurfaceId => {
+    const sourceRun = findLatestRunForSurface(state.runs, sourceThreadSurfaceId)
+    if (!sourceRun) {
+      throw new InvalidThreadSurfaceMergeError(`Merge source run must exist for lane ${sourceThreadSurfaceId}`)
+    }
+    return sourceRun.id
+  })
+
+  return recordMergeEvent(state, {
+    mergeId: mergeEvent.id,
+    runId: mergeEvent.runId,
+    destinationThreadSurfaceId: mergeEvent.destinationThreadSurfaceId,
+    sourceThreadSurfaceIds: mergeEvent.sourceThreadSurfaceIds,
+    sourceRunIds,
+    mergeKind: mergeEvent.mergeKind,
+    executionIndex: mergeEvent.executionIndex,
+    createdAt: mergeEvent.createdAt,
+    summary: mergeEvent.summary,
+  }).state
 }
 
 function resolveParentSurfaceId(state: ThreadSurfaceState, step: Step): string {

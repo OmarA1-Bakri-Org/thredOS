@@ -50,9 +50,10 @@ export async function readRuntimeEventLog(
 
   const events: RuntimeDelegationEvent[] = []
   let invalidLines = 0
+  const lines = content.split(/\r?\n/)
 
-  for (const line of content.split(/\r?\n/)) {
-    const trimmed = line.trim()
+  for (let i = 0; i < lines.length; i++) {
+    const trimmed = lines[i].trim()
     if (!trimmed) continue
 
     try {
@@ -62,9 +63,13 @@ export async function readRuntimeEventLog(
         events.push(result.data)
       } else {
         invalidLines += 1
+        const preview = trimmed.length > 100 ? trimmed.slice(0, 100) + '...' : trimmed
+        console.warn(`[runtime-event-log] Invalid event at line ${i + 1}: ${preview}`)
       }
     } catch {
       invalidLines += 1
+      const preview = trimmed.length > 100 ? trimmed.slice(0, 100) + '...' : trimmed
+      console.warn(`[runtime-event-log] Malformed JSON at line ${i + 1}: ${preview}`)
     }
   }
 
