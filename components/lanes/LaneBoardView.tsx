@@ -1,7 +1,11 @@
 import type { ReactNode } from 'react'
-import { Button, buttonVariants } from '@/components/ui/button'
+import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import type { WorkflowLaneContext } from '@/lib/workflows'
+
+function truncateId(id: string): string {
+  return id.length > 8 ? id.slice(0, 8) : id
+}
 
 interface LaneBoardRowView {
   threadSurfaceId: string
@@ -24,7 +28,7 @@ interface LaneBoardViewProps {
 export function LaneBoardView({
   rows,
   focusedThreadSurfaceId,
-  selectedRunId,
+  selectedRunId: _selectedRunId,
   workflowByThreadSurfaceId = {},
   onFocusThread,
   onBackToHierarchy,
@@ -44,12 +48,12 @@ export function LaneBoardView({
       <div className="min-h-0 flex flex-1 overflow-hidden">
         <aside
           data-testid="lane-board-roster"
-          className="flex w-104 shrink-0 flex-col border-r border-slate-800/80 bg-[#08101d]"
+          className="flex w-80 shrink-0 flex-col border-r border-slate-800/80 bg-[#08101d]"
         >
           <div className="shrink-0 border-b border-slate-800/80 px-5 py-3">
             <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">Roster</div>
           </div>
-          <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-3 py-3">
+          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-4">
             {rows.map(row => {
               const isFocused = row.threadSurfaceId === focusedThreadSurfaceId
               const workflowContext = workflowByThreadSurfaceId[row.threadSurfaceId]
@@ -61,50 +65,31 @@ export function LaneBoardView({
                   aria-pressed={isFocused}
                   onClick={() => onFocusThread(row.threadSurfaceId, row.runId)}
                   className={cn(
-                    buttonVariants({ variant: isFocused ? 'secondary' : 'outline' }),
-                    'h-auto w-full items-start justify-start whitespace-normal px-3 py-3 text-left normal-case tracking-normal',
-                    isFocused ? 'border-sky-500/50 text-white shadow-[0_0_0_1px_rgba(96,165,250,0.15)]' : 'text-slate-300',
+                    'w-full text-left px-4 py-3 transition-colors',
+                    isFocused
+                      ? 'border border-emerald-500/40 border-l-2 border-l-emerald-500 bg-[#0c1525] text-white'
+                      : 'border border-slate-800/60 bg-[#08101d] text-slate-300 hover:bg-[#0a1320]',
                   )}
                 >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="text-sm font-semibold tracking-tight">{row.surfaceLabel}</div>
-                    <span className="border border-slate-700 bg-slate-950/65 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em] text-slate-300">
-                      {row.executionIndex ?? 'draft'}
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-semibold tracking-tight">{row.surfaceLabel}</span>
+                    <span className="font-mono text-[10px] text-slate-500">
+                      #{row.executionIndex ?? '—'}
                     </span>
                   </div>
                   {workflowContext ? (
-                    <div className="mt-3 space-y-2">
-                      <div data-testid="lane-workflow-step-name" className="text-xs font-medium uppercase tracking-[0.16em] text-slate-400">
-                        {workflowContext.stepName}
-                      </div>
-                      <div className="flex flex-wrap gap-2 text-[11px] uppercase tracking-[0.16em]">
-                        <span data-testid="lane-workflow-badge" className="rounded-full border border-sky-500/35 bg-sky-500/10 px-3 py-1 text-sky-100">
-                          {workflowContext.phaseLabel}
-                        </span>
-                        <span data-testid="lane-workflow-badge" className="rounded-full border border-slate-700 bg-slate-950/65 px-3 py-1 text-slate-300">
-                          {workflowContext.executionLabel}
-                        </span>
-                        {workflowContext.hasCondition ? (
-                          <span data-testid="lane-workflow-condition-flag" className="rounded-full border border-amber-500/35 bg-amber-500/10 px-3 py-1 text-amber-100">
-                            conditional
-                          </span>
-                        ) : null}
-                      </div>
+                    <div className="mt-1.5 text-xs text-slate-400">
+                      {workflowContext.phaseLabel} · {workflowContext.executionLabel}
+                      {workflowContext.hasCondition ? ' · conditional' : ''}
                     </div>
                   ) : null}
-                  <div className="mt-3 flex flex-wrap gap-2 text-[11px] uppercase tracking-[0.16em]">
-                    {row.laneTerminalState ? (
-                      <span className="rounded-full border border-amber-500/35 bg-amber-500/10 px-3 py-1 text-amber-100">
-                        {row.laneTerminalState}
-                      </span>
-                    ) : null}
-                    <span
-                      className={`rounded-full border px-3 py-1 ${selectedRunId === row.runId
-                        ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-100'
-                        : 'border-slate-700 bg-slate-950/65 text-slate-400'}`}
-                    >
-                      {selectedRunId === row.runId ? '✓ active' : row.runId}
-                    </span>
+                  {row.laneTerminalState ? (
+                    <div className="mt-1 text-[10px] font-mono uppercase tracking-wide text-amber-400/70">
+                      {row.laneTerminalState}
+                    </div>
+                  ) : null}
+                  <div className="mt-1.5 font-mono text-[10px] text-slate-600" title={row.runId}>
+                    {truncateId(row.runId)}
                   </div>
                 </button>
               )

@@ -62,7 +62,7 @@ describe('LaneBoardView', () => {
     expect(collectByDataTestId(view, 'lane-focused-content')).toHaveLength(1)
   })
 
-  test('renders workflow phase and execution metadata for focused rows', () => {
+  test('renders workflow phase and execution metadata as inline text', () => {
     const view = LaneBoardView({
       rows: [
         {
@@ -87,15 +87,10 @@ describe('LaneBoardView', () => {
       },
     })
 
-    const workflowBadges = collectByDataTestId(view, 'lane-workflow-badge').map(element => element.props.children)
-    expect(workflowBadges).toContain('Feedback')
-    expect(workflowBadges).toContain('sub agent')
-
-    const workflowStepLabels = collectByDataTestId(view, 'lane-workflow-step-name').map(element => element.props.children)
-    expect(workflowStepLabels).toContain('Post-Publish Analytics')
-
-    const conditionFlags = collectByDataTestId(view, 'lane-workflow-condition-flag').map(element => element.props.children)
-    expect(conditionFlags).toContain('conditional')
+    const markup = JSON.stringify(view)
+    expect(markup).toContain('Feedback')
+    expect(markup).toContain('sub agent')
+    expect(markup).toContain('conditional')
   })
 
   test('supports multiple runs for the same thread surface in the lane roster', () => {
@@ -123,5 +118,28 @@ describe('LaneBoardView', () => {
     const markup = JSON.stringify(view)
     expect(markup).toContain('run-a')
     expect(markup).toContain('run-b')
+  })
+
+  test('truncates long IDs to first 8 characters', () => {
+    const longRunId = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890'
+    const view = LaneBoardView({
+      rows: [
+        {
+          threadSurfaceId: 'thread-abc',
+          surfaceLabel: 'Test Step',
+          runId: longRunId,
+          executionIndex: 1,
+        },
+      ],
+      focusedThreadSurfaceId: null,
+      selectedRunId: null,
+      onFocusThread: () => {},
+      onBackToHierarchy: () => {},
+    })
+
+    const markup = JSON.stringify(view)
+    expect(markup).toContain('a1b2c3d4')
+    // Full ID should be present as title attribute for hover
+    expect(markup).toContain(longRunId)
   })
 })

@@ -49,10 +49,18 @@ interface UIStore {
   laneBoardState: LaneBoardState
   setLaneBoardState: (state: LaneBoardState) => void
   openLaneViewForThreadSurface: (threadSurfaceId: string, runId?: string | null) => void
+  chatPosition: { x: number; y: number }
+  setChatPosition: (pos: { x: number; y: number }) => void
+  chatSize: { width: number; height: number }
+  setChatSize: (size: { width: number; height: number }) => void
   createDialogOpen: boolean
   createDialogKind: CreateNodeKind
   openCreateDialog: (kind: CreateNodeKind) => void
   closeCreateDialog: () => void
+  activeAccordionSections: string[]
+  setActiveAccordionSections: (sections: string[]) => void
+  expandAccordionSection: (section: string) => void
+  collapseAccordionSection: (section: string) => void
 }
 
 const defaultHierarchyViewport: HierarchyViewportState = {
@@ -71,7 +79,13 @@ export const useUIStore = create<UIStore>((set) => ({
   productEntry: null,
   setProductEntry: (entry) => set({ productEntry: entry }),
   selectedNodeId: null,
-  setSelectedNodeId: (id) => set({ selectedNodeId: id, ...(id != null ? { inspectorOpen: true } : {}) }),
+  setSelectedNodeId: (id) => set((s) => ({
+    selectedNodeId: id,
+    ...(id != null ? { inspectorOpen: true } : {}),
+    activeAccordionSections: id != null
+      ? [...s.activeAccordionSections.filter(sec => sec !== 'navigator'), ...(s.activeAccordionSections.includes('step-detail') ? [] : ['step-detail'])]
+      : [...s.activeAccordionSections.filter(sec => sec !== 'step-detail'), ...(s.activeAccordionSections.includes('navigator') ? [] : ['navigator'])],
+  })),
   leftRailOpen: false,
   toggleLeftRail: () => set((s) => ({ leftRailOpen: !s.leftRailOpen })),
   closeLeftRail: () => set({ leftRailOpen: false }),
@@ -127,8 +141,22 @@ export const useUIStore = create<UIStore>((set) => ({
         focusedRunId: runId,
       },
     })),
+  chatPosition: { x: 0, y: 0 },
+  setChatPosition: (pos) => set({ chatPosition: pos }),
+  chatSize: { width: 400, height: 500 },
+  setChatSize: (size) => set({ chatSize: size }),
   createDialogOpen: false,
   createDialogKind: 'step',
   openCreateDialog: (kind) => set({ createDialogOpen: true, createDialogKind: kind }),
   closeCreateDialog: () => set({ createDialogOpen: false }),
+  activeAccordionSections: ['navigator'],
+  setActiveAccordionSections: (sections) => set({ activeAccordionSections: sections }),
+  expandAccordionSection: (section) => set((s) => ({
+    activeAccordionSections: s.activeAccordionSections.includes(section)
+      ? s.activeAccordionSections
+      : [...s.activeAccordionSections, section],
+  })),
+  collapseAccordionSection: (section) => set((s) => ({
+    activeAccordionSections: s.activeAccordionSections.filter(id => id !== section),
+  })),
 }))
