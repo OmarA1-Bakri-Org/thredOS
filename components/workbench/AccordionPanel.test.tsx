@@ -7,6 +7,8 @@ const storeState = {
   expandAccordionSection: (_section: string) => {},
   collapseAccordionSection: (_section: string) => {},
   selectedNodeId: null as string | null,
+  selectedThreadSurfaceId: null as string | null,
+  setSelectedThreadSurfaceId: (_id: string | null) => {},
 }
 
 mock.module('@/lib/ui/store', () => ({
@@ -17,6 +19,31 @@ mock.module('@/lib/ui/store', () => ({
       getState: () => storeState,
     },
   ),
+}))
+
+mock.module('@/lib/ui/api', () => ({
+  useThreadSurfaces: () => ({
+    data: [
+      { id: 'thread-master', surfaceLabel: 'Master Thread', depth: 0, role: 'orchestrator', childSurfaceIds: ['thread-child'] },
+    ],
+  }),
+  useStatus: () => ({ data: null, isLoading: false }),
+  useSequence: () => ({ data: null, isLoading: false }),
+  useRunRunnable: () => ({ mutate: () => {}, isPending: false }),
+  useRunStep: () => ({ mutate: () => {}, isPending: false, error: null }),
+  useStopStep: () => ({ mutate: () => {}, isPending: false, error: null }),
+  useRestartStep: () => ({ mutate: () => {}, isPending: false, error: null }),
+  useApproveGate: () => ({ mutate: () => {}, isPending: false, error: null }),
+  useBlockGate: () => ({ mutate: () => {}, isPending: false, error: null }),
+  useThreadRuns: () => ({ data: [] }),
+  useThreadMerges: () => ({ data: [] }),
+  useEditStep: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false, error: null }),
+  useRemoveStep: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false, error: null }),
+  useCloneStep: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false, error: null }),
+  useAddDep: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false, error: null }),
+  useRemoveDep: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false, error: null }),
+  useAddStep: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false, error: null }),
+  useInsertGate: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false, error: null }),
 }))
 
 const { AccordionPanel } = await import('./AccordionPanel')
@@ -53,7 +80,7 @@ describe('AccordionPanel', () => {
     // Radix renders data-orientation on each accordion item
     const orientationCount = (markup.match(/data-orientation="vertical"/g) || []).length
     expect(orientationCount).toBeGreaterThanOrEqual(6)
-    // The navigator section should be open by default
-    expect(markup).toContain('Navigator content placeholder')
+    // The navigator section should be open by default with real content
+    expect(markup).toContain('Master Thread')
   })
 })

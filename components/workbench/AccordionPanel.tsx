@@ -4,6 +4,12 @@ import * as Accordion from '@radix-ui/react-accordion'
 import { ChevronDown, Layers3, ShieldCheck, GitBranch, Activity, Sparkles, BarChart3 } from 'lucide-react'
 import { useUIStore } from '@/lib/ui/store'
 import type { LucideIcon } from 'lucide-react'
+import { ThreadNavigatorContent } from './ThreadNavigatorContent'
+import { SkillsContent } from './SkillsContent'
+import { StepDetailContent } from '@/components/inspector/StepDetailContent'
+import { DependenciesContent } from '@/components/inspector/DependenciesContent'
+import { ThreadContextContent } from '@/components/inspector/ThreadContextContent'
+import { StructureContent } from '@/components/inspector/StructureContent'
 
 interface AccordionSection {
   key: string
@@ -13,12 +19,12 @@ interface AccordionSection {
 }
 
 const sections: AccordionSection[] = [
-  { key: 'navigator', label: 'NAVIGATOR', icon: Layers3, content: <div>Navigator content placeholder</div> },
-  { key: 'step-detail', label: 'STEP / GATE DETAIL', icon: ShieldCheck, content: <div>Step detail content placeholder</div> },
-  { key: 'dependencies', label: 'DEPENDENCIES', icon: GitBranch, content: <div>Dependencies content placeholder</div> },
-  { key: 'thread-context', label: 'THREAD CONTEXT', icon: Activity, content: <div>Thread context content placeholder</div> },
-  { key: 'skills', label: 'SKILLS', icon: Sparkles, content: <div>Skills content placeholder</div> },
-  { key: 'structure', label: 'STRUCTURE', icon: BarChart3, content: <div>Structure content placeholder</div> },
+  { key: 'navigator', label: 'NAVIGATOR', icon: Layers3, content: <ThreadNavigatorContent /> },
+  { key: 'step-detail', label: 'STEP / GATE DETAIL', icon: ShieldCheck, content: <StepDetailContent /> },
+  { key: 'dependencies', label: 'DEPENDENCIES', icon: GitBranch, content: <DependenciesContent /> },
+  { key: 'thread-context', label: 'THREAD CONTEXT', icon: Activity, content: <ThreadContextContent /> },
+  { key: 'skills', label: 'SKILLS', icon: Sparkles, content: <SkillsContent /> },
+  { key: 'structure', label: 'STRUCTURE', icon: BarChart3, content: <StructureContent /> },
 ]
 
 export function AccordionPanel() {
