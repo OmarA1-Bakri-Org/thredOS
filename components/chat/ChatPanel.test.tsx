@@ -28,7 +28,6 @@ describe('ChatPanel', () => {
     expect(markup).toContain('Thread Chat')
     expect(markup).toContain('Sequence context')
     expect(markup).toContain('Reviewed mutations')
-    expect(markup).toContain('Thread dialogue')
     expect(markup).toContain('Context-bound assistant')
     expect(markup).toContain('data-testid="chat-empty-state"')
     expect(markup).toContain('data-testid="chat-empty-example-grid"')
@@ -53,9 +52,10 @@ describe('ChatPanel', () => {
     expect(markup).toContain('Send message')
   })
 
-  test('renders header description text', () => {
+  test('renders compact header without verbose description', () => {
     const markup = renderToStaticMarkup(<ChatPanel />)
-    expect(markup).toContain('Ask for sequence inspection, rationale, and controlled mutations against the active thread and run context.')
+    expect(markup).not.toContain('Thread dialogue')
+    expect(markup).toContain('Thread Chat')
   })
 
   test('renders the Summarize example in the empty state grid', () => {

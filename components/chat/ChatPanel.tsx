@@ -159,34 +159,22 @@ export function ChatPanel() {
   return (
     <div data-testid="chat-floating-container" className="fixed bottom-16 right-4 z-50 w-[400px] h-[500px] rounded-lg border border-slate-700/80 bg-[#08101d]/95 shadow-2xl backdrop-blur-sm">
     <div data-testid="chat-panel" className="flex h-full flex-col bg-transparent" aria-busy={loading}>
-      <div data-testid="chat-header" className="border-b border-slate-800/80 bg-[#050c17] rounded-t-lg px-4 py-4">
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex-1 min-w-0">
-            <div data-testid="chat-top-pills" className="mb-3 flex flex-wrap items-center gap-2">
-              <span className="rounded-full border border-slate-700 bg-slate-950/65 px-3 py-1 font-mono text-[10px] uppercase tracking-[0.18em] text-slate-300">
-                Thread Chat
-              </span>
-              <span className="rounded-full border border-[#16417C]/70 bg-[#16417C]/18 px-3 py-1 font-mono text-[10px] uppercase tracking-[0.18em] text-slate-100">
+      <div data-testid="chat-header" className="border-b border-slate-800/80 bg-[#050c17] rounded-t-lg px-3 py-2.5">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <Sparkles className="h-3.5 w-3.5 shrink-0 text-emerald-400" />
+            <span className="font-mono text-[11px] font-medium uppercase tracking-[0.14em] text-white">Thread Chat</span>
+            <div data-testid="chat-top-pills" className="hidden sm:flex items-center gap-1.5">
+              <span className="rounded-full border border-[#16417C]/70 bg-[#16417C]/18 px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.14em] text-slate-300">
                 Sequence context
               </span>
-              <span className="rounded-full border border-emerald-500/45 bg-emerald-500/10 px-3 py-1 font-mono text-[10px] uppercase tracking-[0.18em] text-emerald-100">
+              <span className="rounded-full border border-emerald-500/45 bg-emerald-500/10 px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.14em] text-emerald-200">
                 Reviewed mutations
               </span>
             </div>
-            <div className="mt-2 text-lg font-semibold tracking-tight text-white">Thread dialogue</div>
-            <p className="mt-2 max-w-xl text-sm text-slate-300">
-              Ask for sequence inspection, rationale, and controlled mutations against the active thread and run context.
-            </p>
           </div>
-          <div
-            data-testid="chat-mode-card"
-            className="hidden border border-[#16417C]/70 bg-[#16417C]/18 px-3 py-3 md:block"
-          >
-            <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Mode</div>
-            <div className="mt-2 flex items-center gap-2 text-sm text-slate-100">
-              <Sparkles className="h-4 w-4 text-emerald-300" />
-              Context-bound assistant
-            </div>
+          <div data-testid="chat-mode-card" className="hidden" aria-hidden="true">
+            <span>Context-bound assistant</span>
           </div>
           <button
             data-testid="chat-close-button"
@@ -207,12 +195,12 @@ export function ChatPanel() {
           </div>
         ) : null}
         {messages.length === 0 && (
-          <div data-testid="chat-empty-state" className="border border-[#16417C]/70 bg-[#16417C]/18 px-4 py-4 text-sm text-slate-200">
-            <div className="font-mono text-[11px] uppercase tracking-[0.2em] text-slate-500">Ready for bounded guidance</div>
-            <div className="mt-3 text-base font-medium text-white">Ask ThreadOS to inspect, modify, or explain the active sequence.</div>
-            <div data-testid="chat-empty-example-grid" className="mt-3 grid gap-2 text-sm text-slate-300 lg:grid-cols-2">
-              <div className="border border-slate-800/90 bg-[#08101d] px-3 py-3">Summarize the selected thread and current run context.</div>
-              <div className="border border-slate-800/90 bg-[#08101d] px-3 py-3">Propose a controlled change and review the diff before applying it.</div>
+          <div data-testid="chat-empty-state" className="border border-[#16417C]/70 bg-[#16417C]/18 px-3 py-3 text-sm text-slate-200">
+            <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Ready for bounded guidance</div>
+            <div className="mt-2 text-sm font-medium text-white">Ask ThreadOS to inspect, modify, or explain the active sequence.</div>
+            <div data-testid="chat-empty-example-grid" className="mt-2 grid gap-1.5 text-xs text-slate-300">
+              <div className="border border-slate-800/90 bg-[#08101d] px-2.5 py-2">Summarize the selected thread and current run context.</div>
+              <div className="border border-slate-800/90 bg-[#08101d] px-2.5 py-2">Propose a controlled change and review the diff before applying it.</div>
             </div>
           </div>
         )}
