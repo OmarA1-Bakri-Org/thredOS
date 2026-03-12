@@ -4,6 +4,16 @@ import { Layers3 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useThreadSurfaces } from '@/lib/ui/api'
 import { useUIStore } from '@/lib/ui/store'
+import { SkillInventoryPanel } from '@/components/skills/SkillInventoryPanel'
+import type { SkillBadge } from '@/components/skills/SkillBadgeRow'
+
+const DEFAULT_SKILLS: SkillBadge[] = [
+  { id: 'search', label: 'Search', inherited: false },
+  { id: 'files', label: 'Files', inherited: false },
+  { id: 'tools', label: 'Tools', inherited: false },
+  { id: 'model', label: 'Model', inherited: true },
+  { id: 'review', label: 'Review', inherited: true },
+]
 
 export function LeftRail() {
   const { data: threadSurfaces } = useThreadSurfaces()
@@ -50,6 +60,9 @@ export function LeftRail() {
           </div>
         </section>
 
+        <div className="mt-6 border-t border-slate-800 pt-4">
+          <SkillInventoryPanel skills={DEFAULT_SKILLS} />
+        </div>
       </div>
 
     </div>

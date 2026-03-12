@@ -10,6 +10,7 @@ import { TopBar } from '@/components/workbench/TopBar'
 import { LeftRail } from '@/components/workbench/LeftRail'
 import { InspectorRail } from '@/components/workbench/InspectorRail'
 import { CreateNodeDialog } from '@/components/command/CreateNodeDialog'
+import { ThreadRunnerGate } from '@/components/thread-runner/ThreadRunnerGate'
 import { useUIStore } from '@/lib/ui/store'
 
 const SequenceCanvas = dynamic(
@@ -47,6 +48,9 @@ export default function Home() {
   if (!mounted) return <div className="h-screen flex flex-col"><LoadingSpinner message="Loading..." /></div>
   if (productEntry == null) {
     return <ProductEntryScreen onEnterThreadOS={() => setProductEntry('threados')} />
+  }
+  if (productEntry === 'thread-runner') {
+    return <ThreadRunnerGate />
   }
 
   return (
