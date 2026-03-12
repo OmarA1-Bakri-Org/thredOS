@@ -56,14 +56,14 @@ describe('AccordionPanel', () => {
     })
   })
 
-  test('renders all 6 section headers', () => {
+  test('renders all 6 section tab triggers with short labels', () => {
     const markup = renderToStaticMarkup(<AccordionPanel />)
-    expect(markup).toContain('NAVIGATOR')
-    expect(markup).toContain('STEP / GATE DETAIL')
-    expect(markup).toContain('DEPENDENCIES')
-    expect(markup).toContain('THREAD CONTEXT')
+    expect(markup).toContain('NAV')
+    expect(markup).toContain('DETAIL')
+    expect(markup).toContain('DEPS')
+    expect(markup).toContain('CTX')
     expect(markup).toContain('SKILLS')
-    expect(markup).toContain('STRUCTURE')
+    expect(markup).toContain('STRUCT')
   })
 
   test('renders the panel container with correct width', () => {
@@ -71,16 +71,25 @@ describe('AccordionPanel', () => {
     expect(markup).toContain('w-[380px]')
   })
 
-  test('renders accordion items with border styling', () => {
+  test('renders info buttons on each section', () => {
     const markup = renderToStaticMarkup(<AccordionPanel />)
-    // All 6 accordion items should be rendered with border styling
-    const itemCount = (markup.match(/border-b border-slate-800\/60/g) || []).length
-    // 6 accordion items + 1 panel header = 7 elements with this border class
-    expect(itemCount).toBeGreaterThanOrEqual(6)
-    // Radix renders data-orientation on each accordion item
-    const orientationCount = (markup.match(/data-orientation="vertical"/g) || []).length
-    expect(orientationCount).toBeGreaterThanOrEqual(6)
-    // The navigator section should be open by default with real content
+    // Each tab trigger and each open content header has an info button
+    const infoCount = (markup.match(/Panel info/g) || []).length
+    // 6 tab triggers + 1 open section header = at least 7
+    expect(infoCount).toBeGreaterThanOrEqual(7)
+  })
+
+  test('renders active section content and header label', () => {
+    const markup = renderToStaticMarkup(<AccordionPanel />)
+    // Navigator is active by default — should render full label and content
+    expect(markup).toContain('NAVIGATOR')
     expect(markup).toContain('Master Thread')
+  })
+
+  test('renders horizontal tab bar layout', () => {
+    const markup = renderToStaticMarkup(<AccordionPanel />)
+    // Tab buttons have aria-pressed
+    expect(markup).toContain('aria-pressed="true"')
+    expect(markup).toContain('aria-pressed="false"')
   })
 })
