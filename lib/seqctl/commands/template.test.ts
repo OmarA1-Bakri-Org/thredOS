@@ -5,7 +5,6 @@ import { join } from 'path'
 import YAML from 'yaml'
 
 let basePath: string
-let origCwd: string
 
 const emptySequence = {
   version: '1.0',
@@ -17,14 +16,11 @@ const emptySequence = {
 describe.serial('templateCommand', () => {
   beforeEach(async () => {
     basePath = await mkdtemp(join(tmpdir(), 'threados-template-test-'))
-    origCwd = process.cwd()
-    process.chdir(basePath)
     await mkdir(join(basePath, '.threados/prompts'), { recursive: true })
     await writeFile(join(basePath, '.threados/sequence.yaml'), YAML.stringify(emptySequence))
   })
 
   afterEach(async () => {
-    process.chdir(origCwd)
     await rm(basePath, { recursive: true, force: true })
   })
 
@@ -35,7 +31,7 @@ describe.serial('templateCommand', () => {
     const origLog = console.log
     console.log = (msg: string) => logs.push(msg)
 
-    await templateCommand('apply', ['base'], { json: true, help: false, watch: false })
+    await templateCommand('apply', ['base'], { json: true, help: false, watch: false, basePath })
 
     console.log = origLog
 
@@ -52,7 +48,7 @@ describe.serial('templateCommand', () => {
     const origLog = console.log
     console.log = (msg: string) => logs.push(msg)
 
-    await templateCommand('apply', ['parallel'], { json: true, help: false, watch: false })
+    await templateCommand('apply', ['parallel'], { json: true, help: false, watch: false, basePath })
 
     console.log = origLog
 
@@ -69,7 +65,7 @@ describe.serial('templateCommand', () => {
     const origLog = console.log
     console.log = (msg: string) => logs.push(msg)
 
-    await templateCommand('apply', ['chained', '--gates'], { json: true, help: false, watch: false })
+    await templateCommand('apply', ['chained', '--gates'], { json: true, help: false, watch: false, basePath })
 
     console.log = origLog
 
@@ -81,7 +77,7 @@ describe.serial('templateCommand', () => {
 
   test('apply updates sequence.yaml on disk', async () => {
     const { templateCommand } = await import('./template')
-    await templateCommand('apply', ['base'], { json: true, help: false, watch: false })
+    await templateCommand('apply', ['base'], { json: true, help: false, watch: false, basePath })
 
     const content = await readFile(join(basePath, '.threados/sequence.yaml'), 'utf8')
     const seq = YAML.parse(content)

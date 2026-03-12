@@ -1,6 +1,21 @@
-import { describe, expect, test } from 'bun:test'
-import OpenAI from 'openai'
-import { createProviderFromEnv } from './index'
+import { describe, expect, mock, test } from 'bun:test'
+
+class MockOpenAI {
+  apiKey: string
+  baseURL?: string
+  defaultHeaders: Record<string, string>
+  constructor(opts: { apiKey: string; baseURL?: string; defaultHeaders?: Record<string, string> }) {
+    this.apiKey = opts.apiKey
+    this.baseURL = opts.baseURL
+    this.defaultHeaders = opts.defaultHeaders ?? {}
+  }
+}
+
+mock.module('openai', () => ({
+  default: MockOpenAI,
+}))
+
+const { createProviderFromEnv } = await import('./index')
 
 describe('OpenRouter provider', () => {
   test('constructs an OpenAI-compatible client with OpenRouter base URL and attribution headers', () => {
@@ -16,7 +31,7 @@ describe('OpenRouter provider', () => {
     })
 
     expect(provider.provider).toBe('openrouter')
-    expect(provider.client).toBeInstanceOf(OpenAI)
+    expect(provider.client).toBeInstanceOf(MockOpenAI)
     expect(provider.defaultModel).toBe('openai/gpt-5-mini')
     expect(provider.config.apiKeyEnvVar).toBe('OPENROUTER_API_KEY')
     expect(provider.config.baseURL).toBe('https://openrouter.ai/api/v1')

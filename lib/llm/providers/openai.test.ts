@@ -1,6 +1,19 @@
-import { describe, expect, test } from 'bun:test'
-import OpenAI from 'openai'
-import { createProviderFromEnv } from './index'
+import { describe, expect, mock, test } from 'bun:test'
+
+class MockOpenAI {
+  apiKey: string
+  defaultHeaders: Record<string, string>
+  constructor(opts: { apiKey: string; defaultHeaders?: Record<string, string> }) {
+    this.apiKey = opts.apiKey
+    this.defaultHeaders = opts.defaultHeaders ?? {}
+  }
+}
+
+mock.module('openai', () => ({
+  default: MockOpenAI,
+}))
+
+const { createProviderFromEnv } = await import('./index')
 
 describe('OpenAI provider', () => {
   test('constructs an OpenAI-backed client from environment configuration', () => {
@@ -15,7 +28,7 @@ describe('OpenAI provider', () => {
     })
 
     expect(provider.provider).toBe('openai')
-    expect(provider.client).toBeInstanceOf(OpenAI)
+    expect(provider.client).toBeInstanceOf(MockOpenAI)
     expect(provider.defaultModel).toBe('gpt-5-mini')
     expect(provider.config.apiKeyEnvVar).toBe('OPENAI_API_KEY')
     expect(provider.config.baseURL).toBeUndefined()

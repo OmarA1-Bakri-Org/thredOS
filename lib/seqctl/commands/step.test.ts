@@ -5,7 +5,6 @@ import { join } from 'path'
 import YAML from 'yaml'
 
 let basePath: string
-let origCwd: string
 
 const baseSequence = {
   version: '1.0',
@@ -27,19 +26,16 @@ async function setupTestEnv() {
 describe.serial('stepCommand', () => {
   beforeEach(async () => {
     basePath = await mkdtemp(join(tmpdir(), 'threados-step-test-'))
-    origCwd = process.cwd()
-    process.chdir(basePath)
     await setupTestEnv()
   })
 
   afterEach(async () => {
-    process.chdir(origCwd)
     await rm(basePath, { recursive: true, force: true })
   })
 
   test('add creates a new step', async () => {
     const { stepCommand } = await import('./step')
-    await stepCommand('add', ['step-c', '--name', 'Step C'], { json: true, help: false, watch: false })
+    await stepCommand('add', ['step-c', '--name', 'Step C'], { json: true, help: false, watch: false, basePath })
 
     const content = await readFile(join(basePath, '.threados/sequence.yaml'), 'utf8')
     const seq = YAML.parse(content)
@@ -49,7 +45,7 @@ describe.serial('stepCommand', () => {
 
   test('edit updates a step name', async () => {
     const { stepCommand } = await import('./step')
-    await stepCommand('edit', ['step-a', '--name', 'Updated A'], { json: true, help: false, watch: false })
+    await stepCommand('edit', ['step-a', '--name', 'Updated A'], { json: true, help: false, watch: false, basePath })
 
     const content = await readFile(join(basePath, '.threados/sequence.yaml'), 'utf8')
     const seq = YAML.parse(content)
@@ -58,7 +54,7 @@ describe.serial('stepCommand', () => {
 
   test('clone duplicates a step', async () => {
     const { stepCommand } = await import('./step')
-    await stepCommand('clone', ['step-a', 'step-a-copy'], { json: true, help: false, watch: false })
+    await stepCommand('clone', ['step-a', 'step-a-copy'], { json: true, help: false, watch: false, basePath })
 
     const content = await readFile(join(basePath, '.threados/sequence.yaml'), 'utf8')
     const seq = YAML.parse(content)

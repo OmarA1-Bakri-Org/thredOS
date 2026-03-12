@@ -6,6 +6,7 @@ interface CLIOptions {
   json: boolean
   help: boolean
   watch: boolean
+  basePath?: string
 }
 
 interface StepStatusInfo {
@@ -161,7 +162,7 @@ export async function statusCommand(
   _args: string[],
   options: CLIOptions
 ): Promise<void> {
-  const basePath = process.cwd()
+  const basePath = options.basePath ?? process.cwd()
 
   // Read sequence and mprocs map
   const sequence = await readSequence(basePath)

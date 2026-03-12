@@ -4,23 +4,19 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 
 let basePath: string
-let origCwd: string
 
 describe.serial('initCommand', () => {
   beforeEach(async () => {
     basePath = await mkdtemp(join(tmpdir(), 'threados-init-test-'))
-    origCwd = process.cwd()
-    process.chdir(basePath)
   })
 
   afterEach(async () => {
-    process.chdir(origCwd)
     await rm(basePath, { recursive: true, force: true })
   })
 
   test('creates .threados directory structure', async () => {
     const { initCommand } = await import('./init')
-    await initCommand(undefined, [], { json: true, help: false, watch: false })
+    await initCommand(undefined, [], { json: true, help: false, watch: false, basePath })
 
     // Verify directory structure
     await access(join(basePath, '.threados'))
@@ -32,7 +28,7 @@ describe.serial('initCommand', () => {
 
   test('creates default sequence.yaml', async () => {
     const { initCommand } = await import('./init')
-    await initCommand(undefined, [], { json: true, help: false, watch: false })
+    await initCommand(undefined, [], { json: true, help: false, watch: false, basePath })
 
     const content = await readFile(join(basePath, '.threados/sequence.yaml'), 'utf8')
     expect(content).toContain('New Sequence')
@@ -42,9 +38,9 @@ describe.serial('initCommand', () => {
   test('does not reinitialize if already initialized', async () => {
     const { initCommand } = await import('./init')
     // First init
-    await initCommand(undefined, [], { json: true, help: false, watch: false })
+    await initCommand(undefined, [], { json: true, help: false, watch: false, basePath })
     // Second init should detect existing
-    await initCommand(undefined, [], { json: true, help: false, watch: false })
+    await initCommand(undefined, [], { json: true, help: false, watch: false, basePath })
     // If we get here without error, the test passes
     // The command outputs "ThreadOS already initialized" via console.log
   })

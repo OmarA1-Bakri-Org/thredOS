@@ -6,6 +6,7 @@ interface CLIOptions {
   json: boolean
   help: boolean
   watch: boolean
+  basePath?: string
 }
 
 export async function depCommand(
@@ -13,7 +14,7 @@ export async function depCommand(
   args: string[],
   options: CLIOptions
 ): Promise<void> {
-  const basePath = process.cwd()
+  const basePath = options.basePath ?? process.cwd()
 
   let result: { success: boolean; action: string; message?: string; error?: string }
 

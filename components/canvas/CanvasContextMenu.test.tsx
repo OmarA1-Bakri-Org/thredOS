@@ -124,7 +124,7 @@ function collectButtons(node: ReactNode, acc: AnyElement[] = []): AnyElement[] {
   if (el.type === 'button') {
     acc.push(el)
   } else {
-    collectButtons(el.props.children, acc)
+    collectButtons(el.props.children as ReactNode, acc)
   }
   return acc
 }

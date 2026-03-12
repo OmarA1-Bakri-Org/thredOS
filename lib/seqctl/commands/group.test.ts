@@ -4,17 +4,13 @@ import { readSequence } from '../../sequence/parser'
 import { createTempDir, cleanTempDir, makeSequence, makeStep, writeTestSequence } from '../../../test/helpers/setup'
 
 let tempDir: string
-let origCwd: string
 const jsonOpts = { json: true, help: false, watch: false }
 
 beforeEach(async () => {
-  origCwd = process.cwd()
   tempDir = await createTempDir()
-  process.chdir(tempDir)
 })
 
 afterEach(async () => {
-  process.chdir(origCwd)
   await cleanTempDir(tempDir)
 })
 
@@ -24,7 +20,7 @@ describe('group parallelize', () => {
       steps: [makeStep({ id: 'a' }), makeStep({ id: 'b' }), makeStep({ id: 'c' })],
     })
     await writeTestSequence(tempDir, seq)
-    await groupCommand('parallelize', ['a', 'b', 'c'], jsonOpts)
+    await groupCommand('parallelize', ['a', 'b', 'c'], { ...jsonOpts, basePath: tempDir })
     const result = await readSequence(tempDir)
     const gid = result.steps[0].group_id
     expect(gid).toBeDefined()
@@ -47,7 +43,7 @@ describe('group list', () => {
     const logs: string[] = []
     const origLog = console.log
     console.log = (msg: string) => logs.push(msg)
-    await groupCommand('list', [], jsonOpts)
+    await groupCommand('list', [], { ...jsonOpts, basePath: tempDir })
     console.log = origLog
     const output = JSON.parse(logs[0])
     expect(output.groups['grp-1']).toEqual(['a', 'b'])

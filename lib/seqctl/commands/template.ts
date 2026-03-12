@@ -17,6 +17,7 @@ interface CLIOptions {
   json: boolean
   help: boolean
   watch: boolean
+  basePath?: string
 }
 
 export async function templateCommand(
@@ -24,7 +25,7 @@ export async function templateCommand(
   args: string[],
   options: CLIOptions
 ): Promise<void> {
-  const basePath = process.cwd()
+  const basePath = options.basePath ?? process.cwd()
 
   if (subcommand !== 'apply') {
     const error = `Unknown subcommand. Usage: seqctl template apply <type> [options]\nTypes: ${TEMPLATE_TYPES.join(', ')}`

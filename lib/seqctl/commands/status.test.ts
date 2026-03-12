@@ -5,7 +5,6 @@ import { join } from 'path'
 import YAML from 'yaml'
 
 let basePath: string
-let origCwd: string
 
 const sequence = {
   version: '1.0',
@@ -23,15 +22,12 @@ const sequence = {
 describe.serial('statusCommand', () => {
   beforeEach(async () => {
     basePath = await mkdtemp(join(tmpdir(), 'threados-status-test-'))
-    origCwd = process.cwd()
-    process.chdir(basePath)
     await mkdir(join(basePath, '.threados/prompts'), { recursive: true })
     await mkdir(join(basePath, '.threados/state'), { recursive: true })
     await writeFile(join(basePath, '.threados/sequence.yaml'), YAML.stringify(sequence))
   })
 
   afterEach(async () => {
-    process.chdir(origCwd)
     await rm(basePath, { recursive: true, force: true })
   })
 
@@ -43,7 +39,7 @@ describe.serial('statusCommand', () => {
     const origLog = console.log
     console.log = (msg: string) => logs.push(msg)
 
-    await statusCommand(undefined, [], { json: true, help: false, watch: false })
+    await statusCommand(undefined, [], { json: true, help: false, watch: false, basePath })
 
     console.log = origLog
 
@@ -61,7 +57,7 @@ describe.serial('statusCommand', () => {
     const origLog = console.log
     console.log = (msg: string) => logs.push(msg)
 
-    await statusCommand(undefined, [], { json: true, help: false, watch: false })
+    await statusCommand(undefined, [], { json: true, help: false, watch: false, basePath })
 
     console.log = origLog
 
@@ -80,7 +76,7 @@ describe.serial('statusCommand', () => {
     const origLog = console.log
     console.log = (msg: string) => logs.push(msg)
 
-    await statusCommand(undefined, [], { json: true, help: false, watch: false })
+    await statusCommand(undefined, [], { json: true, help: false, watch: false, basePath })
 
     console.log = origLog
 

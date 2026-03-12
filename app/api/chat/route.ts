@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server'
 import { readSequence } from '@/lib/sequence/parser'
+import { getBasePath } from '@/lib/config'
 
-const BASE_PATH = process.cwd()
 const MAX_MESSAGE_LENGTH = 10_000
 
 /**
@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
         // Try to load current sequence
         let sequence
         try {
-          sequence = await readSequence(BASE_PATH)
+          sequence = await readSequence(getBasePath())
         } catch {
           sequence = null
         }

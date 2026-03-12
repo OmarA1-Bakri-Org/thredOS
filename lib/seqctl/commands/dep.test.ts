@@ -4,17 +4,13 @@ import { readSequence } from '../../sequence/parser'
 import { createTempDir, cleanTempDir, makeSequence, makeStep, writeTestSequence } from '../../../test/helpers/setup'
 
 let tempDir: string
-let origCwd: string
 const jsonOpts = { json: true, help: false, watch: false }
 
 beforeEach(async () => {
-  origCwd = process.cwd()
   tempDir = await createTempDir()
-  process.chdir(tempDir)
 })
 
 afterEach(async () => {
-  process.chdir(origCwd)
   await cleanTempDir(tempDir)
 })
 
@@ -24,7 +20,7 @@ describe('dep add', () => {
       steps: [makeStep({ id: 'a' }), makeStep({ id: 'b' })],
     })
     await writeTestSequence(tempDir, seq)
-    await depCommand('add', ['b', 'a'], jsonOpts)
+    await depCommand('add', ['b', 'a'], { ...jsonOpts, basePath: tempDir })
     const result = await readSequence(tempDir)
     expect(result.steps.find(s => s.id === 'b')!.depends_on).toContain('a')
   })
@@ -39,7 +35,7 @@ describe('dep add', () => {
     const origExit = process.exit
     process.exit = (() => { throw new Error('exit') }) as never
     try {
-      await depCommand('add', ['a', 'nonexistent'], jsonOpts)
+      await depCommand('add', ['a', 'nonexistent'], { ...jsonOpts, basePath: tempDir })
     } catch {}
     console.log = origLog
     process.exit = origExit
@@ -58,7 +54,7 @@ describe('dep add', () => {
     const origExit = process.exit
     process.exit = (() => { throw new Error('exit') }) as never
     try {
-      await depCommand('add', ['b', 'a'], jsonOpts)
+      await depCommand('add', ['b', 'a'], { ...jsonOpts, basePath: tempDir })
     } catch {}
     console.log = origLog
     process.exit = origExit
@@ -74,7 +70,7 @@ describe('dep rm', () => {
       steps: [makeStep({ id: 'a' }), makeStep({ id: 'b', depends_on: ['a'] })],
     })
     await writeTestSequence(tempDir, seq)
-    await depCommand('rm', ['b', 'a'], jsonOpts)
+    await depCommand('rm', ['b', 'a'], { ...jsonOpts, basePath: tempDir })
     const result = await readSequence(tempDir)
     expect(result.steps.find(s => s.id === 'b')!.depends_on).not.toContain('a')
   })
