@@ -8,7 +8,6 @@ import { ProductEntryScreen } from '@/components/entry/ProductEntryScreen'
 import { WorkbenchShell } from '@/components/workbench/WorkbenchShell'
 import { TopBar } from '@/components/workbench/TopBar'
 import { LeftRail } from '@/components/workbench/LeftRail'
-import { InspectorRail } from '@/components/workbench/InspectorRail'
 import { CreateNodeDialog } from '@/components/command/CreateNodeDialog'
 import { ThreadRunnerGate } from '@/components/thread-runner/ThreadRunnerGate'
 import { useUIStore } from '@/lib/ui/store'
@@ -18,21 +17,14 @@ const SequenceCanvas = dynamic(
   { ssr: false, loading: () => <LoadingSpinner message="Loading canvas..." /> }
 )
 
-const StepInspector = dynamic(
-  () => import('@/components/inspector/StepInspector').then(m => m.StepInspector),
-  { loading: () => <LoadingSpinner message="Loading inspector..." /> }
-)
-
 export default function Home() {
   const mounted = useSyncExternalStore(
     () => () => {},
     () => true,
     () => false
   )
-  const inspectorOpen = useUIStore(s => s.inspectorOpen)
   const leftRailOpen = useUIStore(s => s.leftRailOpen)
   const closeLeftRail = useUIStore(s => s.closeLeftRail)
-  const closeInspector = useUIStore(s => s.closeInspector)
   const productEntry = useUIStore(s => s.productEntry)
   const setProductEntry = useUIStore(s => s.setProductEntry)
   const createDialogOpen = useUIStore(s => s.createDialogOpen)
@@ -60,19 +52,6 @@ export default function Home() {
           <SequenceCanvas />
         </ErrorBoundary>
       }
-      inspector={
-        inspectorOpen ? (
-          <ErrorBoundary>
-            <InspectorRail>
-              <StepInspector />
-            </InspectorRail>
-          </ErrorBoundary>
-        ) : (
-          <div className="flex h-full items-center justify-center px-6 text-sm text-slate-500">Select a thread surface or node to inspect.</div>
-        )
-      }
-      inspectorOpen={inspectorOpen}
-      onDismissInspector={closeInspector}
     />
     </>
   )

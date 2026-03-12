@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useCallback } from 'react'
-import { MessageSquare, Moon, PanelLeft, PanelRight, Play, Plus, Search, ShieldCheck, Sun } from 'lucide-react'
+import { MessageSquare, Moon, PanelLeft, Play, Plus, Search, ShieldCheck, Sun } from 'lucide-react'
 import { useTheme } from 'next-themes'
 import { useRunRunnable, useStatus } from '@/lib/ui/api'
 import { Button } from '@/components/ui/button'
@@ -27,7 +27,6 @@ export function TopBar() {
   const viewMode = useUIStore(s => s.viewMode)
   const setViewMode = useUIStore(s => s.setViewMode)
   const toggleLeftRail = useUIStore(s => s.toggleLeftRail)
-  const toggleInspector = useUIStore(s => s.toggleInspector)
   const toggleChat = useUIStore(s => s.toggleChat)
   const openCreateDialog = useUIStore(s => s.openCreateDialog)
   const { theme, setTheme } = useTheme()
@@ -167,19 +166,6 @@ export function TopBar() {
             aria-label="Open chat"
           >
             <MessageSquare className="h-4 w-4" />
-          </Button>
-          <Button type="button" variant="outline" onClick={toggleInspector} className="hidden xl:inline-flex">
-            Inspector
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            className="xl:hidden"
-            onClick={toggleInspector}
-            aria-label="Open inspector"
-          >
-            <PanelRight className="h-4 w-4" />
           </Button>
         </div>
         <div data-workbench-cluster="utility-status" className="flex min-w-0 items-center gap-2 border border-slate-800 bg-[#0a101a] px-2 py-2">

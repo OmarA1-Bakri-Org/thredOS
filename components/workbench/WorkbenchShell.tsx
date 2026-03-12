@@ -2,10 +2,11 @@
 
 import type { ReactNode } from 'react'
 import dynamic from 'next/dynamic'
-import { PanelLeftClose, PanelRightClose } from 'lucide-react'
+import { PanelLeftClose } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useUIStore } from '@/lib/ui/store'
 import { FloatingChatTrigger } from '@/components/chat/FloatingChatTrigger'
+import { AccordionPanel } from './AccordionPanel'
 
 const ChatPanel = dynamic(() => import('@/components/chat/ChatPanel').then(m => m.ChatPanel), { ssr: false })
 
@@ -15,9 +16,6 @@ interface WorkbenchShellProps {
   leftRailOpen?: boolean
   onDismissLeftRail?: () => void
   board: ReactNode
-  inspector: ReactNode
-  inspectorOpen?: boolean
-  onDismissInspector?: () => void
 }
 
 export function WorkbenchShell({
@@ -26,9 +24,6 @@ export function WorkbenchShell({
   leftRailOpen = false,
   onDismissLeftRail,
   board,
-  inspector,
-  inspectorOpen = true,
-  onDismissInspector,
 }: WorkbenchShellProps) {
   const chatOpen = useUIStore(s => s.chatOpen)
   return (
@@ -37,17 +32,14 @@ export function WorkbenchShell({
         {topBar}
       </div>
       <div className="flex min-h-0 flex-1">
-        <aside data-workbench-region="left-rail" className="hidden w-72 shrink-0 border-r border-slate-800/80 bg-[#08101d] xl:block">
-          {leftRail}
+        <aside data-workbench-region="accordion-panel" className="hidden xl:block">
+          <AccordionPanel />
         </aside>
         <main className="flex min-w-0 flex-1 flex-col">
           <div data-workbench-region="board" className="min-h-0 flex-1 bg-[#050913]">
             {board}
           </div>
         </main>
-        <aside data-workbench-region="inspector" className="hidden w-md shrink-0 border-l border-slate-800/80 bg-[#08101d] xl:block">
-          {inspector}
-        </aside>
       </div>
 
       {leftRailOpen ? (
@@ -68,29 +60,6 @@ export function WorkbenchShell({
             </div>
             <div className="min-h-0 flex-1 overflow-auto">
               {leftRail}
-            </div>
-          </aside>
-        </div>
-      ) : null}
-
-      {inspectorOpen ? (
-        <div className="fixed inset-0 z-40 xl:hidden" data-workbench-region="inspector-drawer">
-          <div className="absolute inset-0 bg-[#02050a]/52 backdrop-blur-sm" onClick={onDismissInspector} aria-hidden="true" />
-          <aside
-            data-workbench-region="inspector-drawer-panel"
-            className="absolute inset-y-0 right-0 flex w-md max-w-[92vw] flex-col border-l border-slate-800/80 bg-[#08101d] shadow-[0_28px_80px_rgba(0,0,0,0.55)]"
-          >
-            <div className="flex items-center justify-between border-b border-slate-800/80 px-4 py-4">
-              <div>
-                <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-slate-500">Responsive rail</div>
-                <div className="mt-1 text-sm font-semibold text-white">Inspector</div>
-              </div>
-              <Button type="button" variant="outline" size="icon" onClick={onDismissInspector} aria-label="Close inspector">
-                <PanelRightClose className="h-4 w-4" />
-              </Button>
-            </div>
-            <div className="min-h-0 flex-1 overflow-auto">
-              {inspector}
             </div>
           </aside>
         </div>

@@ -25,6 +25,11 @@ mock.module('@/components/chat/FloatingChatTrigger', () => ({
   FloatingChatTrigger: () => null,
 }))
 
+// Mock AccordionPanel so we don't need to mock all child hooks
+mock.module('./AccordionPanel', () => ({
+  AccordionPanel: () => <div data-testid="accordion-panel-mock">Accordion</div>,
+}))
+
 const { WorkbenchShell } = await import('./WorkbenchShell')
 
 type ElementWithChildren = ReactElement<{
@@ -77,54 +82,54 @@ function collectByDataRegion(node: ReactNode, target: string, acc: ElementWithCh
 }
 
 describe('WorkbenchShell', () => {
-  test('renders top bar, left rail, center board region, and right inspector rail', () => {
+  test('renders top bar, accordion panel, and center board region', () => {
     const shell = WorkbenchShell({
       topBar: <div>top</div>,
       leftRail: <div>left</div>,
       board: <div>board</div>,
-      inspector: <div>inspector</div>,
     })
 
     expect(collectByDataRegion(shell, 'top-bar')).toHaveLength(1)
-    expect(collectByDataRegion(shell, 'left-rail')).toHaveLength(1)
+    expect(collectByDataRegion(shell, 'accordion-panel')).toHaveLength(1)
     expect(collectByDataRegion(shell, 'board')).toHaveLength(1)
-    expect(collectByDataRegion(shell, 'inspector')).toHaveLength(1)
   })
 
-  test('renders mobile drawer regions when rail overlays are opened', () => {
+  test('renders mobile left-rail drawer when leftRailOpen is true', () => {
     const shell = WorkbenchShell({
       topBar: <div>top</div>,
       leftRail: <div>left</div>,
       leftRailOpen: true,
       onDismissLeftRail: () => {},
       board: <div>board</div>,
-      inspector: <div>inspector</div>,
-      inspectorOpen: true,
-      onDismissInspector: () => {},
     })
 
     expect(collectByDataRegion(shell, 'left-rail-drawer')).toHaveLength(1)
-    expect(collectByDataRegion(shell, 'inspector-drawer')).toHaveLength(1)
     expect(collectByDataRegion(shell, 'left-rail-drawer-panel')).toHaveLength(1)
-    expect(collectByDataRegion(shell, 'inspector-drawer-panel')).toHaveLength(1)
     expect(JSON.stringify(shell)).toContain('Thread navigator')
-    expect(JSON.stringify(shell)).toContain('Inspector')
     expect(collectButtonsByLabel(shell, 'Close thread navigator')).toHaveLength(1)
-    expect(collectButtonsByLabel(shell, 'Close inspector')).toHaveLength(1)
   })
 
-  test('keeps center board dominant by narrowing fixed rails on the default desktop shell', () => {
+  test('does not render inspector regions (removed in favor of accordion panel)', () => {
     const shell = WorkbenchShell({
       topBar: <div>top</div>,
       leftRail: <div>left</div>,
       board: <div>board</div>,
-      inspector: <div>inspector</div>,
     })
 
-    const leftRail = collectByDataRegion(shell, 'left-rail')[0]
-    const inspector = collectByDataRegion(shell, 'inspector')[0]
+    expect(collectByDataRegion(shell, 'inspector')).toHaveLength(0)
+    expect(collectByDataRegion(shell, 'inspector-drawer')).toHaveLength(0)
+    expect(collectByDataRegion(shell, 'inspector-drawer-panel')).toHaveLength(0)
+    expect(collectByDataRegion(shell, 'left-rail')).toHaveLength(0)
+  })
 
-    expect(String(leftRail?.props.className ?? '')).toContain('w-72')
-    expect(String(inspector?.props.className ?? '')).toContain('w-md')
+  test('accordion panel replaces the old left-rail and inspector on desktop', () => {
+    const shell = WorkbenchShell({
+      topBar: <div>top</div>,
+      leftRail: <div>left</div>,
+      board: <div>board</div>,
+    })
+
+    const accordionPanel = collectByDataRegion(shell, 'accordion-panel')[0]
+    expect(accordionPanel).toBeDefined()
   })
 })
