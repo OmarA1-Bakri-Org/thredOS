@@ -1,5 +1,63 @@
+import { existsSync } from 'fs'
+import { mkdir, readFile } from 'fs/promises'
+import { join } from 'path'
+import { writeFileAtomic } from '@/lib/fs/atomic'
 import type { Pack, PackStatus, PackStatusEntry } from './types'
 import { PACK_STATUS_PRIORITY } from './types'
+
+// ---------------------------------------------------------------------------
+// Persistent file-based state
+// ---------------------------------------------------------------------------
+
+const PACK_STATE_PATH = '.threados/state/packs.json'
+
+export interface PackState {
+  version: 1
+  packs: Pack[]
+}
+
+const DEFAULT_PACK_STATE: PackState = {
+  version: 1,
+  packs: [],
+}
+
+export function getPackStatePath(basePath: string): string {
+  return join(basePath, PACK_STATE_PATH)
+}
+
+export async function readPackState(basePath: string): Promise<PackState> {
+  const fullPath = getPackStatePath(basePath)
+  if (!existsSync(fullPath)) {
+    return structuredClone(DEFAULT_PACK_STATE)
+  }
+
+  const raw = JSON.parse(await readFile(fullPath, 'utf-8')) as Partial<PackState>
+
+  return {
+    version: 1,
+    packs: Array.isArray(raw.packs) ? raw.packs : [],
+  }
+}
+
+export async function writePackState(basePath: string, state: PackState): Promise<void> {
+  const fullPath = getPackStatePath(basePath)
+  await mkdir(join(basePath, '.threados/state'), { recursive: true })
+  await writeFileAtomic(fullPath, `${JSON.stringify({ ...state, version: 1 }, null, 2)}\n`)
+}
+
+export async function updatePackState(
+  basePath: string,
+  updater: (currentState: PackState) => PackState | Promise<PackState>,
+): Promise<PackState> {
+  const currentState = await readPackState(basePath)
+  const nextState = await updater(currentState)
+  await writePackState(basePath, nextState)
+  return nextState
+}
+
+// ---------------------------------------------------------------------------
+// In-memory repository (unchanged)
+// ---------------------------------------------------------------------------
 
 export class PackRepository {
   private packs: Map<string, Pack> = new Map()

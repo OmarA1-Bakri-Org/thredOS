@@ -1,4 +1,65 @@
+import { existsSync } from 'fs'
+import { mkdir, readFile } from 'fs/promises'
+import { join } from 'path'
+import { writeFileAtomic } from '@/lib/fs/atomic'
 import type { EligibilityStatus, CombatantRun, Race, RaceResult } from './types'
+
+// ---------------------------------------------------------------------------
+// Persistent file-based state
+// ---------------------------------------------------------------------------
+
+const THREAD_RUNNER_STATE_PATH = '.threados/state/thread-runner.json'
+
+export interface ThreadRunnerState {
+  version: 1
+  races: Race[]
+  combatantRuns: CombatantRun[]
+}
+
+const DEFAULT_THREAD_RUNNER_STATE: ThreadRunnerState = {
+  version: 1,
+  races: [],
+  combatantRuns: [],
+}
+
+export function getThreadRunnerStatePath(basePath: string): string {
+  return join(basePath, THREAD_RUNNER_STATE_PATH)
+}
+
+export async function readThreadRunnerState(basePath: string): Promise<ThreadRunnerState> {
+  const fullPath = getThreadRunnerStatePath(basePath)
+  if (!existsSync(fullPath)) {
+    return structuredClone(DEFAULT_THREAD_RUNNER_STATE)
+  }
+
+  const raw = JSON.parse(await readFile(fullPath, 'utf-8')) as Partial<ThreadRunnerState>
+
+  return {
+    version: 1,
+    races: Array.isArray(raw.races) ? raw.races : [],
+    combatantRuns: Array.isArray(raw.combatantRuns) ? raw.combatantRuns : [],
+  }
+}
+
+export async function writeThreadRunnerState(basePath: string, state: ThreadRunnerState): Promise<void> {
+  const fullPath = getThreadRunnerStatePath(basePath)
+  await mkdir(join(basePath, '.threados/state'), { recursive: true })
+  await writeFileAtomic(fullPath, `${JSON.stringify({ ...state, version: 1 }, null, 2)}\n`)
+}
+
+export async function updateThreadRunnerState(
+  basePath: string,
+  updater: (currentState: ThreadRunnerState) => ThreadRunnerState | Promise<ThreadRunnerState>,
+): Promise<ThreadRunnerState> {
+  const currentState = await readThreadRunnerState(basePath)
+  const nextState = await updater(currentState)
+  await writeThreadRunnerState(basePath, nextState)
+  return nextState
+}
+
+// ---------------------------------------------------------------------------
+// Eligibility check
+// ---------------------------------------------------------------------------
 
 /**
  * Check eligibility for Thread Runner access.

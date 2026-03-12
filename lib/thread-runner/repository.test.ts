@@ -1,5 +1,16 @@
 import { describe, test, expect, beforeEach } from 'bun:test'
-import { checkEligibility, ThreadRunnerRepository } from './repository'
+import { mkdtemp, rm } from 'fs/promises'
+import { join } from 'path'
+import { tmpdir } from 'os'
+import {
+  checkEligibility,
+  ThreadRunnerRepository,
+  readThreadRunnerState,
+  writeThreadRunnerState,
+  updateThreadRunnerState,
+  getThreadRunnerStatePath,
+} from './repository'
+import type { ThreadRunnerState } from './repository'
 import type { CombatantRun, Race } from './types'
 
 describe('checkEligibility', () => {
@@ -137,5 +148,128 @@ describe('ThreadRunnerRepository', () => {
     repo.recordCombatantRun(makeRun({ id: 'run-2', status: 'disqualified' }))
     const result = repo.getResultsForRace('race-1')
     expect(result.placements).toHaveLength(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Persistent file-based state
+// ---------------------------------------------------------------------------
+
+describe('Persistent ThreadRunnerState', () => {
+  let tempDir: string
+
+  beforeEach(async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'thread-runner-state-'))
+  })
+
+  const makeSampleState = (): ThreadRunnerState => ({
+    version: 1,
+    races: [
+      {
+        id: 'race-1',
+        name: 'Sprint Alpha',
+        division: 'open',
+        classification: 'qualifier',
+        startAt: '2026-03-12T00:00:00.000Z',
+        endAt: null,
+        status: 'open',
+        maxCombatants: 8,
+        combatantRunIds: ['run-1'],
+      },
+    ],
+    combatantRuns: [
+      {
+        id: 'run-1',
+        raceId: 'race-1',
+        combatantId: 'combatant-1',
+        threadSurfaceId: 'ts-1',
+        startedAt: '2026-03-12T00:01:00.000Z',
+        endedAt: null,
+        status: 'running',
+        verifiedAt: null,
+        placement: null,
+      },
+    ],
+  })
+
+  test('readThreadRunnerState returns empty default state when file does not exist', async () => {
+    const state = await readThreadRunnerState(tempDir)
+    expect(state.version).toBe(1)
+    expect(state.races).toEqual([])
+    expect(state.combatantRuns).toEqual([])
+  })
+
+  test('writeThreadRunnerState creates the file and readThreadRunnerState reads it back', async () => {
+    const sample = makeSampleState()
+    await writeThreadRunnerState(tempDir, sample)
+
+    const statePath = getThreadRunnerStatePath(tempDir)
+    const { existsSync } = await import('fs')
+    expect(existsSync(statePath)).toBe(true)
+
+    const restored = await readThreadRunnerState(tempDir)
+    expect(restored.version).toBe(1)
+    expect(restored.races).toEqual(sample.races)
+    expect(restored.combatantRuns).toEqual(sample.combatantRuns)
+  })
+
+  test('updateThreadRunnerState modifies existing state', async () => {
+    const sample = makeSampleState()
+    await writeThreadRunnerState(tempDir, sample)
+
+    const updated = await updateThreadRunnerState(tempDir, (current) => {
+      return {
+        ...current,
+        races: [
+          ...current.races,
+          {
+            id: 'race-2',
+            name: 'Sprint Beta',
+            division: 'open',
+            classification: 'final',
+            startAt: '2026-03-13T00:00:00.000Z',
+            endAt: null,
+            status: 'open',
+            maxCombatants: 4,
+            combatantRunIds: [],
+          },
+        ],
+      }
+    })
+
+    expect(updated.races).toHaveLength(2)
+    expect(updated.races[1].id).toBe('race-2')
+
+    // Verify persisted to disk
+    const readBack = await readThreadRunnerState(tempDir)
+    expect(readBack.races).toHaveLength(2)
+    expect(readBack.races[1].name).toBe('Sprint Beta')
+  })
+
+  test('updateThreadRunnerState works on empty state when file does not exist', async () => {
+    const updated = await updateThreadRunnerState(tempDir, (current) => {
+      return {
+        ...current,
+        combatantRuns: [
+          {
+            id: 'run-new',
+            raceId: 'race-1',
+            combatantId: 'combatant-1',
+            threadSurfaceId: 'ts-1',
+            startedAt: '2026-03-12T00:01:00.000Z',
+            endedAt: null,
+            status: 'pending',
+            verifiedAt: null,
+            placement: null,
+          },
+        ],
+      }
+    })
+
+    expect(updated.combatantRuns).toHaveLength(1)
+    expect(updated.combatantRuns[0].id).toBe('run-new')
+
+    const readBack = await readThreadRunnerState(tempDir)
+    expect(readBack.combatantRuns).toHaveLength(1)
   })
 })
