@@ -44,6 +44,8 @@ mock.module('@/lib/ui/api', () => ({
   useRemoveDep: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false, error: null }),
   useAddStep: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false, error: null }),
   useInsertGate: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false, error: null }),
+  useThreadSurfaceSkills: () => ({ data: [] }),
+  useAgentProfile: () => ({ data: null }),
 }))
 
 const { AccordionPanel } = await import('./AccordionPanel')
@@ -66,8 +68,9 @@ describe('AccordionPanel', () => {
     expect(markup).toContain('STRUCT')
   })
 
-  test('renders the panel container with correct width', () => {
+  test('renders the panel container with single-column width when few sections open', () => {
     const markup = renderToStaticMarkup(<AccordionPanel />)
+    // With only 1 section open, panel stays at 380px
     expect(markup).toContain('w-[380px]')
   })
 

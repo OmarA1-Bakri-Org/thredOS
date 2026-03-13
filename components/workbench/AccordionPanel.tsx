@@ -115,8 +115,17 @@ export function AccordionPanel() {
     }
   }
 
+  const openCount = activeAccordionSections.length
+  // Scale columns: 1 col up to 2 sections, 2 cols for 3-4, 3 cols for 5+
+  const colCount = openCount <= 2 ? 1 : openCount <= 4 ? 2 : 3
+  const panelWidth = colCount === 1
+    ? 'w-[380px]'
+    : colCount === 2
+      ? 'w-[50vw] max-w-[760px]'
+      : 'w-[65vw] max-w-[1100px]'
+
   return (
-    <div className="w-[380px] shrink-0 border-r border-slate-800/80 bg-[#08101d] flex flex-col overflow-hidden">
+    <div className={`${panelWidth} shrink-0 border-r border-slate-800/80 bg-[#08101d] flex flex-col overflow-hidden transition-all duration-200`}>
       {/* Horizontal tab bar */}
       <div className="shrink-0 border-b border-slate-800/60 px-2 py-2">
         <div className="flex flex-wrap gap-1">
@@ -132,7 +141,7 @@ export function AccordionPanel() {
                       ? 'bg-sky-500/12 border border-r-0 border-sky-500/40 text-sky-300'
                       : 'border border-r-0 border-transparent text-slate-500 hover:bg-slate-800/60 hover:text-slate-300'
                   }`}
-                  aria-pressed={isActive ? 'true' : 'false'}
+                  aria-pressed={isActive}
                 >
                   <Icon className={`h-3 w-3 ${isActive ? 'text-sky-400' : 'text-slate-500 group-hover:text-slate-400'}`} />
                   <span className="font-mono text-[9px] uppercase tracking-[0.14em]">
@@ -152,9 +161,9 @@ export function AccordionPanel() {
         </div>
       </div>
 
-      {/* Content area — scrollable stack of active sections */}
+      {/* Content area — masonry column flow when multiple sections are open */}
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {activeAccordionSections.length === 0 && (
+        {openCount === 0 && (
           <div className="flex h-full items-center justify-center px-6 py-12 text-center">
             <div>
               <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-slate-600">No panels open</div>
@@ -162,27 +171,46 @@ export function AccordionPanel() {
             </div>
           </div>
         )}
-        {sections
-          .filter(({ key }) => activeAccordionSections.includes(key))
-          .map(({ key, label, icon: Icon, description, content }) => (
-            <div key={key} className="border-b border-slate-800/60">
-              <div className="flex items-center gap-2 border-b border-slate-800/40 bg-[#060e1a] px-4 py-2">
-                <Icon className="h-3 w-3 text-sky-400" />
-                <span className="font-mono text-[9px] uppercase tracking-[0.18em] text-slate-400">{label}</span>
-                <InfoButton description={description} />
-                <button
-                  type="button"
-                  onClick={() => toggleSection(key)}
-                  className="ml-auto font-mono text-[9px] uppercase tracking-[0.12em] text-slate-600 transition-colors hover:text-slate-300"
-                >
-                  close
-                </button>
+        <div
+          className={
+            colCount === 3 ? 'columns-3 gap-3 p-3'
+              : colCount === 2 ? 'columns-2 gap-3 p-3'
+                : ''
+          }
+        >
+          {sections
+            .filter(({ key }) => activeAccordionSections.includes(key))
+            .map(({ key, label, icon: Icon, description, content }) => (
+              <div
+                key={key}
+                className={`break-inside-avoid ${
+                  colCount > 1
+                    ? 'mb-3 rounded border border-slate-700/50 bg-[#060e1a] shadow-md shadow-black/20'
+                    : 'border-b border-slate-800/60'
+                }`}
+              >
+                <div className={`flex items-center gap-2 px-4 py-2 ${
+                  colCount > 1
+                    ? 'rounded-t-lg border-b border-slate-700/40 bg-[#0a1428]'
+                    : 'border-b border-slate-800/40 bg-[#060e1a]'
+                }`}>
+                  <Icon className="h-3 w-3 text-sky-400" />
+                  <span className="font-mono text-[9px] uppercase tracking-[0.18em] text-slate-400">{label}</span>
+                  <InfoButton description={description} />
+                  <button
+                    type="button"
+                    onClick={() => toggleSection(key)}
+                    className="ml-auto font-mono text-[9px] uppercase tracking-[0.12em] text-slate-600 transition-colors hover:text-slate-300"
+                  >
+                    close
+                  </button>
+                </div>
+                <div className={`overflow-y-auto px-4 py-3 ${colCount > 1 ? 'max-h-[35vh]' : 'max-h-[40vh]'}`}>
+                  {content}
+                </div>
               </div>
-              <div className="max-h-[50vh] overflow-y-auto px-4 py-3">
-                {content}
-              </div>
-            </div>
-          ))}
+            ))}
+        </div>
       </div>
     </div>
   )
