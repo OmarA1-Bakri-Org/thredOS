@@ -26,6 +26,7 @@ export interface ThreadSurface {
   surfaceLabel: string
   surfaceDescription?: string
   role?: string
+  registeredAgentId?: string
   createdAt: string
   childSurfaceIds: string[]
 }
