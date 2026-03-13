@@ -140,6 +140,9 @@ export const useUIStore = create<UIStore>((set) => ({
         focusedThreadSurfaceId: threadSurfaceId,
         focusedRunId: runId,
       },
+      activeAccordionSections: state.activeAccordionSections.includes('thread-inspector')
+        ? state.activeAccordionSections
+        : [...state.activeAccordionSections, 'thread-inspector'],
     })),
   chatPosition: { x: 0, y: 0 },
   setChatPosition: (pos) => set({ chatPosition: pos }),

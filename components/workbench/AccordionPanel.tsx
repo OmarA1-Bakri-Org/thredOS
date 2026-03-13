@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Info, Layers3, ShieldCheck, GitBranch, Activity, Sparkles, BarChart3 } from 'lucide-react'
+import { Info, Layers3, ShieldCheck, GitBranch, Activity, Sparkles, BarChart3, Scan } from 'lucide-react'
 import { useUIStore } from '@/lib/ui/store'
 import type { LucideIcon } from 'lucide-react'
 import { ThreadNavigatorContent } from './ThreadNavigatorContent'
@@ -10,6 +10,7 @@ import { StepDetailContent } from '@/components/inspector/StepDetailContent'
 import { DependenciesContent } from '@/components/inspector/DependenciesContent'
 import { ThreadContextContent } from '@/components/inspector/ThreadContextContent'
 import { StructureContent } from '@/components/inspector/StructureContent'
+import { ThreadInspectorContent } from './ThreadInspectorContent'
 
 interface AccordionSection {
   key: string
@@ -60,6 +61,14 @@ const sections: AccordionSection[] = [
     icon: Sparkles,
     description: 'Skill inventory available to this thread — shows registered capabilities and their status.',
     content: <SkillsContent />,
+  },
+  {
+    key: 'thread-inspector',
+    label: 'THREAD INSPECTOR',
+    shortLabel: 'THREAD',
+    icon: Scan,
+    description: 'Unified thread/run inspector — identity, run context, skills, and provenance for the focused thread surface.',
+    content: <ThreadInspectorContent />,
   },
   {
     key: 'structure',
