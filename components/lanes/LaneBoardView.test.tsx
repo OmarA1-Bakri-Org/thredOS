@@ -132,4 +132,75 @@ describe('LaneBoardView', () => {
     // Full ID should be present as title attribute for hover
     expect(markup).toContain(longRunId)
   })
+
+  test('renders merged lanes visible with destination above source', () => {
+    const view = LaneBoardView({
+      rows: [
+        {
+          threadSurfaceId: 'thread-dest',
+          surfaceLabel: 'Destination',
+          runId: 'run-dest',
+          executionIndex: 10,
+        },
+        {
+          threadSurfaceId: 'thread-src-a',
+          surfaceLabel: 'Source A',
+          runId: 'run-src-a',
+          executionIndex: 20,
+          laneTerminalState: 'merged',
+        },
+        {
+          threadSurfaceId: 'thread-src-b',
+          surfaceLabel: 'Source B',
+          runId: 'run-src-b',
+          executionIndex: 30,
+          laneTerminalState: 'merged',
+        },
+      ],
+      focusedThreadSurfaceId: 'thread-dest',
+      selectedRunId: 'run-dest',
+      onFocusThread: () => {},
+      onBackToHierarchy: () => {},
+    })
+
+    const markup = JSON.stringify(view)
+    expect(markup).toContain('Destination')
+    expect(markup).toContain('Source A')
+    expect(markup).toContain('Source B')
+    expect(markup.indexOf('Destination') < markup.indexOf('Source A')).toBe(true)
+  })
+
+  test('renders lane roster preserving execution index ordering', () => {
+    const view = LaneBoardView({
+      rows: [
+        {
+          threadSurfaceId: 'thread-c',
+          surfaceLabel: 'C',
+          runId: 'run-c',
+          executionIndex: 30,
+        },
+        {
+          threadSurfaceId: 'thread-a',
+          surfaceLabel: 'A',
+          runId: 'run-a',
+          executionIndex: 10,
+        },
+        {
+          threadSurfaceId: 'thread-b',
+          surfaceLabel: 'B',
+          runId: 'run-b',
+          executionIndex: 20,
+        },
+      ],
+      focusedThreadSurfaceId: null,
+      selectedRunId: null,
+      onFocusThread: () => {},
+      onBackToHierarchy: () => {},
+    })
+
+    const markup = JSON.stringify(view)
+    expect(markup).toContain('C')
+    expect(markup).toContain('A')
+    expect(markup).toContain('B')
+  })
 })
