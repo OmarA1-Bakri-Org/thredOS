@@ -3,8 +3,9 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import type { Sequence } from '@/lib/sequence/schema'
 import type { SequenceStatus } from '@/app/api/status/route'
-import type { MergeEvent, RunScope, ThreadSurface } from '@/lib/thread-surfaces/types'
+import type { MergeEvent, RunScope, ThreadSurface, ThreadSkillBadge } from '@/lib/thread-surfaces/types'
 import type { ThreadCardProfile } from '@/components/hierarchy/FocusedThreadCard'
+import { resolveSkillsForAgent } from '@/lib/thread-surfaces/projections'
 
 interface ThreadSurfacesResponse {
   threadSurfaces: ThreadSurface[]
@@ -233,6 +234,33 @@ export function useAgentProfile(threadSurfaceId: string | null) {
     },
     enabled: !!threadSurfaceId,
     retry: false,
+    staleTime: 30_000,
+  })
+}
+
+// ── Thread surface skill query ──────────────────────────────────────
+
+/**
+ * Resolve skills for a thread surface by fetching its agent profile
+ * and extracting the skill list. Falls back to default skills when
+ * the surface has no registered agent.
+ */
+export function useThreadSurfaceSkills(threadSurfaceId: string | null) {
+  const { data: profile } = useAgentProfile(threadSurfaceId)
+
+  return useQuery<ThreadSkillBadge[]>({
+    queryKey: ['thread-surface-skills', threadSurfaceId, profile],
+    queryFn: () => {
+      if (profile?.skills) {
+        return profile.skills.map(s => ({
+          id: s.id,
+          label: s.label,
+          inherited: s.inherited,
+        }))
+      }
+      return resolveSkillsForAgent(null)
+    },
+    enabled: !!threadSurfaceId,
     staleTime: 30_000,
   })
 }

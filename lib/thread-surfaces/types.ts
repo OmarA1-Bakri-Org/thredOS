@@ -98,3 +98,16 @@ export interface MergeEvent {
   createdAt: string
   summary?: string
 }
+
+// ── Skill types ──────────────────────────────────────────────────────
+
+export interface ThreadSkillBadge {
+  id: string
+  label: string
+  inherited: boolean
+}
+
+export interface SkillProjection {
+  threadSurfaceId: string
+  skills: ThreadSkillBadge[]
+}
