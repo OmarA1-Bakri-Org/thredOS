@@ -51,6 +51,7 @@ mock.module('@/lib/ui/api', () => ({
   useRemoveDep: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false, error: null }),
   useAddStep: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false, error: null }),
   useInsertGate: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false, error: null }),
+  useThreadSurfaceSkills: () => ({ data: [{ id: 'search', label: 'Search', inherited: false }] }),
 }))
 
 const { LeftRail } = await import('./LeftRail')

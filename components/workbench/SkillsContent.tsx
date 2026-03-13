@@ -1,16 +1,12 @@
 'use client'
 
+import { useUIStore } from '@/lib/ui/store'
+import { useThreadSurfaceSkills } from '@/lib/ui/api'
 import { SkillInventoryPanel } from '@/components/skills/SkillInventoryPanel'
-import type { SkillBadge } from '@/components/skills/SkillBadgeRow'
-
-const DEFAULT_SKILLS: SkillBadge[] = [
-  { id: 'search', label: 'Search', inherited: false },
-  { id: 'files', label: 'Files', inherited: false },
-  { id: 'tools', label: 'Tools', inherited: false },
-  { id: 'model', label: 'Model', inherited: true },
-  { id: 'review', label: 'Review', inherited: true },
-]
 
 export function SkillsContent() {
-  return <SkillInventoryPanel skills={DEFAULT_SKILLS} />
+  const selectedThreadSurfaceId = useUIStore(s => s.selectedThreadSurfaceId)
+  const { data: skills } = useThreadSurfaceSkills(selectedThreadSurfaceId)
+
+  return <SkillInventoryPanel skills={skills ?? []} />
 }

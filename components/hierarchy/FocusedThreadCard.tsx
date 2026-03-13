@@ -3,12 +3,9 @@
 import { Box, Bot, Folder, Globe, Search, ShieldCheck, Sparkles, Wrench } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import type { HierarchyViewNode } from './HierarchyView'
+import type { ThreadSkillBadge } from '@/lib/thread-surfaces/types'
 
-export interface ThreadSkillBadge {
-  id: string
-  label: string
-  inherited: boolean
-}
+export type { ThreadSkillBadge }
 
 export interface ThreadRubricMetric {
   label: string
