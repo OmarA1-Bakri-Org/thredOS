@@ -3,8 +3,7 @@ import { mkdir, writeFile } from 'fs/promises'
 import { join } from 'path'
 import { createTempDir, cleanTempDir, makeSequence, makeStep, writeTestSequence } from '../../../test/helpers/setup'
 import { runCommand } from './run'
-import { readSequence, writeSequence } from '../../sequence/parser'
-import { writeThreadSurfaceState } from '../../thread-surfaces/repository'
+import { readSequence } from '../../sequence/parser'
 
 let tempDir: string
 const jsonOpts = { json: true, help: false, watch: false }

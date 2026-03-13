@@ -186,16 +186,8 @@ function CanvasInner() {
   }
   const shouldRenderSequenceFlow = status != null
 
-  if (isLoading && !hasRealThreadSurfaceData) return <LoadingSpinner message="Loading sequence..." />
-  if (isError && !hasRealThreadSurfaceData) return <div className="flex h-full items-center justify-center text-sm text-destructive">Failed to load sequence status</div>
-  if (
-    threadSurfaceData.source === 'empty'
-    && (!status || (status.steps.length === 0 && status.gates.length === 0))
-  ) {
-    return <EmptyState />
-  }
-
-  // Build HierarchyViewNodes for the agent cards
+  // Build HierarchyViewNodes for the agent cards — must be before early returns
+  // to satisfy React's rules of hooks (useMemo must be called unconditionally)
   const hierarchyViewNodes: HierarchyViewNode[] = useMemo(() =>
     threadSurfaceData.threadSurfaces.map(ts => {
       const surfaceRuns = threadSurfaceData.runs.filter(r => r.threadSurfaceId === ts.id)
@@ -220,6 +212,15 @@ function CanvasInner() {
     }),
     [threadSurfaceData.threadSurfaces, threadSurfaceData.runs],
   )
+
+  if (isLoading && !hasRealThreadSurfaceData) return <LoadingSpinner message="Loading sequence..." />
+  if (isError && !hasRealThreadSurfaceData) return <div className="flex h-full items-center justify-center text-sm text-destructive">Failed to load sequence status</div>
+  if (
+    threadSurfaceData.source === 'empty'
+    && (!status || (status.steps.length === 0 && status.gates.length === 0))
+  ) {
+    return <EmptyState />
+  }
 
   const selectedHierarchyNode = hierarchyViewNodes.find(
     n => n.clickTarget.threadSurfaceId === selectedThreadSurfaceId,

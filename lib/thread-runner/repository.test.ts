@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach } from 'bun:test'
-import { mkdtemp, rm } from 'fs/promises'
+import { mkdtemp } from 'fs/promises'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import {

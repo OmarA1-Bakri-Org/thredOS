@@ -36,7 +36,7 @@ export function LaneBoardView({
   rows,
   focusedThreadSurfaceId,
   selectedRunId: _selectedRunId,
-  workflowByThreadSurfaceId = {},
+  workflowByThreadSurfaceId: _workflowByThreadSurfaceId = {},
   onFocusThread,
   onBackToHierarchy,
   focusedContent,
