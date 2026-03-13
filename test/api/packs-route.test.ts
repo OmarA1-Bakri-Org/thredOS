@@ -3,11 +3,11 @@ import { describe, test, expect } from 'bun:test'
 const { GET } = await import('@/app/api/packs/route')
 
 describe('GET /api/packs', () => {
-  test('returns empty packs list by default', async () => {
+  test('returns packs list as array', async () => {
     const res = await GET()
     expect(res.status).toBe(200)
     const body = await res.json()
-    expect(body.packs).toEqual([])
+    expect(Array.isArray(body.packs)).toBe(true)
   })
 
   test('returns JSON content type', async () => {

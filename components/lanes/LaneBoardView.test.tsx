@@ -62,7 +62,7 @@ describe('LaneBoardView', () => {
     expect(collectByDataTestId(view, 'lane-focused-content')).toHaveLength(1)
   })
 
-  test('renders workflow phase and execution metadata as inline text', () => {
+  test('renders simplified roster card with status dot, name, and index', () => {
     const view = LaneBoardView({
       rows: [
         {
@@ -76,21 +76,11 @@ describe('LaneBoardView', () => {
       selectedRunId: 'run-synthesis',
       onFocusThread: () => {},
       onBackToHierarchy: () => {},
-      workflowByThreadSurfaceId: {
-        'thread-synthesis': {
-          stepId: 'post_publish_analytics',
-          stepName: 'Post-Publish Analytics',
-          phaseLabel: 'Feedback',
-          executionLabel: 'sub agent',
-          hasCondition: true,
-        },
-      },
     })
 
     const markup = JSON.stringify(view)
-    expect(markup).toContain('Feedback')
-    expect(markup).toContain('sub agent')
-    expect(markup).toContain('conditional')
+    expect(markup).toContain('Synthesis')
+    expect(markup).toContain('20')
   })
 
   test('supports multiple runs for the same thread surface in the lane roster', () => {
