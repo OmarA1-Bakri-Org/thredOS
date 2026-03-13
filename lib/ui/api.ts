@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import type { Sequence } from '@/lib/sequence/schema'
 import type { SequenceStatus } from '@/app/api/status/route'
 import type { MergeEvent, RunScope, ThreadSurface } from '@/lib/thread-surfaces/types'
+import type { ThreadCardProfile } from '@/components/hierarchy/FocusedThreadCard'
 
 interface ThreadSurfacesResponse {
   threadSurfaces: ThreadSurface[]
@@ -213,6 +214,26 @@ export function useAddDep() {
       postJson('/api/dep', { action: 'add', stepId, depId }),
     onSuccess: () => invalidateRuntimeQueries(qc),
     onError: (error) => { console.error('Add dependency failed:', error) },
+  })
+}
+
+// ── Agent profile query ─────────────────────────────────────────────
+
+interface AgentProfileResponse {
+  profile: ThreadCardProfile | null
+}
+
+export function useAgentProfile(threadSurfaceId: string | null) {
+  return useQuery<ThreadCardProfile | null>({
+    queryKey: ['agent-profile', threadSurfaceId],
+    queryFn: async () => {
+      if (!threadSurfaceId) return null
+      const res = await fetchJson<AgentProfileResponse>(`/api/agent-profile?threadSurfaceId=${encodeURIComponent(threadSurfaceId)}`)
+      return res.profile
+    },
+    enabled: !!threadSurfaceId,
+    retry: false,
+    staleTime: 30_000,
   })
 }
 

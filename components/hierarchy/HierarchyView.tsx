@@ -23,6 +23,7 @@ interface HierarchyViewProps {
   selectedThreadSurfaceId: string | null
   onSelectThread?: (threadSurfaceId: string, runId: string | null) => void
   onOpenLane: (threadSurfaceId: string, runId: string | null) => void
+  profile?: ThreadCardProfile
 }
 
 function deriveProfile(node: HierarchyViewNode): ThreadCardProfile {
@@ -63,7 +64,7 @@ function deriveProfile(node: HierarchyViewNode): ThreadCardProfile {
   }
 }
 
-export function HierarchyView({ nodes, edges = [], selectedThreadSurfaceId, onSelectThread, onOpenLane }: HierarchyViewProps) {
+export function HierarchyView({ nodes, edges = [], selectedThreadSurfaceId, onSelectThread, onOpenLane, profile }: HierarchyViewProps) {
   const handleSelect = onSelectThread ?? onOpenLane
   const focusedNode = nodes.find(node => node.clickTarget.threadSurfaceId === selectedThreadSurfaceId) ?? nodes[0] ?? null
   const compactNodes = focusedNode ? nodes.filter(node => node.id !== focusedNode.id) : []
@@ -95,7 +96,7 @@ export function HierarchyView({ nodes, edges = [], selectedThreadSurfaceId, onSe
           {focusedNode ? (
             <FocusedThreadCard
               node={focusedNode}
-              profile={deriveProfile(focusedNode)}
+              profile={profile ?? deriveProfile(focusedNode)}
               onOpenLane={onOpenLane}
             />
           ) : nodes.length === 0 ? (

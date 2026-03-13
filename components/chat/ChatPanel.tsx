@@ -157,7 +157,7 @@ export function ChatPanel() {
   const toggleChat = useUIStore(s => s.toggleChat)
 
   return (
-    <div data-testid="chat-floating-container" className="fixed bottom-16 right-4 z-50 w-[400px] h-[500px] rounded-lg border border-slate-700/80 bg-[#08101d]/95 shadow-2xl backdrop-blur-sm">
+    <div data-testid="chat-floating-container" className="fixed bottom-16 right-4 z-50 flex w-[400px] flex-col overflow-hidden border border-slate-700/80 bg-[#08101d]/95 shadow-2xl backdrop-blur-sm" style={{ height: '60vh', minHeight: 320, maxHeight: '85vh', resize: 'vertical' }}>
     <div data-testid="chat-panel" className="flex h-full flex-col bg-transparent" aria-busy={loading}>
       <div data-testid="chat-header" className="border-b border-slate-800/80 bg-[#050c17] rounded-t-lg px-3 py-2.5">
         <div className="flex items-center justify-between gap-2">

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo } from 'react'
 import { ReactFlow, ReactFlowProvider, MiniMap, Controls, Background, useReactFlow } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { useStatus, useThreadMerges, useThreadRuns, useThreadSurfaces } from '@/lib/ui/api'
+import { useStatus, useThreadMerges, useThreadRuns, useThreadSurfaces, useAgentProfile } from '@/lib/ui/api'
 import { useUIStore } from '@/lib/ui/store'
 import { useSequenceGraph } from './useSequenceGraph'
 import { StepNode } from './StepNode'
@@ -111,6 +111,7 @@ function CanvasInner() {
   const minimapVisible = useUIStore(s => s.minimapVisible)
   const viewMode = useUIStore(s => s.viewMode)
   const selectedThreadSurfaceId = useUIStore(s => s.selectedThreadSurfaceId)
+  const { data: agentProfile } = useAgentProfile(selectedThreadSurfaceId)
   const selectedRunId = useUIStore(s => s.selectedRunId)
   const laneFocusThreadSurfaceId = useUIStore(s => s.laneFocusThreadSurfaceId)
   const selectedNodeId = useUIStore(s => s.selectedNodeId)
@@ -242,6 +243,7 @@ function CanvasInner() {
             <HierarchyView
               nodes={hierarchyViewNodes}
               selectedThreadSurfaceId={selectedThreadSurfaceId}
+              profile={agentProfile ?? undefined}
               onSelectThread={(threadSurfaceId, runId) => {
                 setSelectedThreadSurfaceId(threadSurfaceId)
                 setSelectedRunId(runId)

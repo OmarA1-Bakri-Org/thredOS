@@ -3,16 +3,23 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import type { WorkflowLaneContext } from '@/lib/workflows'
 
-function truncateId(id: string): string {
-  return id.length > 8 ? id.slice(0, 8) : id
-}
-
 interface LaneBoardRowView {
   threadSurfaceId: string
   surfaceLabel: string
   runId: string
   executionIndex?: number
   laneTerminalState?: string
+}
+
+function statusDotColor(state: string | undefined): string {
+  switch (state) {
+    case 'merged': return 'bg-emerald-400'
+    case 'running': return 'bg-sky-400 animate-pulse'
+    case 'successful': return 'bg-emerald-400'
+    case 'failed': return 'bg-rose-400'
+    case 'stopped': return 'bg-amber-400'
+    default: return 'bg-slate-500'
+  }
 }
 
 interface LaneBoardViewProps {
@@ -56,40 +63,26 @@ export function LaneBoardView({
           <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-4">
             {rows.map(row => {
               const isFocused = row.threadSurfaceId === focusedThreadSurfaceId
-              const workflowContext = workflowByThreadSurfaceId[row.threadSurfaceId]
               return (
                 <button
                   key={`${row.threadSurfaceId}:${row.runId}`}
                   type="button"
                   data-thread-surface-id={row.threadSurfaceId}
-                  aria-pressed={isFocused}
+                  aria-pressed={isFocused ? 'true' : 'false'}
                   onClick={() => onFocusThread(row.threadSurfaceId, row.runId)}
                   className={cn(
-                    'w-full text-left px-4 py-3 transition-colors',
+                    'w-full text-left px-5 py-3.5 transition-colors',
                     isFocused
                       ? 'border border-emerald-500/40 border-l-2 border-l-emerald-500 bg-[#0c1525] text-white'
                       : 'border border-slate-800/60 bg-[#08101d] text-slate-300 hover:bg-[#0a1320]',
                   )}
                 >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-sm font-semibold tracking-tight">{row.surfaceLabel}</span>
-                    <span className="font-mono text-[10px] text-slate-500">
+                  <div className="flex items-center gap-3">
+                    <span className={cn('h-2 w-2 shrink-0 rounded-full', statusDotColor(row.laneTerminalState))} />
+                    <span className="min-w-0 flex-1 truncate text-sm font-semibold tracking-tight">{row.surfaceLabel}</span>
+                    <span className="shrink-0 font-mono text-[10px] text-slate-500">
                       #{row.executionIndex ?? '—'}
                     </span>
-                  </div>
-                  {workflowContext ? (
-                    <div className="mt-1.5 text-xs text-slate-400">
-                      {workflowContext.phaseLabel} · {workflowContext.executionLabel}
-                      {workflowContext.hasCondition ? ' · conditional' : ''}
-                    </div>
-                  ) : null}
-                  {row.laneTerminalState ? (
-                    <div className="mt-1 text-[10px] font-mono uppercase tracking-wide text-amber-400/70">
-                      {row.laneTerminalState}
-                    </div>
-                  ) : null}
-                  <div className="mt-1.5 font-mono text-[10px] text-slate-600" title={row.runId}>
-                    {truncateId(row.runId)}
                   </div>
                 </button>
               )
