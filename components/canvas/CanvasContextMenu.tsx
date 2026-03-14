@@ -111,9 +111,10 @@ export function CanvasContextMenu({ menu, onClose }: CanvasContextMenuProps) {
               icon={<Copy className="h-3.5 w-3.5" />}
               label="Clone"
               onClick={() => {
+                const newId = `${menu.nodeId}-copy-${Date.now().toString(36).slice(-4)}`
                 cloneStep.mutate(
-                  { sourceId: menu.nodeId!, newId: `${menu.nodeId}-copy` },
-                  { onSuccess: () => setSelectedNodeId(`${menu.nodeId}-copy`) },
+                  { sourceId: menu.nodeId!, newId },
+                  { onSuccess: () => setSelectedNodeId(newId) },
                 )
                 onClose()
               }}

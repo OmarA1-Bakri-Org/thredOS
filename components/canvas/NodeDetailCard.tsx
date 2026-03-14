@@ -336,7 +336,7 @@ export function NodeDetailCard() {
               <button
                 type="button"
                 onClick={() => {
-                  const newId = `${selectedNodeId}-copy`
+                  const newId = `${selectedNodeId}-copy-${Date.now().toString(36).slice(-4)}`
                   cloneStep.mutate({ sourceId: selectedNodeId, newId }, {
                     onSuccess: () => setSelectedNodeId(newId),
                   })
