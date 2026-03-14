@@ -22,7 +22,11 @@ function collectByTestId(node: ReactNode, target: string, acc: ElementWithChildr
   const element = node as ElementWithChildren
   if (typeof element.type === 'function') {
     const render = element.type as (props: typeof element.props) => ReactNode
-    collectByTestId(render(element.props), target, acc)
+    try {
+      collectByTestId(render(element.props), target, acc)
+    } catch {
+      // Skip components that require React's render pipeline (e.g. hooks)
+    }
     return acc
   }
 

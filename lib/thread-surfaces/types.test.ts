@@ -26,6 +26,7 @@ describe('thread surface domain types', () => {
       'run-cancelled',
       'run-completed',
       'gate-cascade',
+      'spawn-limit-warning',
     ])
   })
 

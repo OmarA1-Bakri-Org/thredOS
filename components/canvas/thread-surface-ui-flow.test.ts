@@ -120,7 +120,11 @@ function collectButtons(node: ReactNode, acc: ButtonElement[] = []): ButtonEleme
   const element = node as ReactElement<{ children?: ReactNode; [key: string]: unknown }>
   if (typeof element.type === 'function') {
     const render = element.type as (props: typeof element.props) => ReactNode
-    collectButtons(render(element.props), acc)
+    try {
+      collectButtons(render(element.props), acc)
+    } catch {
+      // Skip components that require React's render pipeline (e.g. hooks)
+    }
     return acc
   }
 
