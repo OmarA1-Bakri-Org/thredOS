@@ -326,14 +326,14 @@ export function AccordionPanel() {
                 key={key}
                 className={`${
                   colCount > 1
-                    ? 'rounded border border-slate-700/50 bg-[#060e1a] shadow-md shadow-black/20'
-                    : 'border-b border-slate-800/60'
+                    ? `rounded border ${accent.border} bg-[#060e1a] shadow-md shadow-black/20`
+                    : `border-b ${accent.border}`
                 }`}
               >
                 <div className={`flex items-center gap-2 px-4 py-2 ${
                   colCount > 1
-                    ? 'rounded-t-lg border-b border-slate-700/40 bg-[#0a1428]'
-                    : 'border-b border-slate-800/40 bg-[#060e1a]'
+                    ? `rounded-t-lg border-b ${accent.border} bg-[#0a1428]`
+                    : `border-b ${accent.border} bg-[#060e1a]`
                 }`}>
                   <Icon className={`h-3 w-3 ${accent.iconActive}`} />
                   <span className={`font-mono text-[9px] uppercase tracking-[0.18em] ${accent.text}`}>{label}</span>
