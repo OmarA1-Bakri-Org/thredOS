@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { Layers3, FileStack, ChevronRight, Pencil, Check, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { useThreadSurfaces, useStatus, useRenameSequence } from '@/lib/ui/api'
+import { useThreadSurfaces, useStatus, useRenameSequence, useSetThreadType } from '@/lib/ui/api'
 import { useUIStore, selectCurrentDepthSurfaceId } from '@/lib/ui/store'
 import { derivePhases } from '@/lib/ui/phases'
 
@@ -24,6 +24,7 @@ export function SequenceSection() {
   const currentDepthSurfaceId = useUIStore(selectCurrentDepthSurfaceId)
 
   const renameMutation = useRenameSequence()
+  const setThreadType = useSetThreadType()
   const [editingName, setEditingName] = useState(false)
   const [nameValue, setNameValue] = useState('')
 
@@ -31,9 +32,8 @@ export function SequenceSection() {
     ? derivePhases(status.steps, status.gates)
     : null
 
-  // User can override thread type; null means "use auto-detected"
-  const [userOverrideType, setUserOverrideType] = useState<string | null>(null)
-  const selectedType = userOverrideType ?? autoDerivation?.threadType ?? null
+  // Persisted thread type from sequence.yaml, falling back to auto-detected
+  const selectedType = status?.thread_type ?? autoDerivation?.threadType ?? null
 
   // Re-derive phases with the effective thread type
   const phaseDerivation = status
@@ -53,7 +53,7 @@ export function SequenceSection() {
                 <button
                   key={t.value}
                   type="button"
-                  onClick={() => setUserOverrideType(t.value)}
+                  onClick={() => setThreadType.mutate(t.value)}
                   className={`cursor-pointer px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.12em] transition-all ${
                     isActive
                       ? 'border border-sky-500/50 bg-sky-500/12 text-sky-200 shadow-[0_0_8px_rgba(56,189,248,0.15)]'

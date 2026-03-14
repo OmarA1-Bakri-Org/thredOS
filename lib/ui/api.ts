@@ -283,6 +283,15 @@ export function useRenameSequence() {
   })
 }
 
+export function useSetThreadType() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (thread_type: string) => postJson('/api/sequence', { action: 'set-type', thread_type }),
+    onSuccess: () => invalidateRuntimeQueries(qc),
+    onError: (error) => { console.error('Set thread type failed:', error) },
+  })
+}
+
 export function useResetSequence() {
   const qc = useQueryClient()
   return useMutation({

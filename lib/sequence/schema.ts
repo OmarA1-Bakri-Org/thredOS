@@ -80,6 +80,7 @@ export const MetadataSchema = z.object({
 export const SequenceSchema = z.object({
   version: z.string().default('1.0'),
   name: z.string().min(1, { message: 'Sequence name is required' }),
+  thread_type: StepTypeSchema.optional(),
   steps: z.array(StepSchema).default([]),
   gates: z.array(GateSchema).default([]),
   metadata: MetadataSchema,
