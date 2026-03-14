@@ -10,10 +10,15 @@ export interface LaneBoardModelArgs {
   mergeEvents: MergeEvent[]
   runIds: string[]
   draftSurfaceOrder?: string[]
+  expandedChildSurfaceIds?: string[]
 }
 
 export interface LaneBoardDisplayRow extends LaneBoardRow {
   isMergeSource: boolean
+  parentThreadSurfaceId: string | null
+  depth: number
+  childCount: number
+  isCollapsed: boolean
 }
 
 export interface LaneBoardMergeGroup {
@@ -31,31 +36,63 @@ export interface LaneBoardModel {
 }
 
 export function useLaneBoard(args: LaneBoardModelArgs): LaneBoardModel {
-  const { threadSurfaces, runs, mergeEvents, runIds, draftSurfaceOrder } = args
+  const { threadSurfaces, runs, mergeEvents, runIds, draftSurfaceOrder, expandedChildSurfaceIds } = args
   return useMemo(
-    () => createLaneBoardModel({ threadSurfaces, runs, mergeEvents, runIds, draftSurfaceOrder }),
-    [threadSurfaces, runs, mergeEvents, runIds, draftSurfaceOrder],
+    () => createLaneBoardModel({ threadSurfaces, runs, mergeEvents, runIds, draftSurfaceOrder, expandedChildSurfaceIds }),
+    [threadSurfaces, runs, mergeEvents, runIds, draftSurfaceOrder, expandedChildSurfaceIds],
   )
 }
 
-export function createLaneBoardModel({ threadSurfaces, runs, mergeEvents, runIds, draftSurfaceOrder = [] }: LaneBoardModelArgs): LaneBoardModel {
+export function createLaneBoardModel({ threadSurfaces, runs, mergeEvents, runIds, draftSurfaceOrder = [], expandedChildSurfaceIds }: LaneBoardModelArgs): LaneBoardModel {
   const projection = projectLaneBoard({ threadSurfaces, runs, mergeEvents, runIds })
   const projectionOrder = new Map(projection.rows.map((row, index) => [row.threadSurfaceId, index]))
   const draftOrder = new Map(draftSurfaceOrder.map((surfaceId, index) => [surfaceId, index]))
   const mergeEventIdBySignature = new Map(mergeEvents.map(event => [getMergeEventSignature(event), event.id]))
 
-  const rows = projection.rows
+  const sortedRows = projection.rows
     .map<LaneBoardDisplayRow>(row => ({
       ...row,
       isMergeSource: row.laneTerminalState === 'merged',
+      parentThreadSurfaceId: null,
+      depth: 0,
+      childCount: 0,
+      isCollapsed: false,
     }))
     .sort((left, right) => compareRows(left, right, projectionOrder, draftOrder))
 
-  const visibleThreadSurfaceIds = new Set(rows.map(row => row.threadSurfaceId))
+  // Build parent/child lookup from thread surfaces
+  const surfaceById = new Map(threadSurfaces.map(s => [s.id, s]))
+  const expandAll = expandedChildSurfaceIds === undefined
+  const expandedSet = new Set(expandedChildSurfaceIds ?? [])
+
+  const enrichedRows = sortedRows.map<LaneBoardDisplayRow>(row => {
+    const surface = surfaceById.get(row.threadSurfaceId)
+    const parentThreadSurfaceId = surface?.parentSurfaceId ?? null
+    const depth = surface?.depth ?? 0
+    const childCount = threadSurfaces.filter(s => s.parentSurfaceId === row.threadSurfaceId).length
+    const isCollapsed = childCount > 0 && !expandAll && !expandedSet.has(row.threadSurfaceId)
+    return {
+      ...row,
+      isMergeSource: row.laneTerminalState === 'merged',
+      parentThreadSurfaceId,
+      depth,
+      childCount,
+      isCollapsed,
+    }
+  })
+
+  // Filter out rows whose parent is collapsed (enforce 2-level inline limit from current view)
+  const collapsedSurfaceIds = new Set(enrichedRows.filter(r => r.isCollapsed).map(r => r.threadSurfaceId))
+  const visibleRows = enrichedRows.filter(row => {
+    if (row.parentThreadSurfaceId == null) return true
+    return !collapsedSurfaceIds.has(row.parentThreadSurfaceId)
+  })
+
+  const visibleThreadSurfaceIds = new Set(visibleRows.map(row => row.threadSurfaceId))
   const mergeGroups = projection.events
     .flatMap(event => buildMergeGroup(event, visibleThreadSurfaceIds, mergeEventIdBySignature))
 
-  return { rows, mergeGroups }
+  return { rows: visibleRows, mergeGroups }
 }
 
 export const buildLaneBoardModel = createLaneBoardModel

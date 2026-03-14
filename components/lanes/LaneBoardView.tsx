@@ -9,6 +9,10 @@ interface LaneBoardRowView {
   runId: string
   executionIndex?: number
   laneTerminalState?: string
+  depth?: number
+  childCount?: number
+  isCollapsed?: boolean
+  parentThreadSurfaceId?: string | null
 }
 
 function statusDotColor(state: string | undefined): string {
@@ -29,6 +33,7 @@ interface LaneBoardViewProps {
   workflowByThreadSurfaceId?: Record<string, WorkflowLaneContext>
   onFocusThread: (threadSurfaceId: string, runId: string) => void
   onBackToHierarchy: () => void
+  onToggleCollapse?: (threadSurfaceId: string) => void
   focusedContent?: ReactNode
 }
 
@@ -39,6 +44,7 @@ export function LaneBoardView({
   workflowByThreadSurfaceId: _workflowByThreadSurfaceId = {},
   onFocusThread,
   onBackToHierarchy,
+  onToggleCollapse,
   focusedContent,
 }: LaneBoardViewProps) {
   return (
@@ -63,28 +69,55 @@ export function LaneBoardView({
           <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-4">
             {rows.map(row => {
               const isFocused = row.threadSurfaceId === focusedThreadSurfaceId
+              const depth = row.depth ?? 0
               return (
-                <button
+                <div
                   key={`${row.threadSurfaceId}:${row.runId}`}
-                  type="button"
-                  data-thread-surface-id={row.threadSurfaceId}
-                  aria-pressed={isFocused ? 'true' : 'false'}
-                  onClick={() => onFocusThread(row.threadSurfaceId, row.runId)}
-                  className={cn(
-                    'w-full text-left px-5 py-3.5 transition-colors',
-                    isFocused
-                      ? 'border border-emerald-500/40 border-l-2 border-l-emerald-500 bg-[#0c1525] text-white'
-                      : 'border border-slate-800/60 bg-[#08101d] text-slate-300 hover:bg-[#0a1320]',
-                  )}
+                  className={cn(depth > 0 && 'border-l-2 border-slate-700/50')}
+                  style={{ paddingLeft: `${16 + depth * 20}px` }}
                 >
-                  <div className="flex items-center gap-3">
-                    <span className={cn('h-2 w-2 shrink-0 rounded-full', statusDotColor(row.laneTerminalState))} />
-                    <span className="min-w-0 flex-1 truncate text-sm font-semibold tracking-tight">{row.surfaceLabel}</span>
-                    <span className="shrink-0 font-mono text-[10px] text-slate-500">
-                      #{row.executionIndex ?? '—'}
-                    </span>
-                  </div>
-                </button>
+                  <button
+                    type="button"
+                    data-thread-surface-id={row.threadSurfaceId}
+                    aria-pressed={isFocused}
+                    aria-label={`Focus thread ${row.surfaceLabel}`}
+                    onClick={() => onFocusThread(row.threadSurfaceId, row.runId)}
+                    className={cn(
+                      'w-full text-left px-5 py-3.5 transition-colors',
+                      isFocused
+                        ? 'border border-emerald-500/40 border-l-2 border-l-emerald-500 bg-[#0c1525] text-white'
+                        : 'border border-slate-800/60 bg-[#08101d] text-slate-300 hover:bg-[#0a1320]',
+                    )}
+                  >
+                    <div className="flex items-center gap-3">
+                      {(row.childCount ?? 0) > 0 && (
+                        <button
+                          type="button"
+                          className="shrink-0 text-slate-500 hover:text-slate-300 transition-colors text-[10px] w-4"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            onToggleCollapse?.(row.threadSurfaceId)
+                          }}
+                          aria-label={row.isCollapsed ? 'Expand children' : 'Collapse children'}
+                        >
+                          {row.isCollapsed ? '▶' : '▼'}
+                        </button>
+                      )}
+                      <span className={cn('h-2 w-2 shrink-0 rounded-full', statusDotColor(row.laneTerminalState))} />
+                      <span className="min-w-0 flex-1 truncate text-sm font-semibold tracking-tight">{row.surfaceLabel}</span>
+                      <span className="shrink-0 font-mono text-[10px] text-slate-500">
+                        #{row.executionIndex ?? '—'}
+                      </span>
+                    </div>
+                  </button>
+                  {row.isCollapsed && (row.childCount ?? 0) > 0 && (
+                    <div className="mt-1 flex items-center gap-1.5 ml-5">
+                      <span className="font-mono text-[9px] text-slate-600">
+                        {row.childCount} child{(row.childCount ?? 0) > 1 ? 'ren' : ''} collapsed
+                      </span>
+                    </div>
+                  )}
+                </div>
               )
             })}
           </div>

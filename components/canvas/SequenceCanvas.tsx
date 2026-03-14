@@ -129,6 +129,8 @@ function CanvasInner() {
   const setSelectedThreadSurfaceId = useUIStore(s => s.setSelectedThreadSurfaceId)
   const setSelectedRunId = useUIStore(s => s.setSelectedRunId)
   const setViewMode = useUIStore(s => s.setViewMode)
+  const expandedChildSurfaceIds = useUIStore(s => s.expandedChildSurfaceIds)
+  const toggleChildSurfaceExpanded = useUIStore(s => s.toggleChildSurfaceExpanded)
   const currentDepthSurfaceId = useUIStore(selectCurrentDepthSurfaceId)
   const currentDepthLevel = useUIStore(selectCurrentDepthLevel)
   const portalDirection = useUIStore(s => s.portalDirection)
@@ -145,6 +147,7 @@ function CanvasInner() {
     runs: threadSurfaceData.runs,
     mergeEvents: threadSurfaceData.mergeEvents,
     runIds: threadSurfaceData.runs.map(run => run.id),
+    expandedChildSurfaceIds,
   })
   const focusedThreadSurfaceId = laneFocusThreadSurfaceId ?? selectedThreadSurfaceId ?? laneBoard.rows[0]?.threadSurfaceId ?? null
   const focusedDetail = resolveThreadSurfaceFocusedDetail({
@@ -252,6 +255,7 @@ function CanvasInner() {
         setSelectedRunId(runId)
       }}
       onBackToHierarchy={() => setViewMode('hierarchy')}
+      onToggleCollapse={toggleChildSurfaceExpanded}
       focusedContent={
         focusedDetail ? (
           <FocusedLanePlane

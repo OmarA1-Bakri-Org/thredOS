@@ -90,6 +90,10 @@ const rows: LaneBoardDisplayRow[] = [
     runId: 'run-synthesis',
     executionIndex: 20,
     isMergeSource: false,
+    parentThreadSurfaceId: null,
+    depth: 0,
+    childCount: 0,
+    isCollapsed: false,
   },
   {
     threadSurfaceId: 'thread-master',
@@ -97,6 +101,10 @@ const rows: LaneBoardDisplayRow[] = [
     runId: 'run-master',
     executionIndex: 40,
     isMergeSource: false,
+    parentThreadSurfaceId: null,
+    depth: 0,
+    childCount: 0,
+    isCollapsed: false,
   },
   {
     threadSurfaceId: 'thread-review',
@@ -106,6 +114,10 @@ const rows: LaneBoardDisplayRow[] = [
     laneTerminalState: 'merged',
     mergedIntoThreadSurfaceId: 'thread-master',
     isMergeSource: true,
+    parentThreadSurfaceId: null,
+    depth: 0,
+    childCount: 0,
+    isCollapsed: false,
   },
 ]
 
