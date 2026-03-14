@@ -50,14 +50,8 @@ export function validateDAG(sequence: Sequence): void {
   }
 }
 
-/**
- * Compute topological order for execution using Kahn's algorithm.
- * Returns nodes in order such that all dependencies come before dependents.
- *
- * @param sequence - The sequence to sort
- * @returns Array of node IDs in topological order
- */
-export function topologicalSort(sequence: Sequence): string[] {
+/** Build a node map and initialize in-degrees from a sequence */
+function buildNodeGraph(sequence: Sequence): { nodes: Map<string, Node>; inDegree: Map<string, number> } {
   const nodes = new Map<string, Node>()
   const inDegree = new Map<string, number>()
 
@@ -70,17 +64,19 @@ export function topologicalSort(sequence: Sequence): string[] {
     inDegree.set(gate.id, 0)
   }
 
-  // Calculate in-degrees
   for (const node of nodes.values()) {
     for (const depId of node.depends_on) {
       if (nodes.has(depId)) {
-        // This node depends on depId, so increment this node's in-degree
         inDegree.set(node.id, (inDegree.get(node.id) ?? 0) + 1)
       }
     }
   }
 
-  // Kahn's algorithm
+  return { nodes, inDegree }
+}
+
+/** Run Kahn's algorithm on pre-computed node graph */
+function kahnSort(nodes: Map<string, Node>, inDegree: Map<string, number>): string[] {
   const queue: string[] = []
   for (const [id, degree] of inDegree) {
     if (degree === 0) queue.push(id)
@@ -91,7 +87,6 @@ export function topologicalSort(sequence: Sequence): string[] {
     const nodeId = queue.shift()!
     result.push(nodeId)
 
-    // Find nodes that depend on this one and decrement their in-degree
     for (const [id, n] of nodes) {
       if (n.depends_on.includes(nodeId)) {
         const newDegree = (inDegree.get(id) ?? 0) - 1
@@ -102,4 +97,16 @@ export function topologicalSort(sequence: Sequence): string[] {
   }
 
   return result
+}
+
+/**
+ * Compute topological order for execution using Kahn's algorithm.
+ * Returns nodes in order such that all dependencies come before dependents.
+ *
+ * @param sequence - The sequence to sort
+ * @returns Array of node IDs in topological order
+ */
+export function topologicalSort(sequence: Sequence): string[] {
+  const { nodes, inDegree } = buildNodeGraph(sequence)
+  return kahnSort(nodes, inDegree)
 }
