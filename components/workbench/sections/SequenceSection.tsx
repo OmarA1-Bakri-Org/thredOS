@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState } from 'react'
 import { Layers3, FileStack, ChevronRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useThreadSurfaces, useStatus } from '@/lib/ui/api'
@@ -27,16 +27,11 @@ export function SequenceSection() {
     ? derivePhases(status.steps, status.gates)
     : null
 
-  const [selectedType, setSelectedType] = useState<string | null>(null)
+  // User can override thread type; null means "use auto-detected"
+  const [userOverrideType, setUserOverrideType] = useState<string | null>(null)
+  const selectedType = userOverrideType ?? autoDerivation?.threadType ?? null
 
-  // Sync auto-detected type as default when it first resolves (ref avoids setState in effect)
-  const hasSyncedAutoTypeRef = useRef(false)
-  if (!hasSyncedAutoTypeRef.current && autoDerivation?.threadType && selectedType === null) {
-    hasSyncedAutoTypeRef.current = true
-    setSelectedType(autoDerivation.threadType)
-  }
-
-  // Re-derive phases with the user-selected thread type override
+  // Re-derive phases with the effective thread type
   const phaseDerivation = status
     ? derivePhases(status.steps, status.gates, selectedType ?? undefined)
     : null
@@ -54,7 +49,7 @@ export function SequenceSection() {
                 <button
                   key={t.value}
                   type="button"
-                  onClick={() => setSelectedType(t.value)}
+                  onClick={() => setUserOverrideType(t.value)}
                   className={`cursor-pointer px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.12em] transition-all ${
                     isActive
                       ? 'border border-sky-500/50 bg-sky-500/12 text-sky-200 shadow-[0_0_8px_rgba(56,189,248,0.15)]'

@@ -212,16 +212,14 @@ export function AccordionPanel() {
   // ── Resize handle ─────────────────────────────────────────────────
   const MIN_WIDTH = 300
   const MAX_WIDTH = 1200
-  const defaultWidth = useMemo(() => colCount === 1 ? 380 : colCount === 2 ? 640 : 920, [colCount])
-  const [panelWidthPx, setPanelWidthPx] = useState(defaultWidth)
+  const derivedWidth = colCount === 1 ? 380 : colCount === 2 ? 640 : 920
+  const [panelWidthPx, setPanelWidthPx] = useState(derivedWidth)
   const isResizingRef = useRef(false)
 
   // Sync default width when colCount changes (user opens/closes sections)
-  const prevColCountRef = useRef(colCount)
-  if (colCount !== prevColCountRef.current) {
-    prevColCountRef.current = colCount
-    setPanelWidthPx(colCount === 1 ? 380 : colCount === 2 ? 640 : 920)
-  }
+  useEffect(() => {
+    setPanelWidthPx(derivedWidth)
+  }, [derivedWidth])
 
   const handleResizeStart = useCallback((e: React.MouseEvent) => {
     e.preventDefault()

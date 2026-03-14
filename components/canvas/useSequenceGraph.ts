@@ -45,7 +45,7 @@ export function useSequenceGraph(
     const gateMap = new Map(status.gates.map(g => [g.id, g]))
 
     const { stepPhaseMap, gatePhaseMap } = buildPhaseMaps(status)
-    const { elkNodes, elkEdges, visibleIds } = buildElkGraph(status, lowerQuery)
+    const { elkNodes, elkEdges } = buildElkGraph(status, lowerQuery)
 
     const graph = {
       id: 'root',
