@@ -152,7 +152,7 @@ export function LaneBoardView({
                 )
               })}
 
-              {rows.map((row, rowIndex) => {
+              {rows.map((row, _rowIndex) => {
                 const isFocused = row.threadSurfaceId === focusedThreadSurfaceId
                 const depth = row.depth ?? 0
                 const isMerged = row.laneTerminalState === 'merged'

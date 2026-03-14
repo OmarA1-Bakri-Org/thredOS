@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useRef } from 'react'
 import { Layers3, FileStack, ChevronRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useThreadSurfaces, useStatus } from '@/lib/ui/api'
@@ -29,12 +29,12 @@ export function SequenceSection() {
 
   const [selectedType, setSelectedType] = useState<string | null>(null)
 
-  // Sync auto-detected type as default when it first resolves
-  useEffect(() => {
-    if (autoDerivation?.threadType && selectedType === null) {
-      setSelectedType(autoDerivation.threadType)
-    }
-  }, [autoDerivation?.threadType, selectedType])
+  // Sync auto-detected type as default when it first resolves (ref avoids setState in effect)
+  const hasSyncedAutoTypeRef = useRef(false)
+  if (!hasSyncedAutoTypeRef.current && autoDerivation?.threadType && selectedType === null) {
+    hasSyncedAutoTypeRef.current = true
+    setSelectedType(autoDerivation.threadType)
+  }
 
   // Re-derive phases with the user-selected thread type override
   const phaseDerivation = status

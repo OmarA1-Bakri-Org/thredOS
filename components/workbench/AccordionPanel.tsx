@@ -174,7 +174,7 @@ export function AccordionPanel() {
   const setSelectedPhaseId = useUIStore((s) => s.setSelectedPhaseId)
   const expandAccordionSection = useUIStore((s) => s.expandAccordionSection)
   const { data: status } = useStatus()
-  const currentDepthSurfaceId = useUIStore(selectCurrentDepthSurfaceId)
+  const _currentDepthSurfaceId = useUIStore(selectCurrentDepthSurfaceId)
   const currentDepthLevel = useUIStore(selectCurrentDepthLevel)
 
   // ── Canvas → Panel sync ──────────────────────────────────────────────
@@ -212,18 +212,16 @@ export function AccordionPanel() {
   // ── Resize handle ─────────────────────────────────────────────────
   const MIN_WIDTH = 300
   const MAX_WIDTH = 1200
-  const defaultWidth = colCount === 1 ? 380 : colCount === 2 ? 640 : 920
+  const defaultWidth = useMemo(() => colCount === 1 ? 380 : colCount === 2 ? 640 : 920, [colCount])
   const [panelWidthPx, setPanelWidthPx] = useState(defaultWidth)
   const isResizingRef = useRef(false)
 
   // Sync default width when colCount changes (user opens/closes sections)
   const prevColCountRef = useRef(colCount)
-  useEffect(() => {
-    if (colCount !== prevColCountRef.current) {
-      prevColCountRef.current = colCount
-      setPanelWidthPx(colCount === 1 ? 380 : colCount === 2 ? 640 : 920)
-    }
-  }, [colCount])
+  if (colCount !== prevColCountRef.current) {
+    prevColCountRef.current = colCount
+    setPanelWidthPx(colCount === 1 ? 380 : colCount === 2 ? 640 : 920)
+  }
 
   const handleResizeStart = useCallback((e: React.MouseEvent) => {
     e.preventDefault()

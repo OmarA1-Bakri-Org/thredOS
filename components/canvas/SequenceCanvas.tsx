@@ -27,7 +27,6 @@ import { ContextDimOverlay } from './ContextDimOverlay'
 import { PathBar } from '@/components/navigation/PathBar'
 import { selectCurrentDepthSurfaceId, selectCurrentDepthLevel } from '@/lib/ui/store'
 import { useDepthKeyboardNav } from './useDepthKeyboardNav'
-import { deriveStepThreadSurfaceId } from '@/lib/thread-surfaces/constants'
 
 const nodeTypes = {
   stepNode: StepNode,

@@ -5,7 +5,7 @@ import ELK from 'elkjs/lib/elk.bundled.js'
 import type { Node, Edge } from '@xyflow/react'
 import type { SequenceStatus } from '@/app/api/status/route'
 import { STATUS_COLORS } from '@/lib/ui/constants'
-import { derivePhases, findPhaseForStep, findPhaseForGate } from '@/lib/ui/phases'
+import { derivePhases } from '@/lib/ui/phases'
 
 const NODE_WIDTH = 220
 const NODE_HEIGHT = 68
