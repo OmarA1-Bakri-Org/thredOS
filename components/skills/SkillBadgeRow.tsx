@@ -1,6 +1,6 @@
 'use client'
 
-import { Box, Bot, Folder, Globe, Search, ShieldCheck, Sparkles, Wrench } from 'lucide-react'
+import { Box, Bot, Folder, GitBranch, Globe, Search, ShieldCheck, Sparkles, Wrench } from 'lucide-react'
 
 export interface SkillBadge {
   id: string
@@ -16,6 +16,7 @@ const skillIcons = {
   model: Bot,
   review: ShieldCheck,
   orchestration: Sparkles,
+  spawn: GitBranch,
 } as const
 
 interface SkillBadgeRowProps {

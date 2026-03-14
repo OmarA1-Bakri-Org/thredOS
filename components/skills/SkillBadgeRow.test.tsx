@@ -52,4 +52,11 @@ describe('SkillBadgeRow', () => {
     expect(markup).toContain('data-testid="skill-badge-unknown-skill"')
     expect(markup).toContain('Custom')
   })
+
+  test('renders spawn skill badge with GitBranch icon', () => {
+    const skills: SkillBadge[] = [{ id: 'spawn', label: 'Spawn', inherited: false }]
+    const markup = renderToStaticMarkup(<SkillBadgeRow skills={skills} />)
+    expect(markup).toContain('skill-badge-spawn')
+    expect(markup).toContain('Spawn')
+  })
 })
