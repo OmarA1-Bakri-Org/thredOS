@@ -2,9 +2,12 @@
 
 import { useState, useCallback, useRef, useMemo } from 'react'
 import { Plus, ShieldCheck, X } from 'lucide-react'
+import { useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { useAddStep, useInsertGate, useStatus } from '@/lib/ui/api'
+import type { SequenceStatus } from '@/app/api/status/route'
 import { useUIStore } from '@/lib/ui/store'
+import { derivePhases, findPhaseForStep, findPhaseForGate } from '@/lib/ui/phases'
 
 const STEP_TYPES = [
   { value: 'base', label: 'Base', color: '#64748b' },
@@ -34,7 +37,10 @@ export function CreateNodeDialog({ open, onClose, initialKind = 'step' }: Create
   const addStep = useAddStep()
   const insertGate = useInsertGate()
   const { data: status } = useStatus()
+  const queryClient = useQueryClient()
   const setSelectedNodeId = useUIStore(s => s.setSelectedNodeId)
+  const selectPhaseAndFocus = useUIStore(s => s.selectPhaseAndFocus)
+  const expandAccordionSection = useUIStore(s => s.expandAccordionSection)
 
   const [kind, setKind] = useState<NodeKind>(initialKind)
   const [nodeId, setNodeId] = useState('')
@@ -77,12 +83,29 @@ export function CreateNodeDialog({ open, onClose, initialKind = 'step' }: Create
           dependsOn: selectedDeps,
         })
       }
+      // Wait for fresh status data so phase derivation includes the new node
+      await queryClient.invalidateQueries({ queryKey: ['status'] })
+      const freshStatus = queryClient.getQueryData<SequenceStatus>(['status'])
+
+      if (freshStatus) {
+        const derivation = derivePhases(freshStatus.steps, freshStatus.gates)
+        const phase = findPhaseForStep(derivation.phases, trimmedId)
+          ?? findPhaseForGate(derivation.phases, trimmedId)
+
+        if (phase) {
+          selectPhaseAndFocus(phase.id)
+          if (kind === 'gate') {
+            expandAccordionSection('gate')
+          }
+        }
+      }
+
       setSelectedNodeId(trimmedId)
       onClose()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create node')
     }
-  }, [nodeId, name, kind, stepType, model, selectedDeps, existingNodes, addStep, insertGate, setSelectedNodeId, onClose])
+  }, [nodeId, name, kind, stepType, model, selectedDeps, existingNodes, addStep, insertGate, setSelectedNodeId, onClose, queryClient, selectPhaseAndFocus, expandAccordionSection])
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Escape') onClose()
