@@ -25,6 +25,9 @@ describe('thread surface domain types', () => {
       'merge-occurred',
       'run-cancelled',
       'run-completed',
+      'gate-cascade',
+      'spawn-limit-warning',
+      'spawn-denied',
     ])
   })
 
@@ -37,6 +40,8 @@ describe('thread surface domain types', () => {
       surfaceLabel: 'Master thread',
       createdAt: '2026-03-09T00:00:00.000Z',
       childSurfaceIds: ['thread-research', 'thread-outreach'],
+      sequenceRef: null,
+      spawnedByAgentId: null,
     }
 
     expect(threadSurface.surfaceLabel).toBe('Master thread')
@@ -58,6 +63,8 @@ describe('thread surface domain types', () => {
       runSummary: 'Initial execution attempt',
       runNotes: 'Fresh run created instead of restarting',
       runDiscussion: 'Discussing current attempt only',
+      parentRunId: null,
+      childIndex: null,
     }
 
     expect(run.threadSurfaceId).toBe('thread-master')
@@ -111,5 +118,17 @@ describe('thread surface domain types', () => {
       sourceThreadSurfaceIds: ['thread-research'],
       sourceRunIds: ['run-research'],
     })
+  })
+
+  test('RunEvent accepts spawn-denied eventType', () => {
+    const event: RunEvent = {
+      id: 'evt-denied',
+      eventType: 'spawn-denied',
+      runId: 'run-1',
+      threadSurfaceId: 'thread-step-a',
+      createdAt: '2026-03-14T00:00:00.000Z',
+      payload: { reason: 'agent lacks spawn skill', childStepId: 'child-1' },
+    }
+    expect(event.eventType).toBe('spawn-denied')
   })
 })

@@ -12,21 +12,26 @@ export interface GroupBoundaryData {
 
 function GroupBoundaryComponent({ data }: NodeProps<Node<GroupBoundaryData>>) {
   const d = data as GroupBoundaryData
+  const bracketColor = 'rgba(99, 102, 241, 0.28)'
+  const sz = 14
+
   return (
     <div
-      className="rounded-lg pointer-events-none"
+      className="pointer-events-none relative"
       style={{
         width: d.width,
         height: d.height,
-        border: '2px dashed rgba(99, 102, 241, 0.4)',
-        background: 'rgba(99, 102, 241, 0.05)',
-        position: 'relative',
+        background: 'rgba(99, 102, 241, 0.025)',
       }}
     >
-      <span
-        className="absolute -top-5 left-2 text-[10px] font-mono text-indigo-400 opacity-70"
-      >
-        group: {d.groupId}
+      {/* Corner brackets — schematic alignment marks */}
+      <div className="absolute top-0 left-0" style={{ width: sz, height: sz, borderTop: `1px solid ${bracketColor}`, borderLeft: `1px solid ${bracketColor}` }} />
+      <div className="absolute top-0 right-0" style={{ width: sz, height: sz, borderTop: `1px solid ${bracketColor}`, borderRight: `1px solid ${bracketColor}` }} />
+      <div className="absolute bottom-0 left-0" style={{ width: sz, height: sz, borderBottom: `1px solid ${bracketColor}`, borderLeft: `1px solid ${bracketColor}` }} />
+      <div className="absolute bottom-0 right-0" style={{ width: sz, height: sz, borderBottom: `1px solid ${bracketColor}`, borderRight: `1px solid ${bracketColor}` }} />
+
+      <span className="absolute -top-5 left-2 font-mono text-[9px] uppercase tracking-[0.16em] text-indigo-400/35">
+        {d.groupId}
       </span>
     </div>
   )

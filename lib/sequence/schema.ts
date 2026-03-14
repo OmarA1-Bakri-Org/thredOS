@@ -10,7 +10,10 @@ export type StepStatus = z.infer<typeof StepStatusSchema>
 export const StepTypeSchema = z.enum(['base', 'p', 'c', 'f', 'b', 'l'])
 export type StepType = z.infer<typeof StepTypeSchema>
 
-export const ModelTypeSchema = z.enum(['claude-code', 'codex', 'gemini', 'shell'])
+/** Known model presets shown in the UI picker — any string is valid for model-agnostic support. */
+export const KNOWN_MODELS = ['claude-code', 'codex', 'gemini', 'shell'] as const
+
+export const ModelTypeSchema = z.string().min(1, { message: 'Model identifier is required' })
 export type ModelType = z.infer<typeof ModelTypeSchema>
 
 export const FailPolicySchema = z.enum(['stop-all', 'continue', 'retry'])
@@ -52,6 +55,8 @@ export const GateSchema = z.object({
   name: z.string().min(1, { message: 'Gate name is required' }),
   depends_on: z.array(z.string()),
   status: GateStatusSchema.default('PENDING'),
+  cascade: z.boolean().default(false),
+  childGateIds: z.array(z.string()).default([]),
 })
 
 export const PolicySchema = z.object({
@@ -59,6 +64,9 @@ export const PolicySchema = z.object({
   max_parallel: z.number().optional(),
   default_timeout_ms: z.number().optional(),
   default_fail_policy: FailPolicySchema.optional(),
+  max_spawn_depth: z.number().default(10),
+  max_children_per_surface: z.number().default(20),
+  max_total_surfaces: z.number().default(200),
 }).optional()
 
 export const MetadataSchema = z.object({

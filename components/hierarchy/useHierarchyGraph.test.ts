@@ -21,6 +21,8 @@ const threadSurfaces: ThreadSurface[] = [
     role: 'orchestrator',
     createdAt: '2026-03-09T00:00:00.000Z',
     childSurfaceIds: ['thread-research', 'thread-outreach'],
+    sequenceRef: null,
+    spawnedByAgentId: null,
   },
   {
     id: 'thread-research',
@@ -32,6 +34,8 @@ const threadSurfaces: ThreadSurface[] = [
     role: 'specialist',
     createdAt: '2026-03-09T00:01:00.000Z',
     childSurfaceIds: ['thread-review'],
+    sequenceRef: null,
+    spawnedByAgentId: null,
   },
   {
     id: 'thread-outreach',
@@ -43,6 +47,8 @@ const threadSurfaces: ThreadSurface[] = [
     role: 'specialist',
     createdAt: '2026-03-09T00:02:00.000Z',
     childSurfaceIds: [],
+    sequenceRef: null,
+    spawnedByAgentId: null,
   },
   {
     id: 'thread-review',
@@ -54,6 +60,8 @@ const threadSurfaces: ThreadSurface[] = [
     role: 'qa',
     createdAt: '2026-03-09T00:03:00.000Z',
     childSurfaceIds: [],
+    sequenceRef: null,
+    spawnedByAgentId: null,
   },
 ]
 
@@ -68,6 +76,8 @@ const runs: RunScope[] = [
     runSummary: 'Master coordinated the active tree.',
     runNotes: 'Keep the root thread stable.',
     runDiscussion: 'Root surface notes for the AI.',
+    parentRunId: null,
+    childIndex: null,
   },
   {
     id: 'run-research-success',
@@ -79,6 +89,8 @@ const runs: RunScope[] = [
     runSummary: 'Research gathered evidence.',
     runNotes: 'Research note.',
     runDiscussion: 'Discuss research branch.',
+    parentRunId: null,
+    childIndex: null,
   },
   {
     id: 'run-research-selected',
@@ -90,6 +102,8 @@ const runs: RunScope[] = [
     runSummary: 'Selected failed run for inspection.',
     runNotes: 'Why the branch failed.',
     runDiscussion: 'AI discussion for the selected run.',
+    parentRunId: null,
+    childIndex: null,
   },
   {
     id: 'run-outreach-old',
@@ -99,6 +113,8 @@ const runs: RunScope[] = [
     endedAt: '2026-03-09T00:03:00.000Z',
     executionIndex: 3,
     runSummary: 'Old outreach attempt.',
+    parentRunId: null,
+    childIndex: null,
   },
   {
     id: 'run-outreach-success',
@@ -110,6 +126,8 @@ const runs: RunScope[] = [
     runSummary: 'Outreach completed successfully.',
     runNotes: 'Outreach note.',
     runDiscussion: 'AI discussion for outreach.',
+    parentRunId: null,
+    childIndex: null,
   },
 ]
 

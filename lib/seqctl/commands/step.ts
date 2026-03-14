@@ -9,6 +9,7 @@ interface CLIOptions {
   json: boolean
   help: boolean
   watch: boolean
+  basePath?: string
 }
 
 interface StepResult {
@@ -317,7 +318,7 @@ export async function stepCommand(
   args: string[],
   options: CLIOptions
 ): Promise<void> {
-  const basePath = process.cwd()
+  const basePath = options.basePath ?? process.cwd()
   const { values, positionals } = parseStepArgs(args)
 
   let result: StepResult

@@ -3,7 +3,9 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import type { Sequence } from '@/lib/sequence/schema'
 import type { SequenceStatus } from '@/app/api/status/route'
-import type { MergeEvent, RunScope, ThreadSurface } from '@/lib/thread-surfaces/types'
+import type { MergeEvent, RunScope, ThreadSurface, ThreadSkillBadge } from '@/lib/thread-surfaces/types'
+import type { ThreadCardProfile } from '@/components/hierarchy/FocusedThreadCard'
+import { resolveSkillsForAgent } from '@/lib/thread-surfaces/projections'
 
 interface ThreadSurfacesResponse {
   threadSurfaces: ThreadSurface[]
@@ -17,7 +19,7 @@ interface ThreadMergesResponse {
   mergeEvents: MergeEvent[]
 }
 
-async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
+export async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, init)
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: res.statusText }))
@@ -26,7 +28,7 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   return res.json()
 }
 
-function postJson<T>(url: string, body: unknown): Promise<T> {
+export function postJson<T>(url: string, body: unknown): Promise<T> {
   return fetchJson<T>(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
 }
 
@@ -135,5 +137,140 @@ export function useBlockGate() {
     mutationFn: (gateId: string) => postJson('/api/gate', { action: 'block', gateId }),
     onSuccess: () => invalidateRuntimeQueries(qc),
     onError: (error) => { console.error('Block gate failed:', error) },
+  })
+}
+
+// ── Construction mutations ──────────────────────────────────────────
+
+export interface AddStepInput {
+  stepId: string
+  name?: string
+  type?: string
+  model?: string
+  prompt?: string
+  dependsOn?: string[]
+}
+
+export function useAddStep() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (input: AddStepInput) => postJson('/api/step', { action: 'add', ...input }),
+    onSuccess: () => invalidateRuntimeQueries(qc),
+    onError: (error) => { console.error('Add step failed:', error) },
+  })
+}
+
+export interface EditStepInput {
+  stepId: string
+  name?: string
+  type?: string
+  model?: string
+  prompt?: string
+  status?: string
+  dependsOn?: string[]
+}
+
+export function useEditStep() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (input: EditStepInput) => postJson('/api/step', { action: 'edit', ...input }),
+    onSuccess: () => invalidateRuntimeQueries(qc),
+    onError: (error) => { console.error('Edit step failed:', error) },
+  })
+}
+
+export function useRemoveStep() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (stepId: string) => postJson('/api/step', { action: 'rm', stepId }),
+    onSuccess: () => invalidateRuntimeQueries(qc),
+    onError: (error) => { console.error('Remove step failed:', error) },
+  })
+}
+
+export function useCloneStep() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ sourceId, newId }: { sourceId: string; newId: string }) =>
+      postJson('/api/step', { action: 'clone', sourceId, newId }),
+    onSuccess: () => invalidateRuntimeQueries(qc),
+    onError: (error) => { console.error('Clone step failed:', error) },
+  })
+}
+
+export function useInsertGate() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (input: { gateId: string; name?: string; dependsOn?: string[] }) =>
+      postJson('/api/gate', { action: 'insert', ...input }),
+    onSuccess: () => invalidateRuntimeQueries(qc),
+    onError: (error) => { console.error('Insert gate failed:', error) },
+  })
+}
+
+export function useAddDep() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ stepId, depId }: { stepId: string; depId: string }) =>
+      postJson('/api/dep', { action: 'add', stepId, depId }),
+    onSuccess: () => invalidateRuntimeQueries(qc),
+    onError: (error) => { console.error('Add dependency failed:', error) },
+  })
+}
+
+// ── Agent profile query ─────────────────────────────────────────────
+
+interface AgentProfileResponse {
+  profile: ThreadCardProfile | null
+}
+
+export function useAgentProfile(threadSurfaceId: string | null) {
+  return useQuery<ThreadCardProfile | null>({
+    queryKey: ['agent-profile', threadSurfaceId],
+    queryFn: async () => {
+      if (!threadSurfaceId) return null
+      const res = await fetchJson<AgentProfileResponse>(`/api/agent-profile?threadSurfaceId=${encodeURIComponent(threadSurfaceId)}`)
+      return res.profile
+    },
+    enabled: !!threadSurfaceId,
+    retry: false,
+    staleTime: 30_000,
+  })
+}
+
+// ── Thread surface skill query ──────────────────────────────────────
+
+/**
+ * Resolve skills for a thread surface by fetching its agent profile
+ * and extracting the skill list. Falls back to default skills when
+ * the surface has no registered agent.
+ */
+export function useThreadSurfaceSkills(threadSurfaceId: string | null) {
+  const { data: profile } = useAgentProfile(threadSurfaceId)
+
+  return useQuery<ThreadSkillBadge[]>({
+    queryKey: ['thread-surface-skills', threadSurfaceId, profile],
+    queryFn: () => {
+      if (profile?.skills) {
+        return profile.skills.map(s => ({
+          id: s.id,
+          label: s.label,
+          inherited: s.inherited,
+        }))
+      }
+      return resolveSkillsForAgent(null)
+    },
+    enabled: !!threadSurfaceId,
+    staleTime: 30_000,
+  })
+}
+
+export function useRemoveDep() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ stepId, depId }: { stepId: string; depId: string }) =>
+      postJson('/api/dep', { action: 'rm', stepId, depId }),
+    onSuccess: () => invalidateRuntimeQueries(qc),
+    onError: (error) => { console.error('Remove dependency failed:', error) },
   })
 }

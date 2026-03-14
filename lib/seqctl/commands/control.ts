@@ -7,6 +7,7 @@ interface CLIOptions {
   json: boolean
   help: boolean
   watch: boolean
+  basePath?: string
 }
 
 export async function controlCommand(
@@ -14,7 +15,7 @@ export async function controlCommand(
   args: string[],
   options: CLIOptions
 ): Promise<void> {
-  const basePath = process.cwd()
+  const basePath = options.basePath ?? process.cwd()
   const stepId = args[0]
 
   if (!stepId) {

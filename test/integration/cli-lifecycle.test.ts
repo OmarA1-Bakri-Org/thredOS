@@ -36,17 +36,13 @@ async function emitRuntimeEventWithCommand(
 
 describe('CLI lifecycle integration', () => {
   let tmpDir: string
-  let origCwd: string
 
   beforeEach(async () => {
-    origCwd = process.cwd()
     tmpDir = await createTempDir()
-    process.chdir(tmpDir)
   })
 
   afterEach(async () => {
     delete globalThis.__THREADOS_CLI_RUN_RUNTIME__
-    process.chdir(origCwd)
     await cleanTempDir(tmpDir)
   })
 
@@ -54,7 +50,7 @@ describe('CLI lifecycle integration', () => {
     const logs: string[] = []
     const origLog = console.log
     console.log = (msg: string) => logs.push(msg)
-    await initCommand(undefined, [], jsonOpts)
+    await initCommand(undefined, [], { ...jsonOpts, basePath: tmpDir })
     console.log = origLog
 
     const result = JSON.parse(logs[0])
@@ -67,14 +63,14 @@ describe('CLI lifecycle integration', () => {
 
   test('full flow: init → add steps → add dep → status', async () => {
     // Init
-    await initCommand(undefined, [], { json: false, help: false, watch: false })
+    await initCommand(undefined, [], { json: false, help: false, watch: false, basePath: tmpDir })
 
     // Add steps
-    await stepCommand('add', ['echo-step', '-n', 'EchoStep', '-t', 'base', '-m', 'claude-code'], jsonOpts)
-    await stepCommand('add', ['step-two', '-n', 'StepTwo', '-t', 'base', '-m', 'claude-code'], jsonOpts)
+    await stepCommand('add', ['echo-step', '-n', 'EchoStep', '-t', 'base', '-m', 'claude-code'], { ...jsonOpts, basePath: tmpDir })
+    await stepCommand('add', ['step-two', '-n', 'StepTwo', '-t', 'base', '-m', 'claude-code'], { ...jsonOpts, basePath: tmpDir })
 
     // Add dep
-    await depCommand('add', ['step-two', 'echo-step'], jsonOpts)
+    await depCommand('add', ['step-two', 'echo-step'], { ...jsonOpts, basePath: tmpDir })
 
     // Verify sequence
     const seq = await readSequence(tmpDir)
@@ -84,7 +80,7 @@ describe('CLI lifecycle integration', () => {
   })
 
   test('run step with echo and verify artifacts', async () => {
-    await initCommand(undefined, [], { json: false, help: false, watch: false })
+    await initCommand(undefined, [], { json: false, help: false, watch: false, basePath: tmpDir })
 
     const seq = await readSequence(tmpDir)
     seq.steps = [{
@@ -111,7 +107,7 @@ describe('CLI lifecycle integration', () => {
     process.exit = (() => { throw new Error('exit') }) as never
 
     try {
-      await runCommand('step', ['echo-test'], jsonOpts)
+      await runCommand('step', ['echo-test'], { ...jsonOpts, basePath: tmpDir })
     } catch (error) {
       throw error
     }
@@ -125,7 +121,7 @@ describe('CLI lifecycle integration', () => {
   })
 
   test('run step persists thread surface runtime state even when the agent command fails', async () => {
-    await initCommand(undefined, [], { json: false, help: false, watch: false })
+    await initCommand(undefined, [], { json: false, help: false, watch: false, basePath: tmpDir })
 
     const seq = await readSequence(tmpDir)
     seq.name = 'CLI Runtime Sequence'
@@ -149,7 +145,7 @@ describe('CLI lifecycle integration', () => {
     process.exit = (() => { throw new Error('exit') }) as never
 
     try {
-      await runCommand('step', ['runtime-step'], jsonOpts)
+      await runCommand('step', ['runtime-step'], { ...jsonOpts, basePath: tmpDir })
     } catch {
       // expected - claude CLI may not be installed in test
     } finally {
@@ -176,7 +172,7 @@ describe('CLI lifecycle integration', () => {
   })
 
   test('orchestrator metadata alone does not create delegated child surfaces in the CLI runtime', async () => {
-    await initCommand(undefined, [], { json: false, help: false, watch: false })
+    await initCommand(undefined, [], { json: false, help: false, watch: false, basePath: tmpDir })
 
     const seq = await readSequence(tmpDir)
     seq.name = 'CLI Spawn Sequence'
@@ -249,7 +245,7 @@ describe('CLI lifecycle integration', () => {
     console.log = (msg: string) => logs.push(msg)
 
     try {
-      await runCommand('step', ['orchestrator'], jsonOpts)
+      await runCommand('step', ['orchestrator'], { ...jsonOpts, basePath: tmpDir })
     } finally {
       console.log = origLog
     }
@@ -269,7 +265,7 @@ describe('CLI lifecycle integration', () => {
   })
 
   test('runtime-emitted spawn-child events create child surfaces without static orchestrator metadata', async () => {
-    await initCommand(undefined, [], { json: false, help: false, watch: false })
+    await initCommand(undefined, [], { json: false, help: false, watch: false, basePath: tmpDir })
 
     const seq = await readSequence(tmpDir)
     seq.name = 'CLI Runtime Event Sequence'
@@ -345,7 +341,7 @@ describe('CLI lifecycle integration', () => {
       saveRunArtifacts: async () => '.threados/runs/mock',
     }
 
-    await runCommand('step', ['delegate-step'], jsonOpts)
+    await runCommand('step', ['delegate-step'], { ...jsonOpts, basePath: tmpDir })
 
     const state = await readThreadSurfaceState(tmpDir)
     expect(state.threadSurfaces).toEqual(
@@ -358,6 +354,8 @@ describe('CLI lifecycle integration', () => {
           id: 'thread-delegate-step',
           parentSurfaceId: 'thread-root',
           childSurfaceIds: ['thread-delegate-child-a', 'thread-delegate-child-b'],
+          sequenceRef: null,
+          spawnedByAgentId: null,
         }),
         expect.objectContaining({
           id: 'thread-delegate-child-a',
@@ -372,7 +370,7 @@ describe('CLI lifecycle integration', () => {
   })
 
   test('runtime event emitter command can record merge-into events through the cli run path', async () => {
-    await initCommand(undefined, [], { json: false, help: false, watch: false })
+    await initCommand(undefined, [], { json: false, help: false, watch: false, basePath: tmpDir })
 
     const seq = await readSequence(tmpDir)
     seq.name = 'CLI Merge Event Sequence'
@@ -421,6 +419,8 @@ describe('CLI lifecycle integration', () => {
           surfaceLabel: 'CLI Merge Event Sequence',
           createdAt: '2026-03-09T10:00:00.000Z',
           childSurfaceIds: ['thread-candidate-a', 'thread-candidate-b'],
+          sequenceRef: null,
+          spawnedByAgentId: null,
         },
         {
           id: 'thread-candidate-a',
@@ -430,6 +430,8 @@ describe('CLI lifecycle integration', () => {
           surfaceLabel: 'Candidate A',
           createdAt: '2026-03-09T10:00:01.000Z',
           childSurfaceIds: [],
+          sequenceRef: null,
+          spawnedByAgentId: null,
         },
         {
           id: 'thread-candidate-b',
@@ -439,6 +441,8 @@ describe('CLI lifecycle integration', () => {
           surfaceLabel: 'Candidate B',
           createdAt: '2026-03-09T10:00:02.000Z',
           childSurfaceIds: [],
+          sequenceRef: null,
+          spawnedByAgentId: null,
         },
       ],
       runs: [
@@ -449,6 +453,8 @@ describe('CLI lifecycle integration', () => {
           startedAt: '2026-03-09T10:00:00.000Z',
           endedAt: '2026-03-09T10:00:15.000Z',
           executionIndex: 1,
+          parentRunId: null,
+          childIndex: null,
         },
         {
           id: 'run-candidate-a',
@@ -457,6 +463,8 @@ describe('CLI lifecycle integration', () => {
           startedAt: '2026-03-09T10:00:01.000Z',
           endedAt: '2026-03-09T10:00:15.000Z',
           executionIndex: 2,
+          parentRunId: null,
+          childIndex: null,
         },
         {
           id: 'run-candidate-b',
@@ -465,6 +473,8 @@ describe('CLI lifecycle integration', () => {
           startedAt: '2026-03-09T10:00:02.000Z',
           endedAt: '2026-03-09T10:00:15.000Z',
           executionIndex: 3,
+          parentRunId: null,
+          childIndex: null,
         },
       ],
       mergeEvents: [],
@@ -511,7 +521,7 @@ describe('CLI lifecycle integration', () => {
       saveRunArtifacts: async () => '.threados/runs/mock',
     }
 
-    await runCommand('step', ['fusion-synth'], jsonOpts)
+    await runCommand('step', ['fusion-synth'], { ...jsonOpts, basePath: tmpDir })
 
     const state = await readThreadSurfaceState(tmpDir)
     expect(state.mergeEvents).toEqual([

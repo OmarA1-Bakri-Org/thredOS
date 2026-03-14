@@ -1,0 +1,22 @@
+{
+  "review_id": "hierarchy-lanes-review_20260311",
+  "target": "components/hierarchy/**, components/lanes/**, components/workbench/**, components/chat/**",
+  "focus_areas": ["visual", "usability", "code", "performance"],
+  "context": "Engineering dashboard / agentic workbench",
+  "platform": "responsive",
+  "status": "complete",
+  "started_at": "2026-03-11T00:00:00Z",
+  "issues_found": 13,
+  "severity_counts": {
+    "critical": 0,
+    "major": 3,
+    "minor": 6,
+    "suggestion": 4
+  },
+  "prior_review": {
+    "review_id": "full-ui-review_20260310",
+    "issues_found": 18,
+    "resolved": 12,
+    "remaining": 6
+  }
+}

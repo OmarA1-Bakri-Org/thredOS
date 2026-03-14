@@ -15,6 +15,7 @@ import { readThreadSurfaceState, writeThreadSurfaceState } from '../../thread-su
 import { completeRun, createReplacementRun, createRootThreadSurfaceRun } from '../../thread-surfaces/mutations'
 import { beginStepRunIfSurfaceExists, finalizeStepRunWithRuntimeEvents, type StepRunScope } from '../../thread-surfaces/step-run-runtime'
 import { readRuntimeEventLog, type RuntimeDelegationEvent } from '../../thread-surfaces/runtime-event-log'
+import { provisionAllChildSequences } from '../../thread-surfaces/provision-child-sequence'
 
 const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000 // 30 minutes
 const THREADOS_EVENT_EMITTER_COMMAND = 'thread event'
@@ -23,6 +24,7 @@ interface CLIOptions {
   json: boolean
   help: boolean
   watch: boolean
+  basePath?: string
 }
 
 interface RunStepResult {
@@ -277,6 +279,10 @@ async function finalizeStepRunScope(
   if (finalized.stepRun != null) {
     await writeThreadSurfaceState(basePath, finalized.state)
   }
+
+  if (finalized.pendingChildSequences.length > 0) {
+    await provisionAllChildSequences(basePath, finalized.pendingChildSequences)
+  }
 }
 
 /**
@@ -287,7 +293,7 @@ export async function runCommand(
   args: string[],
   options: CLIOptions
 ): Promise<void> {
-  const basePath = process.cwd()
+  const basePath = options.basePath ?? process.cwd()
 
   // Read and validate sequence
   const sequence = await readSequence(basePath)

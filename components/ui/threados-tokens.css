@@ -1,0 +1,59 @@
+/*
+ * ThreadOS Shell Design Tokens
+ *
+ * Extracted shell-specific design tokens that were previously hardcoded as hex
+ * values across components. These complement (not replace) the OKLCH theme
+ * tokens defined in globals.css.
+ *
+ * Usage: import this file in your root layout or globals.css to make these
+ * custom properties available throughout the application.
+ */
+
+:root {
+  /* ── Shell Backgrounds ─────────────────────────────────────────────────
+   * Layered depth system — deepest to lightest. Each layer sits above
+   * the previous one in the visual hierarchy.
+   */
+  --threados-bg-deepest: #050913;           /* board area, deepest layer */
+  --threados-bg-deep: #060a12;              /* outer shell, full-screen backgrounds */
+  --threados-bg-panel: #08101d;             /* panel backgrounds, headers, sidebars */
+  --threados-bg-surface: #0a101a;           /* controls, elevated sections, mini-map */
+  --threados-bg-elevated: #0c1525;          /* active/focused lane backgrounds */
+  --threados-bg-header: #050c17;            /* chat header, input area backgrounds */
+  --threados-bg-canvas: #0b1420;            /* canvas gradient start */
+  --threados-bg-canvas-end: #060a12;        /* canvas gradient end */
+  --threados-bg-accordion-header: #060e1a;  /* accordion section headers */
+  --threados-bg-hover: #0f1a2e;             /* hover state for controls */
+  --threados-bg-tooltip: #0a1220;           /* tooltip backgrounds */
+
+  /* ── Overlay & Scrim ───────────────────────────────────────────────── */
+  --threados-overlay: #02050a;              /* modal/drawer overlay base (used with opacity) */
+  --threados-overlay-opacity: 0.82;         /* default overlay opacity */
+
+  /* ── Accent — Blue ─────────────────────────────────────────────────── */
+  --threados-accent-blue: #16417C;                    /* primary blue accent (borders, badges, panels) */
+  --threados-accent-blue-border: rgba(22, 65, 124, 0.70);   /* blue accent border (70% opacity) */
+  --threados-accent-blue-bg: rgba(22, 65, 124, 0.18);       /* blue accent background (18% opacity) */
+  --threados-accent-blue-bg-subtle: rgba(22, 65, 124, 0.12); /* blue accent background subtle */
+  --threados-accent-blue-bg-hover: rgba(22, 65, 124, 0.16);  /* blue accent background hover */
+
+  /* ── Shadow ────────────────────────────────────────────────────────── */
+  --threados-shadow-deep: 0 28px 80px rgba(0, 0, 0, 0.55);    /* deep elevation shadow (modals, drawers) */
+  --threados-shadow-overlay: 0 28px 80px rgba(0, 0, 0, 0.45); /* card/entry shadow */
+
+  /* ── Typography Scale ────────────────────────────────────────────────
+   * Size and tracking helpers only — font families are defined in
+   * globals.css and should not be duplicated here.
+   */
+  --threados-label-size: 11px;
+  --threados-label-tracking: 0.22em;
+  --threados-caption-size: 10px;
+  --threados-caption-tracking: 0.18em;
+  --threados-micro-size: 9px;
+  --threados-micro-tracking: 0.14em;
+
+  /* ── Canvas Grid ───────────────────────────────────────────────────── */
+  --threados-grid-color: rgba(255, 255, 255, 0.025);
+  --threados-grid-gap: 28px;
+  --threados-minimap-mask: rgba(7, 16, 27, 0.85);
+}

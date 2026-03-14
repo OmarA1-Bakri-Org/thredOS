@@ -1,17 +1,18 @@
 import { NextRequest } from 'next/server'
 import { readSequence } from '@/lib/sequence/parser'
+import { getBasePath } from '@/lib/config'
+import { createConfiguredProvider, getConfiguredModel } from '@/lib/llm/providers'
 
-const BASE_PATH = process.cwd()
 const MAX_MESSAGE_LENGTH = 10_000
 
 /**
  * Chat API endpoint — SSE stream
- * POST { message: string }
+ * POST { message: string, model?: string }
  * Returns SSE events: message, actions, diff, done
  */
 export async function POST(request: NextRequest) {
   const body = await request.json()
-  const { message } = body
+  const { message, model } = body
 
   if (!message || typeof message !== 'string') {
     return new Response(JSON.stringify({ error: 'message is required' }), {
@@ -39,29 +40,54 @@ export async function POST(request: NextRequest) {
         // Try to load current sequence
         let sequence
         try {
-          sequence = await readSequence(BASE_PATH)
+          sequence = await readSequence(getBasePath())
         } catch {
           sequence = null
         }
 
-        // If ANTHROPIC_API_KEY is set, we'd call Claude here
-        // For now, echo the message with context-aware response
-        if (process.env.ANTHROPIC_API_KEY && sequence) {
-          // Future: call Anthropic API with buildSystemPrompt(sequence)
-          // Stream response chunks as type: 'message'
-          // Parse actions from response as type: 'actions'
-          // Run dry-run and send type: 'diff'
+        // Resolve model and attempt LLM call
+        const resolvedModel = model ?? getConfiguredModel(process.env)
+        let llmAvailable = false
+
+        try {
+          const provider = createConfiguredProvider(process.env)
+          if (provider.client && sequence) {
+            llmAvailable = true
+            const systemPrompt = `You are a ThreadOS assistant helping manage a sequence with ${sequence.steps.length} steps. Help the user understand and modify their sequence.`
+            const completion = await provider.client.chat.completions.create({
+              model: provider.defaultModel ?? resolvedModel,
+              messages: [
+                { role: 'system', content: systemPrompt },
+                { role: 'user', content: message },
+              ],
+              stream: true,
+            })
+
+            for await (const chunk of completion) {
+              const content = chunk.choices[0]?.delta?.content
+              if (content) {
+                send('message', { content, streaming: true })
+              }
+            }
+
+            send('actions', { actions: [] })
+            send('done', { model: resolvedModel })
+          }
+        } catch {
+          // LLM not available — fall through to stub response
         }
 
-        // Stub response — sanitize user input to prevent injection
-        const sanitizedMessage = message.replace(/[<>"]/g, '')
-        const responseText = sequence
-          ? `I see your sequence with ${sequence.steps.length} steps. You said: "${sanitizedMessage}". I'm ready to help manage your sequence — but I need an LLM API key to provide intelligent suggestions.`
-          : `No sequence found. You said: "${sanitizedMessage}". Try running \`seqctl init\` first to create a sequence.`
+        if (!llmAvailable) {
+          // Stub response — sanitize user input to prevent injection
+          const sanitizedMessage = message.replace(/[<>"]/g, '')
+          const responseText = sequence
+            ? `I see your sequence with ${sequence.steps.length} steps. You said: "${sanitizedMessage}". I'm ready to help manage your sequence — but I need an LLM API key to provide intelligent suggestions. Set THREADOS_MODEL and the corresponding API key in your .env file.`
+            : `No sequence found. You said: "${sanitizedMessage}". Try running \`seqctl init\` first to create a sequence.`
 
-        send('message', { content: responseText })
-        send('actions', { actions: [] })
-        send('done', {})
+          send('message', { content: responseText })
+          send('actions', { actions: [] })
+          send('done', { model: resolvedModel, stub: true })
+        }
       } catch (e) {
         console.error('[chat/route] Error processing SSE stream:', e)
         send('message', { content: 'Error processing request' })

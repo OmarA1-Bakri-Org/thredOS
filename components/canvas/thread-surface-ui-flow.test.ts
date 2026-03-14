@@ -1,19 +1,78 @@
 import { readFileSync } from 'node:fs'
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, mock, test } from 'bun:test'
 import type { ReactElement, ReactNode } from 'react'
 import type { SequenceStatus } from '@/app/api/status/route'
-import { resolveThreadSurfaceFocusedDetail } from '@/components/canvas/threadSurfaceFocus'
-import { resolveThreadSurfaceCanvasData } from '@/components/canvas/threadSurfaceScaffold'
-import { HierarchyView } from '@/components/hierarchy/HierarchyView'
-import { useHierarchyGraph } from '@/components/hierarchy/useHierarchyGraph'
-import { createLaneBoardModel } from '@/components/lanes/useLaneBoard'
-import {
+import type { MergeEvent, RunScope, ThreadSurface } from '@/lib/thread-surfaces/types'
+
+/* ── mock @/lib/ui/store with functional openLaneViewForThreadSurface ── */
+const uiState: Record<string, unknown> = {
+  productEntry: null,
+  setProductEntry: () => {},
+  selectedNodeId: null,
+  setSelectedNodeId: () => {},
+  leftRailOpen: false,
+  toggleLeftRail: () => {},
+  closeLeftRail: () => {},
+  inspectorOpen: false,
+  toggleInspector: () => {},
+  closeInspector: () => {},
+  chatOpen: false,
+  toggleChat: () => {},
+  searchQuery: '',
+  setSearchQuery: () => {},
+  minimapVisible: true,
+  toggleMinimap: () => {},
+  viewMode: 'hierarchy' as string,
+  setViewMode: (mode: string) => { uiState.viewMode = mode },
+  selectedThreadSurfaceId: null as string | null,
+  setSelectedThreadSurfaceId: (id: string | null) => { uiState.selectedThreadSurfaceId = id },
+  selectedRunId: null as string | null,
+  setSelectedRunId: (id: string | null) => { uiState.selectedRunId = id },
+  hierarchyViewport: { x: 0, y: 0, zoom: 1 },
+  setHierarchyViewport: () => {},
+  laneFocusThreadSurfaceId: null as string | null,
+  setLaneFocusThreadSurfaceId: () => {},
+  laneBoardState: { scrollLeft: 0, focusedThreadSurfaceId: null as string | null, focusedRunId: null as string | null },
+  setLaneBoardState: () => {},
+  openLaneViewForThreadSurface: (threadSurfaceId: string, runId: string | null = null) => {
+    uiState.viewMode = 'lanes'
+    uiState.selectedThreadSurfaceId = threadSurfaceId
+    uiState.selectedRunId = runId
+    uiState.laneFocusThreadSurfaceId = threadSurfaceId
+    uiState.laneBoardState = {
+      ...(uiState.laneBoardState as Record<string, unknown>),
+      focusedThreadSurfaceId: threadSurfaceId,
+      focusedRunId: runId,
+    }
+  },
+  createDialogOpen: false,
+  createDialogKind: 'step',
+  openCreateDialog: () => {},
+  closeCreateDialog: () => {},
+}
+
+mock.module('@/lib/ui/store', () => ({
+  useUIStore: Object.assign(
+    (selector: (s: typeof uiState) => unknown) => selector(uiState),
+    {
+      setState: (patch: Partial<typeof uiState>) => Object.assign(uiState, patch),
+      getState: () => uiState,
+    },
+  ),
+}))
+
+const { resolveThreadSurfaceFocusedDetail } = await import('@/components/canvas/threadSurfaceFocus')
+const { resolveThreadSurfaceCanvasData } = await import('@/components/canvas/threadSurfaceScaffold')
+const { HierarchyView } = await import('@/components/hierarchy/HierarchyView')
+const { useHierarchyGraph } = await import('@/components/hierarchy/useHierarchyGraph')
+const { createLaneBoardModel } = await import('@/components/lanes/useLaneBoard')
+const {
   unwrapThreadMergesResponse,
   unwrapThreadRunsResponse,
   unwrapThreadSurfacesResponse,
-} from '@/lib/ui/api'
-import { useUIStore } from '@/lib/ui/store'
-import type { MergeEvent, RunScope, ThreadSurface } from '@/lib/thread-surfaces/types'
+} = await import('@/lib/ui/api')
+const { useUIStore } = await import('@/lib/ui/store')
+const { contentCreatorWorkflow, resolveWorkflowReferenceStep } = await import('@/lib/workflows')
 
 type ButtonElement = ReactElement<{
   children?: ReactNode
@@ -61,7 +120,11 @@ function collectButtons(node: ReactNode, acc: ButtonElement[] = []): ButtonEleme
   const element = node as ReactElement<{ children?: ReactNode; [key: string]: unknown }>
   if (typeof element.type === 'function') {
     const render = element.type as (props: typeof element.props) => ReactNode
-    collectButtons(render(element.props), acc)
+    try {
+      collectButtons(render(element.props), acc)
+    } catch {
+      // Skip components that require React's render pipeline (e.g. hooks)
+    }
     return acc
   }
 
@@ -188,5 +251,13 @@ describe('thread surface canvas flow', () => {
         }),
       ],
     })
+
+    expect(
+      resolveWorkflowReferenceStep(contentCreatorWorkflow, {
+        threadSurfaceLabel: focusedDetail?.surfaceLabel,
+        threadRole: focusedDetail?.role,
+        runSummary: focusedDetail?.runSummary,
+      })?.id,
+    ).toBe('post_publish_analytics')
   })
 })

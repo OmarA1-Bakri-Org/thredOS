@@ -8,6 +8,7 @@ interface CLIOptions {
   json: boolean
   help: boolean
   watch: boolean
+  basePath?: string
 }
 
 export async function gateCommand(
@@ -15,7 +16,7 @@ export async function gateCommand(
   args: string[],
   options: CLIOptions
 ): Promise<void> {
-  const basePath = process.cwd()
+  const basePath = options.basePath ?? process.cwd()
 
   let result: { success: boolean; action: string; message?: string; error?: string; gates?: Gate[] }
 
@@ -47,6 +48,8 @@ export async function gateCommand(
         name: (values.name as string) || gateId,
         depends_on: values['depends-on'] ? (values['depends-on'] as string).split(',').map(s => s.trim()) : [],
         status: 'PENDING',
+        cascade: false,
+        childGateIds: [],
       }
 
       sequence.gates.push(gate)

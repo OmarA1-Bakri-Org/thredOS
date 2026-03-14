@@ -12,6 +12,8 @@ const surface: ThreadSurface = {
   role: 'specialist',
   createdAt: '2026-03-09T00:01:00.000Z',
   childSurfaceIds: ['thread-review'],
+  sequenceRef: null,
+  spawnedByAgentId: null,
 }
 
 const runs: RunScope[] = [
@@ -24,6 +26,8 @@ const runs: RunScope[] = [
     runSummary: 'Research gathered evidence.',
     runNotes: 'Stable evidence set compiled.',
     runDiscussion: 'AI discussion for the successful run.',
+    parentRunId: null,
+    childIndex: null,
   },
   {
     id: 'run-research-failed',
@@ -34,6 +38,8 @@ const runs: RunScope[] = [
     runSummary: 'Research failed after a bad branch.',
     runNotes: 'Failure notes for follow-up.',
     runDiscussion: 'AI discussion for the failed run.',
+    parentRunId: null,
+    childIndex: null,
   },
 ]
 

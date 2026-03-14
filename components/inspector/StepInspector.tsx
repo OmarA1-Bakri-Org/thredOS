@@ -1,55 +1,301 @@
 'use client'
 
+import { AlertTriangle, GitBranch, ShieldCheck, Wrench } from 'lucide-react'
 import { useUIStore } from '@/lib/ui/store'
-import { useStatus } from '@/lib/ui/api'
+import { useStatus, useThreadMerges, useThreadRuns, useThreadSurfaces } from '@/lib/ui/api'
 import { StepForm } from './StepForm'
 import { StepActions } from './StepActions'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
+import { ThreadSurfaceInspector } from './ThreadSurfaceInspector'
+import { WorkflowBlueprintPanel } from '@/components/workflows/WorkflowBlueprintPanel'
+import { WorkflowStepContextPanel } from '@/components/workflows/WorkflowStepContextPanel'
+import { contentCreatorWorkflow, resolveWorkflowReferenceStep } from '@/lib/workflows'
+import { createLaneBoardModel } from '@/components/lanes/useLaneBoard'
+import { resolveThreadSurfaceFocusedDetail } from '@/components/canvas/threadSurfaceFocus'
+import { useHierarchyGraph } from '@/components/hierarchy/useHierarchyGraph'
+import type { HierarchyViewNode } from '@/components/hierarchy/HierarchyView'
+
+function EmptyInspectorState({ message }: { message: string }) {
+  return (
+    <div className="border border-[#16417C]/70 bg-[#16417C]/18 px-4 py-4 text-sm text-slate-200">
+      {message}
+    </div>
+  )
+}
 
 export function StepInspector() {
   const selectedNodeId = useUIStore(s => s.selectedNodeId)
+  const selectedThreadSurfaceId = useUIStore(s => s.selectedThreadSurfaceId)
+  const selectedRunId = useUIStore(s => s.selectedRunId)
+  const setSelectedThreadSurfaceId = useUIStore(s => s.setSelectedThreadSurfaceId)
+  const setSelectedRunId = useUIStore(s => s.setSelectedRunId)
   const { data: status, isLoading } = useStatus()
+  const { data: threadSurfaces } = useThreadSurfaces()
+  const { data: runs } = useThreadRuns()
+  const { data: mergeEvents } = useThreadMerges()
 
-  if (!selectedNodeId) {
+  const selectedRunIdBySurfaceId = selectedThreadSurfaceId && selectedRunId
+    ? { [selectedThreadSurfaceId]: selectedRunId }
+    : {}
+  const hierarchyGraph = useHierarchyGraph({
+    threadSurfaces: threadSurfaces ?? [],
+    runs: runs ?? [],
+    zoom: 1,
+    selectedRunIdBySurfaceId,
+  })
+  const hierarchyNodes: HierarchyViewNode[] = hierarchyGraph.nodes.map(node => ({
+    id: node.id,
+    surfaceLabel: node.surfaceLabel,
+    depth: node.depth,
+    childCount: node.metadata.childCount,
+    runStatus: node.metadata.displayRunStatus,
+    runSummary: node.metadata.runSummary,
+    role: node.metadata.role,
+    surfaceDescription: node.metadata.surfaceDescription,
+    clickTarget: {
+      threadSurfaceId: node.clickTarget.threadSurfaceId,
+      runId: node.clickTarget.runId,
+    },
+  }))
+  const hierarchyEdges = hierarchyGraph.edges
+
+  const handleSelectNode = (threadSurfaceId: string, runId: string | null) => {
+    setSelectedThreadSurfaceId(threadSurfaceId)
+    if (runId) setSelectedRunId(runId)
+  }
+
+  const laneBoard = threadSurfaces && runs && mergeEvents
+    ? createLaneBoardModel({
+        threadSurfaces,
+        runs,
+        mergeEvents,
+        runIds: runs.map(run => run.id),
+      })
+    : null
+  const focusedThreadDetail = threadSurfaces && runs && mergeEvents && laneBoard
+    ? resolveThreadSurfaceFocusedDetail({
+        threadSurfaces,
+        runs,
+        mergeEvents,
+        rows: laneBoard.rows,
+        mergeGroups: laneBoard.mergeGroups,
+        focusedThreadSurfaceId: selectedThreadSurfaceId,
+        selectedRunId,
+      })
+    : null
+
+  if (!selectedNodeId && focusedThreadDetail) {
+    const workflowStep = resolveWorkflowReferenceStep(contentCreatorWorkflow, {
+      selectedNodeId: null,
+      threadSurfaceLabel: focusedThreadDetail.surfaceLabel,
+      threadRole: focusedThreadDetail.role,
+      runSummary: focusedThreadDetail.runSummary,
+    })
+
     return (
-      <div className="p-4 text-muted-foreground text-sm">
-        Select a step or gate to inspect
-      </div>
+      <ThreadSurfaceInspector
+        detail={focusedThreadDetail}
+        workflowStep={workflowStep}
+        hierarchyNodes={hierarchyNodes}
+        hierarchyEdges={hierarchyEdges}
+        selectedThreadSurfaceId={selectedThreadSurfaceId}
+        onSelectNode={handleSelectNode}
+      />
     )
   }
 
-  if (isLoading) return <LoadingSpinner message="Loading..." />
+  if (!selectedNodeId) {
+    return <EmptyInspectorState message="Select a thread surface, step, or gate to inspect." />
+  }
+
+  if (isLoading) return <LoadingSpinner message="Loading inspector..." />
 
   if (!status) {
-    return <div className="p-4 text-muted-foreground text-sm">No data available</div>
+    return <EmptyInspectorState message="Sequence status is unavailable." />
   }
 
   const step = status.steps.find(s => s.id === selectedNodeId)
   const gate = status.gates.find(g => g.id === selectedNodeId)
+  const workflowStep = resolveWorkflowReferenceStep(contentCreatorWorkflow, {
+    selectedNodeId,
+    threadSurfaceLabel: step?.name ?? gate?.name ?? selectedNodeId,
+    runSummary: step?.name ?? gate?.name ?? selectedNodeId,
+  })
 
   if (!step && !gate) {
-    return <div className="p-4 text-muted-foreground text-sm">Node not found</div>
+    return <EmptyInspectorState message="The selected node could not be resolved from the current sequence state." />
   }
 
   if (gate) {
     return (
-      <div className="p-4">
-        <h3 className="font-bold text-lg">Gate: {gate.id}</h3>
-        <dl className="mt-2 space-y-2">
-          <div><dt className="text-xs text-muted-foreground inline">Name:</dt> <dd className="inline">{gate.name}</dd></div>
-          <div><dt className="text-xs text-muted-foreground inline">Status:</dt> <dd className="inline font-mono">{gate.status}</dd></div>
-          {gate.dependsOn.length > 0 && <div><dt className="text-xs text-muted-foreground inline">Dependencies:</dt> <dd className="inline">{gate.dependsOn.join(', ')}</dd></div>}
-        </dl>
-        <StepActions nodeId={gate.id} isGate={true} />
-      </div>
-    )
-  }
+      <div className="space-y-4">
+        <section className="border border-[#16417C]/70 bg-[#16417C]/18 px-4 py-4">
+          <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">Gate</div>
+          <div className="mt-2 flex items-center gap-2 text-2xl font-semibold tracking-tight text-white">
+            <ShieldCheck className="h-5 w-5 text-emerald-300" />
+            {gate.id}
+          </div>
+          <p className="mt-2 text-sm text-slate-200">{gate.name}</p>
+        </section>
+
+        <section className="grid gap-3 xl:grid-cols-2">
+          <div className="border border-slate-700 bg-slate-950/65 px-4 py-4">
+            <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">State</div>
+            <div className="mt-3 text-sm text-slate-100">
+              <div><strong className="text-white">Status:</strong> <span className="font-mono uppercase tracking-[0.14em] text-emerald-100">{gate.status}</span></div>
+              <div className="mt-2"><strong className="text-white">Dependencies:</strong> {gate.dependsOn.length > 0 ? gate.dependsOn.join(', ') : 'None'}</div>
+            </div>
+          </div>
+          <div className="border border-slate-700 bg-slate-950/65 px-4 py-4">
+            <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">Control</div>
+            <p className="mt-3 text-sm text-slate-300">
+              Gates regulate downstream work. Approval allows progression; blocking keeps the dependency chain halted.
+            </p>
+          </div>
+        </section>
+
+      <section className="border border-slate-700 bg-[#0a101a] px-4 py-4">
+        <div className="mb-3 font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">Actions</div>
+        <StepActions nodeId={gate.id} isGate />
+      </section>
+
+      {workflowStep ? (
+        <WorkflowStepContextPanel workflow={contentCreatorWorkflow} step={workflowStep} />
+      ) : null}
+    </div>
+  )
+}
 
   return (
-    <div className="p-4">
-      <h3 className="font-bold text-lg">{step!.id}</h3>
-      <StepForm step={step!} />
-      <StepActions nodeId={step!.id} isGate={false} />
+    <div className="space-y-4">
+      {focusedThreadDetail ? (
+        <section
+          data-testid="step-inspector-thread-context"
+          className="border border-[#16417C]/70 bg-[#16417C]/18 px-4 py-4"
+        >
+          <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">Current thread / run</div>
+          <div className="mt-2 flex flex-wrap items-end gap-3">
+            <div>
+              <div className="text-2xl font-semibold tracking-tight text-white">{focusedThreadDetail.surfaceLabel}</div>
+              {focusedThreadDetail.role ? (
+                <div className="mt-1 text-sm text-slate-200">{focusedThreadDetail.role}</div>
+              ) : null}
+            </div>
+            {focusedThreadDetail.runId ? (
+              <span className="border border-sky-500/35 bg-sky-500/10 px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-sky-100">
+                {focusedThreadDetail.runId}
+              </span>
+            ) : null}
+            {focusedThreadDetail.runStatus ? (
+              <span className="border border-emerald-500/35 bg-emerald-500/10 px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-emerald-100">
+                {focusedThreadDetail.runStatus}
+              </span>
+            ) : null}
+            {focusedThreadDetail.executionIndex != null ? (
+              <span className="border border-slate-700 bg-slate-950/60 px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-slate-200">
+                execIndex {focusedThreadDetail.executionIndex}
+              </span>
+            ) : null}
+          </div>
+          <div className="mt-3 grid gap-3 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]">
+            <div className="space-y-3">
+              <div className="border border-slate-800/90 bg-[#08101d] px-3 py-3">
+                <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Run summary</div>
+                <div className="mt-2 text-sm text-slate-100">
+                  {focusedThreadDetail.runSummary ?? 'No run summary recorded yet.'}
+                </div>
+              </div>
+              <div
+                data-testid="step-inspector-thread-provenance"
+                className="border border-slate-800/90 bg-[#08101d] px-3 py-3"
+              >
+                <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Thread provenance</div>
+                <div className="mt-2 space-y-2 text-sm text-slate-100">
+                  <div><strong className="text-white">Thread surface:</strong> {focusedThreadDetail.threadSurfaceId}</div>
+                  <div><strong className="text-white">Run:</strong> {focusedThreadDetail.runId ?? 'No run selected'}</div>
+                  <div><strong className="text-white">Workflow step context:</strong> {workflowStep ? workflowStep.name : 'Unavailable'}</div>
+                </div>
+              </div>
+            </div>
+            <div className="space-y-3">
+              <div
+                data-testid="step-inspector-run-notes"
+                className="border border-[#16417C]/70 bg-[#16417C]/16 px-3 py-3"
+              >
+                <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Run notes</div>
+                <div className="mt-2 text-sm text-slate-100">
+                  {focusedThreadDetail.runNotes ?? 'No run notes recorded yet.'}
+                </div>
+              </div>
+              <div
+                data-testid="step-inspector-run-discussion"
+                className="border border-[#16417C]/70 bg-[#16417C]/16 px-3 py-3"
+              >
+                <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Run discussion</div>
+                <div className="mt-2 text-sm text-slate-100">
+                  {focusedThreadDetail.runDiscussion ?? 'No run discussion recorded yet.'}
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      ) : null}
+
+      <section className="border border-[#16417C]/70 bg-[#16417C]/18 px-4 py-4">
+        <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">Step detail</div>
+        <div className="mt-2 text-2xl font-semibold tracking-tight text-white">{step!.id}</div>
+        <div className="mt-3 flex flex-wrap gap-2 text-[11px] uppercase tracking-[0.18em]">
+          <span className="border border-sky-500/45 bg-sky-500/10 px-3 py-1 text-sky-100">{step!.type}</span>
+          <span className="border border-slate-700 bg-slate-950/60 px-3 py-1 text-slate-200">{step!.model}</span>
+          <span className="border border-emerald-500/35 bg-emerald-500/10 px-3 py-1 text-emerald-100">{step!.status}</span>
+        </div>
+      </section>
+
+      <section className="grid gap-3 xl:grid-cols-2">
+        <div className="border border-slate-700 bg-slate-950/65 px-4 py-4">
+          <div className="flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">
+            <Wrench className="h-3.5 w-3.5" />
+            Thread context
+          </div>
+          <StepForm step={step!} />
+        </div>
+
+        <div className="space-y-3">
+          <div className="border border-slate-700 bg-slate-950/65 px-4 py-4">
+            <div className="flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">
+              <GitBranch className="h-3.5 w-3.5" />
+              Provenance
+            </div>
+            <div className="mt-3 space-y-2 text-sm text-slate-300">
+              <div><strong className="text-white">Sequence:</strong> {status.name}</div>
+              <div><strong className="text-white">Runtime status:</strong> {step!.status}</div>
+              <div><strong className="text-white">Dependencies:</strong> {step!.dependsOn.length > 0 ? step!.dependsOn.join(', ') : 'None'}</div>
+            </div>
+          </div>
+
+          <div className="border border-slate-700 bg-slate-950/65 px-4 py-4">
+            <div className="flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">
+              <AlertTriangle className="h-3.5 w-3.5" />
+              Operational guidance
+            </div>
+            <p className="mt-3 text-sm text-slate-300">
+              Use restart for a clean rerun. Use stop only when you intend to interrupt active work and accept downstream impact.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section className="border border-slate-700 bg-[#0a101a] px-4 py-4">
+        <div className="mb-3 font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">Actions</div>
+        <StepActions nodeId={step!.id} isGate={false} />
+      </section>
+
+      <section data-testid="step-inspector-workflow-detail" className="space-y-4">
+        {workflowStep ? (
+          <WorkflowStepContextPanel workflow={contentCreatorWorkflow} step={workflowStep} />
+        ) : null}
+        <WorkflowBlueprintPanel workflow={contentCreatorWorkflow} />
+      </section>
     </div>
   )
 }

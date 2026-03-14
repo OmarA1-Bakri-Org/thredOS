@@ -43,6 +43,8 @@ export function generateChained(opts: ChainedTemplateOptions = {}): { steps: Ste
         name: `Gate after ${id}`,
         depends_on: [id],
         status: 'PENDING',
+        cascade: false,
+        childGateIds: [],
       })
     }
   }

@@ -1,0 +1,1696 @@
+{
+  "$schema": "../workflow-schema.json",
+  "id": "content_creator",
+  "name": "Content Creator",
+  "version": "1.0.0",
+  "description": "Multi-platform content creation agent for LinkedIn posts/articles, blog/newsletter (intelligentrails.news, omarbakri.com), and X/Twitter. Orchestrates the full pipeline: Strategy, Research, Draft, Polish, Publish.",
+  "channel": "multi_platform",
+  "triggers": [
+    "create content", "write a post", "linkedin post", "tweet", "blog post",
+    "newsletter", "content calendar", "repurpose", "batch content", "content pipeline",
+    "write for linkedin", "write for x", "post to x", "publish",
+    "plan my week's content", "write about", "improve this draft"
+  ],
+
+  "prerequisites": {
+    "connections": [
+      {
+        "name": "linkedin",
+        "type": "rube",
+        "required": true,
+        "health_check": "LINKEDIN_GET_POST_CONTENT",
+        "on_unavailable": "skip_dependent_steps"
+      },
+      {
+        "name": "twitter",
+        "type": "rube",
+        "required": true,
+        "health_check": "TWITTER_RECENT_SEARCH",
+        "on_unavailable": "skip_dependent_steps"
+      },
+      {
+        "name": "tavily",
+        "type": "rube",
+        "required": false,
+        "health_check": "TAVILY_TAVILY_SEARCH",
+        "on_unavailable": "warn"
+      },
+      {
+        "name": "exa",
+        "type": "rube",
+        "required": false,
+        "health_check": "EXA_SEARCH",
+        "on_unavailable": "warn"
+      },
+      {
+        "name": "telegram",
+        "type": "rube",
+        "required": false,
+        "health_check": "TELEGRAM_SEND_MESSAGE",
+        "on_unavailable": "warn"
+      }
+    ],
+    "env_vars": [
+      "GEMINI_API_KEY"
+    ],
+    "phantom_ids": {},
+    "key_ids": {
+      "telegram_chat_id": "1778273779",
+      "linkedin_author_urn": "urn:li:person:OmarAl-Bakri",
+      "blog_domain": "omarbakri.com",
+      "newsletter_domain": "intelligentrails.news"
+    }
+  },
+
+  "rate_limits": {
+    "linkedin_posts_per_day": {
+      "max": 1,
+      "per": "day",
+      "enforce": "hard",
+      "current_check": "python C:/Users/OmarAl-Bakri/Claude_Code_Automations/scripts/state_manager.py get-messages --agent \"orchestrator\" --type \"POST_PUBLISHED\" --filter-platform \"linkedin\" --filter-date \"today\"",
+      "on_breach": "abort"
+    },
+    "twitter_posts_per_day": {
+      "max": 10,
+      "per": "day",
+      "enforce": "soft",
+      "current_check": "python C:/Users/OmarAl-Bakri/Claude_Code_Automations/scripts/state_manager.py get-messages --agent \"orchestrator\" --type \"POST_PUBLISHED\" --filter-platform \"twitter\" --filter-date \"today\"",
+      "on_breach": "warn"
+    },
+    "twitter_posts_min_per_day": {
+      "max": 3,
+      "per": "day",
+      "enforce": "soft",
+      "on_breach": "warn"
+    },
+    "image_generation_per_session": {
+      "max": 5,
+      "per": "session",
+      "enforce": "soft",
+      "on_breach": "warn"
+    }
+  },
+
+  "timeouts": {
+    "workflow_max_ms": 3600000,
+    "step_default_ms": 300000,
+    "api_call_ms": 30000,
+    "phantombuster_poll_ms": 0,
+    "approval_wait_ms": 0
+  },
+
+  "shared_references": [
+    {
+      "id": "voice_guide",
+      "path": "agent_workflows/content_creator/references/voice-guide.md",
+      "load_when": "always",
+      "required": true
+    },
+    {
+      "id": "platform_formats",
+      "path": "agent_workflows/content_creator/references/platform-formats.md",
+      "load_when": "before_drafting",
+      "required": true
+    },
+    {
+      "id": "repurposing",
+      "path": "agent_workflows/content_creator/references/repurposing.md",
+      "load_when": "before_drafting",
+      "required": false
+    },
+    {
+      "id": "rtgs_company_info",
+      "path": "shared_references/rtgs-company-info.md",
+      "load_when": "always",
+      "required": true
+    },
+    {
+      "id": "persona_routing",
+      "path": "shared_references/persona-routing.md",
+      "load_when": "always",
+      "required": true
+    },
+    {
+      "id": "cross_channel_intel",
+      "path": "shared_references/cross-channel-intel.md",
+      "load_when": "setup",
+      "required": false
+    },
+    {
+      "id": "state_management",
+      "path": "shared_references/state-management.md",
+      "load_when": "setup",
+      "required": false
+    },
+    {
+      "id": "context7_docs",
+      "path": "shared_references/context7-documentation.md",
+      "load_when": "setup",
+      "required": false
+    }
+  ],
+
+  "steps": [
+    {
+      "id": "health_check",
+      "name": "Health Check",
+      "phase": 0,
+      "description": "Verify state manager and database connectivity before content creation pipeline",
+      "execution": "sequential",
+      "timeout_ms": 15000,
+      "actions": [
+        {
+          "id": "run_health_check",
+          "type": "cli",
+          "description": "Run state manager health check",
+          "config": {
+            "command": "python C:/Users/OmarAl-Bakri/Claude_Code_Automations/scripts/state_manager.py health-check"
+          },
+          "output_key": "health",
+          "retry": {
+            "max_attempts": 2,
+            "delay_ms": 3000,
+            "retry_on": ["timeout", "connection_error"]
+          },
+          "on_failure": "warn"
+        }
+      ],
+      "gates": {
+        "post": [
+          {
+            "id": "not_stateless",
+            "type": "hard",
+            "check": "health.mode != 'stateless'",
+            "on_fail": "abort",
+            "message": "State manager is stateless — cannot proceed. Send Telegram alert."
+          },
+          {
+            "id": "degraded_warning",
+            "type": "soft",
+            "check": "health.mode == 'normal'",
+            "on_fail": "warn",
+            "message": "State manager is degraded — SQLite fallback active. Proceeding with caution."
+          }
+        ]
+      }
+    },
+
+    {
+      "id": "register_agent",
+      "name": "Register Agent",
+      "phase": 0,
+      "description": "Register content_creator agent with state manager (idempotent, first run only)",
+      "execution": "sequential",
+      "timeout_ms": 10000,
+      "condition": "first_run == true",
+      "actions": [
+        {
+          "id": "register",
+          "type": "cli",
+          "description": "Register content_creator agent",
+          "config": {
+            "command": "python C:/Users/OmarAl-Bakri/Claude_Code_Automations/scripts/state_manager.py register-agent --name \"content_creator\" --channels \"linkedin,twitter,blog\" --capabilities \"content_creation,research,publishing,analytics\""
+          },
+          "on_failure": "warn"
+        }
+      ]
+    },
+
+    {
+      "id": "pre_session",
+      "name": "Pre-Session State Load",
+      "phase": 0,
+      "description": "Load session state: recent posts, agent messages, memories, content performance history, ICP rotation schedule",
+      "execution": "sequential",
+      "timeout_ms": 30000,
+      "depends_on": ["health_check"],
+      "actions": [
+        {
+          "id": "pre_session_check",
+          "type": "cli",
+          "description": "Load session state from state manager",
+          "config": {
+            "command": "python C:/Users/OmarAl-Bakri/Claude_Code_Automations/scripts/state_manager.py pre-session-check --agent \"content_creator\""
+          },
+          "output_key": "session_state",
+          "on_failure": "warn"
+        },
+        {
+          "id": "get_messages",
+          "type": "cli",
+          "description": "Retrieve inter-agent messages (POST_PUBLISHED, METRICS, etc.)",
+          "config": {
+            "command": "python C:/Users/OmarAl-Bakri/Claude_Code_Automations/scripts/state_manager.py get-messages --agent \"content_creator\""
+          },
+          "output_key": "agent_messages",
+          "on_failure": "warn"
+        },
+        {
+          "id": "recall_memories",
+          "type": "cli",
+          "description": "Recall content performance memories and audience insights",
+          "config": {
+            "command": "python C:/Users/OmarAl-Bakri/Claude_Code_Automations/scripts/state_manager.py recall --agent \"content_creator\" --limit 20"
+          },
+          "output_key": "memories",
+          "on_failure": "skip"
+        },
+        {
+          "id": "load_knowledge",
+          "type": "cli",
+          "description": "Load content creation knowledge base",
+          "config": {
+            "command": "python C:/Users/OmarAl-Bakri/Claude_Code_Automations/scripts/state_manager.py query-knowledge --category \"content\" --tags \"linkedin,twitter,blog,performance\""
+          },
+          "output_key": "knowledge",
+          "on_failure": "skip"
+        }
+      ]
+    },
+
+    {
+      "id": "setup_workspace",
+      "name": "Setup Workspace & ICP Rotation",
+      "phase": 0,
+      "description": "Create working directories, determine today's ICP lane from rotation schedule, check shared intel from other agents",
+      "execution": "sequential",
+      "timeout_ms": 30000,
+      "actions": [
+        {
+          "id": "create_dirs",
+          "type": "cli",
+          "description": "Create temp working directories for content pipeline",
+          "config": {
+            "command": "mkdir -p /tmp/content-ops/drafts && mkdir -p /tmp/content-ops/images && mkdir -p /tmp/content-ops/research && mkdir -p /tmp/shared-intel"
+          },
+          "on_failure": "abort_step"
+        },
+        {
+          "id": "read_shared_intel",
+          "type": "read_file",
+          "description": "Check for prospect signals from LinkedIn/Outlook agents for content inspiration",
+          "config": {
+            "file_path": "/tmp/shared-intel/prospect-signals.json"
+          },
+          "output_key": "cross_channel_signals",
+          "on_failure": "skip"
+        },
+        {
+          "id": "determine_icp_lane",
+          "type": "conditional",
+          "description": "Determine today's ICP lane from weekly rotation: Mon=B(Payments), Tue=C(Partnerships), Wed=A(Treasury), Thu=D(Technical), Fri=C(Partnerships). Lane E(Compliance) rotates in every other Wednesday.",
+          "config": {
+            "condition": "day_of_week",
+            "if_true": [],
+            "if_false": []
+          },
+          "output_key": "todays_icp_lane",
+          "on_failure": "warn"
+        }
+      ],
+      "outputs": {
+        "todays_icp_lane": "ICP lane letter (A-E) based on day of week rotation",
+        "icp_rotation_schedule": "Mon=B(Marcus/Payments), Tue=C(Sofia/Partnerships), Wed=A(Karim/Treasury), Thu=D(Raj/Technical), Fri=C(Sofia/Partnerships), Lane E(Hannah/Compliance) every other Wed"
+      }
+    },
+
+    {
+      "id": "strategy",
+      "name": "Phase 1: Strategy",
+      "phase": 1,
+      "description": "Determine what content to create: platform, format, ICP lane, content pillar, buyer stage. Use content-strategy and brainstorming skills. Output: prioritized list of content pieces with platform, format, and angle.",
+      "execution": "sub_agent",
+      "timeout_ms": 300000,
+      "depends_on": ["setup_workspace", "pre_session"],
+      "condition": "user_needs_strategy == true",
+      "actions": [
+        {
+          "id": "invoke_content_strategy",
+          "type": "skill",
+          "description": "Invoke content-strategy skill for topic clusters, pillars, keyword mapping",
+          "config": {
+            "skill_name": "content-strategy"
+          },
+          "output_key": "strategy_output",
+          "on_failure": "abort_step"
+        },
+        {
+          "id": "invoke_brainstorming",
+          "type": "skill",
+          "description": "Invoke brainstorming skill for ideation when exploring angles",
+          "config": {
+            "skill_name": "brainstorming"
+          },
+          "output_key": "brainstorm_output",
+          "on_failure": "skip"
+        },
+        {
+          "id": "invoke_marketing_psychology",
+          "type": "skill",
+          "description": "Apply marketing psychology for engagement triggers (curiosity gap, social proof, loss aversion)",
+          "config": {
+            "skill_name": "marketing-skills:marketing-psychology"
+          },
+          "output_key": "psychology_angles",
+          "on_failure": "skip"
+        }
+      ],
+      "outputs": {
+        "content_plan": "Prioritized list of content pieces with platform, format, ICP lane, pillar, buyer stage, and angle",
+        "strategy_output": "Topic clusters and keyword mapping from content-strategy skill",
+        "brainstorm_output": "Ideation results from brainstorming skill"
+      }
+    },
+
+    {
+      "id": "research",
+      "name": "Phase 2: Research",
+      "phase": 2,
+      "description": "Gather supporting data, examples, trending context, and competitor insights. Uses Tavily, Exa, x-twitter-scraper, competitor analysis, and SEO research tools.",
+      "execution": "sub_agent",
+      "timeout_ms": 300000,
+      "depends_on": ["strategy"],
+      "condition": "research_needed == true",
+      "actions": [
+        {
+          "id": "tavily_search",
+          "type": "rube_tool",
+          "description": "Broad web research via Tavily for trending topics and supporting data",
+          "config": {
+            "tool_slug": "TAVILY_TAVILY_SEARCH",
+            "arguments": {
+              "query": "{{research_query}}",
+              "search_depth": "advanced",
+              "max_results": 10
+            }
+          },
+          "output_key": "tavily_results",
+          "retry": {
+            "max_attempts": 2,
+            "delay_ms": 3000,
+            "retry_on": ["timeout", "connection_error"]
+          },
+          "on_failure": "warn"
+        },
+        {
+          "id": "exa_search",
+          "type": "rube_tool",
+          "description": "Deep semantic research via Exa for content discovery and competitor analysis",
+          "config": {
+            "tool_slug": "EXA_SEARCH",
+            "arguments": {
+              "query": "{{research_query}}",
+              "num_results": 10,
+              "type": "neural"
+            }
+          },
+          "output_key": "exa_results",
+          "retry": {
+            "max_attempts": 2,
+            "delay_ms": 3000,
+            "retry_on": ["timeout", "connection_error"]
+          },
+          "on_failure": "warn"
+        },
+        {
+          "id": "twitter_trend_search",
+          "type": "rube_tool",
+          "description": "Search X/Twitter for trending topics and engagement patterns via Xquik",
+          "config": {
+            "tool_slug": "TWITTER_RECENT_SEARCH",
+            "arguments": {
+              "query": "{{research_query}}",
+              "max_results": 20
+            }
+          },
+          "output_key": "twitter_trends",
+          "on_failure": "skip"
+        },
+        {
+          "id": "competitor_analysis",
+          "type": "skill",
+          "description": "Competitive content gap analysis via marketing-skills:competitor-alternatives",
+          "config": {
+            "skill_name": "marketing-skills:competitor-alternatives"
+          },
+          "output_key": "competitor_gaps",
+          "on_failure": "skip"
+        },
+        {
+          "id": "seo_research",
+          "type": "skill",
+          "description": "Keyword research and search intent analysis via marketing-skills:ai-seo",
+          "config": {
+            "skill_name": "marketing-skills:ai-seo"
+          },
+          "output_key": "seo_keywords",
+          "on_failure": "skip"
+        }
+      ],
+      "outputs": {
+        "research_brief": "Research brief with key data points, quotes, angles, competitor gaps, and SEO keywords"
+      }
+    },
+
+    {
+      "id": "draft_linkedin",
+      "name": "Phase 3: Draft LinkedIn Post",
+      "phase": 3,
+      "description": "Create LinkedIn post with 2-line hook (~55 chars each), body paragraphs, specific CTA question, and 1080x1350 AI-generated image. No hashtags, no emojis in copy. Links go in first comment only.",
+      "execution": "sub_agent",
+      "timeout_ms": 300000,
+      "depends_on": ["research"],
+      "condition": "target_platforms contains 'linkedin'",
+      "actions": [
+        {
+          "id": "invoke_linkedin_growth_engine",
+          "type": "skill",
+          "description": "Invoke linkedin-growth-engine workflow for LinkedIn-specific post creation",
+          "config": {
+            "skill_name": "linkedin-growth-engine"
+          },
+          "output_key": "linkedin_draft_raw",
+          "on_failure": "abort_step"
+        },
+        {
+          "id": "invoke_copywriting",
+          "type": "skill",
+          "description": "Apply proven hook frameworks and persuasion copy via marketing-skills:copywriting",
+          "config": {
+            "skill_name": "marketing-skills:copywriting"
+          },
+          "output_key": "copywriting_review",
+          "on_failure": "skip"
+        },
+        {
+          "id": "generate_image",
+          "type": "cli",
+          "description": "Generate 1080x1350 (4:5) image using Google GenAI SDK (Imagen). Scrappy, unbranded style.",
+          "config": {
+            "command": "python -c \"from google import genai; client = genai.Client(); response = client.models.generate_images(model='imagen-4.0-fast-generate-001', prompt='{{image_prompt}}', config=genai.types.GenerateImagesConfig(number_of_images=1, aspect_ratio='3:4', output_mime_type='image/png')); response.generated_images[0].image.save('/tmp/content-ops/images/linkedin-post.png')\""
+          },
+          "output_key": "generated_image_path",
+          "retry": {
+            "max_attempts": 2,
+            "delay_ms": 5000,
+            "retry_on": ["timeout", "connection_error"]
+          },
+          "on_failure": "warn"
+        },
+        {
+          "id": "strip_image_metadata",
+          "type": "cli",
+          "description": "Strip all AI-generated metadata from image before upload (EXIF, XMP, IPTC). Critical to avoid platform detection.",
+          "config": {
+            "command": "python -c \"from PIL import Image; img = Image.open('/tmp/content-ops/images/linkedin-post.png'); clean = Image.new(img.mode, img.size); clean.putdata(list(img.getdata())); clean.save('/tmp/content-ops/images/linkedin-post-clean.png')\""
+          },
+          "output_key": "clean_image_path",
+          "on_failure": "warn"
+        }
+      ],
+      "format_validations": [
+        {
+          "field": "linkedin_draft_raw.hook_line_1",
+          "rule": "max_chars",
+          "value": 65,
+          "on_fail": "retry",
+          "auto_fix_action": "Trim hook line 1 to ~55 characters while preserving impact",
+          "message": "LinkedIn hook line 1 exceeds ~55 chars (hard cap 65)"
+        },
+        {
+          "field": "linkedin_draft_raw.hook_line_1",
+          "rule": "min_chars",
+          "value": 40,
+          "on_fail": "retry",
+          "auto_fix_action": "Expand hook line 1 to at least 40 characters for sufficient impact",
+          "message": "LinkedIn hook line 1 is too short (min 40 chars)"
+        },
+        {
+          "field": "linkedin_draft_raw.hook_line_2",
+          "rule": "max_chars",
+          "value": 65,
+          "on_fail": "retry",
+          "auto_fix_action": "Trim hook line 2 to ~55 characters while preserving open loop",
+          "message": "LinkedIn hook line 2 exceeds ~55 chars (hard cap 65)"
+        },
+        {
+          "field": "linkedin_draft_raw.hook_line_2",
+          "rule": "min_chars",
+          "value": 40,
+          "on_fail": "retry",
+          "auto_fix_action": "Expand hook line 2 to at least 40 characters for open loop effect",
+          "message": "LinkedIn hook line 2 is too short (min 40 chars)"
+        },
+        {
+          "field": "linkedin_draft_raw.hook",
+          "rule": "count_sentences",
+          "value": { "exact": 2 },
+          "on_fail": "retry",
+          "auto_fix_action": "Rewrite hook to exactly 2 sentences",
+          "message": "LinkedIn hook must be exactly 2 sentences"
+        },
+        {
+          "field": "linkedin_draft_raw.text",
+          "rule": "regex_no_match",
+          "value": "#[a-zA-Z]",
+          "on_fail": "auto_fix",
+          "auto_fix_action": "Remove all hashtags from LinkedIn post",
+          "message": "LinkedIn posts must not contain hashtags"
+        },
+        {
+          "field": "linkedin_draft_raw.text",
+          "rule": "regex_no_match",
+          "value": "[\\U0001F600-\\U0001F64F\\U0001F300-\\U0001F5FF\\U0001F680-\\U0001F6FF\\U0001F1E0-\\U0001F1FF\\U00002702-\\U000027B0\\U000024C2-\\U0001F251\\U0001f926-\\U0001f937\\U00010000-\\U0010ffff\\u2640-\\u2642\\u2600-\\u2B55\\u200d\\u23cf\\u23e9\\u231a\\ufe0f\\u3030]",
+          "on_fail": "auto_fix",
+          "auto_fix_action": "Remove all emojis from LinkedIn post copy",
+          "message": "LinkedIn posts must not contain emojis in copy"
+        },
+        {
+          "field": "linkedin_draft_raw.text",
+          "rule": "regex_no_match",
+          "value": "https?://[^\\s]+",
+          "on_fail": "auto_fix",
+          "auto_fix_action": "Move links from post body to first comment",
+          "message": "LinkedIn posts must not contain links in body — put links in first comment"
+        },
+        {
+          "field": "linkedin_draft_raw.cta",
+          "rule": "regex_no_match",
+          "value": "(?i)what do you think\\??",
+          "on_fail": "retry",
+          "auto_fix_action": "Replace generic CTA with a specific question that invites a story or opinion",
+          "message": "CTA must be a specific question, not generic 'What do you think?'"
+        }
+      ],
+      "outputs": {
+        "linkedin_draft": "Polished LinkedIn post draft with hook, body, CTA",
+        "linkedin_image": "Clean 1080x1350 image with metadata stripped",
+        "linkedin_first_comment": "First comment content (links, context)"
+      }
+    },
+
+    {
+      "id": "draft_twitter",
+      "name": "Phase 3: Draft X/Twitter Content",
+      "phase": 3,
+      "description": "Create tweet or thread. Tweets: 280 chars max, front-load the hook. Threads: 3-10 tweets, numbered, first tweet is the hook. Contrarian takes and specific numbers perform best.",
+      "execution": "sub_agent",
+      "timeout_ms": 180000,
+      "depends_on": ["research"],
+      "condition": "target_platforms contains 'twitter'",
+      "actions": [
+        {
+          "id": "invoke_social_content",
+          "type": "skill",
+          "description": "Invoke social-content skill for tweet/thread drafting",
+          "config": {
+            "skill_name": "social-content"
+          },
+          "output_key": "twitter_draft_raw",
+          "on_failure": "abort_step"
+        },
+        {
+          "id": "invoke_copywriting_twitter",
+          "type": "skill",
+          "description": "Apply concise, punchy copy techniques via marketing-skills:copywriting",
+          "config": {
+            "skill_name": "marketing-skills:copywriting"
+          },
+          "output_key": "twitter_copy_review",
+          "on_failure": "skip"
+        }
+      ],
+      "format_validations": [
+        {
+          "field": "twitter_draft_raw.tweet_text",
+          "rule": "max_chars",
+          "value": 280,
+          "on_fail": "retry",
+          "auto_fix_action": "Trim tweet to 280 characters while preserving the hook and core message",
+          "message": "Tweet exceeds 280 character limit"
+        },
+        {
+          "field": "twitter_draft_raw.tweet_text",
+          "rule": "min_chars",
+          "value": 20,
+          "on_fail": "retry",
+          "auto_fix_action": "Expand tweet to at least 20 characters",
+          "message": "Tweet is too short to be impactful"
+        },
+        {
+          "field": "twitter_draft_raw.thread_tweets",
+          "rule": "max_length",
+          "value": 10,
+          "on_fail": "retry",
+          "auto_fix_action": "Consolidate thread to max 10 tweets",
+          "message": "Thread exceeds 10 tweets"
+        },
+        {
+          "field": "twitter_draft_raw.thread_tweets",
+          "rule": "min_length",
+          "value": 3,
+          "on_fail": "retry",
+          "auto_fix_action": "Expand thread to at least 3 tweets for substance",
+          "message": "Thread must have at least 3 tweets"
+        },
+        {
+          "field": "twitter_draft_raw.thread_tweets[*]",
+          "rule": "max_chars",
+          "value": 280,
+          "on_fail": "retry",
+          "auto_fix_action": "Trim individual thread tweet to 280 characters",
+          "message": "Individual thread tweet exceeds 280 character limit"
+        }
+      ],
+      "outputs": {
+        "twitter_draft": "Final tweet or thread draft",
+        "twitter_media": "Optional media attachments for tweets"
+      }
+    },
+
+    {
+      "id": "draft_blog",
+      "name": "Phase 3: Draft Blog Post",
+      "phase": 3,
+      "description": "Create long-form blog post for omarbakri.com. Structure: Hook, Stakes, Body (H2/H3), Takeaway, CTA. 800-2000 words. SEO-optimized with target keyword in title, H2s, first paragraph, URL.",
+      "execution": "sub_agent",
+      "timeout_ms": 600000,
+      "depends_on": ["research"],
+      "condition": "target_platforms contains 'blog'",
+      "actions": [
+        {
+          "id": "invoke_article_writing",
+          "type": "skill",
+          "description": "Invoke article-writing skill for long-form blog post drafting",
+          "config": {
+            "skill_name": "everything-claude-code:article-writing"
+          },
+          "output_key": "blog_draft_raw",
+          "on_failure": "abort_step"
+        },
+        {
+          "id": "invoke_seo_optimization",
+          "type": "skill",
+          "description": "Apply on-page SEO optimization via marketing-skills:ai-seo",
+          "config": {
+            "skill_name": "marketing-skills:ai-seo"
+          },
+          "output_key": "seo_review",
+          "on_failure": "warn"
+        },
+        {
+          "id": "invoke_copywriting_blog",
+          "type": "skill",
+          "description": "Apply compelling introductions and CTAs via marketing-skills:copywriting",
+          "config": {
+            "skill_name": "marketing-skills:copywriting"
+          },
+          "output_key": "blog_copy_review",
+          "on_failure": "skip"
+        },
+        {
+          "id": "generate_featured_image",
+          "type": "cli",
+          "description": "Generate featured image for blog post using Google GenAI SDK (Imagen)",
+          "config": {
+            "command": "python -c \"from google import genai; client = genai.Client(); response = client.models.generate_images(model='imagen-4.0-fast-generate-001', prompt='{{blog_image_prompt}}', config=genai.types.GenerateImagesConfig(number_of_images=1, aspect_ratio='16:9', output_mime_type='image/png')); response.generated_images[0].image.save('/tmp/content-ops/images/blog-featured.png')\""
+          },
+          "output_key": "blog_featured_image",
+          "on_failure": "skip"
+        },
+        {
+          "id": "strip_blog_image_metadata",
+          "type": "cli",
+          "description": "Strip AI metadata from blog featured image",
+          "config": {
+            "command": "python -c \"from PIL import Image; img = Image.open('/tmp/content-ops/images/blog-featured.png'); clean = Image.new(img.mode, img.size); clean.putdata(list(img.getdata())); clean.save('/tmp/content-ops/images/blog-featured-clean.png')\""
+          },
+          "output_key": "clean_blog_image",
+          "on_failure": "skip"
+        }
+      ],
+      "format_validations": [
+        {
+          "field": "blog_draft_raw.text",
+          "rule": "count_words",
+          "value": { "min": 800, "max": 2000 },
+          "on_fail": "retry",
+          "auto_fix_action": "Adjust blog post length to 800-2000 words",
+          "message": "Blog post must be 800-2000 words"
+        },
+        {
+          "field": "blog_draft_raw.text",
+          "rule": "regex_match",
+          "value": "^#\\s+.+",
+          "on_fail": "retry",
+          "auto_fix_action": "Add H1 title with target keyword",
+          "message": "Blog post must start with an H1 title containing the target keyword"
+        },
+        {
+          "field": "blog_draft_raw.text",
+          "rule": "regex_match",
+          "value": "##\\s+.+",
+          "on_fail": "retry",
+          "auto_fix_action": "Add H2 section headings to blog post structure",
+          "message": "Blog post must contain H2 section headings"
+        },
+        {
+          "field": "blog_draft_raw.text",
+          "rule": "not_contains",
+          "value": ["In today's", "In the ever-evolving", "It's worth noting", "It's important to mention", "landscape", "paradigm shift", "leverage", "synergy"],
+          "on_fail": "retry",
+          "auto_fix_action": "Remove prohibited AI/corporate phrases from blog post",
+          "message": "Blog post contains prohibited AI/corporate phrases"
+        }
+      ],
+      "outputs": {
+        "blog_draft": "Final blog post draft in markdown",
+        "blog_featured_image": "Clean featured image for blog post",
+        "blog_seo_meta": "SEO metadata (title, description, keywords, URL slug)"
+      }
+    },
+
+    {
+      "id": "draft_newsletter",
+      "name": "Phase 3: Draft Newsletter",
+      "phase": 3,
+      "description": "Create newsletter for intelligentrails.news. 500-1200 words, conversational tone, email-friendly format. Structure: Subject line, personal hook, main insight, supporting evidence, practical takeaway, sign-off, P.S.",
+      "execution": "sub_agent",
+      "timeout_ms": 300000,
+      "depends_on": ["research"],
+      "condition": "target_platforms contains 'newsletter'",
+      "actions": [
+        {
+          "id": "invoke_article_writing_newsletter",
+          "type": "skill",
+          "description": "Invoke article-writing skill for newsletter drafting",
+          "config": {
+            "skill_name": "everything-claude-code:article-writing"
+          },
+          "output_key": "newsletter_draft_raw",
+          "on_failure": "abort_step"
+        },
+        {
+          "id": "invoke_copywriting_newsletter",
+          "type": "skill",
+          "description": "Apply compelling subject lines and CTAs via marketing-skills:copywriting",
+          "config": {
+            "skill_name": "marketing-skills:copywriting"
+          },
+          "output_key": "newsletter_copy_review",
+          "on_failure": "skip"
+        }
+      ],
+      "format_validations": [
+        {
+          "field": "newsletter_draft_raw.text",
+          "rule": "count_words",
+          "value": { "min": 500, "max": 1200 },
+          "on_fail": "retry",
+          "auto_fix_action": "Adjust newsletter length to 500-1200 words",
+          "message": "Newsletter must be 500-1200 words"
+        },
+        {
+          "field": "newsletter_draft_raw.subject_line",
+          "rule": "max_chars",
+          "value": 50,
+          "on_fail": "retry",
+          "auto_fix_action": "Shorten subject line to under 50 characters",
+          "message": "Newsletter subject line must be under 50 characters"
+        },
+        {
+          "field": "newsletter_draft_raw.subject_line",
+          "rule": "min_chars",
+          "value": 15,
+          "on_fail": "retry",
+          "auto_fix_action": "Expand subject line to at least 15 characters for clarity",
+          "message": "Newsletter subject line is too short"
+        },
+        {
+          "field": "newsletter_draft_raw.text",
+          "rule": "is_plain_text",
+          "value": true,
+          "on_fail": "warn",
+          "message": "Newsletter should be email-friendly plain text (no complex layouts)"
+        },
+        {
+          "field": "newsletter_draft_raw.text",
+          "rule": "not_contains",
+          "value": ["In today's", "In the ever-evolving", "It's worth noting", "It's important to mention", "landscape", "paradigm shift"],
+          "on_fail": "retry",
+          "auto_fix_action": "Remove prohibited AI/corporate phrases from newsletter",
+          "message": "Newsletter contains prohibited AI/corporate phrases"
+        }
+      ],
+      "outputs": {
+        "newsletter_draft": "Final newsletter draft",
+        "newsletter_subject": "Email subject line (under 50 chars)"
+      }
+    },
+
+    {
+      "id": "polish_humanizer",
+      "name": "Phase 4: Humanizer Gate",
+      "phase": 4,
+      "description": "Run all drafts through humanizer skill to remove 24 known AI writing patterns: filler phrases, hedging, purple prose, over-structuring, sycophantic openers.",
+      "execution": "sequential",
+      "timeout_ms": 180000,
+      "depends_on": ["draft_linkedin", "draft_twitter", "draft_blog", "draft_newsletter"],
+      "actions": [
+        {
+          "id": "humanizer_pass",
+          "type": "skill",
+          "description": "Remove AI writing patterns from all drafts",
+          "config": {
+            "skill_name": "humanizer"
+          },
+          "on_failure": "warn"
+        }
+      ],
+      "gates": {
+        "post": [
+          {
+            "id": "humanizer_hard_gate",
+            "type": "hard",
+            "check": "all(drafts, humanizer_score >= 0.8)",
+            "on_fail": "retry",
+            "max_retries": 3,
+            "retry_delay_ms": 0,
+            "retry_action": "Re-run humanizer on failing drafts with stricter pattern removal",
+            "message": "One or more drafts still have AI writing patterns after humanizer pass",
+            "escalation": {
+              "after_retries": "flag_for_review",
+              "alert_channel": "telegram"
+            }
+          }
+        ]
+      },
+      "format_validations": [
+        {
+          "field": "draft.text",
+          "rule": "not_contains",
+          "value": ["It's important to note", "In today's digital landscape", "In the ever-evolving", "It's worth noting", "It could be argued", "Tapestry", "Landscape", "Paradigm shift", "Great question!", "leverage", "synergy"],
+          "on_fail": "retry",
+          "auto_fix_action": "Re-run humanizer to remove remaining AI patterns",
+          "message": "Draft contains known AI writing patterns that must be removed"
+        },
+        {
+          "field": "draft.text",
+          "rule": "not_contains",
+          "value": ["Claude", "Anthropic", "OpenAI", "GPT", "AI assistant", "language model", "I'm an AI", "AI-generated"],
+          "on_fail": "abort",
+          "message": "CRITICAL: Draft reveals AI involvement — must not publish"
+        }
+      ]
+    },
+
+    {
+      "id": "polish_clarity",
+      "name": "Phase 4: Clarity & Conciseness Gate",
+      "phase": 4,
+      "description": "Run all drafts through writing-clearly-and-concisely skill. Checks: unnecessary words, passive voice, jargon, sentence length variation, reading level.",
+      "execution": "sequential",
+      "timeout_ms": 120000,
+      "depends_on": ["polish_humanizer"],
+      "actions": [
+        {
+          "id": "clarity_pass",
+          "type": "skill",
+          "description": "Trim and sharpen prose for clarity and conciseness",
+          "config": {
+            "skill_name": "writing-clearly-and-concisely"
+          },
+          "on_failure": "warn"
+        }
+      ],
+      "gates": {
+        "post": [
+          {
+            "id": "clarity_hard_gate",
+            "type": "hard",
+            "check": "all(drafts, clarity_score >= 0.8)",
+            "on_fail": "retry",
+            "max_retries": 2,
+            "retry_delay_ms": 0,
+            "retry_action": "Re-run clarity pass on failing drafts, removing unnecessary words and passive voice",
+            "message": "One or more drafts failed the clarity and conciseness check",
+            "escalation": {
+              "after_retries": "flag_for_review",
+              "alert_channel": "telegram"
+            }
+          }
+        ]
+      }
+    },
+
+    {
+      "id": "polish_copy_editing",
+      "name": "Phase 4: Copy Editing Gate",
+      "phase": 4,
+      "description": "Professional editing pass via marketing-skills:copy-editing. Grammar, punctuation, style consistency, brand voice alignment (references/voice-guide.md), fact-checking claims, link verification.",
+      "execution": "sequential",
+      "timeout_ms": 120000,
+      "depends_on": ["polish_clarity"],
+      "actions": [
+        {
+          "id": "copy_editing_pass",
+          "type": "skill",
+          "description": "Professional copy editing for grammar, style, brand voice, and fact-checking",
+          "config": {
+            "skill_name": "marketing-skills:copy-editing"
+          },
+          "on_failure": "warn"
+        }
+      ],
+      "gates": {
+        "post": [
+          {
+            "id": "copy_editing_hard_gate",
+            "type": "hard",
+            "check": "all(drafts, copy_editing_score >= 0.8)",
+            "on_fail": "retry",
+            "max_retries": 2,
+            "retry_delay_ms": 0,
+            "retry_action": "Re-run copy editing on failing drafts, fixing grammar and brand voice issues",
+            "message": "One or more drafts failed the copy editing check",
+            "escalation": {
+              "after_retries": "flag_for_review",
+              "alert_channel": "telegram"
+            }
+          }
+        ]
+      }
+    },
+
+    {
+      "id": "polish_self_check",
+      "name": "Phase 4: Quick Self-Check",
+      "phase": 4,
+      "description": "Apply 5-point self-check to every piece: (1) Reader test — remove your name, still valuable? (2) Hook test — first 2 lines, would you click see more? (3) CTA test — action is clear? (4) AI pattern test — sounds human? (5) Conciseness test — shortest version?",
+      "execution": "sequential",
+      "timeout_ms": 60000,
+      "depends_on": ["polish_copy_editing"],
+      "actions": [
+        {
+          "id": "run_self_check",
+          "type": "sub_agent",
+          "description": "Sub-agent runs the 5-point self-check on all polished drafts",
+          "config": {
+            "subagent_type": "general-purpose",
+            "prompt": "Run the 5-point self-check on all polished drafts:\n1. READER TEST: Remove creator's name. Is it still valuable?\n2. HOOK TEST: Read only the first 2 lines. Would you click 'see more'?\n3. CTA TEST: What action should the reader take? Is it clear?\n4. AI PATTERN TEST: Does this sound like a human wrote it?\n5. CONCISENESS TEST: Is this the shortest version that conveys the full message?\nFor each draft, return pass/fail per check and suggested fixes for failures."
+          },
+          "output_key": "self_check_results",
+          "on_failure": "warn"
+        }
+      ],
+      "gates": {
+        "post": [
+          {
+            "id": "self_check_pass",
+            "type": "soft",
+            "check": "all(drafts, self_check_results.all_pass == true)",
+            "on_fail": "flag_for_review",
+            "message": "One or more drafts failed the self-check — flagging for review"
+          }
+        ]
+      }
+    },
+
+    {
+      "id": "approval",
+      "name": "Phase 4.5: Approval",
+      "phase": 4,
+      "description": "Present all polished drafts to Omar for approval, editing, or rejection before publishing",
+      "execution": "sequential",
+      "timeout_ms": 0,
+      "depends_on": ["polish_self_check"],
+      "actions": [
+        {
+          "id": "present_drafts",
+          "type": "approval",
+          "description": "Present each polished draft to Omar with platform, format, ICP lane, and quality gate results",
+          "config": {
+            "approval_prompt": "For each polished draft, present:\n- PLATFORM (LinkedIn / X/Twitter / Blog / Newsletter)\n- FORMAT (post / carousel / tweet / thread / article / newsletter)\n- ICP LANE (A-E) and persona name\n- CONTENT PILLAR\n- HOOK (first 2 lines)\n- FULL DRAFT\n- IMAGE (if applicable)\n- QUALITY GATE RESULTS (humanizer, clarity, copy-editing scores)\n- SELF-CHECK RESULTS (5-point check)\n- FIRST COMMENT (for LinkedIn, if links exist)\n\nOmar can: APPROVE, EDIT (with notes), SKIP, or DEFER (schedule for later)"
+          },
+          "output_key": "approval_decisions"
+        }
+      ],
+      "gates": {
+        "pre": [
+          {
+            "id": "drafts_available",
+            "type": "hard",
+            "check": "polished_drafts.length > 0",
+            "on_fail": "skip",
+            "message": "No drafts to present — skipping approval"
+          }
+        ],
+        "post": [
+          {
+            "id": "at_least_one_decision",
+            "type": "soft",
+            "check": "approval_decisions.length > 0",
+            "on_fail": "warn",
+            "message": "Omar skipped all drafts — no content to publish"
+          }
+        ]
+      }
+    },
+
+    {
+      "id": "publish_double_post_check",
+      "name": "Phase 5: Double-Post Prevention (LinkedIn)",
+      "phase": 5,
+      "description": "Before publishing to LinkedIn, check if a post was already published today by ANY agent (growth_engine or content_creator). Max 1 LinkedIn post per day — more reduces per-post reach.",
+      "execution": "sequential",
+      "timeout_ms": 15000,
+      "depends_on": ["approval"],
+      "condition": "approval_decisions.approved contains platform 'linkedin'",
+      "actions": [
+        {
+          "id": "check_linkedin_posts_today",
+          "type": "cli",
+          "description": "Check state_manager for POST_PUBLISHED messages with today's date and platform=linkedin",
+          "config": {
+            "command": "python C:/Users/OmarAl-Bakri/Claude_Code_Automations/scripts/state_manager.py get-messages --agent \"orchestrator\" --mark-read"
+          },
+          "output_key": "todays_posts",
+          "on_failure": "warn"
+        }
+      ],
+      "gates": {
+        "post": [
+          {
+            "id": "no_linkedin_post_today",
+            "type": "hard",
+            "check": "todays_posts.filter(type='POST_PUBLISHED', platform='linkedin', date='today').length == 0",
+            "on_fail": "ask_user",
+            "message": "A LinkedIn post was already published today. More than 1 post/day reduces per-post reach. Options: (1) DEFER to tomorrow, (2) OVERRIDE with algorithm penalty warning."
+          }
+        ]
+      }
+    },
+
+    {
+      "id": "publish_linkedin",
+      "name": "Phase 5: Publish to LinkedIn",
+      "phase": 5,
+      "description": "Upload image via LINKEDIN_INITIALIZE_IMAGE_UPLOAD, create post via LINKEDIN_CREATE_LINKED_IN_POST with text + media URN, add links via LINKEDIN_CREATE_COMMENT_ON_POST as first comment.",
+      "execution": "sequential",
+      "timeout_ms": 120000,
+      "depends_on": ["publish_double_post_check"],
+      "condition": "approval_decisions.approved contains platform 'linkedin' AND double_post_check_passed == true",
+      "actions": [
+        {
+          "id": "upload_image",
+          "type": "rube_tool",
+          "description": "Upload clean 1080x1350 image to LinkedIn via LINKEDIN_INITIALIZE_IMAGE_UPLOAD",
+          "config": {
+            "tool_slug": "LINKEDIN_INITIALIZE_IMAGE_UPLOAD",
+            "arguments": {
+              "image_path": "/tmp/content-ops/images/linkedin-post-clean.png"
+            }
+          },
+          "output_key": "image_upload_result",
+          "retry": {
+            "max_attempts": 2,
+            "delay_ms": 5000,
+            "retry_on": ["timeout", "connection_error"]
+          },
+          "on_failure": "warn"
+        },
+        {
+          "id": "create_post",
+          "type": "rube_tool",
+          "description": "Create LinkedIn post with text and media URN",
+          "config": {
+            "tool_slug": "LINKEDIN_CREATE_LINKED_IN_POST",
+            "arguments": {
+              "text": "{{linkedin_draft.text}}",
+              "media_urn": "{{image_upload_result.asset_urn}}"
+            }
+          },
+          "output_key": "linkedin_post_result",
+          "retry": {
+            "max_attempts": 2,
+            "delay_ms": 5000,
+            "retry_on": ["timeout", "connection_error"]
+          },
+          "on_failure": "abort_step"
+        },
+        {
+          "id": "verify_post_created",
+          "type": "rube_tool",
+          "description": "Verify the LinkedIn post was actually created by fetching it back",
+          "config": {
+            "tool_slug": "LINKEDIN_GET_POST_CONTENT",
+            "arguments": {
+              "post_urn": "{{linkedin_post_result.post_urn}}"
+            }
+          },
+          "output_key": "linkedin_post_verification",
+          "retry": {
+            "max_attempts": 3,
+            "delay_ms": 5000,
+            "retry_on": ["timeout", "connection_error", "not_found"]
+          },
+          "on_failure": "warn"
+        },
+        {
+          "id": "add_first_comment",
+          "type": "rube_tool",
+          "description": "Add links as first comment on the LinkedIn post (never in post body)",
+          "config": {
+            "tool_slug": "LINKEDIN_CREATE_COMMENT_ON_POST",
+            "arguments": {
+              "post_urn": "{{linkedin_post_result.post_urn}}",
+              "text": "{{linkedin_first_comment}}"
+            }
+          },
+          "output_key": "first_comment_result",
+          "on_failure": "warn"
+        }
+      ],
+      "gates": {
+        "pre": [
+          {
+            "id": "image_metadata_stripped",
+            "type": "hard",
+            "check": "clean_image_path exists AND image_metadata_stripped == true",
+            "on_fail": "retry",
+            "max_retries": 1,
+            "retry_action": "Re-run metadata stripping on the image",
+            "message": "Image metadata must be stripped before upload to avoid AI detection"
+          }
+        ],
+        "post": [
+          {
+            "id": "linkedin_post_verified",
+            "type": "hard",
+            "check": "linkedin_post_verification.post_urn exists AND linkedin_post_verification.text matches linkedin_draft.text",
+            "on_fail": "retry",
+            "max_retries": 2,
+            "retry_delay_ms": 10000,
+            "retry_action": "Re-verify the LinkedIn post was created by fetching it back",
+            "message": "LinkedIn post creation could not be verified — post may not have been published",
+            "escalation": {
+              "after_retries": "flag_for_review",
+              "alert_channel": "telegram"
+            }
+          }
+        ]
+      }
+    },
+
+    {
+      "id": "publish_twitter",
+      "name": "Phase 5: Publish to X/Twitter",
+      "phase": 5,
+      "description": "Post tweet or thread via Rube TWITTER_CREATION_OF_A_POST. For media: TWITTER_UPLOAD_MEDIA first. For threads: post sequentially with reply_in_reply_to_tweet_id.",
+      "execution": "sequential",
+      "timeout_ms": 120000,
+      "depends_on": ["approval"],
+      "condition": "approval_decisions.approved contains platform 'twitter'",
+      "actions": [
+        {
+          "id": "upload_twitter_media",
+          "type": "rube_tool",
+          "description": "Upload media for tweet (if applicable)",
+          "config": {
+            "tool_slug": "TWITTER_UPLOAD_MEDIA",
+            "arguments": {
+              "media_path": "{{twitter_media_path}}"
+            }
+          },
+          "output_key": "twitter_media_result",
+          "on_failure": "skip"
+        },
+        {
+          "id": "post_tweet",
+          "type": "rube_tool",
+          "description": "Post the tweet via TWITTER_CREATION_OF_A_POST",
+          "config": {
+            "tool_slug": "TWITTER_CREATION_OF_A_POST",
+            "arguments": {
+              "text": "{{twitter_draft.tweet_text}}",
+              "media_ids": "{{twitter_media_result.media_id}}"
+            }
+          },
+          "output_key": "twitter_post_result",
+          "retry": {
+            "max_attempts": 2,
+            "delay_ms": 5000,
+            "retry_on": ["timeout", "connection_error"]
+          },
+          "on_failure": "abort_step"
+        },
+        {
+          "id": "post_thread_replies",
+          "type": "rube_tool",
+          "description": "For threads: post subsequent tweets as replies (numbered 2/ through N/)",
+          "config": {
+            "tool_slug": "TWITTER_CREATION_OF_A_POST",
+            "arguments": {
+              "text": "{{thread_tweet_text}}",
+              "reply_in_reply_to_tweet_id": "{{previous_tweet_id}}"
+            }
+          },
+          "output_key": "thread_results",
+          "on_failure": "warn"
+        },
+        {
+          "id": "verify_tweet_posted",
+          "type": "rube_tool",
+          "description": "Verify the tweet was actually posted by looking it up",
+          "config": {
+            "tool_slug": "TWITTER_POST_LOOKUP_BY_POST_ID",
+            "arguments": {
+              "tweet_id": "{{twitter_post_result.tweet_id}}"
+            }
+          },
+          "output_key": "twitter_post_verification",
+          "retry": {
+            "max_attempts": 2,
+            "delay_ms": 5000,
+            "retry_on": ["timeout", "connection_error"]
+          },
+          "on_failure": "warn"
+        }
+      ],
+      "gates": {
+        "post": [
+          {
+            "id": "twitter_post_verified",
+            "type": "soft",
+            "check": "twitter_post_verification.tweet_id exists",
+            "on_fail": "warn",
+            "message": "Twitter post could not be verified — may not have been published"
+          }
+        ]
+      }
+    },
+
+    {
+      "id": "publish_blog",
+      "name": "Phase 5: Publish Blog Post",
+      "phase": 5,
+      "description": "Export blog post as markdown/HTML for manual publishing to omarbakri.com CMS. Write final draft to temp directory for user pickup.",
+      "execution": "sequential",
+      "timeout_ms": 60000,
+      "depends_on": ["approval"],
+      "condition": "approval_decisions.approved contains platform 'blog'",
+      "actions": [
+        {
+          "id": "export_blog_markdown",
+          "type": "write_file",
+          "description": "Write final blog post as markdown file for CMS publishing",
+          "config": {
+            "file_path": "/tmp/content-ops/drafts/blog-post-final.md"
+          },
+          "output_key": "blog_export_path",
+          "on_failure": "abort_step"
+        },
+        {
+          "id": "export_blog_html",
+          "type": "write_file",
+          "description": "Write final blog post as HTML for direct CMS paste",
+          "config": {
+            "file_path": "/tmp/content-ops/drafts/blog-post-final.html"
+          },
+          "output_key": "blog_html_path",
+          "on_failure": "skip"
+        }
+      ],
+      "outputs": {
+        "blog_export_path": "Path to final blog markdown file",
+        "blog_html_path": "Path to final blog HTML file"
+      }
+    },
+
+    {
+      "id": "publish_newsletter",
+      "name": "Phase 5: Publish Newsletter",
+      "phase": 5,
+      "description": "Export newsletter for manual publishing to intelligentrails.news. Write final draft to temp directory for user pickup.",
+      "execution": "sequential",
+      "timeout_ms": 60000,
+      "depends_on": ["approval"],
+      "condition": "approval_decisions.approved contains platform 'newsletter'",
+      "actions": [
+        {
+          "id": "export_newsletter",
+          "type": "write_file",
+          "description": "Write final newsletter as markdown file for email platform",
+          "config": {
+            "file_path": "/tmp/content-ops/drafts/newsletter-final.md"
+          },
+          "output_key": "newsletter_export_path",
+          "on_failure": "abort_step"
+        }
+      ],
+      "outputs": {
+        "newsletter_export_path": "Path to final newsletter markdown file"
+      }
+    },
+
+    {
+      "id": "post_publish_analytics",
+      "name": "Phase 5: Post-Publish Analytics & Feedback Loop",
+      "phase": 5,
+      "description": "For every published piece: add UTM parameters, set up engagement tracking, log POST_PUBLISHED to state_manager for orchestrator, log METRICS for LinkedIn post URN.",
+      "execution": "sequential",
+      "timeout_ms": 120000,
+      "depends_on": ["publish_linkedin", "publish_twitter", "publish_blog", "publish_newsletter"],
+      "actions": [
+        {
+          "id": "invoke_analytics_tracking",
+          "type": "skill",
+          "description": "Add UTM parameters and set up engagement tracking via marketing-skills:analytics-tracking",
+          "config": {
+            "skill_name": "marketing-skills:analytics-tracking"
+          },
+          "output_key": "analytics_setup",
+          "on_failure": "warn"
+        },
+        {
+          "id": "log_post_published_linkedin",
+          "type": "cli",
+          "description": "Log LinkedIn POST_PUBLISHED to state_manager for orchestrator (closes analytics feedback loop)",
+          "config": {
+            "command": "python C:/Users/OmarAl-Bakri/Claude_Code_Automations/scripts/state_manager.py post-message --from-agent \"content_creator\" --to-agent \"orchestrator\" --type \"POST_PUBLISHED\" --payload '{\"platform\": \"linkedin\", \"post_id\": \"{{linkedin_post_result.post_urn}}\", \"topic\": \"{{content_topic}}\", \"pillar\": \"{{content_pillar}}\", \"format\": \"{{content_format}}\", \"icp_lane\": \"{{icp_lane}}\", \"timestamp\": \"{{timestamp}}\"}'"
+          },
+          "output_key": "linkedin_log_result",
+          "on_failure": "warn"
+        },
+        {
+          "id": "log_metrics_linkedin",
+          "type": "cli",
+          "description": "Log LinkedIn METRICS to state_manager with post URN for analytics retrieval",
+          "config": {
+            "command": "python C:/Users/OmarAl-Bakri/Claude_Code_Automations/scripts/state_manager.py post-message --from-agent \"content_creator\" --to-agent \"orchestrator\" --type \"METRICS\" --payload '{\"post_urn\": \"{{linkedin_post_result.post_urn}}\", \"platform\": \"linkedin\", \"initial_engagement\": {\"impressions\": 0, \"comments\": 0, \"likes\": 0}}'"
+          },
+          "output_key": "linkedin_metrics_log",
+          "on_failure": "warn"
+        },
+        {
+          "id": "log_post_published_twitter",
+          "type": "cli",
+          "description": "Log Twitter POST_PUBLISHED to state_manager for orchestrator",
+          "config": {
+            "command": "python C:/Users/OmarAl-Bakri/Claude_Code_Automations/scripts/state_manager.py post-message --from-agent \"content_creator\" --to-agent \"orchestrator\" --type \"POST_PUBLISHED\" --payload '{\"platform\": \"twitter\", \"post_id\": \"{{twitter_post_result.tweet_id}}\", \"topic\": \"{{content_topic}}\", \"pillar\": \"{{content_pillar}}\", \"format\": \"{{content_format}}\", \"timestamp\": \"{{timestamp}}\"}'"
+          },
+          "output_key": "twitter_log_result",
+          "on_failure": "warn"
+        },
+        {
+          "id": "log_post_published_blog",
+          "type": "cli",
+          "description": "Log Blog POST_PUBLISHED to state_manager for orchestrator",
+          "config": {
+            "command": "python C:/Users/OmarAl-Bakri/Claude_Code_Automations/scripts/state_manager.py post-message --from-agent \"content_creator\" --to-agent \"orchestrator\" --type \"POST_PUBLISHED\" --payload '{\"platform\": \"blog\", \"post_id\": \"{{blog_url}}\", \"topic\": \"{{content_topic}}\", \"pillar\": \"{{content_pillar}}\", \"format\": \"article\", \"timestamp\": \"{{timestamp}}\"}'"
+          },
+          "output_key": "blog_log_result",
+          "on_failure": "warn"
+        },
+        {
+          "id": "log_post_published_newsletter",
+          "type": "cli",
+          "description": "Log Newsletter POST_PUBLISHED to state_manager for orchestrator",
+          "config": {
+            "command": "python C:/Users/OmarAl-Bakri/Claude_Code_Automations/scripts/state_manager.py post-message --from-agent \"content_creator\" --to-agent \"orchestrator\" --type \"POST_PUBLISHED\" --payload '{\"platform\": \"newsletter\", \"post_id\": \"{{newsletter_id}}\", \"topic\": \"{{content_topic}}\", \"pillar\": \"{{content_pillar}}\", \"format\": \"newsletter\", \"timestamp\": \"{{timestamp}}\"}'"
+          },
+          "output_key": "newsletter_log_result",
+          "on_failure": "warn"
+        },
+        {
+          "id": "log_interaction_graph",
+          "type": "cli",
+          "description": "Log content publication to FalkorDB graph for cross-agent visibility",
+          "config": {
+            "command": "python C:/Users/OmarAl-Bakri/Claude_Code_Automations/scripts/state_manager.py log-interaction --channel \"{{published_platform}}\" --type \"content_published\" --direction \"outbound\" --summary \"Published {{content_format}} on {{published_platform}}: {{content_topic}}\" --agent-name \"content_creator\""
+          },
+          "on_failure": "warn"
+        },
+        {
+          "id": "remember_content_learnings",
+          "type": "cli",
+          "description": "Store content performance learnings and audience insights for future reference",
+          "config": {
+            "command": "python C:/Users/OmarAl-Bakri/Claude_Code_Automations/scripts/state_manager.py remember --key \"content_{{content_format}}_{{timestamp}}\" --content \"{{content_learning}}\" --tags \"content,{{published_platform}},{{content_pillar}},{{icp_lane}}\" --agent \"content_creator\""
+          },
+          "on_failure": "skip"
+        }
+      ]
+    },
+
+    {
+      "id": "telegram_summary",
+      "name": "Telegram Summary",
+      "phase": 6,
+      "description": "Send content creation summary via Telegram",
+      "execution": "sequential",
+      "timeout_ms": 15000,
+      "depends_on": ["post_publish_analytics"],
+      "actions": [
+        {
+          "id": "send_telegram",
+          "type": "rube_tool",
+          "description": "Send content pipeline summary to Telegram",
+          "config": {
+            "tool_slug": "TELEGRAM_SEND_MESSAGE",
+            "arguments": {
+              "chat_id": "1778273779",
+              "text": "Content Pipeline Complete\n\nPlatforms: {{published_platforms}}\nPieces published: {{counts.published}}\nICP Lane: {{icp_lane}} ({{icp_persona_name}})\nPillar: {{content_pillar}}\nQuality gates: {{counts.gates_passed}}/{{counts.gates_total}} passed\n\nReady in Cowork."
+            }
+          },
+          "on_failure": "warn"
+        }
+      ],
+      "gates": {
+        "pre": [
+          {
+            "id": "no_confidential_in_telegram",
+            "type": "hard",
+            "check": "telegram_text does NOT contain draft content, full post text, or sensitive business details",
+            "on_fail": "abort",
+            "message": "CRITICAL: Telegram message contains confidential content — must not send"
+          }
+        ]
+      }
+    },
+
+    {
+      "id": "log_session",
+      "name": "Log Session & Cleanup",
+      "phase": 6,
+      "description": "Log session to state manager, clean up temp working directory (preserve shared-intel)",
+      "execution": "sequential",
+      "timeout_ms": 15000,
+      "depends_on": ["telegram_summary"],
+      "actions": [
+        {
+          "id": "log_session_cmd",
+          "type": "cli",
+          "description": "Log session to state manager",
+          "config": {
+            "command": "python C:/Users/OmarAl-Bakri/Claude_Code_Automations/scripts/state_manager.py log-session --session-id \"content-creator-{{date}}-{{time}}\" --agent-name \"content_creator\" --skills-run \"{{skills_used}}\" --contacts-processed 0 --interactions-logged {{counts.published}} --follow-ups-created 0 --summary \"Created and published {{counts.published}} content pieces across {{published_platforms}}: {{content_summary}}\""
+          },
+          "on_failure": "warn"
+        },
+        {
+          "id": "cleanup",
+          "type": "cli",
+          "description": "Remove temp working directory (NOT shared-intel)",
+          "config": {
+            "command": "rm -rf /tmp/content-ops/"
+          },
+          "on_failure": "skip"
+        }
+      ]
+    }
+  ],
+
+  "quality_gates": [
+    {
+      "id": "humanizer",
+      "type": "hard",
+      "skill": "humanizer",
+      "applies_to": "all_drafts",
+      "order": 1,
+      "retry": {
+        "max_attempts": 3,
+        "on_exhausted": "flag_for_review"
+      }
+    },
+    {
+      "id": "clarity",
+      "type": "hard",
+      "skill": "writing-clearly-and-concisely",
+      "applies_to": "all_drafts",
+      "order": 2,
+      "retry": {
+        "max_attempts": 2,
+        "on_exhausted": "flag_for_review"
+      }
+    },
+    {
+      "id": "copy_editing",
+      "type": "hard",
+      "skill": "marketing-skills:copy-editing",
+      "applies_to": "all_drafts",
+      "order": 3,
+      "retry": {
+        "max_attempts": 2,
+        "on_exhausted": "flag_for_review"
+      }
+    },
+    {
+      "id": "copywriting",
+      "type": "soft",
+      "skill": "marketing-skills:copywriting",
+      "applies_to": "all_drafts",
+      "order": 4,
+      "retry": {
+        "max_attempts": 1,
+        "on_exhausted": "flag_for_review"
+      }
+    },
+    {
+      "id": "seo_check",
+      "type": "soft",
+      "skill": "marketing-skills:ai-seo",
+      "applies_to": "blog_posts",
+      "order": 5,
+      "retry": {
+        "max_attempts": 1,
+        "on_exhausted": "flag_for_review"
+      }
+    }
+  ],
+
+  "format_rules": {
+    "linkedin_post": {
+      "platform": "linkedin",
+      "rules": [
+        { "field": "hook_line_1", "rule": "max_chars", "value": 65, "on_fail": "retry", "message": "LinkedIn hook line 1 must be ~55 chars (max 65)" },
+        { "field": "hook_line_1", "rule": "min_chars", "value": 40, "on_fail": "retry", "message": "LinkedIn hook line 1 must be at least 40 chars" },
+        { "field": "hook_line_2", "rule": "max_chars", "value": 65, "on_fail": "retry", "message": "LinkedIn hook line 2 must be ~55 chars (max 65)" },
+        { "field": "hook_line_2", "rule": "min_chars", "value": 40, "on_fail": "retry", "message": "LinkedIn hook line 2 must be at least 40 chars" },
+        { "field": "hook", "rule": "count_sentences", "value": { "exact": 2 }, "on_fail": "retry", "message": "LinkedIn hook must be exactly 2 sentences" },
+        { "field": "text", "rule": "regex_no_match", "value": "#[a-zA-Z]", "on_fail": "auto_fix", "auto_fix_action": "Remove all hashtags", "message": "No hashtags in LinkedIn posts" },
+        { "field": "text", "rule": "regex_no_match", "value": "[\\U0001F600-\\U0001F64F\\U0001F300-\\U0001F5FF\\U0001F680-\\U0001F6FF]", "on_fail": "auto_fix", "auto_fix_action": "Remove all emojis from copy", "message": "No emojis in LinkedIn post copy" },
+        { "field": "text", "rule": "regex_no_match", "value": "https?://[^\\s]+", "on_fail": "auto_fix", "auto_fix_action": "Move links to first comment", "message": "No links in LinkedIn post body — use first comment" },
+        { "field": "cta", "rule": "regex_no_match", "value": "(?i)what do you think\\??", "on_fail": "retry", "message": "CTA must be specific, not generic 'What do you think?'" },
+        { "field": "image", "rule": "image_dimensions", "value": { "width": 1080, "height": 1350 }, "on_fail": "retry", "message": "LinkedIn image must be 1080x1350 (4:5)" },
+        { "field": "image", "rule": "image_aspect_ratio", "value": "4:5", "on_fail": "retry", "message": "LinkedIn image must be 4:5 aspect ratio" },
+        { "field": "text", "rule": "no_prohibited_phrases", "value": ["In today's", "In the ever-evolving", "It's worth noting", "It's important to mention", "leverage", "synergy", "paradigm shift", "landscape", "It could be argued"], "on_fail": "retry", "message": "Contains prohibited AI/corporate phrases" },
+        { "field": "text", "rule": "no_prohibited_phrases", "value": ["Claude", "Anthropic", "OpenAI", "GPT", "AI assistant", "language model", "I'm an AI", "AI-generated"], "on_fail": "abort", "message": "CRITICAL: Reveals AI involvement" }
+      ]
+    },
+    "linkedin_carousel": {
+      "platform": "linkedin",
+      "rules": [
+        { "field": "slides", "rule": "min_length", "value": 6, "on_fail": "retry", "message": "LinkedIn carousel must have at least 6 slides" },
+        { "field": "slides", "rule": "max_length", "value": 14, "on_fail": "retry", "message": "LinkedIn carousel must have at most 14 slides" },
+        { "field": "slide_image", "rule": "image_dimensions", "value": { "width": 1080, "height": 1350 }, "on_fail": "retry", "message": "Each carousel slide must be 1080x1350" }
+      ]
+    },
+    "linkedin_article": {
+      "platform": "linkedin",
+      "rules": [
+        { "field": "text", "rule": "count_words", "value": { "min": 1000, "max": 3000 }, "on_fail": "retry", "message": "LinkedIn article must be 1000-3000 words" },
+        { "field": "text", "rule": "regex_match", "value": "^#\\s+.+", "on_fail": "retry", "message": "LinkedIn article must start with an H1 title" },
+        { "field": "text", "rule": "regex_match", "value": "##\\s+.+", "on_fail": "retry", "message": "LinkedIn article must contain H2 section headings" }
+      ]
+    },
+    "tweet": {
+      "platform": "twitter",
+      "rules": [
+        { "field": "text", "rule": "max_chars", "value": 280, "on_fail": "retry", "message": "Tweet must be 280 characters max" },
+        { "field": "text", "rule": "min_chars", "value": 20, "on_fail": "retry", "message": "Tweet must be at least 20 characters" },
+        { "field": "text", "rule": "no_prohibited_phrases", "value": ["Claude", "Anthropic", "OpenAI", "GPT", "AI assistant", "language model", "I'm an AI", "AI-generated"], "on_fail": "abort", "message": "CRITICAL: Reveals AI involvement" }
+      ]
+    },
+    "twitter_thread": {
+      "platform": "twitter",
+      "rules": [
+        { "field": "tweets", "rule": "min_length", "value": 3, "on_fail": "retry", "message": "Thread must have at least 3 tweets" },
+        { "field": "tweets", "rule": "max_length", "value": 10, "on_fail": "retry", "message": "Thread must have at most 10 tweets" },
+        { "field": "tweets[*]", "rule": "max_chars", "value": 280, "on_fail": "retry", "message": "Each thread tweet must be 280 characters max" },
+        { "field": "tweets[0]", "rule": "regex_match", "value": "^1/", "on_fail": "auto_fix", "auto_fix_action": "Add '1/' prefix to first tweet", "message": "First thread tweet must start with '1/'" }
+      ]
+    },
+    "blog_post": {
+      "platform": "blog",
+      "rules": [
+        { "field": "text", "rule": "count_words", "value": { "min": 800, "max": 2000 }, "on_fail": "retry", "message": "Blog post must be 800-2000 words" },
+        { "field": "text", "rule": "regex_match", "value": "^#\\s+.+", "on_fail": "retry", "message": "Blog post must start with H1 title containing target keyword" },
+        { "field": "text", "rule": "regex_match", "value": "##\\s+.+", "on_fail": "retry", "message": "Blog post must contain H2 section headings" },
+        { "field": "text", "rule": "no_prohibited_phrases", "value": ["In today's", "In the ever-evolving", "It's worth noting", "It's important to mention", "leverage", "synergy", "paradigm shift", "landscape"], "on_fail": "retry", "message": "Contains prohibited AI/corporate phrases" },
+        { "field": "text", "rule": "no_prohibited_phrases", "value": ["Claude", "Anthropic", "OpenAI", "GPT", "AI assistant", "language model", "I'm an AI", "AI-generated"], "on_fail": "abort", "message": "CRITICAL: Reveals AI involvement" }
+      ]
+    },
+    "newsletter": {
+      "platform": "newsletter",
+      "rules": [
+        { "field": "text", "rule": "count_words", "value": { "min": 500, "max": 1200 }, "on_fail": "retry", "message": "Newsletter must be 500-1200 words" },
+        { "field": "subject_line", "rule": "max_chars", "value": 50, "on_fail": "retry", "message": "Subject line must be under 50 characters" },
+        { "field": "subject_line", "rule": "min_chars", "value": 15, "on_fail": "retry", "message": "Subject line must be at least 15 characters" },
+        { "field": "text", "rule": "is_plain_text", "value": true, "on_fail": "warn", "message": "Newsletter should be email-friendly (no complex layouts)" },
+        { "field": "text", "rule": "no_prohibited_phrases", "value": ["In today's", "In the ever-evolving", "It's worth noting", "It's important to mention", "leverage", "synergy", "paradigm shift", "landscape"], "on_fail": "retry", "message": "Contains prohibited AI/corporate phrases" },
+        { "field": "text", "rule": "no_prohibited_phrases", "value": ["Claude", "Anthropic", "OpenAI", "GPT", "AI assistant", "language model", "I'm an AI", "AI-generated"], "on_fail": "abort", "message": "CRITICAL: Reveals AI involvement" }
+      ]
+    }
+  },
+
+  "error_handling": {
+    "on_step_failure": "log_and_continue",
+    "on_connection_failure": {
+      "linkedin": "skip_dependent_steps",
+      "twitter": "skip_dependent_steps",
+      "tavily": "warn",
+      "exa": "warn",
+      "telegram": "warn"
+    },
+    "alert_config": {
+      "channel": "telegram",
+      "chat_id": "1778273779",
+      "on_events": ["gate_failure", "rate_limit_breach", "workflow_abort"]
+    },
+    "max_consecutive_failures": 3
+  },
+
+  "post_completion": {
+    "log_session": {
+      "enabled": true,
+      "command_template": "python C:/Users/OmarAl-Bakri/Claude_Code_Automations/scripts/state_manager.py log-session --session-id \"content-creator-{{date}}-{{time}}\" --agent-name \"content_creator\" --skills-run \"{{skills_used}}\" --contacts-processed 0 --interactions-logged {{counts.published}} --follow-ups-created 0 --summary \"{{summary}}\""
+    },
+    "telegram_summary": {
+      "enabled": true,
+      "chat_id": "1778273779",
+      "template": "Content Pipeline Complete\n\nPlatforms: {{published_platforms}}\nPieces published: {{counts.published}}\nICP Lane: {{icp_lane}} ({{icp_persona_name}})\nPillar: {{content_pillar}}\nQuality gates: {{counts.gates_passed}}/{{counts.gates_total}} passed\n\nReady in Cowork."
+    },
+    "cross_channel_signals": [
+      {
+        "type": "POST_PUBLISHED",
+        "from_agent": "content_creator",
+        "to_agent": "orchestrator",
+        "payload_template": "{\"platform\":\"{{platform}}\",\"post_id\":\"{{post_id}}\",\"topic\":\"{{topic}}\",\"pillar\":\"{{pillar}}\",\"format\":\"{{format}}\",\"icp_lane\":\"{{icp_lane}}\",\"timestamp\":\"{{timestamp}}\"}"
+      },
+      {
+        "type": "METRICS",
+        "from_agent": "content_creator",
+        "to_agent": "orchestrator",
+        "payload_template": "{\"post_urn\":\"{{post_urn}}\",\"platform\":\"{{platform}}\",\"initial_engagement\":{\"impressions\":0,\"comments\":0,\"likes\":0}}"
+      },
+      {
+        "type": "CONTENT_PUBLISHED",
+        "from_agent": "content_creator",
+        "to_agent": "linkedin_growth_engine",
+        "payload_template": "{\"platform\":\"linkedin\",\"post_urn\":\"{{post_urn}}\",\"topic\":\"{{topic}}\",\"icp_lane\":\"{{icp_lane}}\",\"timestamp\":\"{{timestamp}}\"}"
+      }
+    ],
+    "cleanup_paths": ["/tmp/content-ops/"],
+    "preserve_paths": ["/tmp/shared-intel/"]
+  }
+}

@@ -46,21 +46,33 @@ thread gate approve review
 thread run runnable
 ```
 
+## Product Entry Points
+
+ThreadOS exposes two product paths from a single entrance screen:
+
+- **ThreadOS** — the core engineering environment for building, orchestrating, and inspecting multi-agent thread systems
+- **Thread Runner** — a locked advanced proving mode for verified VM-based competitive runs, pack generation, and builder status (requires registration + subscription)
+
 ## Architecture
 
 ```text
 ThreadOS
-├── lib/seqctl/        # CLI commands
-├── lib/sequence/      # Schema, parser, DAG
-├── lib/mprocs/        # Process manager adapter
-├── lib/runner/        # Step execution wrapper
-├── lib/policy/        # Safety policy engine
-├── lib/audit/         # Audit logging
-├── lib/chat/          # Chat orchestrator (system prompt, validator)
-├── lib/reconciliation/# State reconciliation
-├── app/               # Next.js UI + API routes
-├── components/        # React components (canvas, inspector, chat)
-└── docs/              # Extended documentation
+├── lib/seqctl/           # CLI commands
+├── lib/sequence/         # Schema, parser, DAG
+├── lib/llm/providers/    # Model provider layer (OpenAI, OpenRouter)
+├── lib/thread-surfaces/  # Thread surface domain (types, projections, runtime events)
+├── lib/thread-runner/    # Verified-run, race, and eligibility contracts
+├── lib/packs/            # Pack and status records (Challenger/Champion/Hero)
+├── lib/agents/           # Agent registration, profile builder, stats
+├── lib/mprocs/           # Process manager adapter
+├── lib/runner/           # Step execution wrapper
+├── lib/policy/           # Safety policy engine
+├── lib/audit/            # Audit logging
+├── lib/chat/             # Chat orchestrator (system prompt, validator)
+├── lib/reconciliation/   # State reconciliation
+├── app/                  # Next.js UI + API routes
+├── components/           # React components (workbench, hierarchy, lanes, inspector, skills)
+└── docs/                 # Extended documentation
 ```
 
 ### Thread Types
@@ -97,12 +109,16 @@ Key commands:
 bun dev
 ```
 
-Opens the horizontal canvas UI at `http://localhost:3000` with:
+Opens the workbench at `http://localhost:3000`:
 
-- **Sequence Canvas** — Visual DAG of steps and dependencies
-- **Step Inspector** — Edit step properties
-- **Chat Panel** — AI-assisted sequence management
-- **Toolbar** — Run, stop, status controls
+- **Workbench Shell** — stable top bar, accordion panel, center board region
+- **Hierarchy View** — structural thread map with focused trading-card inspection
+- **Lane Board** — run-scoped execution surface with merge ordering and timeline context
+- **Thread Inspector** — identity, run context, skills (local/inherited), and provenance
+- **Skill Inventory** — per-surface skills resolved from agent registration
+- **Step Inspector** — edit step/gate properties with dependency management
+- **Chat Panel** — floating AI-assisted sequence management
+- **Entry Screen** — ThreadOS (active) and Thread Runner (locked) product paths
 
 ## Documentation
 

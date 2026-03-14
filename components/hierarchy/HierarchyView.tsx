@@ -1,5 +1,6 @@
 import { CompactThreadCard } from './CompactThreadCard'
 import { FocusedThreadCard, type ThreadCardProfile } from './FocusedThreadCard'
+import { ThreadFlowPlane } from './ThreadFlowPlane'
 
 export interface HierarchyViewNode {
   id: string
@@ -18,8 +19,11 @@ export interface HierarchyViewNode {
 
 interface HierarchyViewProps {
   nodes: HierarchyViewNode[]
+  edges?: { source: string; target: string }[]
   selectedThreadSurfaceId: string | null
+  onSelectThread?: (threadSurfaceId: string, runId: string | null) => void
   onOpenLane: (threadSurfaceId: string, runId: string | null) => void
+  profile?: ThreadCardProfile
 }
 
 function deriveProfile(node: HierarchyViewNode): ThreadCardProfile {
@@ -60,46 +64,58 @@ function deriveProfile(node: HierarchyViewNode): ThreadCardProfile {
   }
 }
 
-export function HierarchyView({ nodes, selectedThreadSurfaceId, onOpenLane }: HierarchyViewProps) {
+export function HierarchyView({ nodes, edges = [], selectedThreadSurfaceId, onSelectThread, onOpenLane, profile }: HierarchyViewProps) {
+  const handleSelect = onSelectThread ?? onOpenLane
   const focusedNode = nodes.find(node => node.clickTarget.threadSurfaceId === selectedThreadSurfaceId) ?? nodes[0] ?? null
   const compactNodes = focusedNode ? nodes.filter(node => node.id !== focusedNode.id) : []
 
   return (
     <div className="relative flex h-full flex-col overflow-hidden bg-[radial-gradient(circle_at_top,rgba(29,78,216,0.12),transparent_28%),linear-gradient(180deg,#07101b,#050913)] text-slate-100">
-      <div className="border-b border-slate-800/80 px-6 py-5">
+      <div className="border-b border-slate-800/80 px-6 py-4">
         <div className="font-mono text-[11px] uppercase tracking-[0.24em] text-slate-500">Hierarchy</div>
-        <h2 className="mt-2 text-xl font-semibold tracking-tight text-white">Structural thread surfaces</h2>
-        <p className="mt-2 max-w-3xl text-sm text-slate-400">Select a thread to centralize its card, inspect its operational profile, and jump directly into lane execution context.</p>
+        <h2 className="mt-1 text-lg font-semibold tracking-tight text-white">Structural thread surfaces</h2>
+        <p className="mt-1 max-w-3xl text-sm text-slate-400">Select a thread to inspect its profile and jump into lane execution.</p>
       </div>
 
-      <div className="relative min-h-0 flex-1 overflow-hidden px-6 py-6">
-        <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.025)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.025)_1px,transparent_1px)] bg-[size:40px_40px] opacity-35" />
-        <div className="absolute inset-0 bg-black/26 backdrop-blur-[5px]" />
+      <div className="relative min-h-0 flex-1 overflow-y-auto">
+        <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.018)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.018)_1px,transparent_1px)] bg-size-[40px_40px] opacity-20" />
 
-        {focusedNode ? (
-          <div className="relative z-10 flex h-full flex-col gap-6">
+        <div className="relative z-10 space-y-4 px-6 py-5">
+          {nodes.length > 0 && (
+            <section className="border border-slate-700/60 bg-[#0a101a]/80 px-4 py-4">
+              <div className="mb-3 font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">Sequence Flow</div>
+              <ThreadFlowPlane
+                nodes={nodes}
+                edges={edges}
+                selectedThreadSurfaceId={selectedThreadSurfaceId}
+                onSelectNode={handleSelect}
+              />
+            </section>
+          )}
+
+          {focusedNode ? (
             <FocusedThreadCard
               node={focusedNode}
-              profile={deriveProfile(focusedNode)}
+              profile={profile ?? deriveProfile(focusedNode)}
               onOpenLane={onOpenLane}
             />
+          ) : nodes.length === 0 ? (
+            <div className="border border-dashed border-slate-800 px-6 py-12 text-center text-sm text-slate-500">No thread surfaces available yet.</div>
+          ) : null}
 
-            {compactNodes.length > 0 ? (
-              <div className="relative z-10 flex gap-4 overflow-x-auto pb-4">
-                {compactNodes.map(node => (
-                  <CompactThreadCard
-                    key={node.id}
-                    node={node}
-                    selected={selectedThreadSurfaceId === node.clickTarget.threadSurfaceId}
-                    onSelect={onOpenLane}
-                  />
-                ))}
-              </div>
-            ) : null}
-          </div>
-        ) : (
-          <div className="relative z-10 flex h-full items-center justify-center border border-dashed border-slate-800 text-sm text-slate-500">No thread surfaces available yet.</div>
-        )}
+          {compactNodes.length > 0 && (
+            <div className="flex gap-3 overflow-x-auto pb-3">
+              {compactNodes.map(node => (
+                <CompactThreadCard
+                  key={node.id}
+                  node={node}
+                  selected={selectedThreadSurfaceId === node.clickTarget.threadSurfaceId}
+                  onSelect={handleSelect}
+                />
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )

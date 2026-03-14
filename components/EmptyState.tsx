@@ -4,15 +4,15 @@ import { FileQuestion } from 'lucide-react'
 
 export function EmptyState() {
   return (
-    <div className="flex items-center justify-center h-full">
-      <div className="text-center max-w-md">
-        <FileQuestion className="h-12 w-12 mx-auto text-muted-foreground mb-3" />
-        <h2 className="text-lg font-semibold">No Sequence Found</h2>
-        <p className="text-sm text-muted-foreground mt-1">
+    <div className="flex h-full items-center justify-center">
+      <div className="max-w-md text-center">
+        <FileQuestion className="mx-auto mb-3 h-12 w-12 text-slate-500" />
+        <h2 className="text-lg font-semibold text-white">No Sequence Found</h2>
+        <p className="mt-1 text-sm text-slate-400">
           Get started by initializing a new sequence:
         </p>
-        <pre className="mt-3 px-4 py-2 bg-muted rounded text-sm font-mono">
-          seqctl init my-project
+        <pre className="mt-3 border border-slate-800/90 bg-[#08101d] px-4 py-3 text-sm font-mono text-slate-200">
+          thread init my-project
         </pre>
       </div>
     </div>

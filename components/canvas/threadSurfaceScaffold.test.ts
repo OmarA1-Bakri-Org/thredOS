@@ -31,6 +31,8 @@ const threadSurfaces: ThreadSurface[] = [
     surfaceLabel: 'Master',
     createdAt: '2026-03-09T00:00:00.000Z',
     childSurfaceIds: [],
+    sequenceRef: null,
+    spawnedByAgentId: null,
   },
 ]
 
@@ -42,6 +44,8 @@ const runs: RunScope[] = [
     startedAt: '2026-03-09T00:00:00.000Z',
     endedAt: null,
     executionIndex: 1,
+    parentRunId: null,
+    childIndex: null,
   },
 ]
 

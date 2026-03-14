@@ -1,4 +1,5 @@
-import type { LaneTerminalState, MergeEvent, RunScope, ThreadSurface } from './types'
+import type { LaneTerminalState, MergeEvent, RunScope, SkillProjection, ThreadSkillBadge, ThreadSurface } from './types'
+import type { AgentRegistration } from '../agents/types'
 
 export interface HierarchyProjectionNode {
   id: string
@@ -74,6 +75,50 @@ export function projectHierarchy(threadSurfaces: ThreadSurface[]): HierarchyProj
         target: surface.id,
       })),
   }
+}
+
+export function projectChildrenOf(threadSurfaces: ThreadSurface[], parentSurfaceId: string): ThreadSurface[] {
+  return threadSurfaces.filter(surface => surface.parentSurfaceId === parentSurfaceId)
+}
+
+export interface AncestryPathSegment {
+  id: string
+  label: string
+  depth: number
+}
+
+export function projectAncestryPath(threadSurfaces: ThreadSurface[], surfaceId: string): AncestryPathSegment[] {
+  const surfaceMap = new Map(threadSurfaces.map(s => [s.id, s]))
+  const path: AncestryPathSegment[] = []
+  let current = surfaceMap.get(surfaceId)
+
+  while (current) {
+    path.unshift({ id: current.id, label: current.surfaceLabel, depth: current.depth })
+    current = current.parentSurfaceId ? surfaceMap.get(current.parentSurfaceId) : undefined
+  }
+
+  return path
+}
+
+export function projectDepthScopedLaneBoard(
+  threadSurfaces: ThreadSurface[],
+  runs: RunScope[],
+  mergeEvents: MergeEvent[],
+  parentSurfaceId: string,
+): LaneBoardProjection {
+  const childSurfaces = projectChildrenOf(threadSurfaces, parentSurfaceId)
+  const childSurfaceIds = new Set(childSurfaces.map(s => s.id))
+  const childRuns = runs.filter(run => childSurfaceIds.has(run.threadSurfaceId))
+  const childMergeEvents = mergeEvents.filter(event =>
+    childSurfaceIds.has(event.destinationThreadSurfaceId)
+  )
+
+  return projectLaneBoard({
+    threadSurfaces: childSurfaces,
+    runs: childRuns,
+    mergeEvents: childMergeEvents,
+    runIds: childRuns.map(run => run.id),
+  })
 }
 
 export function resolveDefaultDisplayRun(runs: RunScope[]): RunScope | undefined {
@@ -193,4 +238,64 @@ function latestRun(runs: RunScope[]): RunScope | undefined {
     const rightTimestamp = right.endedAt ?? right.startedAt
     return rightTimestamp.localeCompare(leftTimestamp)
   })[0]
+}
+
+// ── Skill projection ────────────────────────────────────────────────
+
+const DEFAULT_SKILLS: ThreadSkillBadge[] = [
+  { id: 'search', label: 'Search', inherited: false },
+  { id: 'browser', label: 'Browser', inherited: false },
+  { id: 'model', label: 'Model', inherited: false },
+  { id: 'tools', label: 'Tools', inherited: false },
+  { id: 'files', label: 'Files', inherited: true },
+  { id: 'orchestration', label: 'Orchestration', inherited: true },
+]
+
+/**
+ * Resolve skills for a thread surface from its registered agent.
+ *
+ * If the agent has `metadata.skills`, those are used (with inherited flag
+ * preserved). Otherwise a default skill set is returned with the
+ * direct/inherited split pre-assigned.
+ */
+export function resolveSkillsForAgent(agent: AgentRegistration | null): ThreadSkillBadge[] {
+  if (agent?.metadata?.skills && Array.isArray(agent.metadata.skills)) {
+    return (agent.metadata.skills as Array<{ id: string; label: string; inherited?: boolean }>).map(s => ({
+      id: s.id,
+      label: s.label,
+      inherited: s.inherited ?? false,
+    }))
+  }
+  return [...DEFAULT_SKILLS]
+}
+
+/**
+ * Check whether an agent has been granted the spawn skill.
+ * Spawn-skilled agents automatically create child thread surfaces
+ * when their step executes.
+ */
+export function hasSpawnSkill(agent: AgentRegistration | null): boolean {
+  const skills = resolveSkillsForAgent(agent)
+  return skills.some(s => s.id === 'spawn')
+}
+
+/**
+ * Project skills onto each thread surface by resolving the registered
+ * agent for that surface and extracting skill data.
+ */
+export function projectSkills(
+  threadSurfaces: ThreadSurface[],
+  agents: AgentRegistration[],
+): SkillProjection[] {
+  const agentById = new Map(agents.map(a => [a.id, a]))
+
+  return threadSurfaces.map(surface => {
+    const agent = surface.registeredAgentId
+      ? agentById.get(surface.registeredAgentId) ?? null
+      : null
+    return {
+      threadSurfaceId: surface.id,
+      skills: resolveSkillsForAgent(agent),
+    }
+  })
 }

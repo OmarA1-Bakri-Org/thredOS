@@ -18,6 +18,8 @@ const threadSurfaces: ThreadSurface[] = [
     role: 'orchestrator',
     createdAt: '2026-03-09T00:00:00.000Z',
     childSurfaceIds: ['thread-research'],
+    sequenceRef: null,
+    spawnedByAgentId: null,
   },
   {
     id: 'thread-research',
@@ -29,6 +31,8 @@ const threadSurfaces: ThreadSurface[] = [
     role: 'specialist',
     createdAt: '2026-03-09T00:01:00.000Z',
     childSurfaceIds: [],
+    sequenceRef: null,
+    spawnedByAgentId: null,
   },
 ]
 
@@ -41,6 +45,8 @@ const runs: RunScope[] = [
     endedAt: '2026-03-09T00:03:00.000Z',
     executionIndex: 2,
     runSummary: 'Master completed',
+    parentRunId: null,
+    childIndex: null,
   },
   {
     id: 'run-research-1',
@@ -50,6 +56,8 @@ const runs: RunScope[] = [
     endedAt: null,
     executionIndex: 1,
     runSummary: 'Research in progress',
+    parentRunId: null,
+    childIndex: null,
   },
 ]
 

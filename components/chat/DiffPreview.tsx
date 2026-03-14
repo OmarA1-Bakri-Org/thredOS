@@ -10,16 +10,16 @@ export const DiffPreview = memo(function DiffPreview({ diff }: DiffPreviewProps)
   const lines = diff.split('\n')
 
   return (
-    <div className="border rounded-lg my-2 overflow-hidden">
-      <div className="text-xs font-medium text-muted-foreground px-3 py-1 bg-muted">
+    <div className="my-3 overflow-hidden border border-[#16417C]/70 bg-[#16417C]/14">
+      <div className="border-b border-[#16417C]/70 bg-[#16417C]/18 px-3 py-2 font-mono text-[11px] uppercase tracking-[0.2em] text-slate-400">
         Preview Changes
       </div>
-      <pre className="text-xs p-3 overflow-x-auto font-mono">
+      <pre className="overflow-x-auto bg-[#050c17] p-4 font-mono text-xs leading-6 text-slate-200">
         {lines.map((line, i) => {
           let className = ''
-          if (line.startsWith('+')) className = 'text-green-600'
-          else if (line.startsWith('-')) className = 'text-red-600'
-          else if (line.startsWith('@@')) className = 'text-blue-500'
+          if (line.startsWith('+')) className = 'text-emerald-300'
+          else if (line.startsWith('-')) className = 'text-rose-300'
+          else if (line.startsWith('@@')) className = 'text-sky-300'
           return (
             <div key={i} className={className}>
               {line}

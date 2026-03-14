@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useRef, useEffect, type KeyboardEvent } from 'react'
 import { Send } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 
 interface ChatInputProps {
   onSend: (message: string) => void
@@ -38,7 +39,7 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
   )
 
   return (
-    <div className="flex items-end gap-2 p-2 border-t">
+    <div className="flex items-end gap-3 border-t border-slate-800/80 bg-[#050c17] px-4 py-4">
       <textarea
         ref={textareaRef}
         value={value}
@@ -47,16 +48,18 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
         placeholder="Ask about your sequence..."
         disabled={disabled}
         rows={1}
-        className="flex-1 px-3 py-2 text-sm border rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50 resize-none"
+        className="min-h-[44px] flex-1 resize-none border border-[#16417C]/70 bg-[#16417C]/12 px-3 py-3 text-sm text-slate-100 outline-none placeholder:text-slate-500 focus:border-sky-500/70 disabled:opacity-50"
       />
-      <button
+      <Button
+        type="button"
         onClick={handleSend}
         disabled={disabled || !value.trim()}
-        className="p-2 rounded-md hover:bg-accent disabled:opacity-50"
+        variant="default"
+        size="icon"
         aria-label="Send message"
       >
         <Send className="h-4 w-4" />
-      </button>
+      </Button>
     </div>
   )
 }

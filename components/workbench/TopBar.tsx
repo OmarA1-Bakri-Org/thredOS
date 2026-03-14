@@ -1,9 +1,10 @@
 'use client'
 
 import { useEffect, useRef, useCallback } from 'react'
-import { Moon, Search, Sun } from 'lucide-react'
+import { MessageSquare, Moon, PanelLeft, Play, Plus, Search, ShieldCheck, Sun } from 'lucide-react'
 import { useTheme } from 'next-themes'
-import { useStatus, useRunRunnable } from '@/lib/ui/api'
+import { useRunRunnable, useStatus } from '@/lib/ui/api'
+import { Button } from '@/components/ui/button'
 import { useUIStore, type ProductEntryMode, type ThreadSurfaceViewMode } from '@/lib/ui/store'
 
 const productEntries: Array<{ value: ProductEntryMode; label: string; disabled?: boolean }> = [
@@ -14,7 +15,6 @@ const productEntries: Array<{ value: ProductEntryMode; label: string; disabled?:
 const viewModes: Array<{ value: ThreadSurfaceViewMode; label: string; disabled?: boolean }> = [
   { value: 'hierarchy', label: 'Hierarchy' },
   { value: 'lanes', label: 'Lanes' },
-  { value: 'layers', label: 'Layers', disabled: true },
 ]
 
 export function TopBar() {
@@ -26,8 +26,9 @@ export function TopBar() {
   const setProductEntry = useUIStore(s => s.setProductEntry)
   const viewMode = useUIStore(s => s.viewMode)
   const setViewMode = useUIStore(s => s.setViewMode)
-  const toggleInspector = useUIStore(s => s.toggleInspector)
+  const toggleLeftRail = useUIStore(s => s.toggleLeftRail)
   const toggleChat = useUIStore(s => s.toggleChat)
+  const openCreateDialog = useUIStore(s => s.openCreateDialog)
   const { theme, setTheme } = useTheme()
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -46,87 +47,155 @@ export function TopBar() {
     }
   }, [])
 
+  const statusSummary = status
+    ? `Ready ${status.summary.ready} · Active ${status.summary.running} · Completed ${status.summary.done} · Failed ${status.summary.failed}`
+    : null
+
   return (
-    <div className="flex h-16 items-center gap-4 px-5">
-      <div className="min-w-0">
-        <div className="text-[11px] uppercase tracking-[0.28em] text-sky-300/60">Agentic operating system</div>
-        <div className="text-xl font-semibold tracking-tight text-white">threadOS</div>
-      </div>
+    <div className="grid min-h-[4.5rem] grid-cols-1 gap-3 px-4 py-3 lg:grid-cols-[minmax(0,auto)_minmax(0,1fr)_auto] lg:items-center 2xl:px-5">
+      <div className="flex min-w-0 items-center gap-2.5">
+        <Button
+          type="button"
+          variant="outline"
+          size="icon"
+          className="xl:hidden"
+          onClick={toggleLeftRail}
+          aria-label="Open thread navigator"
+        >
+          <PanelLeft className="h-4 w-4" />
+        </Button>
 
-      <div className="ml-4 flex items-center gap-2">
-        {productEntries.map(entry => (
-          <button
-            key={entry.value}
-            type="button"
-            onClick={() => !entry.disabled && setProductEntry(entry.value)}
-            disabled={entry.disabled}
-            className={`rounded-full border px-3 py-1 text-[11px] uppercase tracking-[0.22em] transition ${productEntry === entry.value ? 'border-sky-500/60 bg-sky-500/10 text-sky-100' : 'border-slate-700 bg-slate-900/70 text-slate-300'} ${entry.disabled ? 'cursor-not-allowed opacity-45' : 'hover:border-slate-500 hover:text-white'}`}
-          >
-            {entry.label}
-          </button>
-        ))}
-      </div>
-
-      <div className="flex items-center gap-2">
-        {viewModes.map(mode => (
-          <button
-            key={mode.value}
-            type="button"
-            onClick={() => !mode.disabled && setViewMode(mode.value)}
-            disabled={mode.disabled}
-            className={`rounded-full border px-3 py-1 text-[11px] uppercase tracking-[0.22em] transition ${viewMode === mode.value ? 'border-emerald-500/60 bg-emerald-500/10 text-emerald-100' : 'border-slate-700 bg-slate-950/60 text-slate-300'} ${mode.disabled ? 'cursor-not-allowed opacity-45' : 'hover:border-slate-500 hover:text-white'}`}
-          >
-            {mode.label}
-          </button>
-        ))}
-      </div>
-
-      <div className="ml-auto flex min-w-[20rem] items-center gap-3 border border-slate-800 bg-[#050913] px-3 py-2 text-sm text-slate-300">
-        <Search className="h-4 w-4 text-slate-500" />
-        <input
-          type="text"
-          defaultValue={searchQuery}
-          onChange={handleSearchChange}
-          placeholder="Search threads, runs, skills"
-          className="w-full bg-transparent text-sm text-slate-100 outline-none placeholder:text-slate-500"
-        />
-      </div>
-
-      <button
-        type="button"
-        onClick={() => runRunnable.mutate()}
-        disabled={runRunnable.isPending}
-        className="border border-sky-500/40 bg-sky-500/10 px-4 py-2 text-xs uppercase tracking-[0.2em] text-sky-100 transition hover:border-sky-400 hover:bg-sky-500/15 disabled:cursor-not-allowed disabled:opacity-60"
-      >
-        {runRunnable.isPending ? 'Running' : 'Run'}
-      </button>
-
-      <button type="button" onClick={toggleInspector} className="border border-slate-700 px-3 py-2 text-xs uppercase tracking-[0.18em] text-slate-300 transition hover:border-slate-500 hover:text-white">
-        Inspector
-      </button>
-      <button type="button" onClick={toggleChat} className="border border-slate-700 px-3 py-2 text-xs uppercase tracking-[0.18em] text-slate-300 transition hover:border-slate-500 hover:text-white">
-        Thread Chat
-      </button>
-      <button
-        type="button"
-        onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-        className="border border-slate-700 p-2 text-slate-300 transition hover:border-slate-500 hover:text-white"
-        aria-label="Toggle theme"
-      >
-        {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-      </button>
-
-      {status ? (
-        <div className="hidden min-w-[17rem] border-l border-slate-800 pl-4 text-right text-[11px] uppercase tracking-[0.18em] text-slate-400 2xl:block">
-          <div className="text-slate-500">{status.name}</div>
-          <div className="mt-1 flex justify-end gap-3">
-            <span className="text-slate-300">Ready {status.summary.ready}</span>
-            <span className="text-sky-300">Run {status.summary.running}</span>
-            <span className="text-emerald-300">Done {status.summary.done}</span>
-            <span className="text-rose-300">Fail {status.summary.failed}</span>
-          </div>
+        <div className="min-w-0">
+          <div className="font-mono text-[11px] uppercase tracking-[0.28em] text-sky-300/60">Agentic operating system</div>
+          <div className="text-xl font-semibold tracking-tight text-white">threadOS</div>
         </div>
-      ) : null}
+      </div>
+
+      <div className="flex min-w-0 flex-wrap items-center gap-3 lg:flex-nowrap">
+        <div
+          data-workbench-cluster="product-entry"
+          className="hidden shrink-0 items-center gap-2 border border-slate-800 bg-[#0a101a] px-2 py-2 md:flex"
+        >
+          {productEntries.map(entry => (
+            <Button
+              key={entry.value}
+              type="button"
+              variant={productEntry === entry.value ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => !entry.disabled && setProductEntry(entry.value)}
+              disabled={entry.disabled}
+              className={`rounded-full px-3 ${entry.disabled ? 'opacity-45' : ''}`}
+            >
+              {entry.label}
+            </Button>
+          ))}
+        </div>
+
+        <div
+          data-workbench-cluster="view-mode"
+          className="hidden shrink-0 items-center gap-2 border border-slate-800 bg-[#0a101a] px-2 py-2 xl:flex"
+        >
+          {viewModes.map(mode => (
+            <Button
+              key={mode.value}
+              type="button"
+              variant={viewMode === mode.value ? 'success' : 'outline'}
+              size="sm"
+              onClick={() => !mode.disabled && setViewMode(mode.value)}
+              disabled={mode.disabled}
+              className={`rounded-full px-3 ${mode.disabled ? 'opacity-45' : ''}`}
+            >
+              {mode.label}
+            </Button>
+          ))}
+        </div>
+
+        <div
+          data-workbench-cluster="command-search"
+          className="flex min-w-0 flex-1 items-center gap-3 border border-slate-800 bg-[#0a101a] px-3 py-2 text-sm text-slate-300"
+        >
+          <Search className="h-4 w-4 shrink-0 text-slate-400" />
+          <input
+            type="text"
+            defaultValue={searchQuery}
+            onChange={handleSearchChange}
+            placeholder="Search threads, runs, skills"
+            className="w-full bg-transparent text-sm text-slate-100 outline-none placeholder:text-slate-500"
+          />
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center justify-end gap-2 lg:flex-nowrap">
+        <div data-workbench-cluster="primary-actions" className="flex items-center gap-2 border border-slate-800 bg-[#0a101a] px-2 py-2">
+          <Button
+            type="button"
+            variant="warning"
+            size="sm"
+            onClick={() => openCreateDialog('step')}
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Step
+          </Button>
+          <Button
+            type="button"
+            variant="success"
+            size="sm"
+            onClick={() => openCreateDialog('gate')}
+          >
+            <ShieldCheck className="h-3.5 w-3.5" />
+            Gate
+          </Button>
+          <Button
+            type="button"
+            variant="default"
+            onClick={() => runRunnable.mutate()}
+            disabled={runRunnable.isPending}
+          >
+            <Play className="h-4 w-4" />
+            {runRunnable.isPending ? 'Running' : 'Run'}
+          </Button>
+          <Button type="button" variant="secondary" onClick={toggleChat} className="hidden lg:inline-flex">
+            Chat
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            size="icon"
+            className="lg:hidden"
+            onClick={toggleChat}
+            aria-label="Open chat"
+          >
+            <MessageSquare className="h-4 w-4" />
+          </Button>
+        </div>
+        <div data-workbench-cluster="utility-status" className="flex min-w-0 items-center gap-2 border border-slate-800 bg-[#0a101a] px-2 py-2">
+          {status ? (
+            <div className="hidden min-w-0 items-center gap-2 xl:flex">
+              <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-slate-500">{status.name}</span>
+              <span
+                data-testid="topbar-status-summary"
+                className="rounded-full border border-[#16417C]/70 bg-[#16417C]/18 px-3 py-1 font-mono text-[11px] uppercase tracking-[0.16em] text-slate-100"
+              >
+                {statusSummary}
+              </span>
+            </div>
+          ) : null}
+          {status ? (
+            <span className="rounded-full border border-slate-700 bg-slate-950/65 px-3 py-1 font-mono text-[11px] uppercase tracking-[0.16em] text-slate-300 xl:hidden">
+              {status.name}
+            </span>
+          ) : null}
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+            aria-label="Toggle theme"
+          >
+            {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+          </Button>
+        </div>
+      </div>
     </div>
   )
 }

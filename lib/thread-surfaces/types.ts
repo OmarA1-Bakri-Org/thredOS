@@ -15,6 +15,9 @@ export const RunEventTypeValues = [
   'merge-occurred',
   'run-cancelled',
   'run-completed',
+  'gate-cascade',
+  'spawn-limit-warning',
+  'spawn-denied',
 ] as const
 export type RunEventType = typeof RunEventTypeValues[number]
 
@@ -26,8 +29,11 @@ export interface ThreadSurface {
   surfaceLabel: string
   surfaceDescription?: string
   role?: string
+  registeredAgentId?: string
   createdAt: string
   childSurfaceIds: string[]
+  sequenceRef: string | null
+  spawnedByAgentId: string | null
 }
 
 export interface RunScope {
@@ -41,6 +47,8 @@ export interface RunScope {
   runSummary?: string
   runNotes?: string
   runDiscussion?: string
+  parentRunId: string | null
+  childIndex: number | null
 }
 
 export interface RunEventPayloadByType {
@@ -71,6 +79,20 @@ export interface RunEventPayloadByType {
   'run-completed': {
     summary?: string
   }
+  'gate-cascade': {
+    sourceGateId: string
+    targetGateId: string
+    cascadeResult: 'blocked' | 'approved'
+  }
+  'spawn-limit-warning': {
+    limitType: 'depth' | 'children' | 'total'
+    currentValue: number
+    maxValue: number
+  }
+  'spawn-denied': {
+    reason: string
+    childStepId: string
+  }
 }
 
 interface BaseRunEvent<T extends RunEventType> {
@@ -96,4 +118,17 @@ export interface MergeEvent {
   executionIndex: number
   createdAt: string
   summary?: string
+}
+
+// ── Skill types ──────────────────────────────────────────────────────
+
+export interface ThreadSkillBadge {
+  id: string
+  label: string
+  inherited: boolean
+}
+
+export interface SkillProjection {
+  threadSurfaceId: string
+  skills: ThreadSkillBadge[]
 }

@@ -4,6 +4,9 @@ import { completeRun, createChildThreadSurfaceRun, createReplacementRun, findLat
 import type { ThreadSurfaceState } from '@/lib/thread-surfaces/repository'
 import type { RuntimeDelegationEvent } from '@/lib/thread-surfaces/runtime-event-log'
 import { deriveStepThreadSurfaceId, ROOT_THREAD_SURFACE_ID } from '@/lib/thread-surfaces/constants'
+import { deriveChildSequenceRef, type PendingChildSequence } from '@/lib/thread-surfaces/provision-child-sequence'
+import type { AgentRegistration } from '@/lib/agents/types'
+import { hasSpawnSkill } from '@/lib/thread-surfaces/projections'
 
 export interface StepRunScope {
   runId: string
@@ -16,6 +19,7 @@ interface BeginStepRunOptions {
   now: string
   nextRunId: string
   executionIndex?: number
+  agent?: AgentRegistration | null
 }
 
 interface FinalizeStepRunOptions {
@@ -27,6 +31,7 @@ interface FinalizeStepRunOptions {
   nextRunId: () => string
   nextEventId: () => string
   nextMergeId: () => string
+  agent?: AgentRegistration | null
 }
 
 export function beginStepRunIfSurfaceExists(
@@ -36,6 +41,31 @@ export function beginStepRunIfSurfaceExists(
 ): { state: ThreadSurfaceState; stepRun: StepRunScope | null } {
   const threadSurfaceId = deriveStepThreadSurfaceId(step.id)
   const existingSurface = state.threadSurfaces.find(surface => surface.id === threadSurfaceId) ?? null
+
+  // Auto-create child surface for spawn-skilled agents
+  if (existingSurface == null && hasSpawnSkill(opts.agent ?? null)) {
+    const executionIndex = opts.executionIndex ?? state.runs.length + 1
+    const nextState = createChildThreadSurfaceRun(state, {
+      parentSurfaceId: ROOT_THREAD_SURFACE_ID,
+      parentAgentNodeId: step.id,
+      childSurfaceId: threadSurfaceId,
+      childSurfaceLabel: step.name,
+      createdAt: opts.now,
+      runId: opts.nextRunId,
+      startedAt: opts.now,
+      executionIndex,
+    }).state
+
+    return {
+      state: nextState,
+      stepRun: {
+        runId: opts.nextRunId,
+        startedAt: opts.now,
+        executionIndex,
+        threadSurfaceId,
+      },
+    }
+  }
 
   if (existingSurface == null) {
     return { state, stepRun: null }
@@ -63,7 +93,7 @@ export function beginStepRunIfSurfaceExists(
 export function finalizeStepRunWithRuntimeEvents(
   state: ThreadSurfaceState,
   opts: FinalizeStepRunOptions,
-): { state: ThreadSurfaceState; stepRun: StepRunScope | null } {
+): { state: ThreadSurfaceState; stepRun: StepRunScope | null; pendingChildSequences: PendingChildSequence[] } {
   let nextState = state
   let effectiveStepRun = opts.stepRun
 
@@ -77,7 +107,7 @@ export function finalizeStepRunWithRuntimeEvents(
   }
 
   if (effectiveStepRun == null) {
-    return { state: nextState, stepRun: null }
+    return { state: nextState, stepRun: null, pendingChildSequences: [] }
   }
 
   nextState = completeRun(nextState, {
@@ -87,15 +117,18 @@ export function finalizeStepRunWithRuntimeEvents(
     runSummary: opts.success ? `step:${opts.step.id}` : `step:${opts.step.id}:failed`,
   }).state
 
+  let pendingChildSequences: PendingChildSequence[] = []
   if (opts.success && opts.runtimeEvents.length > 0) {
-    nextState = persistRuntimeDelegationEvents(nextState, effectiveStepRun, opts.step, opts.runtimeEvents, {
+    const result = persistRuntimeDelegationEvents(nextState, effectiveStepRun, opts.step, opts.runtimeEvents, {
       nextRunId: opts.nextRunId,
       nextEventId: opts.nextEventId,
       nextMergeId: opts.nextMergeId,
-    })
+    }, opts.agent)
+    nextState = result.state
+    pendingChildSequences = result.pendingChildSequences
   }
 
-  return { state: nextState, stepRun: effectiveStepRun }
+  return { state: nextState, stepRun: effectiveStepRun, pendingChildSequences }
 }
 
 function materializeStepRunForRuntimeEvents(
@@ -146,17 +179,41 @@ function persistRuntimeDelegationEvents(
     nextEventId: () => string
     nextMergeId: () => string
   },
-): ThreadSurfaceState {
+  agent?: AgentRegistration | null,
+): { state: ThreadSurfaceState; pendingChildSequences: PendingChildSequence[] } {
   let nextState = state
+  const pendingChildSequences: PendingChildSequence[] = []
+  // When agent is not provided (undefined), allow spawns for backward compatibility.
+  // Only deny when agent is explicitly provided without the spawn skill.
+  const canSpawn = agent === undefined ? true : hasSpawnSkill(agent)
 
   for (const event of runtimeEvents) {
     if (event.eventType === 'spawn-child') {
+      if (!canSpawn) {
+        nextState = {
+          ...nextState,
+          runEvents: [
+            ...nextState.runEvents,
+            {
+              id: ids.nextEventId(),
+              eventType: 'spawn-denied' as const,
+              runId: stepRun.runId,
+              threadSurfaceId: stepRun.threadSurfaceId,
+              createdAt: event.createdAt,
+              payload: { reason: 'agent lacks spawn skill', childStepId: event.childStepId },
+            },
+          ],
+        }
+        continue
+      }
       const parentThreadSurfaceId = event.parentStepId
         ? deriveStepThreadSurfaceId(event.parentStepId)
         : stepRun.threadSurfaceId
       const childThreadSurfaceId = deriveStepThreadSurfaceId(event.childStepId)
       const createdAt = event.createdAt
       const childSurfaceExists = nextState.threadSurfaces.some(surface => surface.id === childThreadSurfaceId)
+      const threadType = event.threadType ?? 'base'
+      const sequenceRef = deriveChildSequenceRef(childThreadSurfaceId)
 
       if (!childSurfaceExists) {
         nextState = createChildThreadSurfaceRun(nextState, {
@@ -168,7 +225,16 @@ function persistRuntimeDelegationEvents(
           runId: ids.nextRunId(),
           startedAt: createdAt,
           executionIndex: nextState.runs.length + 1,
+          sequenceRef,
+          spawnedByAgentId: step.id,
         }).state
+
+        pendingChildSequences.push({
+          surfaceId: childThreadSurfaceId,
+          sequenceRef,
+          sequenceName: event.childLabel,
+          threadType,
+        })
       } else if (childThreadSurfaceId !== stepRun.threadSurfaceId) {
         nextState = createReplacementRun(nextState, {
           threadSurfaceId: childThreadSurfaceId,
@@ -209,7 +275,7 @@ function persistRuntimeDelegationEvents(
     }).state
   }
 
-  return nextState
+  return { state: nextState, pendingChildSequences }
 }
 
 function resolveParentSurfaceId(state: ThreadSurfaceState, step: Step): string {

@@ -14,6 +14,8 @@ const threadSurfaces: ThreadSurface[] = [
     role: 'orchestrator',
     createdAt: '2026-03-09T00:00:00.000Z',
     childSurfaceIds: ['thread-synthesis'],
+    sequenceRef: null,
+    spawnedByAgentId: null,
   },
   {
     id: 'thread-synthesis',
@@ -25,6 +27,8 @@ const threadSurfaces: ThreadSurface[] = [
     role: 'synthesizer',
     createdAt: '2026-03-09T00:03:00.000Z',
     childSurfaceIds: [],
+    sequenceRef: null,
+    spawnedByAgentId: null,
   },
   {
     id: 'thread-review',
@@ -34,6 +38,8 @@ const threadSurfaces: ThreadSurface[] = [
     surfaceLabel: 'Review',
     createdAt: '2026-03-09T00:04:00.000Z',
     childSurfaceIds: [],
+    sequenceRef: null,
+    spawnedByAgentId: null,
   },
 ]
 
@@ -46,6 +52,8 @@ const runs: RunScope[] = [
     endedAt: null,
     executionIndex: 40,
     runSummary: 'Master owns final delivery.',
+    parentRunId: null,
+    childIndex: null,
   },
   {
     id: 'run-synthesis',
@@ -57,6 +65,8 @@ const runs: RunScope[] = [
     runSummary: 'Synthesis is consolidating research.',
     runNotes: 'Prepare the review packet.',
     runDiscussion: 'Child discussion context.',
+    parentRunId: null,
+    childIndex: null,
   },
 ]
 
@@ -80,6 +90,10 @@ const rows: LaneBoardDisplayRow[] = [
     runId: 'run-synthesis',
     executionIndex: 20,
     isMergeSource: false,
+    parentThreadSurfaceId: null,
+    depth: 0,
+    childCount: 0,
+    isCollapsed: false,
   },
   {
     threadSurfaceId: 'thread-master',
@@ -87,6 +101,10 @@ const rows: LaneBoardDisplayRow[] = [
     runId: 'run-master',
     executionIndex: 40,
     isMergeSource: false,
+    parentThreadSurfaceId: null,
+    depth: 0,
+    childCount: 0,
+    isCollapsed: false,
   },
   {
     threadSurfaceId: 'thread-review',
@@ -96,6 +114,10 @@ const rows: LaneBoardDisplayRow[] = [
     laneTerminalState: 'merged',
     mergedIntoThreadSurfaceId: 'thread-master',
     isMergeSource: true,
+    parentThreadSurfaceId: null,
+    depth: 0,
+    childCount: 0,
+    isCollapsed: false,
   },
 ]
 

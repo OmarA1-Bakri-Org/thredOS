@@ -43,6 +43,9 @@ next-env.d.ts
 # ThreadOS runtime artifacts (not committed)
 .threados/runs/
 .threados/state/
+.threados/__pycache__/
+.threados/audit.log
+.threados/sequence.yaml.bak
 
 # Vendored binaries (not committed)
 vendor/
@@ -52,3 +55,14 @@ vendor/
 
 # Windows artifacts
 nul
+
+# Agent verification screenshots (ephemeral)
+/*.png
+
+# Tool configs (local)
+.hintrc
+.kombai/
+.playwright-mcp/
+
+#Ignore vscode AI rules
+.github\instructions\codacy.instructions.md

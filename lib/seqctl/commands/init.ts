@@ -7,6 +7,7 @@ interface CLIOptions {
   json: boolean
   help: boolean
   watch: boolean
+  basePath?: string
 }
 
 interface InitResult {
@@ -26,7 +27,7 @@ export async function initCommand(
   _args: string[],
   options: CLIOptions
 ): Promise<void> {
-  const basePath = process.cwd()
+  const basePath = options.basePath ?? process.cwd()
   const threadosPath = join(basePath, THREADOS_DIR)
 
   // Check if already initialized

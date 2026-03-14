@@ -2,7 +2,7 @@
 
 > **Version**: 3.0
 > **Status**: Product and implementation roadmap
-> **Last Updated**: 2026-03-10
+> **Last Updated**: 2026-03-13
 
 ---
 
@@ -33,16 +33,30 @@ The codebase is no longer at the earlier M0-M2 state described by older roadmap 
 - Production integration branch work proving green lint, typecheck, test, and build slices
 - UI prototype artifacts for the new shell, focused thread card, main thread surface, and wireframes
 
-### 2.2 What Is Still Missing
+### 2.2 Implementation Progress
 
-These are the key remaining production gaps:
+#### Delivered
+- Model provider layer (OpenAI + OpenRouter via shared abstraction)
+- Production workbench shell with top bar, accordion panel, and board regions
+- Hierarchy view with focused thread cards (builder, pack, skills, rubric, provenance)
+- Lane board with run-scoped ordering, merge visibility, and timeline context
+- Thread Inspector with identity, run context, skill inventory, and provenance sections
+- Skill projection layer with direct/inherited distinction and agent registration resolution
+- Entry gating with ThreadOS (active) and Thread Runner (locked) product paths
+- Thread Runner eligibility API (currently returns all requirements locked)
+- Verified-run and race domain records with combatant runs, placement, and result ordering
+- Pack and status records (Challenger/Champion/Hero) with builder attribution
+- Agent registration system with profile builder and stats aggregation
+- Design tokens extracted to `threados-tokens.css` for shell visual system
+- Lint, typecheck, test, and build all pass green
 
-- Full production UI implementation of the new shell and boards
+#### Remaining
 - Real VM-backed Thread Runner infrastructure
-- Registration, subscription, and eligibility gating for Thread Runner
-- Verified competition storage, ranking, and cup flow
-- First-class pack/status records and builder profiles
-- Complete documentation for the new product split and UI model
+- Actual registration and subscription service integration for Thread Runner eligibility
+- Layers board mode (global map view)
+- Cup and league competitive flows
+- Pack showcase and premium access views
+- Open Champion invitation logic
 
 ### 2.3 Product Positioning
 

@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import type { Sequence, Step } from '@/lib/sequence/schema'
+import type { AgentRegistration } from '../agents/types'
 import { deriveSpawnSpecsForStep } from './spawn-runtime'
 
 function makeStep(overrides: Partial<Step> = {}): Step {
@@ -23,6 +24,23 @@ function makeSequence(steps: Step[]): Sequence {
     gates: [],
   }
 }
+
+function makeAgent(overrides: Partial<AgentRegistration> = {}): AgentRegistration {
+  return {
+    id: 'agt-test',
+    name: 'Test Agent',
+    registeredAt: '2026-03-14T00:00:00.000Z',
+    builderId: 'omar',
+    builderName: 'Omar',
+    threadSurfaceIds: [],
+    ...overrides,
+  }
+}
+
+const spawnAgent = makeAgent({
+  id: 'agt-spawner',
+  metadata: { skills: [{ id: 'spawn', label: 'Spawn', inherited: false }] },
+})
 
 describe('deriveSpawnSpecsForStep', () => {
   test('orchestrator steps create child spawn specs only for delegated workers', () => {
@@ -55,6 +73,7 @@ describe('deriveSpawnSpecsForStep', () => {
     const specs = deriveSpawnSpecsForStep({
       sequence: makeSequence([orchestrator, workerA, workerB, unrelated]),
       step: orchestrator,
+      agent: spawnAgent,
     })
 
     expect(specs).toEqual([
@@ -89,6 +108,7 @@ describe('deriveSpawnSpecsForStep', () => {
     const specs = deriveSpawnSpecsForStep({
       sequence: makeSequence([main, watchdog]),
       step: watchdog,
+      agent: spawnAgent,
     })
 
     expect(specs).toEqual([
@@ -112,6 +132,7 @@ describe('deriveSpawnSpecsForStep', () => {
     const specs = deriveSpawnSpecsForStep({
       sequence: makeSequence([step]),
       step,
+      agent: null,
     })
 
     expect(specs).toEqual([])
@@ -128,6 +149,7 @@ describe('deriveSpawnSpecsForStep', () => {
     const specs = deriveSpawnSpecsForStep({
       sequence: makeSequence([fanoutStep]),
       step: fanoutStep,
+      agent: spawnAgent,
     })
 
     expect(specs).toEqual([
@@ -150,5 +172,61 @@ describe('deriveSpawnSpecsForStep', () => {
         spawnKind: 'fanout',
       }),
     ])
+  })
+
+  test('returns empty when agent lacks spawn skill', () => {
+    const orchestrator = makeStep({
+      id: 'orch-orchestrator',
+      name: 'Orchestrator',
+      type: 'b',
+      orchestrator: 'orch-orchestrator',
+    })
+    const worker = makeStep({
+      id: 'orch-worker-1',
+      name: 'Worker 1',
+      type: 'b',
+      depends_on: ['orch-orchestrator'],
+      orchestrator: 'orch-orchestrator',
+    })
+    const agent = makeAgent({
+      id: 'agt-no-spawn',
+      metadata: { skills: [{ id: 'search', label: 'Search', inherited: false }] },
+    })
+
+    const specs = deriveSpawnSpecsForStep({
+      sequence: makeSequence([orchestrator, worker]),
+      step: orchestrator,
+      agent,
+    })
+
+    expect(specs).toEqual([])
+  })
+
+  test('returns specs when agent has spawn skill', () => {
+    const orchestrator = makeStep({
+      id: 'orch-orchestrator',
+      name: 'Orchestrator',
+      type: 'b',
+      orchestrator: 'orch-orchestrator',
+    })
+    const worker = makeStep({
+      id: 'orch-worker-1',
+      name: 'Worker 1',
+      type: 'b',
+      depends_on: ['orch-orchestrator'],
+      orchestrator: 'orch-orchestrator',
+    })
+
+    const specs = deriveSpawnSpecsForStep({
+      sequence: makeSequence([orchestrator, worker]),
+      step: orchestrator,
+      agent: spawnAgent,
+    })
+
+    expect(specs).toHaveLength(1)
+    expect(specs[0]).toEqual(expect.objectContaining({
+      childAgentNodeId: 'orch-worker-1',
+      spawnKind: 'orchestrator',
+    }))
   })
 })

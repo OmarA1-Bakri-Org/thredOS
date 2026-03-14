@@ -199,6 +199,8 @@ describe.serial('thread spawn event persistence', () => {
           surfaceLabel: 'Orchestrated Sequence',
           createdAt: '2026-03-09T12:00:00.000Z',
           childSurfaceIds: ['thread-orch-orchestrator'],
+          sequenceRef: null,
+          spawnedByAgentId: null,
         },
         {
           id: 'thread-orch-orchestrator',
@@ -208,6 +210,8 @@ describe.serial('thread spawn event persistence', () => {
           surfaceLabel: 'Main Orchestrator',
           createdAt: '2026-03-09T12:00:01.000Z',
           childSurfaceIds: ['thread-orch-worker-1'],
+          sequenceRef: null,
+          spawnedByAgentId: null,
         },
         {
           id: 'thread-orch-worker-1',
@@ -217,6 +221,8 @@ describe.serial('thread spawn event persistence', () => {
           surfaceLabel: 'Worker 1',
           createdAt: '2026-03-09T12:00:02.000Z',
           childSurfaceIds: [],
+          sequenceRef: null,
+          spawnedByAgentId: null,
         },
       ],
       runs: [
@@ -227,6 +233,8 @@ describe.serial('thread spawn event persistence', () => {
           startedAt: '2026-03-09T12:00:00.000Z',
           endedAt: '2026-03-09T12:00:15.000Z',
           executionIndex: 1,
+          parentRunId: null,
+          childIndex: null,
         },
         {
           id: 'run-worker-seed',
@@ -235,6 +243,8 @@ describe.serial('thread spawn event persistence', () => {
           startedAt: '2026-03-09T12:00:02.000Z',
           endedAt: '2026-03-09T12:00:16.000Z',
           executionIndex: 2,
+          parentRunId: null,
+          childIndex: null,
         },
       ],
       mergeEvents: [],
@@ -297,6 +307,8 @@ describe.serial('thread spawn event persistence', () => {
           surfaceLabel: 'Orchestrated Sequence',
           createdAt: '2026-03-09T12:00:00.000Z',
           childSurfaceIds: ['thread-orch-orchestrator'],
+          sequenceRef: null,
+          spawnedByAgentId: null,
         },
         {
           id: 'thread-orch-orchestrator',
@@ -306,6 +318,8 @@ describe.serial('thread spawn event persistence', () => {
           surfaceLabel: 'Main Orchestrator',
           createdAt: '2026-03-09T12:00:01.000Z',
           childSurfaceIds: ['thread-orch-worker-1'],
+          sequenceRef: null,
+          spawnedByAgentId: null,
         },
         {
           id: 'thread-orch-worker-1',
@@ -315,6 +329,8 @@ describe.serial('thread spawn event persistence', () => {
           surfaceLabel: 'Worker 1',
           createdAt: '2026-03-09T12:00:02.000Z',
           childSurfaceIds: [],
+          sequenceRef: null,
+          spawnedByAgentId: null,
         },
       ],
       runs: [
@@ -325,6 +341,8 @@ describe.serial('thread spawn event persistence', () => {
           startedAt: '2026-03-09T12:00:00.000Z',
           endedAt: '2026-03-09T12:00:15.000Z',
           executionIndex: 1,
+          parentRunId: null,
+          childIndex: null,
         },
         {
           id: 'run-orchestrator-seed',
@@ -333,6 +351,8 @@ describe.serial('thread spawn event persistence', () => {
           startedAt: '2026-03-09T12:00:01.000Z',
           endedAt: '2026-03-09T12:00:16.000Z',
           executionIndex: 2,
+          parentRunId: null,
+          childIndex: null,
         },
         {
           id: 'run-worker-seed',
@@ -341,6 +361,8 @@ describe.serial('thread spawn event persistence', () => {
           startedAt: '2026-03-09T12:00:02.000Z',
           endedAt: null,
           executionIndex: 3,
+          parentRunId: null,
+          childIndex: null,
         },
       ],
       mergeEvents: [],
@@ -403,6 +425,8 @@ describe.serial('thread spawn event persistence', () => {
           surfaceLabel: 'Long Sequence',
           createdAt: '2026-03-09T12:00:00.000Z',
           childSurfaceIds: ['thread-long-main'],
+          sequenceRef: null,
+          spawnedByAgentId: null,
         },
         {
           id: 'thread-long-main',
@@ -412,6 +436,8 @@ describe.serial('thread spawn event persistence', () => {
           surfaceLabel: 'Long Main',
           createdAt: '2026-03-09T12:00:01.000Z',
           childSurfaceIds: [],
+          sequenceRef: null,
+          spawnedByAgentId: null,
         },
       ],
       runs: [
@@ -422,6 +448,8 @@ describe.serial('thread spawn event persistence', () => {
           startedAt: '2026-03-09T12:00:00.000Z',
           endedAt: '2026-03-09T12:00:15.000Z',
           executionIndex: 1,
+          parentRunId: null,
+          childIndex: null,
         },
         {
           id: 'run-main-seed',
@@ -430,6 +458,8 @@ describe.serial('thread spawn event persistence', () => {
           startedAt: '2026-03-09T12:00:01.000Z',
           endedAt: '2026-03-09T12:00:16.000Z',
           executionIndex: 2,
+          parentRunId: null,
+          childIndex: null,
         },
       ],
       mergeEvents: [],
@@ -451,6 +481,8 @@ describe.serial('thread spawn event persistence', () => {
         expect.objectContaining({
           id: 'thread-long-main',
           childSurfaceIds: [],
+          sequenceRef: null,
+          spawnedByAgentId: null,
         }),
       ]),
     )
@@ -513,6 +545,8 @@ describe.serial('thread spawn event persistence', () => {
           id: 'thread-delegate-step',
           parentSurfaceId: 'thread-root',
           childSurfaceIds: ['thread-delegate-child-a', 'thread-delegate-child-b'],
+          sequenceRef: null,
+          spawnedByAgentId: null,
         }),
         expect.objectContaining({
           id: 'thread-delegate-child-a',

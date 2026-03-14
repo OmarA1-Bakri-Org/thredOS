@@ -23,23 +23,19 @@ function captureLog(): { logs: string[]; restore: () => void } {
 
 describe('thread types integration', () => {
   let tmpDir: string
-  let origCwd: string
 
   beforeEach(async () => {
-    origCwd = process.cwd()
     tmpDir = await createTempDir()
-    process.chdir(tmpDir)
-    await initCommand(undefined, [], silentOpts)
+    await initCommand(undefined, [], { ...silentOpts, basePath: tmpDir })
   })
 
   afterEach(async () => {
-    process.chdir(origCwd)
     await cleanTempDir(tmpDir)
   })
 
   test('base template apply', async () => {
     const { restore, logs } = captureLog()
-    await templateCommand('apply', ['base'], jsonOpts)
+    await templateCommand('apply', ['base'], { ...jsonOpts, basePath: tmpDir })
     restore()
 
     const result = JSON.parse(logs[0])
@@ -51,9 +47,9 @@ describe('thread types integration', () => {
 
   test('parallel: group parallelize', async () => {
     const { restore } = captureLog()
-    await stepCommand('add', ['p1', '-n', 'P1', '-t', 'base', '-m', 'claude-code'], jsonOpts)
-    await stepCommand('add', ['p2', '-n', 'P2', '-t', 'base', '-m', 'claude-code'], jsonOpts)
-    await groupCommand('parallelize', ['p1', 'p2'], jsonOpts)
+    await stepCommand('add', ['p1', '-n', 'P1', '-t', 'base', '-m', 'claude-code'], { ...jsonOpts, basePath: tmpDir })
+    await stepCommand('add', ['p2', '-n', 'P2', '-t', 'base', '-m', 'claude-code'], { ...jsonOpts, basePath: tmpDir })
+    await groupCommand('parallelize', ['p1', 'p2'], { ...jsonOpts, basePath: tmpDir })
     restore()
 
     const seq = await readSequence(tmpDir)
@@ -63,10 +59,10 @@ describe('thread types integration', () => {
 
   test('chained: steps with gate', async () => {
     const { restore } = captureLog()
-    await stepCommand('add', ['c1', '-n', 'C1', '-t', 'base', '-m', 'claude-code'], jsonOpts)
-    await stepCommand('add', ['c2', '-n', 'C2', '-t', 'base', '-m', 'claude-code'], jsonOpts)
-    await gateCommand('insert', ['review-gate', '-n', 'ReviewGate', 'c1'], jsonOpts)
-    await depCommand('add', ['c2', 'review-gate'], jsonOpts)
+    await stepCommand('add', ['c1', '-n', 'C1', '-t', 'base', '-m', 'claude-code'], { ...jsonOpts, basePath: tmpDir })
+    await stepCommand('add', ['c2', '-n', 'C2', '-t', 'base', '-m', 'claude-code'], { ...jsonOpts, basePath: tmpDir })
+    await gateCommand('insert', ['review-gate', '-n', 'ReviewGate', 'c1'], { ...jsonOpts, basePath: tmpDir })
+    await depCommand('add', ['c2', 'review-gate'], { ...jsonOpts, basePath: tmpDir })
     restore()
 
     const seq = await readSequence(tmpDir)
@@ -77,9 +73,9 @@ describe('thread types integration', () => {
 
   test('fusion: create fusion steps', async () => {
     const { restore } = captureLog()
-    await stepCommand('add', ['cand1', '-n', 'Candidate1', '-t', 'base', '-m', 'claude-code'], jsonOpts)
-    await stepCommand('add', ['cand2', '-n', 'Candidate2', '-t', 'base', '-m', 'claude-code'], jsonOpts)
-    await fusionCommand('create', ['--candidates', 'cand1,cand2', '--synth', 'synth-1'], jsonOpts)
+    await stepCommand('add', ['cand1', '-n', 'Candidate1', '-t', 'base', '-m', 'claude-code'], { ...jsonOpts, basePath: tmpDir })
+    await stepCommand('add', ['cand2', '-n', 'Candidate2', '-t', 'base', '-m', 'claude-code'], { ...jsonOpts, basePath: tmpDir })
+    await fusionCommand('create', ['--candidates', 'cand1,cand2', '--synth', 'synth-1'], { ...jsonOpts, basePath: tmpDir })
     restore()
 
     const seq = await readSequence(tmpDir)

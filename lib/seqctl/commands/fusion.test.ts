@@ -4,17 +4,13 @@ import { readSequence } from '../../sequence/parser'
 import { createTempDir, cleanTempDir, makeSequence, makeStep, writeTestSequence } from '../../../test/helpers/setup'
 
 let tempDir: string
-let origCwd: string
 const jsonOpts = { json: true, help: false, watch: false }
 
 beforeEach(async () => {
-  origCwd = process.cwd()
   tempDir = await createTempDir()
-  process.chdir(tempDir)
 })
 
 afterEach(async () => {
-  process.chdir(origCwd)
   await cleanTempDir(tempDir)
 })
 
@@ -27,7 +23,7 @@ describe('fusion create', () => {
       ],
     })
     await writeTestSequence(tempDir, seq)
-    await fusionCommand('create', ['--candidates', 'c1,c2', '--synth', 'synth-1'], jsonOpts)
+    await fusionCommand('create', ['--candidates', 'c1,c2', '--synth', 'synth-1'], { ...jsonOpts, basePath: tempDir })
     const result = await readSequence(tempDir)
     const c1 = result.steps.find(s => s.id === 'c1')!
     expect(c1.fusion_candidates).toBe(true)
@@ -48,7 +44,7 @@ describe('fusion create', () => {
     const origExit = process.exit
     process.exit = (() => { throw new Error('exit') }) as never
     try {
-      await fusionCommand('create', ['--candidates', 'a', '--synth', 's'], jsonOpts)
+      await fusionCommand('create', ['--candidates', 'a', '--synth', 's'], { ...jsonOpts, basePath: tempDir })
     } catch {}
     console.log = origLog
     process.exit = origExit

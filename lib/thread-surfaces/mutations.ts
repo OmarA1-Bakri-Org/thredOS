@@ -1,6 +1,8 @@
 import type { MergeEvent, MergeKind, RunEvent, RunScope, RunStatus, ThreadSurface } from './types'
 import {
   InvalidThreadSurfaceMergeError,
+  SpawnDepthExceededError,
+  SpawnLimitExceededError,
   ThreadSurfaceAlreadyExistsError,
   ThreadSurfaceNotFoundError,
   ThreadSurfaceRunScopeNotFoundError,
@@ -27,6 +29,13 @@ interface CreateChildThreadSurfaceRunArgs {
   runId: string
   startedAt: string
   executionIndex?: number
+  sequenceRef?: string | null
+  parentRunId?: string | null
+  childIndex?: number | null
+  spawnedByAgentId?: string | null
+  maxSpawnDepth?: number
+  maxChildrenPerSurface?: number
+  maxTotalSurfaces?: number
 }
 
 interface CreateReplacementRunArgs {
@@ -69,6 +78,26 @@ interface RecordChildAgentSpawnEventArgs {
   createdAt: string
 }
 
+interface RecordGateCascadeEventArgs {
+  eventId: string
+  runId: string
+  threadSurfaceId: string
+  childGateId: string
+  parentGateId: string
+  cascadeStatus: 'blocked' | 'passed'
+  createdAt: string
+}
+
+interface RecordSpawnWarningEventArgs {
+  eventId: string
+  runId: string
+  threadSurfaceId: string
+  limitType: 'depth' | 'children' | 'total'
+  currentValue: number
+  maxValue: number
+  createdAt: string
+}
+
 export const emptyThreadSurfaceState: ThreadSurfaceState = {
   version: 1,
   threadSurfaces: [],
@@ -90,6 +119,8 @@ export function createRootThreadSurfaceRun(state: ThreadSurfaceState, args: Crea
     surfaceLabel: args.surfaceLabel,
     createdAt: args.createdAt,
     childSurfaceIds: [],
+    sequenceRef: null,
+    spawnedByAgentId: null,
   }
 
   const run = createRunScope({
@@ -121,6 +152,24 @@ export function createChildThreadSurfaceRun(state: ThreadSurfaceState, args: Cre
   }
 
   const parent = state.threadSurfaces[parentIndex]
+
+  if (args.maxSpawnDepth != null) {
+    const childDepth = parent.depth + 1
+    if (childDepth > args.maxSpawnDepth) {
+      throw new SpawnDepthExceededError(childDepth, args.maxSpawnDepth)
+    }
+  }
+  if (args.maxChildrenPerSurface != null) {
+    if (parent.childSurfaceIds.length >= args.maxChildrenPerSurface) {
+      throw new SpawnLimitExceededError('children', parent.childSurfaceIds.length, args.maxChildrenPerSurface)
+    }
+  }
+  if (args.maxTotalSurfaces != null) {
+    if (state.threadSurfaces.length >= args.maxTotalSurfaces) {
+      throw new SpawnLimitExceededError('total', state.threadSurfaces.length, args.maxTotalSurfaces)
+    }
+  }
+
   const childSurface: ThreadSurface = {
     id: args.childSurfaceId,
     parentSurfaceId: parent.id,
@@ -129,6 +178,8 @@ export function createChildThreadSurfaceRun(state: ThreadSurfaceState, args: Cre
     surfaceLabel: args.childSurfaceLabel,
     createdAt: args.createdAt,
     childSurfaceIds: [],
+    sequenceRef: args.sequenceRef ?? null,
+    spawnedByAgentId: args.spawnedByAgentId ?? null,
   }
 
   const childRun = createRunScope({
@@ -136,6 +187,8 @@ export function createChildThreadSurfaceRun(state: ThreadSurfaceState, args: Cre
     threadSurfaceId: args.childSurfaceId,
     startedAt: args.startedAt,
     executionIndex: args.executionIndex,
+    parentRunId: args.parentRunId ?? null,
+    childIndex: args.childIndex ?? null,
   })
 
   const nextThreadSurfaces = [...state.threadSurfaces]
@@ -145,12 +198,60 @@ export function createChildThreadSurfaceRun(state: ThreadSurfaceState, args: Cre
   }
   nextThreadSurfaces.push(childSurface)
 
+  const warningEvents: RunEvent[] = []
+  const childDepth = parent.depth + 1
+
+  if (args.maxSpawnDepth != null && childDepth >= args.maxSpawnDepth * 0.8) {
+    warningEvents.push({
+      id: `warn-depth-${args.runId}`,
+      runId: args.runId,
+      eventType: 'spawn-limit-warning',
+      createdAt: args.createdAt,
+      threadSurfaceId: args.childSurfaceId,
+      payload: {
+        limitType: 'depth',
+        currentValue: childDepth,
+        maxValue: args.maxSpawnDepth,
+      },
+    })
+  }
+
+  if (args.maxChildrenPerSurface != null && parent.childSurfaceIds.length + 1 >= args.maxChildrenPerSurface * 0.8) {
+    warningEvents.push({
+      id: `warn-children-${args.runId}`,
+      runId: args.runId,
+      eventType: 'spawn-limit-warning',
+      createdAt: args.createdAt,
+      threadSurfaceId: args.parentSurfaceId,
+      payload: {
+        limitType: 'children',
+        currentValue: parent.childSurfaceIds.length + 1,
+        maxValue: args.maxChildrenPerSurface,
+      },
+    })
+  }
+
+  if (args.maxTotalSurfaces != null && nextThreadSurfaces.length >= args.maxTotalSurfaces * 0.8) {
+    warningEvents.push({
+      id: `warn-total-${args.runId}`,
+      runId: args.runId,
+      eventType: 'spawn-limit-warning',
+      createdAt: args.createdAt,
+      threadSurfaceId: args.childSurfaceId,
+      payload: {
+        limitType: 'total',
+        currentValue: nextThreadSurfaces.length,
+        maxValue: args.maxTotalSurfaces,
+      },
+    })
+  }
+
   return {
     state: {
       ...state,
       threadSurfaces: nextThreadSurfaces,
       runs: [...state.runs, childRun],
-      runEvents: state.runEvents,
+      runEvents: [...state.runEvents, ...warningEvents],
     },
     childSurface,
     childRun,
@@ -284,6 +385,68 @@ export function recordChildAgentSpawnEvent(state: ThreadSurfaceState, args: Reco
   }
 }
 
+export function recordGateCascadeEvent(state: ThreadSurfaceState, args: RecordGateCascadeEventArgs) {
+  if (!state.threadSurfaces.some(surface => surface.id === args.threadSurfaceId)) {
+    throw new ThreadSurfaceNotFoundError(args.threadSurfaceId)
+  }
+  if (!state.runs.some(run => run.id === args.runId)) {
+    throw new ThreadSurfaceRunScopeNotFoundError(args.runId)
+  }
+
+  const cascadeResultMap = { blocked: 'blocked', passed: 'approved' } as const
+
+  const runEvent: RunEvent = {
+    id: args.eventId,
+    runId: args.runId,
+    eventType: 'gate-cascade',
+    createdAt: args.createdAt,
+    threadSurfaceId: args.threadSurfaceId,
+    payload: {
+      sourceGateId: args.parentGateId,
+      targetGateId: args.childGateId,
+      cascadeResult: cascadeResultMap[args.cascadeStatus],
+    },
+  }
+
+  return {
+    state: {
+      ...state,
+      runEvents: [...state.runEvents, runEvent],
+    },
+    runEvent,
+  }
+}
+
+export function recordSpawnWarningEvent(state: ThreadSurfaceState, args: RecordSpawnWarningEventArgs) {
+  if (!state.threadSurfaces.some(surface => surface.id === args.threadSurfaceId)) {
+    throw new ThreadSurfaceNotFoundError(args.threadSurfaceId)
+  }
+  if (!state.runs.some(run => run.id === args.runId)) {
+    throw new ThreadSurfaceRunScopeNotFoundError(args.runId)
+  }
+
+  const runEvent: RunEvent = {
+    id: args.eventId,
+    runId: args.runId,
+    eventType: 'spawn-limit-warning',
+    createdAt: args.createdAt,
+    threadSurfaceId: args.threadSurfaceId,
+    payload: {
+      limitType: args.limitType,
+      currentValue: args.currentValue,
+      maxValue: args.maxValue,
+    },
+  }
+
+  return {
+    state: {
+      ...state,
+      runEvents: [...state.runEvents, runEvent],
+    },
+    runEvent,
+  }
+}
+
 export function findLatestRunForSurface(runs: RunScope[], threadSurfaceId: string): RunScope | undefined {
   return [...runs]
     .filter(run => run.threadSurfaceId === threadSurfaceId)
@@ -301,11 +464,15 @@ function createRunScope({
   threadSurfaceId,
   startedAt,
   executionIndex,
+  parentRunId,
+  childIndex,
 }: {
   runId: string
   threadSurfaceId: string
   startedAt: string
   executionIndex?: number
+  parentRunId?: string | null
+  childIndex?: number | null
 }): RunScope {
   return {
     id: runId,
@@ -313,6 +480,8 @@ function createRunScope({
     runStatus: 'running',
     startedAt,
     endedAt: null,
+    parentRunId: parentRunId ?? null,
+    childIndex: childIndex ?? null,
     ...(executionIndex != null ? { executionIndex } : {}),
   }
 }

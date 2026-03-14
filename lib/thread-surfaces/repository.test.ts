@@ -22,6 +22,8 @@ const threadSurface: ThreadSurface = {
   role: 'orchestrator',
   createdAt: '2026-03-09T00:00:00.000Z',
   childSurfaceIds: ['thread-research'],
+  sequenceRef: null,
+  spawnedByAgentId: null,
 }
 
 const run: RunScope = {
@@ -34,6 +36,8 @@ const run: RunScope = {
   runSummary: 'Master run',
   runNotes: 'Watch lane order',
   runDiscussion: 'AI notes',
+  parentRunId: null,
+  childIndex: null,
 }
 
 const mergeEvent: MergeEvent = {
