@@ -2,18 +2,14 @@ import { Fragment } from 'react'
 import { ArrowRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { HierarchyViewNode } from './HierarchyView'
+import { EdgeConnectorOverlay } from './EdgeConnectorOverlay'
 
 interface ThreadFlowPlaneProps {
   nodes: HierarchyViewNode[]
   edges: { source: string; target: string }[]
   selectedThreadSurfaceId: string | null
   onSelectNode: (threadSurfaceId: string, runId: string | null) => void
-}
-
-const layerLabels: Record<number, string> = {
-  0: 'Champion',
-  1: 'Frontline',
-  2: 'Mini',
+  layerLabels?: Record<number, string>
 }
 
 function statusDot(runStatus: string | null): string {
@@ -48,14 +44,33 @@ function buildParentMap(edges: { source: string; target: string }[], nodes: Hier
   return parentMap
 }
 
-export function ThreadFlowPlane({ nodes, edges, selectedThreadSurfaceId, onSelectNode }: ThreadFlowPlaneProps) {
+function resolveLayerLabel(depth: number, layerLabelsProp?: Record<number, string>): string {
+  if (layerLabelsProp && depth in layerLabelsProp) {
+    return layerLabelsProp[depth]
+  }
+  return `Level ${depth}`
+}
+
+export function ThreadFlowPlane({
+  nodes,
+  edges,
+  selectedThreadSurfaceId,
+  onSelectNode,
+  layerLabels: layerLabelsProp,
+}: ThreadFlowPlaneProps) {
   const layers = groupByLayer(nodes)
   const parentMap = buildParentMap(edges, nodes)
 
   if (layers.length === 0) return null
 
   return (
-    <div data-testid="thread-flow-plane" className="flex items-start gap-1 overflow-x-auto">
+    <div
+      data-testid="thread-flow-plane"
+      className="relative flex items-start gap-1 overflow-x-auto"
+    >
+      {/* SVG edge connector overlay — rendered as a client component */}
+      <EdgeConnectorOverlay edges={edges} />
+
       {layers.map((layer, layerIndex) => (
         <Fragment key={layer.depth}>
           {layerIndex > 0 && (
@@ -66,7 +81,7 @@ export function ThreadFlowPlane({ nodes, edges, selectedThreadSurfaceId, onSelec
           )}
           <div className="flex min-w-[11rem] shrink-0 flex-col gap-2">
             <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-slate-500">
-              Layer {layer.depth} · {layerLabels[layer.depth] ?? 'Sub'}
+              Layer {layer.depth} · {resolveLayerLabel(layer.depth, layerLabelsProp)}
             </div>
             {layer.nodes.map(node => {
               const isSelected = node.clickTarget.threadSurfaceId === selectedThreadSurfaceId

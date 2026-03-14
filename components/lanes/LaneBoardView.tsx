@@ -85,6 +85,13 @@ export function LaneBoardView({
             <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">Roster</div>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
+            {rows.length === 0 ? (
+              <div className="flex h-full items-center justify-center px-4 py-8">
+                <p className="font-mono text-[11px] text-slate-500">
+                  No lanes yet — run a sequence to see execution lanes
+                </p>
+              </div>
+            ) : (
             <div className="relative space-y-3">
               {/* Merge connector lines — CSS bracket/connector pattern */}
               {mergeGroups.map(mg => {
@@ -290,6 +297,7 @@ export function LaneBoardView({
                 )
               })}
             </div>
+            )}
           </div>
         </aside>
 
