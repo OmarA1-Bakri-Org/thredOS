@@ -1,9 +1,9 @@
 'use client'
 
 import { useState } from 'react'
-import { Layers3, FileStack, ChevronRight } from 'lucide-react'
+import { Layers3, FileStack, ChevronRight, Pencil, Check, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { useThreadSurfaces, useStatus } from '@/lib/ui/api'
+import { useThreadSurfaces, useStatus, useRenameSequence } from '@/lib/ui/api'
 import { useUIStore, selectCurrentDepthSurfaceId } from '@/lib/ui/store'
 import { derivePhases } from '@/lib/ui/phases'
 
@@ -22,6 +22,10 @@ export function SequenceSection() {
   const selectedThreadSurfaceId = useUIStore(s => s.selectedThreadSurfaceId)
   const setSelectedThreadSurfaceId = useUIStore(s => s.setSelectedThreadSurfaceId)
   const currentDepthSurfaceId = useUIStore(selectCurrentDepthSurfaceId)
+
+  const renameMutation = useRenameSequence()
+  const [editingName, setEditingName] = useState(false)
+  const [nameValue, setNameValue] = useState('')
 
   const autoDerivation = status
     ? derivePhases(status.steps, status.gates)
@@ -96,7 +100,54 @@ export function SequenceSection() {
       {status && (
         <div className="border border-[#16417C]/70 bg-[#16417C]/18 px-3 py-3">
           <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Sequence</div>
-          <div className="mt-2 text-sm font-medium text-white">{status.name}</div>
+          {editingName ? (
+            <div className="mt-2 flex items-center gap-1.5">
+              <input
+                type="text"
+                value={nameValue}
+                onChange={e => setNameValue(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    renameMutation.mutate(nameValue)
+                    setEditingName(false)
+                  }
+                  if (e.key === 'Escape') setEditingName(false)
+                }}
+                autoFocus
+                aria-label="Sequence name"
+                placeholder="Sequence name"
+                className="min-w-0 flex-1 border border-slate-700 bg-slate-900 px-2 py-1 text-sm font-medium text-white outline-none focus:border-sky-500/50"
+              />
+              <button
+                type="button"
+                title="Save name"
+                onClick={() => { renameMutation.mutate(nameValue); setEditingName(false) }}
+                className="border border-slate-700 p-1 text-emerald-400 hover:border-emerald-500/50 hover:bg-emerald-500/10"
+              >
+                <Check className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                title="Cancel editing"
+                onClick={() => setEditingName(false)}
+                className="border border-slate-700 p-1 text-slate-400 hover:border-slate-500 hover:bg-slate-800"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ) : (
+            <div className="mt-2 flex items-center gap-1.5">
+              <span className="text-sm font-medium text-white">{status.name}</span>
+              <button
+                type="button"
+                title="Edit sequence name"
+                onClick={() => { setNameValue(status.name); setEditingName(true) }}
+                className="p-0.5 text-slate-600 hover:text-slate-300"
+              >
+                <Pencil className="h-3 w-3" />
+              </button>
+            </div>
+          )}
           <div className="mt-1 flex gap-3 font-mono text-[10px] uppercase tracking-[0.14em]">
             <span className="text-emerald-300">{status.summary.ready} ready</span>
             <span className="text-sky-300">{status.summary.running} active</span>

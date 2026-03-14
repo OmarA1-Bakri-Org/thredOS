@@ -6,7 +6,8 @@ import { handleError, auditLog } from '@/lib/api-helpers'
 import type { Sequence } from '@/lib/sequence/schema'
 
 const ResetSchema = z.object({ action: z.literal('reset'), name: z.string().optional() })
-const BodySchema = z.union([ResetSchema])
+const RenameSchema = z.object({ action: z.literal('rename'), name: z.string().min(1).max(100) })
+const BodySchema = z.union([ResetSchema, RenameSchema])
 
 export async function GET() {
   try {
@@ -32,6 +33,14 @@ export async function POST(request: Request) {
       await writeSequence(bp, newSeq)
       await auditLog('sequence.reset', body.name || 'New Sequence')
       return NextResponse.json({ success: true, action: 'reset', name: newSeq.name })
+    }
+
+    if (body.action === 'rename') {
+      const seq = await readSequence(bp)
+      seq.name = body.name
+      await writeSequence(bp, seq)
+      await auditLog('sequence.rename', body.name)
+      return NextResponse.json({ ok: true })
     }
 
     return NextResponse.json({ error: 'Unknown action' }, { status: 400 })

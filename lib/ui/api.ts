@@ -274,6 +274,15 @@ export function useThreadSurfaceSkills(threadSurfaceId: string | null) {
   })
 }
 
+export function useRenameSequence() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (name: string) => postJson('/api/sequence', { action: 'rename', name }),
+    onSuccess: () => invalidateRuntimeQueries(qc),
+    onError: (error) => { console.error('Rename sequence failed:', error) },
+  })
+}
+
 export function useResetSequence() {
   const qc = useQueryClient()
   return useMutation({
