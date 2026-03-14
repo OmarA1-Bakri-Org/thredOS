@@ -79,13 +79,7 @@ export const useUIStore = create<UIStore>((set) => ({
   productEntry: null,
   setProductEntry: (entry) => set({ productEntry: entry }),
   selectedNodeId: null,
-  setSelectedNodeId: (id) => set((s) => ({
-    selectedNodeId: id,
-    ...(id != null ? { inspectorOpen: true } : {}),
-    activeAccordionSections: id != null
-      ? [...s.activeAccordionSections.filter(sec => sec !== 'navigator'), ...(s.activeAccordionSections.includes('step-detail') ? [] : ['step-detail'])]
-      : [...s.activeAccordionSections.filter(sec => sec !== 'step-detail'), ...(s.activeAccordionSections.includes('navigator') ? [] : ['navigator'])],
-  })),
+  setSelectedNodeId: (id) => set({ selectedNodeId: id }),
   leftRailOpen: false,
   toggleLeftRail: () => set((s) => ({ leftRailOpen: !s.leftRailOpen })),
   closeLeftRail: () => set({ leftRailOpen: false }),

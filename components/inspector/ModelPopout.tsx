@@ -155,7 +155,13 @@ export function ModelPopout({ value, onChange }: ModelPopoutProps) {
               className="w-full bg-transparent text-[11px] text-slate-200 outline-none placeholder:text-slate-600"
             />
             {search && (
-              <button type="button" onClick={() => setSearch('')} className="text-slate-500 hover:text-slate-300">
+              <button
+                type="button"
+                onClick={() => setSearch('')}
+                aria-label="Clear search"
+                title="Clear search"
+                className="text-slate-500 hover:text-slate-300"
+              >
                 <X className="h-3 w-3" />
               </button>
             )}

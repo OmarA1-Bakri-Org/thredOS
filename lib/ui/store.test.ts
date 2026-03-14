@@ -94,22 +94,19 @@ describe('useUIStore', () => {
     expect(useUIStore.getState().selectedNodeId).toBeNull()
   })
 
-  test('setSelectedNodeId with a non-null id opens the inspector', () => {
+  test('setSelectedNodeId sets the id without side effects', () => {
     expect(useUIStore.getState().inspectorOpen).toBeFalse()
 
     useUIStore.getState().setSelectedNodeId('step-build')
     expect(useUIStore.getState().selectedNodeId).toBe('step-build')
-    expect(useUIStore.getState().inspectorOpen).toBeTrue()
+    // Canvas card reads selectedNodeId directly — no inspector side-effect
+    expect(useUIStore.getState().inspectorOpen).toBeFalse()
   })
 
-  test('setSelectedNodeId with null does not force-open the inspector', () => {
+  test('setSelectedNodeId with null clears the selection', () => {
     useUIStore.getState().setSelectedNodeId('step-build')
-    expect(useUIStore.getState().inspectorOpen).toBeTrue()
-
-    useUIStore.getState().closeInspector()
     useUIStore.getState().setSelectedNodeId(null)
     expect(useUIStore.getState().selectedNodeId).toBeNull()
-    expect(useUIStore.getState().inspectorOpen).toBeFalse()
   })
 
   // ── setSelectedThreadSurfaceId inspector side-effect ──────────────

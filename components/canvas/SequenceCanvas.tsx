@@ -12,6 +12,7 @@ import { GroupBoundary } from './GroupBoundary'
 import { FusionMerge } from './FusionMerge'
 import { DependencyEdge } from './DependencyEdge'
 import { CanvasContextMenu, useCanvasContextMenu } from './CanvasContextMenu'
+import { NodeDetailCard } from './NodeDetailCard'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { EmptyState } from '@/components/EmptyState'
 import { useHierarchyGraph } from '@/components/hierarchy/useHierarchyGraph'
@@ -97,6 +98,7 @@ function SequenceFlowGraph({
             style={{ background: '#0a101a', border: '1px solid rgba(51,65,85,0.4)' }}
           />
         )}
+        <NodeDetailCard />
       </ReactFlow>
       <CanvasContextMenu menu={menu} onClose={closeMenu} />
     </>
