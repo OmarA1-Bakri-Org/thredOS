@@ -45,36 +45,82 @@ export function resolveThreadSurfaceFocusedDetail({
   if (!threadSurface) return null
 
   const surfaceRuns = runs.filter(run => run.threadSurfaceId === fallbackThreadSurfaceId)
+  const displayRun = resolveDisplayRun(surfaceRuns, selectedRunId)
+  const row = findMatchingRow(rows, fallbackThreadSurfaceId, displayRun)
+  const displayRunId = displayRun?.id ?? null
+
+  return {
+    ...buildSurfaceFields(threadSurface),
+    ...buildRunFields(displayRun, row),
+    ...buildLaneFields(row),
+    incomingMergeGroups: filterIncomingMergeGroups(mergeGroups, threadSurface.id, displayRunId),
+    outgoingMergeEvents: filterOutgoingMergeEvents(mergeEvents, threadSurface.id, displayRunId),
+  }
+}
+
+function resolveDisplayRun(surfaceRuns: RunScope[], selectedRunId: string | null): RunScope | null {
   const selectedRun = selectedRunId
     ? surfaceRuns.find(run => run.id === selectedRunId) ?? null
     : null
-  const displayRun = selectedRun ?? resolveDefaultDisplayRun(surfaceRuns) ?? null
-  const row = rows.find(candidate =>
-    candidate.threadSurfaceId === fallbackThreadSurfaceId
+  return selectedRun ?? resolveDefaultDisplayRun(surfaceRuns) ?? null
+}
+
+function findMatchingRow(
+  rows: LaneBoardDisplayRow[],
+  threadSurfaceId: string,
+  displayRun: RunScope | null,
+): LaneBoardDisplayRow | undefined {
+  return rows.find(candidate =>
+    candidate.threadSurfaceId === threadSurfaceId
     && (displayRun ? candidate.runId === displayRun.id : true),
   )
-  const displayRunId = displayRun?.id ?? null
+}
 
+function buildSurfaceFields(threadSurface: ThreadSurface) {
   return {
     threadSurfaceId: threadSurface.id,
     surfaceLabel: threadSurface.surfaceLabel,
     surfaceDescription: threadSurface.surfaceDescription ?? null,
     role: threadSurface.role ?? null,
+  }
+}
+
+function buildRunFields(displayRun: RunScope | null, row: LaneBoardDisplayRow | undefined) {
+  return {
     runId: displayRun?.id ?? null,
     runStatus: displayRun?.runStatus ?? null,
     executionIndex: displayRun?.executionIndex ?? row?.executionIndex ?? null,
     runSummary: displayRun?.runSummary ?? null,
     runNotes: displayRun?.runNotes ?? null,
     runDiscussion: displayRun?.runDiscussion ?? null,
+  }
+}
+
+function buildLaneFields(row: LaneBoardDisplayRow | undefined) {
+  return {
     laneTerminalState: row?.laneTerminalState ?? null,
     mergedIntoThreadSurfaceId: row?.mergedIntoThreadSurfaceId ?? null,
-    incomingMergeGroups: mergeGroups.filter(group =>
-      group.destinationThreadSurfaceId === threadSurface.id
-      && (displayRunId == null || group.runId === displayRunId),
-    ),
-    outgoingMergeEvents: mergeEvents.filter(event =>
-      event.sourceThreadSurfaceIds.includes(threadSurface.id)
-      && (displayRunId == null || event.runId === displayRunId),
-    ),
   }
+}
+
+function filterIncomingMergeGroups(
+  mergeGroups: LaneBoardMergeGroup[],
+  threadSurfaceId: string,
+  displayRunId: string | null,
+): LaneBoardMergeGroup[] {
+  return mergeGroups.filter(group =>
+    group.destinationThreadSurfaceId === threadSurfaceId
+    && (displayRunId == null || group.runId === displayRunId),
+  )
+}
+
+function filterOutgoingMergeEvents(
+  mergeEvents: MergeEvent[],
+  threadSurfaceId: string,
+  displayRunId: string | null,
+): MergeEvent[] {
+  return mergeEvents.filter(event =>
+    event.sourceThreadSurfaceIds.includes(threadSurfaceId)
+    && (displayRunId == null || event.runId === displayRunId),
+  )
 }

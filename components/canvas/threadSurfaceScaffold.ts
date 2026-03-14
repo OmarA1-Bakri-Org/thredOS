@@ -91,11 +91,20 @@ export function resolveThreadSurfaceCanvasData({
   }
 }
 
+const RUN_STATUS_CHECKS: Array<{
+  test: (summary: SequenceStatus['summary']) => boolean
+  status: Exclude<ThreadSurfaceHierarchyStatus, null>
+}> = [
+  { test: s => s.running > 0, status: 'running' },
+  { test: s => s.failed > 0, status: 'failed' },
+  { test: s => s.total > 0 && s.done === s.total, status: 'successful' },
+  { test: s => s.ready > 0 || s.blocked > 0 || s.needsReview > 0, status: 'pending' },
+]
+
 function deriveRunStatus(status: SequenceStatus): Exclude<ThreadSurfaceHierarchyStatus, null> {
-  if (status.summary.running > 0) return 'running'
-  if (status.summary.failed > 0) return 'failed'
-  if (status.summary.total > 0 && status.summary.done === status.summary.total) return 'successful'
-  if (status.summary.ready > 0 || status.summary.blocked > 0 || status.summary.needsReview > 0) return 'pending'
+  for (const check of RUN_STATUS_CHECKS) {
+    if (check.test(status.summary)) return check.status
+  }
   return 'cancelled'
 }
 
@@ -113,7 +122,8 @@ export function hasResolvedThreadSurfaceApiData(
   runs?: RunScope[] | null,
   mergeEvents?: MergeEvent[] | null,
 ): boolean {
-  return Array.isArray(threadSurfaces) && Array.isArray(runs) && Array.isArray(mergeEvents)
+  const collections = [threadSurfaces, runs, mergeEvents]
+  return collections.every(collection => Array.isArray(collection))
 }
 
 function hasPersistedThreadSurfaceData(
