@@ -57,17 +57,22 @@ function deriveClassification(pack: Pack | null, role: string | null): string {
 
 // ── Placement derivation ─────────────────────────────────────────────
 
+const ORDINAL_PLACEMENT: Record<number, string> = { 1: '1st', 2: '2nd', 3: '3rd' }
+
+function formatPlacement(placement: number): string {
+  return ORDINAL_PLACEMENT[placement] ?? `${placement}th`
+}
+
+function derivePlacementFromStats(stats: AgentStats): string {
+  if (stats.bestPlacement > 0) return formatPlacement(stats.bestPlacement)
+  return 'Competitor'
+}
+
+const FALLBACK_PLACEMENT: Record<string, string> = { running: 'Finalist', successful: '1st' }
+
 function derivePlacement(stats: AgentStats | null, runStatus: string | null): string {
-  if (stats && stats.totalRuns > 0) {
-    if (stats.bestPlacement === 1) return '1st'
-    if (stats.bestPlacement === 2) return '2nd'
-    if (stats.bestPlacement === 3) return '3rd'
-    if (stats.bestPlacement > 0) return `${stats.bestPlacement}th`
-    return 'Competitor'
-  }
-  if (runStatus === 'running') return 'Finalist'
-  if (runStatus === 'successful') return '1st'
-  return 'Challenger'
+  if (stats && stats.totalRuns > 0) return derivePlacementFromStats(stats)
+  return FALLBACK_PLACEMENT[runStatus ?? ''] ?? 'Challenger'
 }
 
 // ── ThreadPower formula ──────────────────────────────────────────────
@@ -75,26 +80,32 @@ function derivePlacement(stats: AgentStats | null, runStatus: string | null): st
 // Formula:  base + winBonus + podiumBonus + runVolumeBonus + statusBonus
 // Capped at 9.9
 //
-function computeThreadPower(stats: AgentStats | null, runStatus: string | null, childCount: number): number {
+function clampedScore(value: number, cap: number): number {
+  return Math.min(cap, Number(value.toFixed(1)))
+}
+
+function threadPowerFromStats(stats: AgentStats): number {
   const base = 5.0
+  const winBonus = (stats.wins / stats.totalRuns) * 2.5               // 0..2.5
+  const podiumBonus = (stats.podiums / stats.totalRuns) * 1.2         // 0..1.2
+  const runVolumeBonus = Math.min(1.0, stats.totalRuns / 20)          // 0..1.0  (20 runs = max)
+  const avgPlacementBonus = stats.avgPlacement > 0
+    ? Math.max(0, (5 - stats.avgPlacement) * 0.15)                    // top-3 avg → 0.3..0.6
+    : 0
+  return clampedScore(base + winBonus + podiumBonus + runVolumeBonus + avgPlacementBonus, 9.9)
+}
 
-  if (stats && stats.totalRuns > 0) {
-    const winRate = stats.wins / stats.totalRuns
-    const winBonus = winRate * 2.5                                     // 0..2.5
-    const podiumRate = stats.podiums / stats.totalRuns
-    const podiumBonus = podiumRate * 1.2                               // 0..1.2
-    const runVolumeBonus = Math.min(1.0, stats.totalRuns / 20)         // 0..1.0  (20 runs = max)
-    const avgPlacementBonus = stats.avgPlacement > 0
-      ? Math.max(0, (5 - stats.avgPlacement) * 0.15)                  // top-3 avg → 0.3..0.6
-      : 0
+const STATUS_BONUS: Record<string, number> = { running: 0.6, successful: 0.9 }
 
-    return Math.min(9.9, Number((base + winBonus + podiumBonus + runVolumeBonus + avgPlacementBonus).toFixed(1)))
-  }
-
-  // Fallback — no race data, derive from hierarchy context
+function threadPowerFallback(runStatus: string | null, childCount: number): number {
   const childWeight = Math.min(childCount, 5)
-  const statusBonus = runStatus === 'running' ? 0.6 : runStatus === 'successful' ? 0.9 : 0.2
-  return Math.min(9.6, Number((6.2 + childWeight * 0.45 + statusBonus).toFixed(1)))
+  const statusBonus = STATUS_BONUS[runStatus ?? ''] ?? 0.2
+  return clampedScore(6.2 + childWeight * 0.45 + statusBonus, 9.6)
+}
+
+function computeThreadPower(stats: AgentStats | null, runStatus: string | null, childCount: number): number {
+  if (stats && stats.totalRuns > 0) return threadPowerFromStats(stats)
+  return threadPowerFallback(runStatus, childCount)
 }
 
 // ── Weight formula ───────────────────────────────────────────────────
@@ -102,30 +113,36 @@ function computeThreadPower(stats: AgentStats | null, runStatus: string | null, 
 // Formula:  base + podiumBonus + packBonus + depthBonus
 // Capped at 9.9
 //
+const PACK_STATUS_BONUS: Record<string, number> = { hero: 1.5, champion: 1.0 }
+const DEPTH_BONUS_WITH_STATS: Record<number, number> = { 0: 1.2, 1: 0.6 }
+const DEPTH_BONUS_FALLBACK: Record<number, number> = { 0: 1.5, 1: 0.8 }
+
+function packBonus(pack: Pack | null): number {
+  if (!pack) return 0.3
+  return PACK_STATUS_BONUS[pack.highestStatus] ?? 0.5
+}
+
+function weightFromStats(stats: AgentStats, pack: Pack | null, depth: number): number {
+  const base = 4.0
+  const podiumBonus = Math.min(2.5, stats.podiums * 0.5)
+  const depthBonus = DEPTH_BONUS_WITH_STATS[depth] ?? 0.2
+  return clampedScore(base + podiumBonus + packBonus(pack) + depthBonus, 9.9)
+}
+
+function weightFallback(depth: number, childCount: number): number {
+  const childWeight = Math.min(childCount, 5)
+  const depthBonus = DEPTH_BONUS_FALLBACK[depth] ?? 0.2
+  return clampedScore(4.6 + childWeight * 0.55 + depthBonus, 9.4)
+}
+
 function computeWeight(
   stats: AgentStats | null,
   pack: Pack | null,
   depth: number,
   childCount: number,
 ): number {
-  const base = 4.0
-
-  if (stats && stats.totalRuns > 0) {
-    const podiumBonus = Math.min(2.5, stats.podiums * 0.5)             // 5 podiums = max
-    const packBonus = pack
-      ? pack.highestStatus === 'hero' ? 1.5
-      : pack.highestStatus === 'champion' ? 1.0
-      : 0.5
-      : 0.3
-    const depthBonus = depth === 0 ? 1.2 : depth === 1 ? 0.6 : 0.2
-
-    return Math.min(9.9, Number((base + podiumBonus + packBonus + depthBonus).toFixed(1)))
-  }
-
-  // Fallback
-  const childWeight = Math.min(childCount, 5)
-  const depthBonus = depth === 0 ? 1.5 : depth === 1 ? 0.8 : 0.2
-  return Math.min(9.4, Number((4.6 + childWeight * 0.55 + depthBonus).toFixed(1)))
+  if (stats && stats.totalRuns > 0) return weightFromStats(stats, pack, depth)
+  return weightFallback(depth, childCount)
 }
 
 // ── Delta string ─────────────────────────────────────────────────────
@@ -141,36 +158,52 @@ function computeDelta(stats: AgentStats | null, runStatus: string | null): strin
 
 // ── Rubric metrics ───────────────────────────────────────────────────
 
+const MODEL_BY_DEPTH: Record<number, number> = { 0: 8, 1: 7 }
+const AUTONOMY_BY_ROLE: Record<string, number> = { orchestrator: 9, synthesis: 7 }
+const AUTONOMY_FALLBACK_BY_ROLE: Record<string, number> = { orchestrator: 8 }
+const RELIABILITY_BY_STATUS: Record<string, number> = { successful: 8, running: 7 }
+
+function modelScore(depth: number): number {
+  return MODEL_BY_DEPTH[depth] ?? 6
+}
+
+function coordinationScore(childCount: number, depth: number): number {
+  return Math.min(10, 4 + childCount + (depth === 0 ? 2 : 0))
+}
+
+function rubricFromStats(stats: AgentStats, node: ProfileNodeContext): ThreadRubricMetric[] {
+  const completionRate = (stats.totalRuns - stats.disqualifications) / stats.totalRuns
+  const winRate = stats.wins / stats.totalRuns
+
+  return [
+    { label: 'Tools', value: Math.min(10, 5 + node.linkedSurfaceCount) },
+    { label: 'Model', value: modelScore(node.depth) },
+    { label: 'Autonomy', value: AUTONOMY_BY_ROLE[node.role ?? ''] ?? 6 },
+    { label: 'Coordination', value: coordinationScore(node.childCount, node.depth) },
+    { label: 'Reliability', value: Math.min(10, Math.round(completionRate * 10)) },
+    { label: 'Economy', value: Math.min(10, Math.round(3 + winRate * 5 + (1 - (stats.avgPlacement / 10)) * 2)) },
+  ]
+}
+
+function rubricFallback(node: ProfileNodeContext): ThreadRubricMetric[] {
+  const childWeight = Math.min(node.childCount, 5)
+
+  return [
+    { label: 'Tools', value: Math.min(10, 5 + childWeight) },
+    { label: 'Model', value: modelScore(node.depth) },
+    { label: 'Autonomy', value: AUTONOMY_FALLBACK_BY_ROLE[node.role ?? ''] ?? 6 },
+    { label: 'Coordination', value: coordinationScore(node.childCount, node.depth) },
+    { label: 'Reliability', value: RELIABILITY_BY_STATUS[node.runStatus ?? ''] ?? 5 },
+    { label: 'Economy', value: Math.max(3, 8 - childWeight) },
+  ]
+}
+
 function computeRubric(
   stats: AgentStats | null,
   node: ProfileNodeContext,
 ): ThreadRubricMetric[] {
-  if (stats && stats.totalRuns > 0) {
-    const completionRate = stats.totalRuns > 0
-      ? (stats.totalRuns - stats.disqualifications) / stats.totalRuns
-      : 0
-    const winRate = stats.wins / stats.totalRuns
-
-    return [
-      { label: 'Tools', value: Math.min(10, 5 + node.linkedSurfaceCount) },
-      { label: 'Model', value: node.depth === 0 ? 8 : node.depth === 1 ? 7 : 6 },
-      { label: 'Autonomy', value: node.role === 'orchestrator' ? 9 : node.role === 'synthesis' ? 7 : 6 },
-      { label: 'Coordination', value: Math.min(10, 4 + node.childCount + (node.depth === 0 ? 2 : 0)) },
-      { label: 'Reliability', value: Math.min(10, Math.round(completionRate * 10)) },
-      { label: 'Economy', value: Math.min(10, Math.round(3 + winRate * 5 + (1 - (stats.avgPlacement / 10)) * 2)) },
-    ]
-  }
-
-  // Fallback — same as original deriveProfile
-  const childWeight = Math.min(node.childCount, 5)
-  return [
-    { label: 'Tools', value: Math.min(10, 5 + childWeight) },
-    { label: 'Model', value: node.depth === 0 ? 8 : node.depth === 1 ? 7 : 6 },
-    { label: 'Autonomy', value: node.role === 'orchestrator' ? 8 : 6 },
-    { label: 'Coordination', value: Math.min(10, 4 + node.childCount + (node.depth === 0 ? 2 : 0)) },
-    { label: 'Reliability', value: node.runStatus === 'successful' ? 8 : node.runStatus === 'running' ? 7 : 5 },
-    { label: 'Economy', value: Math.max(3, 8 - childWeight) },
-  ]
+  if (stats && stats.totalRuns > 0) return rubricFromStats(stats, node)
+  return rubricFallback(node)
 }
 
 // ── Skills derivation ────────────────────────────────────────────────
@@ -205,29 +238,34 @@ function deriveSkills(agent: AgentRegistration | null): ThreadSkillBadge[] {
  * falls back to the same algorithmic derivation that was used before
  * the registration system existed.
  */
+const PLACEMENT_PACK_FALLBACK: Record<string, string> = {
+  '1st': "Champion's Pack",
+  'Finalist': 'Hero Pack',
+}
+
+function derivePackName(pack: Pack | null, placement: string): string {
+  if (pack) return PACK_DISPLAY[pack.highestStatus]
+  return PLACEMENT_PACK_FALLBACK[placement] ?? 'Challenger Pack'
+}
+
+function isVerifiedAgent(agent: AgentRegistration | null, stats: AgentStats | null, runStatus: string | null): boolean {
+  if (agent == null) return false
+  if (stats != null && stats.totalRuns > 0) return true
+  return runStatus === 'running' || runStatus === 'successful'
+}
+
 export function buildAgentProfile(sources: ProfileDataSources): ThreadCardProfile {
   const { agent, stats, pack, node } = sources
 
-  const division = deriveDivision(pack, node.depth)
-  const classification = deriveClassification(pack, node.role)
   const placement = derivePlacement(stats, node.runStatus)
-  const packName = pack ? PACK_DISPLAY[pack.highestStatus] : (
-    placement === '1st' ? "Champion's Pack" : placement === 'Finalist' ? 'Hero Pack' : 'Challenger Pack'
-  )
-
-  const verified = agent != null && (
-    (stats != null && stats.totalRuns > 0)
-    || node.runStatus === 'running'
-    || node.runStatus === 'successful'
-  )
 
   return {
     builder: agent?.builderName ?? 'ThreadOS Registry',
-    pack: packName,
-    division,
-    classification,
+    pack: derivePackName(pack, placement),
+    division: deriveDivision(pack, node.depth),
+    classification: deriveClassification(pack, node.role),
     placement,
-    verified,
+    verified: isVerifiedAgent(agent, stats, node.runStatus),
     threadPower: computeThreadPower(stats, node.runStatus, node.childCount),
     weight: computeWeight(stats, pack, node.depth, node.childCount),
     delta: computeDelta(stats, node.runStatus),

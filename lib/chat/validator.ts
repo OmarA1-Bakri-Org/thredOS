@@ -33,6 +33,27 @@ const VALID_COMMANDS = [
   'group create', 'fusion create',
 ]
 
+type ValidatorFn = (action: ProposedAction, errors: string[]) => void
+
+function requireFields(command: string, fields: string[]): ValidatorFn {
+  return (action, errors) => {
+    for (const field of fields) {
+      if (!action.args[field]) errors.push(`${command} requires ${field}`)
+    }
+  }
+}
+
+const commandValidators: Record<string, ValidatorFn> = {
+  'step add': requireFields('step add', ['id', 'name', 'type', 'model', 'prompt_file']),
+  'step remove': requireFields('step remove', ['id']),
+  'step update': requireFields('step update', ['id']),
+  'dep add': requireFields('dep add', ['from', 'to']),
+  'dep remove': requireFields('dep remove', ['from', 'to']),
+  'restart': requireFields('restart', ['step_id']),
+  'gate approve': (action, errors) => { if (!action.args.id) errors.push('gate approve requires id') },
+  'gate block': (action, errors) => { if (!action.args.id) errors.push('gate block requires id') },
+}
+
 /** Allowed fields for step update to prevent arbitrary field injection */
 const ALLOWED_UPDATE_FIELDS = new Set([
   'id', 'name', 'type', 'model', 'prompt_file', 'depends_on',
@@ -55,39 +76,9 @@ export class ActionValidator {
         continue
       }
 
-      // Command-specific validation
-      if (action.command === 'step add') {
-        if (!action.args.id) errors.push('step add requires id')
-        if (!action.args.name) errors.push('step add requires name')
-        if (!action.args.type) errors.push('step add requires type')
-        if (!action.args.model) errors.push('step add requires model')
-        if (!action.args.prompt_file) errors.push('step add requires prompt_file')
-      }
-
-      if (action.command === 'step remove' && !action.args.id) {
-        errors.push('step remove requires id')
-      }
-
-      if (action.command === 'step update' && !action.args.id) {
-        errors.push('step update requires id')
-      }
-
-      if (action.command === 'dep add') {
-        if (!action.args.from) errors.push('dep add requires from')
-        if (!action.args.to) errors.push('dep add requires to')
-      }
-
-      if (action.command === 'dep remove') {
-        if (!action.args.from) errors.push('dep remove requires from')
-        if (!action.args.to) errors.push('dep remove requires to')
-      }
-
-      if (action.command === 'restart' && !action.args.step_id) {
-        errors.push('restart requires step_id')
-      }
-
-      if ((action.command === 'gate approve' || action.command === 'gate block') && !action.args.id) {
-        errors.push(`${action.command} requires id`)
+      const validator = commandValidators[action.command]
+      if (validator) {
+        validator(action, errors)
       }
     }
 
@@ -182,6 +173,11 @@ export class ActionValidator {
   }
 }
 
+const BOOLEAN_LOOKUP: Record<string, boolean> = {
+  'true': true,
+  'false': false,
+}
+
 /**
  * Parse a value that should be boolean but may arrive as a string.
  * Returns the boolean value, or null if the value cannot be interpreted as boolean.
@@ -189,11 +185,185 @@ export class ActionValidator {
 function parseBooleanField(value: unknown): boolean | null {
   if (typeof value === 'boolean') return value
   if (typeof value === 'string') {
-    const normalized = value.trim().toLowerCase()
-    if (normalized === 'true') return true
-    if (normalized === 'false') return false
+    return BOOLEAN_LOOKUP[value.trim().toLowerCase()] ?? null
   }
   return null
+}
+
+/** Validate allowed fields and apply enum/schema checks for step update */
+function applyStepUpdate(
+  step: import('../sequence/schema').Step,
+  updates: Record<string, string | string[] | boolean | number | undefined>
+): string | null {
+  for (const key of Object.keys(updates)) {
+    if (!ALLOWED_UPDATE_FIELDS.has(key)) {
+      return `Invalid update field: ${key}`
+    }
+  }
+
+  // Validate enum fields
+  const enumError = validateEnumUpdates(step, updates)
+  if (enumError) return enumError
+
+  // Apply simple string fields
+  if (updates.name !== undefined) step.name = String(updates.name)
+  if (updates.prompt_file !== undefined) step.prompt_file = String(updates.prompt_file)
+  if (updates.cwd !== undefined) step.cwd = String(updates.cwd)
+  if (updates.depends_on !== undefined && Array.isArray(updates.depends_on)) {
+    step.depends_on = updates.depends_on.map(String)
+  }
+  if (updates.group_id !== undefined) step.group_id = String(updates.group_id)
+  if (updates.watchdog_for !== undefined) step.watchdog_for = String(updates.watchdog_for)
+  if (updates.orchestrator !== undefined) step.orchestrator = String(updates.orchestrator)
+
+  // Apply numeric fields
+  const numericError = applyNumericUpdates(step, updates)
+  if (numericError) return numericError
+
+  // Apply boolean fields
+  const booleanError = applyBooleanUpdates(step, updates)
+  if (booleanError) return booleanError
+
+  // Apply fail_policy
+  if (updates.fail_policy !== undefined) {
+    const policyResult = FailPolicySchema.safeParse(updates.fail_policy)
+    if (!policyResult.success) return `Invalid fail_policy: ${updates.fail_policy}`
+    step.fail_policy = policyResult.data
+  }
+
+  return null
+}
+
+function validateEnumUpdates(
+  step: import('../sequence/schema').Step,
+  updates: Record<string, string | string[] | boolean | number | undefined>
+): string | null {
+  if (updates.type !== undefined) {
+    const typeResult = StepTypeSchema.safeParse(updates.type)
+    if (!typeResult.success) return `Invalid type: ${updates.type}`
+    step.type = typeResult.data
+  }
+  if (updates.model !== undefined) {
+    const modelResult = ModelTypeSchema.safeParse(updates.model)
+    if (!modelResult.success) return `Invalid model: ${updates.model}`
+    step.model = modelResult.data
+  }
+  if (updates.status !== undefined) {
+    const statusResult = StepStatusSchema.safeParse(updates.status)
+    if (!statusResult.success) return `Invalid status: ${updates.status}`
+    step.status = statusResult.data
+  }
+  return null
+}
+
+function applyNumericUpdates(
+  step: import('../sequence/schema').Step,
+  updates: Record<string, string | string[] | boolean | number | undefined>
+): string | null {
+  if (updates.fanout !== undefined) {
+    const fanout = Number(updates.fanout)
+    if (isNaN(fanout)) return `Invalid fanout: must be a number`
+    step.fanout = fanout
+  }
+  if (updates.timeout_ms !== undefined) {
+    const timeout = Number(updates.timeout_ms)
+    if (isNaN(timeout)) return `Invalid timeout_ms: must be a number`
+    step.timeout_ms = timeout
+  }
+  return null
+}
+
+function applyBooleanUpdates(
+  step: import('../sequence/schema').Step,
+  updates: Record<string, string | string[] | boolean | number | undefined>
+): string | null {
+  if (updates.fusion_candidates !== undefined) {
+    const parsed = parseBooleanField(updates.fusion_candidates)
+    if (parsed === null) return `Invalid fusion_candidates: expected boolean or "true"/"false"`
+    step.fusion_candidates = parsed
+  }
+  if (updates.fusion_synth !== undefined) {
+    const parsed = parseBooleanField(updates.fusion_synth)
+    if (parsed === null) return `Invalid fusion_synth: expected boolean or "true"/"false"`
+    step.fusion_synth = parsed
+  }
+  return null
+}
+
+function applyStepAdd(seq: Sequence, action: ProposedAction): string | null {
+  if (seq.steps.find(s => s.id === action.args.id)) {
+    return `Step ${action.args.id} already exists`
+  }
+  const newStep = {
+    id: action.args.id,
+    name: action.args.name,
+    type: action.args.type || 'base',
+    model: action.args.model || 'claude-code',
+    prompt_file: action.args.prompt_file,
+    depends_on: action.args.depends_on || [],
+    status: 'READY',
+  }
+  const parsed = StepSchema.safeParse(newStep)
+  if (!parsed.success) {
+    return `Invalid step: ${parsed.error.issues.map(i => i.message).join(', ')}`
+  }
+  seq.steps.push(parsed.data)
+  return null
+}
+
+function applyStepRemove(seq: Sequence, action: ProposedAction): string | null {
+  const idx = seq.steps.findIndex(s => s.id === action.args.id)
+  if (idx === -1) return `Step ${action.args.id} not found`
+  seq.steps.splice(idx, 1)
+  for (const s of seq.steps) {
+    s.depends_on = s.depends_on.filter(d => d !== action.args.id)
+  }
+  return null
+}
+
+function applyDepAdd(seq: Sequence, action: ProposedAction): string | null {
+  const step = seq.steps.find(s => s.id === action.args.from)
+  if (!step) return `Step ${action.args.from} not found`
+  if (!step.depends_on.includes(String(action.args.to))) {
+    step.depends_on.push(String(action.args.to))
+  }
+  return null
+}
+
+function applyDepRemove(seq: Sequence, action: ProposedAction): string | null {
+  const step = seq.steps.find(s => s.id === action.args.from)
+  if (!step) return `Step ${action.args.from} not found`
+  step.depends_on = step.depends_on.filter(d => d !== action.args.to)
+  return null
+}
+
+function applyGateStatus(seq: Sequence, action: ProposedAction, status: 'APPROVED' | 'BLOCKED'): string | null {
+  const gate = seq.gates.find(g => g.id === action.args.id)
+  if (!gate) return `Gate ${action.args.id} not found`
+  gate.status = status
+  return null
+}
+
+type ActionApplier = (seq: Sequence, action: ProposedAction) => string | null
+
+const actionAppliers: Record<string, ActionApplier> = {
+  'step add': applyStepAdd,
+  'step remove': applyStepRemove,
+  'step update': (seq, action) => {
+    const step = seq.steps.find(s => s.id === action.args.id)
+    if (!step) return `Step ${action.args.id} not found`
+    const { id: _id, ...updates } = action.args
+    return applyStepUpdate(step, updates)
+  },
+  'dep add': applyDepAdd,
+  'dep remove': applyDepRemove,
+  'gate approve': (seq, action) => applyGateStatus(seq, action, 'APPROVED'),
+  'gate block': (seq, action) => applyGateStatus(seq, action, 'BLOCKED'),
+  'run': () => null,
+  'stop': () => null,
+  'restart': () => null,
+  'group create': () => null,
+  'fusion create': () => null,
 }
 
 /**
@@ -201,137 +371,9 @@ function parseBooleanField(value: unknown): boolean | null {
  * Returns error string or null on success.
  */
 function applyAction(seq: Sequence, action: ProposedAction): string | null {
-  switch (action.command) {
-    case 'step add': {
-      if (seq.steps.find(s => s.id === action.args.id)) {
-        return `Step ${action.args.id} already exists`
-      }
-      const newStep = {
-        id: action.args.id,
-        name: action.args.name,
-        type: action.args.type || 'base',
-        model: action.args.model || 'claude-code',
-        prompt_file: action.args.prompt_file,
-        depends_on: action.args.depends_on || [],
-        status: 'READY',
-      }
-      // Validate through schema to prevent invalid data
-      const parsed = StepSchema.safeParse(newStep)
-      if (!parsed.success) {
-        return `Invalid step: ${parsed.error.issues.map(i => i.message).join(', ')}`
-      }
-      seq.steps.push(parsed.data)
-      return null
-    }
-    case 'step remove': {
-      const idx = seq.steps.findIndex(s => s.id === action.args.id)
-      if (idx === -1) return `Step ${action.args.id} not found`
-      seq.steps.splice(idx, 1)
-      // Remove from depends_on of other steps
-      for (const s of seq.steps) {
-        s.depends_on = s.depends_on.filter(d => d !== action.args.id)
-      }
-      return null
-    }
-    case 'step update': {
-      const step = seq.steps.find(s => s.id === action.args.id)
-      if (!step) return `Step ${action.args.id} not found`
-      const { id: _id, ...updates } = action.args
-      // Only allow known fields to be updated (prevent prototype pollution / field injection)
-      for (const key of Object.keys(updates)) {
-        if (!ALLOWED_UPDATE_FIELDS.has(key)) {
-          return `Invalid update field: ${key}`
-        }
-      }
-      // Validate enum fields if provided
-      if (updates.type !== undefined) {
-        const typeResult = StepTypeSchema.safeParse(updates.type)
-        if (!typeResult.success) return `Invalid type: ${updates.type}`
-        step.type = typeResult.data
-      }
-      if (updates.model !== undefined) {
-        const modelResult = ModelTypeSchema.safeParse(updates.model)
-        if (!modelResult.success) return `Invalid model: ${updates.model}`
-        step.model = modelResult.data
-      }
-      if (updates.status !== undefined) {
-        const statusResult = StepStatusSchema.safeParse(updates.status)
-        if (!statusResult.success) return `Invalid status: ${updates.status}`
-        step.status = statusResult.data
-      }
-      if (updates.name !== undefined) step.name = String(updates.name)
-      if (updates.prompt_file !== undefined) step.prompt_file = String(updates.prompt_file)
-      if (updates.cwd !== undefined) step.cwd = String(updates.cwd)
-      if (updates.depends_on !== undefined && Array.isArray(updates.depends_on)) {
-        step.depends_on = updates.depends_on.map(String)
-      }
-      // Handle M3 extension fields
-      if (updates.group_id !== undefined) step.group_id = String(updates.group_id)
-      if (updates.fanout !== undefined) {
-        const fanout = Number(updates.fanout)
-        if (isNaN(fanout)) return `Invalid fanout: must be a number`
-        step.fanout = fanout
-      }
-      if (updates.fusion_candidates !== undefined) {
-        const parsed = parseBooleanField(updates.fusion_candidates)
-        if (parsed === null) return `Invalid fusion_candidates: expected boolean or "true"/"false"`
-        step.fusion_candidates = parsed
-      }
-      if (updates.fusion_synth !== undefined) {
-        const parsed = parseBooleanField(updates.fusion_synth)
-        if (parsed === null) return `Invalid fusion_synth: expected boolean or "true"/"false"`
-        step.fusion_synth = parsed
-      }
-      if (updates.watchdog_for !== undefined) step.watchdog_for = String(updates.watchdog_for)
-      if (updates.orchestrator !== undefined) step.orchestrator = String(updates.orchestrator)
-      if (updates.timeout_ms !== undefined) {
-        const timeout = Number(updates.timeout_ms)
-        if (isNaN(timeout)) return `Invalid timeout_ms: must be a number`
-        step.timeout_ms = timeout
-      }
-      if (updates.fail_policy !== undefined) {
-        const policyResult = FailPolicySchema.safeParse(updates.fail_policy)
-        if (!policyResult.success) return `Invalid fail_policy: ${updates.fail_policy}`
-        step.fail_policy = policyResult.data
-      }
-      return null
-    }
-    case 'dep add': {
-      const step = seq.steps.find(s => s.id === action.args.from)
-      if (!step) return `Step ${action.args.from} not found`
-      if (!step.depends_on.includes(String(action.args.to))) {
-        step.depends_on.push(String(action.args.to))
-      }
-      return null
-    }
-    case 'dep remove': {
-      const step = seq.steps.find(s => s.id === action.args.from)
-      if (!step) return `Step ${action.args.from} not found`
-      step.depends_on = step.depends_on.filter(d => d !== action.args.to)
-      return null
-    }
-    case 'gate approve': {
-      const gate = seq.gates.find(g => g.id === action.args.id)
-      if (!gate) return `Gate ${action.args.id} not found`
-      gate.status = 'APPROVED'
-      return null
-    }
-    case 'gate block': {
-      const gate = seq.gates.find(g => g.id === action.args.id)
-      if (!gate) return `Gate ${action.args.id} not found`
-      gate.status = 'BLOCKED'
-      return null
-    }
-    case 'run':
-    case 'stop':
-    case 'restart':
-    case 'group create':
-    case 'fusion create':
-      // These are runtime commands, no-op in dry-run context
-      return null
-    default:
-      return `Unknown command: ${action.command}`
-  }
+  const applier = actionAppliers[action.command]
+  if (!applier) return `Unknown command: ${action.command}`
+  return applier(seq, action)
 }
 
 /**

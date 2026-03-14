@@ -1,7 +1,6 @@
 'use client'
 
-import { Box, Pencil } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { Box } from 'lucide-react'
 import { useUIStore } from '@/lib/ui/store'
 import { useStatus } from '@/lib/ui/api'
 import { derivePhases } from '@/lib/ui/phases'

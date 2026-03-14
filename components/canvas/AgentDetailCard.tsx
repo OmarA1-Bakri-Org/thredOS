@@ -6,7 +6,7 @@ import { X, Box, Bot, Folder, Globe, Search, ShieldCheck, Sparkles, Wrench } fro
 import { useUIStore } from '@/lib/ui/store'
 import { useAgentProfile } from '@/lib/ui/api'
 import { deriveStepThreadSurfaceId } from '@/lib/thread-surfaces/constants'
-import type { ThreadCardProfile, ThreadRubricMetric } from '@/components/hierarchy/FocusedThreadCard'
+import type { ThreadRubricMetric } from '@/components/hierarchy/FocusedThreadCard'
 import type { ThreadSkillBadge } from '@/lib/thread-surfaces/types'
 
 /* ── Skill icon map (shared with FocusedThreadCard) ───────────────── */

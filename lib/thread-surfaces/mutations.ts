@@ -152,36 +152,9 @@ export function createChildThreadSurfaceRun(state: ThreadSurfaceState, args: Cre
   }
 
   const parent = state.threadSurfaces[parentIndex]
+  validateSpawnLimits(parent, state, args)
 
-  if (args.maxSpawnDepth != null) {
-    const childDepth = parent.depth + 1
-    if (childDepth > args.maxSpawnDepth) {
-      throw new SpawnDepthExceededError(childDepth, args.maxSpawnDepth)
-    }
-  }
-  if (args.maxChildrenPerSurface != null) {
-    if (parent.childSurfaceIds.length >= args.maxChildrenPerSurface) {
-      throw new SpawnLimitExceededError('children', parent.childSurfaceIds.length, args.maxChildrenPerSurface)
-    }
-  }
-  if (args.maxTotalSurfaces != null) {
-    if (state.threadSurfaces.length >= args.maxTotalSurfaces) {
-      throw new SpawnLimitExceededError('total', state.threadSurfaces.length, args.maxTotalSurfaces)
-    }
-  }
-
-  const childSurface: ThreadSurface = {
-    id: args.childSurfaceId,
-    parentSurfaceId: parent.id,
-    parentAgentNodeId: args.parentAgentNodeId,
-    depth: parent.depth + 1,
-    surfaceLabel: args.childSurfaceLabel,
-    createdAt: args.createdAt,
-    childSurfaceIds: [],
-    sequenceRef: args.sequenceRef ?? null,
-    spawnedByAgentId: args.spawnedByAgentId ?? null,
-  }
-
+  const childSurface = buildChildSurface(parent, args)
   const childRun = createRunScope({
     runId: args.runId,
     threadSurfaceId: args.childSurfaceId,
@@ -198,53 +171,7 @@ export function createChildThreadSurfaceRun(state: ThreadSurfaceState, args: Cre
   }
   nextThreadSurfaces.push(childSurface)
 
-  const warningEvents: RunEvent[] = []
-  const childDepth = parent.depth + 1
-
-  if (args.maxSpawnDepth != null && childDepth >= args.maxSpawnDepth * 0.8) {
-    warningEvents.push({
-      id: `warn-depth-${args.runId}`,
-      runId: args.runId,
-      eventType: 'spawn-limit-warning',
-      createdAt: args.createdAt,
-      threadSurfaceId: args.childSurfaceId,
-      payload: {
-        limitType: 'depth',
-        currentValue: childDepth,
-        maxValue: args.maxSpawnDepth,
-      },
-    })
-  }
-
-  if (args.maxChildrenPerSurface != null && parent.childSurfaceIds.length + 1 >= args.maxChildrenPerSurface * 0.8) {
-    warningEvents.push({
-      id: `warn-children-${args.runId}`,
-      runId: args.runId,
-      eventType: 'spawn-limit-warning',
-      createdAt: args.createdAt,
-      threadSurfaceId: args.parentSurfaceId,
-      payload: {
-        limitType: 'children',
-        currentValue: parent.childSurfaceIds.length + 1,
-        maxValue: args.maxChildrenPerSurface,
-      },
-    })
-  }
-
-  if (args.maxTotalSurfaces != null && nextThreadSurfaces.length >= args.maxTotalSurfaces * 0.8) {
-    warningEvents.push({
-      id: `warn-total-${args.runId}`,
-      runId: args.runId,
-      eventType: 'spawn-limit-warning',
-      createdAt: args.createdAt,
-      threadSurfaceId: args.childSurfaceId,
-      payload: {
-        limitType: 'total',
-        currentValue: nextThreadSurfaces.length,
-        maxValue: args.maxTotalSurfaces,
-      },
-    })
-  }
+  const warningEvents = collectSpawnWarnings(parent, nextThreadSurfaces.length, args)
 
   return {
     state: {
@@ -256,6 +183,88 @@ export function createChildThreadSurfaceRun(state: ThreadSurfaceState, args: Cre
     childSurface,
     childRun,
   }
+}
+
+function validateSpawnLimits(
+  parent: ThreadSurface,
+  state: ThreadSurfaceState,
+  args: CreateChildThreadSurfaceRunArgs,
+): void {
+  const childDepth = parent.depth + 1
+  if (args.maxSpawnDepth != null && childDepth > args.maxSpawnDepth) {
+    throw new SpawnDepthExceededError(childDepth, args.maxSpawnDepth)
+  }
+  if (args.maxChildrenPerSurface != null && parent.childSurfaceIds.length >= args.maxChildrenPerSurface) {
+    throw new SpawnLimitExceededError('children', parent.childSurfaceIds.length, args.maxChildrenPerSurface)
+  }
+  if (args.maxTotalSurfaces != null && state.threadSurfaces.length >= args.maxTotalSurfaces) {
+    throw new SpawnLimitExceededError('total', state.threadSurfaces.length, args.maxTotalSurfaces)
+  }
+}
+
+function buildChildSurface(parent: ThreadSurface, args: CreateChildThreadSurfaceRunArgs): ThreadSurface {
+  return {
+    id: args.childSurfaceId,
+    parentSurfaceId: parent.id,
+    parentAgentNodeId: args.parentAgentNodeId,
+    depth: parent.depth + 1,
+    surfaceLabel: args.childSurfaceLabel,
+    createdAt: args.createdAt,
+    childSurfaceIds: [],
+    sequenceRef: args.sequenceRef ?? null,
+    spawnedByAgentId: args.spawnedByAgentId ?? null,
+  }
+}
+
+function buildSpawnWarning(
+  id: string,
+  runId: string,
+  createdAt: string,
+  threadSurfaceId: string,
+  limitType: 'depth' | 'children' | 'total',
+  currentValue: number,
+  maxValue: number,
+): RunEvent {
+  return {
+    id,
+    runId,
+    eventType: 'spawn-limit-warning',
+    createdAt,
+    threadSurfaceId,
+    payload: { limitType, currentValue, maxValue },
+  }
+}
+
+function collectSpawnWarnings(
+  parent: ThreadSurface,
+  totalSurfaceCount: number,
+  args: CreateChildThreadSurfaceRunArgs,
+): RunEvent[] {
+  const warnings: RunEvent[] = []
+  const childDepth = parent.depth + 1
+
+  if (args.maxSpawnDepth != null && childDepth >= args.maxSpawnDepth * 0.8) {
+    warnings.push(buildSpawnWarning(
+      `warn-depth-${args.runId}`, args.runId, args.createdAt,
+      args.childSurfaceId, 'depth', childDepth, args.maxSpawnDepth,
+    ))
+  }
+
+  if (args.maxChildrenPerSurface != null && parent.childSurfaceIds.length + 1 >= args.maxChildrenPerSurface * 0.8) {
+    warnings.push(buildSpawnWarning(
+      `warn-children-${args.runId}`, args.runId, args.createdAt,
+      args.parentSurfaceId, 'children', parent.childSurfaceIds.length + 1, args.maxChildrenPerSurface,
+    ))
+  }
+
+  if (args.maxTotalSurfaces != null && totalSurfaceCount >= args.maxTotalSurfaces * 0.8) {
+    warnings.push(buildSpawnWarning(
+      `warn-total-${args.runId}`, args.runId, args.createdAt,
+      args.childSurfaceId, 'total', totalSurfaceCount, args.maxTotalSurfaces,
+    ))
+  }
+
+  return warnings
 }
 
 export function createReplacementRun(state: ThreadSurfaceState, args: CreateReplacementRunArgs) {

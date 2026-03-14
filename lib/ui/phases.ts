@@ -44,6 +44,52 @@ interface GateData {
 }
 
 /**
+ * Assign gates to steps by ID pattern matching.
+ * Returns a map of stepId -> gateIds[] and a set of assigned gate IDs.
+ */
+function assignGatesByPattern(
+  steps: StepData[],
+  gates: GateData[],
+): { gateStepMap: Map<string, string[]>; assignedGates: Set<string> } {
+  const gateStepMap = new Map<string, string[]>()
+  const assignedGates = new Set<string>()
+
+  for (const gate of gates) {
+    const matchingStep = steps.find(
+      s => gate.id.includes(s.id) || gate.name.includes(s.name)
+    )
+    if (matchingStep) {
+      const existing = gateStepMap.get(matchingStep.id) ?? []
+      existing.push(gate.id)
+      gateStepMap.set(matchingStep.id, existing)
+      assignedGates.add(gate.id)
+    }
+  }
+
+  return { gateStepMap, assignedGates }
+}
+
+/**
+ * Assign remaining unmatched gates to steps without gates, by position.
+ */
+function assignRemainingGatesByPosition(
+  steps: StepData[],
+  gates: GateData[],
+  gateStepMap: Map<string, string[]>,
+  assignedGates: Set<string>,
+) {
+  const unassignedGates = gates.filter(g => !assignedGates.has(g.id))
+  const stepsWithoutGates = steps.filter(s => !gateStepMap.has(s.id))
+  const count = Math.min(unassignedGates.length, stepsWithoutGates.length)
+
+  for (let i = 0; i < count; i++) {
+    const existing = gateStepMap.get(stepsWithoutGates[i].id) ?? []
+    existing.push(unassignedGates[i].id)
+    gateStepMap.set(stepsWithoutGates[i].id, existing)
+  }
+}
+
+/**
  * Derive phases from steps and gates.
  *
  * Associates each gate with the step it directly depends on (gates
@@ -59,51 +105,18 @@ export function derivePhases(
     return { phases: [], threadType: threadType ?? 'base', resolved: false }
   }
 
-  // Build a lookup of gate → which step it guards
-  // Convention: gate ID often starts with "gate-" prefix of a step,
-  // or gates reference step IDs in a naming pattern.
-  // For now, pair gates with steps by dependency order:
-  // gates that have no dependsOn go to the first step,
-  // otherwise match by position.
-  const gateStepMap = new Map<string, string[]>()
-  const assignedGates = new Set<string>()
+  const { gateStepMap, assignedGates } = assignGatesByPattern(steps, gates)
+  assignRemainingGatesByPosition(steps, gates, gateStepMap, assignedGates)
 
-  // First pass: try to match gates to steps by ID pattern
-  for (const gate of gates) {
-    // Common pattern: gate ID contains step ID (e.g., "gate-step-1" guards "step-1")
-    const matchingStep = steps.find(
-      s => gate.id.includes(s.id) || gate.name.includes(s.name)
-    )
-    if (matchingStep) {
-      const existing = gateStepMap.get(matchingStep.id) ?? []
-      existing.push(gate.id)
-      gateStepMap.set(matchingStep.id, existing)
-      assignedGates.add(gate.id)
-    }
-  }
-
-  // Second pass: assign remaining gates by position
-  const unassignedGates = gates.filter(g => !assignedGates.has(g.id))
-  const stepsWithoutGates = steps.filter(s => !gateStepMap.has(s.id))
-  for (let i = 0; i < Math.min(unassignedGates.length, stepsWithoutGates.length); i++) {
-    const existing = gateStepMap.get(stepsWithoutGates[i].id) ?? []
-    existing.push(unassignedGates[i].id)
-    gateStepMap.set(stepsWithoutGates[i].id, existing)
-  }
-
-  // Determine phase roles based on thread type
   const resolvedType = threadType ?? detectThreadType(steps)
-  const phases: Phase[] = steps.map((step, index) => {
-    const role = resolvePhaseRole(resolvedType, index, steps.length)
-    return {
-      id: `phase-${step.id}`,
-      label: step.name || step.id,
-      order: index,
-      stepIds: [step.id],
-      gateIds: gateStepMap.get(step.id) ?? [],
-      role,
-    }
-  })
+  const phases: Phase[] = steps.map((step, index) => ({
+    id: `phase-${step.id}`,
+    label: step.name || step.id,
+    order: index,
+    stepIds: [step.id],
+    gateIds: gateStepMap.get(step.id) ?? [],
+    role: resolvePhaseRole(resolvedType, index, steps.length),
+  }))
 
   return {
     phases,
@@ -113,22 +126,58 @@ export function derivePhases(
 }
 
 /**
+ * Thread type detection rules — each returns the type string if matched, or null.
+ * Order matters: more specific patterns checked first.
+ */
+interface DetectionRule {
+  test: (steps: StepData[]) => boolean
+  type: string
+}
+
+const DETECTION_RULES: DetectionRule[] = [
+  {
+    // Fusion: 2+ root steps and exactly 1 synthesis step depending on 2+
+    test: (steps) => {
+      const rootSteps = steps.filter(s => s.dependsOn.length === 0)
+      const synthSteps = steps.filter(s => s.dependsOn.length >= 2)
+      return rootSteps.length >= 2 && synthSteps.length === 1
+    },
+    type: 'f',
+  },
+  {
+    // Parallel: no dependencies at all
+    test: (steps) => !steps.some(s => s.dependsOn.length > 0),
+    type: 'p',
+  },
+  {
+    // Chained: has at least one dependency (default for multi-step with deps)
+    test: (steps) => steps.some(s => s.dependsOn.length > 0),
+    type: 'c',
+  },
+]
+
+/**
  * Detect thread type from step structure when not explicitly set.
  * Falls back to 'base' for single steps, 'c' for sequential chains.
  */
 function detectThreadType(steps: StepData[]): string {
   if (steps.length <= 1) return 'base'
 
-  // Check if steps form a chain (each depends on the previous)
-  const hasChain = steps.some(s => s.dependsOn.length > 0)
-  if (!hasChain) return 'p' // No dependencies = parallel
+  for (const rule of DETECTION_RULES) {
+    if (rule.test(steps)) return rule.type
+  }
 
-  // Check for fusion pattern: multiple steps without deps + one with deps on all
-  const rootSteps = steps.filter(s => s.dependsOn.length === 0)
-  const synthSteps = steps.filter(s => s.dependsOn.length >= 2)
-  if (rootSteps.length >= 2 && synthSteps.length === 1) return 'f'
+  return 'c'
+}
 
-  return 'c' // Default to chained
+/** Phase role lookup table by thread type. */
+const PHASE_ROLE_TABLE: Record<string, (index: number, total: number) => Phase['role']> = {
+  base: () => 'primary',
+  p: () => 'primary',
+  c: () => 'primary',
+  f: (index, total) => (index < total - 1 ? 'candidate' : 'synthesis'),
+  b: () => 'handoff',
+  l: (index) => (index === 0 ? 'primary' : 'watchdog'),
 }
 
 function resolvePhaseRole(
@@ -136,22 +185,8 @@ function resolvePhaseRole(
   index: number,
   total: number,
 ): Phase['role'] {
-  switch (threadType) {
-    case 'base':
-      return 'primary'
-    case 'p':
-      return 'primary'
-    case 'c':
-      return 'primary'
-    case 'f':
-      return index < total - 1 ? 'candidate' : 'synthesis'
-    case 'b':
-      return 'handoff'
-    case 'l':
-      return index === 0 ? 'primary' : 'watchdog'
-    default:
-      return 'primary'
-  }
+  const resolver = PHASE_ROLE_TABLE[threadType]
+  return resolver ? resolver(index, total) : 'primary'
 }
 
 /** Get the phase that contains a given step ID */

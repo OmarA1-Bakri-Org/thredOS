@@ -51,16 +51,31 @@ export async function writeThreadSurfaceState(basePath: string, state: ThreadSur
   await writeFileAtomic(fullPath, `${JSON.stringify({ ...state, version: 1 }, null, 2)}\n`)
 }
 
+const MERGE_EVENT_DEFAULTS: Omit<MergeEvent, 'summary'> = {
+  id: '',
+  runId: '',
+  destinationThreadSurfaceId: '',
+  sourceThreadSurfaceIds: [],
+  sourceRunIds: [],
+  mergeKind: 'single',
+  executionIndex: 0,
+  createdAt: '',
+}
+
+function normalizeStringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value : []
+}
+
 function normalizeMergeEvent(raw: Partial<MergeEvent>): MergeEvent {
   return {
-    id: raw.id ?? '',
-    runId: raw.runId ?? '',
-    destinationThreadSurfaceId: raw.destinationThreadSurfaceId ?? '',
-    sourceThreadSurfaceIds: Array.isArray(raw.sourceThreadSurfaceIds) ? raw.sourceThreadSurfaceIds : [],
-    sourceRunIds: Array.isArray(raw.sourceRunIds) ? raw.sourceRunIds : [],
-    mergeKind: raw.mergeKind ?? 'single',
-    executionIndex: raw.executionIndex ?? 0,
-    createdAt: raw.createdAt ?? '',
+    id: raw.id ?? MERGE_EVENT_DEFAULTS.id,
+    runId: raw.runId ?? MERGE_EVENT_DEFAULTS.runId,
+    destinationThreadSurfaceId: raw.destinationThreadSurfaceId ?? MERGE_EVENT_DEFAULTS.destinationThreadSurfaceId,
+    sourceThreadSurfaceIds: normalizeStringArray(raw.sourceThreadSurfaceIds),
+    sourceRunIds: normalizeStringArray(raw.sourceRunIds),
+    mergeKind: raw.mergeKind ?? MERGE_EVENT_DEFAULTS.mergeKind,
+    executionIndex: raw.executionIndex ?? MERGE_EVENT_DEFAULTS.executionIndex,
+    createdAt: raw.createdAt ?? MERGE_EVENT_DEFAULTS.createdAt,
     ...(raw.summary ? { summary: raw.summary } : {}),
   }
 }

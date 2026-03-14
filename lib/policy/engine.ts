@@ -49,84 +49,64 @@ export class PolicyEngine {
    * Validate an action against the policy
    */
   validate(action: PolicyAction): PolicyResult {
-    // Check forbidden patterns first
-    if (action.command) {
-      for (const pattern of this.config.forbidden_patterns) {
-        const regex = new RegExp(pattern)
-        if (regex.test(action.command)) {
-          return {
-            allowed: false,
-            reason: `Command matches forbidden pattern: ${pattern}`,
-            confirmation_required: false,
-          }
-        }
-      }
-    }
+    const forbiddenResult = this.checkForbiddenPatterns(action)
+    if (forbiddenResult) return forbiddenResult
 
-    // Check command allowlist (only if allowlist is non-empty)
-    if (action.command && this.config.command_allowlist.length > 0) {
-      const allowed = this.config.command_allowlist.some(prefix =>
-        action.command!.startsWith(prefix)
-      )
-      if (!allowed) {
-        return {
-          allowed: false,
-          reason: `Command not in allowlist: ${action.command}`,
-          confirmation_required: false,
-        }
-      }
-    }
+    const allowlistResult = this.checkCommandAllowlist(action)
+    if (allowlistResult) return allowlistResult
 
-    // Check CWD restriction
-    if (action.cwd && this.config.cwd_patterns.length > 0) {
-      const cwdAllowed = this.config.cwd_patterns.some(pattern => {
-        if (pattern === '**') return true
-        // Simple glob: check if cwd starts with pattern (strip trailing *)
-        const prefix = pattern.replace(/\*+$/, '')
-        return action.cwd!.startsWith(prefix)
-      })
-      if (!cwdAllowed) {
-        return {
-          allowed: false,
-          reason: `CWD not allowed: ${action.cwd}`,
-          confirmation_required: false,
-        }
-      }
-    }
+    const cwdResult = this.checkCwdRestriction(action)
+    if (cwdResult) return cwdResult
 
-    // Check fanout limit
-    if (action.type === 'fanout' && action.fanout_count !== undefined) {
-      if (action.fanout_count > this.config.max_fanout) {
-        return {
-          allowed: false,
-          reason: `Fanout ${action.fanout_count} exceeds limit ${this.config.max_fanout}`,
-          confirmation_required: false,
-        }
-      }
-    }
+    const limitResult = this.checkResourceLimits(action)
+    if (limitResult) return limitResult
 
-    // Check concurrent limit
-    if (action.type === 'concurrent' && action.concurrent_count !== undefined) {
-      if (action.concurrent_count > this.config.max_concurrent) {
-        return {
-          allowed: false,
-          reason: `Concurrent ${action.concurrent_count} exceeds limit ${this.config.max_concurrent}`,
-          confirmation_required: false,
-        }
-      }
-    }
-
-    // SAFE mode requires confirmation for mutations
     if (this.config.mode === 'SAFE' && action.type === 'run_command') {
-      return {
-        allowed: true,
-        confirmation_required: true,
-      }
+      return { allowed: true, confirmation_required: true }
     }
 
-    return {
-      allowed: true,
-      confirmation_required: false,
+    return { allowed: true, confirmation_required: false }
+  }
+
+  private checkForbiddenPatterns(action: PolicyAction): PolicyResult | null {
+    if (!action.command) return null
+    for (const pattern of this.config.forbidden_patterns) {
+      if (new RegExp(pattern).test(action.command)) {
+        return { allowed: false, reason: `Command matches forbidden pattern: ${pattern}`, confirmation_required: false }
+      }
     }
+    return null
+  }
+
+  private checkCommandAllowlist(action: PolicyAction): PolicyResult | null {
+    if (!action.command || this.config.command_allowlist.length === 0) return null
+    const allowed = this.config.command_allowlist.some(prefix => action.command!.startsWith(prefix))
+    if (!allowed) {
+      return { allowed: false, reason: `Command not in allowlist: ${action.command}`, confirmation_required: false }
+    }
+    return null
+  }
+
+  private checkCwdRestriction(action: PolicyAction): PolicyResult | null {
+    if (!action.cwd || this.config.cwd_patterns.length === 0) return null
+    const cwdAllowed = this.config.cwd_patterns.some(pattern => {
+      if (pattern === '**') return true
+      const prefix = pattern.replace(/\*+$/, '')
+      return action.cwd!.startsWith(prefix)
+    })
+    if (!cwdAllowed) {
+      return { allowed: false, reason: `CWD not allowed: ${action.cwd}`, confirmation_required: false }
+    }
+    return null
+  }
+
+  private checkResourceLimits(action: PolicyAction): PolicyResult | null {
+    if (action.type === 'fanout' && action.fanout_count !== undefined && action.fanout_count > this.config.max_fanout) {
+      return { allowed: false, reason: `Fanout ${action.fanout_count} exceeds limit ${this.config.max_fanout}`, confirmation_required: false }
+    }
+    if (action.type === 'concurrent' && action.concurrent_count !== undefined && action.concurrent_count > this.config.max_concurrent) {
+      return { allowed: false, reason: `Concurrent ${action.concurrent_count} exceeds limit ${this.config.max_concurrent}`, confirmation_required: false }
+    }
+    return null
   }
 }

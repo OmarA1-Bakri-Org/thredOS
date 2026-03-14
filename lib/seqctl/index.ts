@@ -54,24 +54,30 @@ function formatError(error: unknown): string {
   return String(error)
 }
 
-async function main() {
-  const rawArgs = Bun.argv.slice(2)
+const FLAG_MAP: Record<string, keyof CLIOptions> = {
+  '--json': 'json', '-j': 'json',
+  '--help': 'help', '-h': 'help',
+  '--watch': 'watch', '-w': 'watch',
+}
 
-  // Extract global flags manually so subcommand flags pass through untouched
+function parseGlobalFlags(rawArgs: string[]): { options: CLIOptions; remaining: string[] } {
   const options: CLIOptions = { json: false, help: false, watch: false }
   const remaining: string[] = []
 
   for (const arg of rawArgs) {
-    if (arg === '--json' || arg === '-j') options.json = true
-    else if (arg === '--help' || arg === '-h') options.help = true
-    else if (arg === '--watch' || arg === '-w') options.watch = true
-    else remaining.push(arg)
+    const flag = FLAG_MAP[arg]
+    if (flag) {
+      options[flag] = true
+    } else {
+      remaining.push(arg)
+    }
   }
 
-  const [command, subcommand, ...args] = remaining
+  return { options, remaining }
+}
 
-  if (options.help || !command) {
-    console.log(`
+function printHelp(): never {
+  console.log(`
 thread - ThreadOS Sequence Controller
 
 Usage:
@@ -98,30 +104,31 @@ Options:
   -h, --help              Show help
   -w, --watch             Watch for changes (status only)
 `)
-    process.exit(0)
+  process.exit(0)
+}
+
+function exitWithCLIError(errorMsg: string, json: boolean): never {
+  if (json) {
+    console.log(JSON.stringify({ error: errorMsg, success: false }))
+  } else {
+    console.error(`Error: ${errorMsg}`)
   }
+  process.exit(1)
+}
+
+async function main() {
+  const { options, remaining } = parseGlobalFlags(Bun.argv.slice(2))
+  const [command, subcommand, ...args] = remaining
+
+  if (options.help || !command) printHelp()
 
   const handler = commands[command]
-  if (!handler) {
-    const errorMsg = `Unknown command: ${command}`
-    if (options.json) {
-      console.log(JSON.stringify({ error: errorMsg, success: false }))
-    } else {
-      console.error(errorMsg)
-    }
-    process.exit(1)
-  }
+  if (!handler) exitWithCLIError(`Unknown command: ${command}`, options.json)
 
   try {
     await handler(subcommand, args, options)
   } catch (error) {
-    const message = formatError(error)
-    if (options.json) {
-      console.log(JSON.stringify({ error: message, success: false }))
-    } else {
-      console.error(`Error: ${message}`)
-    }
-    process.exit(1)
+    exitWithCLIError(formatError(error), options.json)
   }
 }
 

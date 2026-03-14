@@ -310,6 +310,41 @@ async function cloneStep(
   }
 }
 
+type StepSubHandler = (basePath: string, positionals: string[], values: Record<string, unknown>) => Promise<StepResult>
+
+function requireStepId(action: string, errorMsg: string): (basePath: string, positionals: string[], values: Record<string, unknown>) => Promise<StepResult> {
+  return async (basePath, positionals, values) => {
+    const stepId = positionals[0]
+    if (!stepId) return { success: false, action, stepId: '', error: errorMsg }
+    if (action === 'add') return addStep(basePath, stepId, values)
+    if (action === 'edit') return editStep(basePath, stepId, values)
+    return removeStep(basePath, stepId)
+  }
+}
+
+const stepSubHandlers: Record<string, StepSubHandler> = {
+  add: requireStepId('add', 'Step ID required: seqctl step add <stepId> [options]'),
+  edit: requireStepId('edit', 'Step ID required: seqctl step edit <stepId> [options]'),
+  rm: requireStepId('rm', 'Step ID required: seqctl step rm <stepId>'),
+  clone: async (basePath, positionals) => {
+    const sourceId = positionals[0]
+    const newId = positionals[1]
+    if (!sourceId || !newId) return { success: false, action: 'clone', stepId: '', error: 'Usage: seqctl step clone <sourceId> <newId>' }
+    return cloneStep(basePath, sourceId, newId)
+  },
+}
+
+function outputStepResult(result: StepResult, options: CLIOptions): void {
+  if (options.json) {
+    console.log(JSON.stringify(result))
+  } else if (result.success) {
+    console.log(result.message)
+  } else {
+    console.error(`Error: ${result.error}`)
+    process.exit(1)
+  }
+}
+
 /**
  * Step command handler
  */
@@ -321,88 +356,10 @@ export async function stepCommand(
   const basePath = options.basePath ?? process.cwd()
   const { values, positionals } = parseStepArgs(args)
 
-  let result: StepResult
+  const handler = subcommand ? stepSubHandlers[subcommand] : undefined
+  const result = handler
+    ? await handler(basePath, positionals, values)
+    : { success: false, action: subcommand || 'unknown', stepId: '', error: 'Unknown subcommand. Usage: seqctl step add|edit|rm|clone' }
 
-  switch (subcommand) {
-    case 'add': {
-      const stepId = positionals[0]
-      if (!stepId) {
-        result = {
-          success: false,
-          action: 'add',
-          stepId: '',
-          error: 'Step ID required: seqctl step add <stepId> [options]',
-        }
-      } else {
-        result = await addStep(basePath, stepId, values)
-      }
-      break
-    }
-
-    case 'edit': {
-      const stepId = positionals[0]
-      if (!stepId) {
-        result = {
-          success: false,
-          action: 'edit',
-          stepId: '',
-          error: 'Step ID required: seqctl step edit <stepId> [options]',
-        }
-      } else {
-        result = await editStep(basePath, stepId, values)
-      }
-      break
-    }
-
-    case 'rm': {
-      const stepId = positionals[0]
-      if (!stepId) {
-        result = {
-          success: false,
-          action: 'rm',
-          stepId: '',
-          error: 'Step ID required: seqctl step rm <stepId>',
-        }
-      } else {
-        result = await removeStep(basePath, stepId)
-      }
-      break
-    }
-
-    case 'clone': {
-      const sourceId = positionals[0]
-      const newId = positionals[1]
-      if (!sourceId || !newId) {
-        result = {
-          success: false,
-          action: 'clone',
-          stepId: '',
-          error: 'Usage: seqctl step clone <sourceId> <newId>',
-        }
-      } else {
-        result = await cloneStep(basePath, sourceId, newId)
-      }
-      break
-    }
-
-    default: {
-      result = {
-        success: false,
-        action: subcommand || 'unknown',
-        stepId: '',
-        error: 'Unknown subcommand. Usage: seqctl step add|edit|rm|clone',
-      }
-    }
-  }
-
-  if (options.json) {
-    console.log(JSON.stringify(result))
-  } else {
-    if (result.success) {
-      console.log(result.message)
-    } else {
-      console.error(`Error: ${result.error}`)
-      process.exit(1)
-    }
-  }
+  outputStepResult(result, options)
 }
