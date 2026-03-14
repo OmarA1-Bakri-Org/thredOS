@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import type { ReactElement, ReactNode } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
 import { LaneBoardView } from './LaneBoardView'
+import type { LaneBoardDisplayRow, LaneBoardMergeGroup } from './useLaneBoard'
 
 type ElementWithChildren = ReactElement<{ children?: ReactNode; [key: string]: unknown }>
 
@@ -202,5 +204,124 @@ describe('LaneBoardView', () => {
     expect(markup).toContain('C')
     expect(markup).toContain('A')
     expect(markup).toContain('B')
+  })
+})
+
+/* ─────────────────────────────────────────────
+ * Phase 6 — Merge & Convergence UI
+ * ───────────────────────────────────────────── */
+
+function baseRows(): LaneBoardDisplayRow[] {
+  return [
+    { threadSurfaceId: 'thread-research', surfaceLabel: 'Research', runId: 'run-1', executionIndex: 1, laneTerminalState: 'merged', isMergeSource: true, parentThreadSurfaceId: null, depth: 0, childCount: 0, isCollapsed: false },
+    { threadSurfaceId: 'thread-outreach', surfaceLabel: 'Outreach', runId: 'run-2', executionIndex: 2, laneTerminalState: 'merged', isMergeSource: true, parentThreadSurfaceId: null, depth: 0, childCount: 0, isCollapsed: false },
+    { threadSurfaceId: 'thread-synthesis', surfaceLabel: 'Synthesis', runId: 'run-3', executionIndex: 3, laneTerminalState: 'completed', isMergeSource: false, parentThreadSurfaceId: null, depth: 0, childCount: 0, isCollapsed: false },
+  ]
+}
+
+function blockMergeGroup(): LaneBoardMergeGroup {
+  return {
+    mergeEventId: 'merge-1',
+    runId: 'run-3',
+    mergeKind: 'block',
+    executionIndex: 3,
+    destinationThreadSurfaceId: 'thread-synthesis',
+    orderedThreadSurfaceIds: ['thread-synthesis', 'thread-research', 'thread-outreach'],
+  }
+}
+
+function singleMergeGroup(): LaneBoardMergeGroup {
+  return {
+    mergeEventId: 'merge-2',
+    runId: 'run-2',
+    mergeKind: 'single',
+    executionIndex: 2,
+    destinationThreadSurfaceId: 'thread-outreach',
+    orderedThreadSurfaceIds: ['thread-outreach', 'thread-research'],
+  }
+}
+
+const defaultProps = {
+  rows: baseRows(),
+  focusedThreadSurfaceId: null,
+  selectedRunId: null,
+  onFocusThread: () => {},
+  onBackToHierarchy: () => {},
+}
+
+describe('LaneBoardView — Merge & Convergence UI', () => {
+  test('renders roster with lane rows', () => {
+    const markup = renderToStaticMarkup(<LaneBoardView {...defaultProps} />)
+    expect(markup).toContain('Research')
+    expect(markup).toContain('Outreach')
+    expect(markup).toContain('Synthesis')
+  })
+
+  test('renders gate diamond for merge group', () => {
+    const markup = renderToStaticMarkup(
+      <LaneBoardView {...defaultProps} mergeGroups={[blockMergeGroup()]} />,
+    )
+    expect(markup).toContain('data-testid="merge-diamond-merge-1"')
+  })
+
+  test('block merge shows count badge', () => {
+    const markup = renderToStaticMarkup(
+      <LaneBoardView {...defaultProps} mergeGroups={[blockMergeGroup()]} />,
+    )
+    // 2 source lanes (Research + Outreach) merging into 1 destination (Synthesis)
+    expect(markup).toContain('2')
+    expect(markup).toContain('1')
+    // The combined badge text "2 → 1" or equivalent representation
+    expect(markup).toMatch(/2\s*→\s*1|2\s*&#x2192;\s*1|2.*→.*1|2.*&#x2192;.*1/)
+  })
+
+  test('single merge does not show count badge', () => {
+    const markup = renderToStaticMarkup(
+      <LaneBoardView {...defaultProps} mergeGroups={[singleMergeGroup()]} />,
+    )
+    // Single merge should not display a source count badge
+    // It should have the diamond but not the "N → 1" count
+    expect(markup).toContain('data-testid="merge-diamond-merge-2"')
+    expect(markup).not.toMatch(/\d+\s*→\s*1|\d+\s*&#x2192;\s*1/)
+  })
+
+  test('merged lanes have terminal state styling', () => {
+    const markup = renderToStaticMarkup(
+      <LaneBoardView {...defaultProps} mergeGroups={[blockMergeGroup()]} />,
+    )
+    // Rows with laneTerminalState === 'merged' should show "Merged" text
+    expect(markup).toContain('Merged')
+    // Merged rows should have reduced opacity styling
+    expect(markup).toContain('opacity')
+  })
+
+  test('renders without merge groups', () => {
+    // No mergeGroups prop at all
+    const markupNoProp = renderToStaticMarkup(<LaneBoardView {...defaultProps} />)
+    expect(markupNoProp).toContain('Research')
+    expect(markupNoProp).toContain('Outreach')
+    expect(markupNoProp).toContain('Synthesis')
+    expect(markupNoProp).not.toContain('data-testid="merge-diamond-')
+
+    // Empty mergeGroups array
+    const markupEmpty = renderToStaticMarkup(
+      <LaneBoardView {...defaultProps} mergeGroups={[]} />,
+    )
+    expect(markupEmpty).toContain('Research')
+    expect(markupEmpty).toContain('Outreach')
+    expect(markupEmpty).toContain('Synthesis')
+    expect(markupEmpty).not.toContain('data-testid="merge-diamond-')
+  })
+
+  test('merge diamond shows merge kind label', () => {
+    const blockMarkup = renderToStaticMarkup(
+      <LaneBoardView {...defaultProps} mergeGroups={[blockMergeGroup()]} />,
+    )
+    expect(blockMarkup).toContain('block')
+
+    const singleMarkup = renderToStaticMarkup(
+      <LaneBoardView {...defaultProps} mergeGroups={[singleMergeGroup()]} />,
+    )
+    expect(singleMarkup).toContain('single')
   })
 })

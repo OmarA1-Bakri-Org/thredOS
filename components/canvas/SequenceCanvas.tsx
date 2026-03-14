@@ -242,6 +242,7 @@ function CanvasInner() {
   return (
     <LaneBoardView
       rows={laneBoard.rows}
+      mergeGroups={laneBoard.mergeGroups}
       focusedThreadSurfaceId={focusedThreadSurfaceId}
       selectedRunId={selectedRunId}
       workflowByThreadSurfaceId={workflowByThreadSurfaceId}
