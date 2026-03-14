@@ -42,35 +42,46 @@ export function beginStepRunIfSurfaceExists(
   const threadSurfaceId = deriveStepThreadSurfaceId(step.id)
   const existingSurface = state.threadSurfaces.find(surface => surface.id === threadSurfaceId) ?? null
 
-  // Auto-create child surface for spawn-skilled agents
   if (existingSurface == null && hasSpawnSkill(opts.agent ?? null)) {
-    const executionIndex = opts.executionIndex ?? state.runs.length + 1
-    const nextState = createChildThreadSurfaceRun(state, {
-      parentSurfaceId: ROOT_THREAD_SURFACE_ID,
-      parentAgentNodeId: step.id,
-      childSurfaceId: threadSurfaceId,
-      childSurfaceLabel: step.name,
-      createdAt: opts.now,
-      runId: opts.nextRunId,
-      startedAt: opts.now,
-      executionIndex,
-    }).state
-
-    return {
-      state: nextState,
-      stepRun: {
-        runId: opts.nextRunId,
-        startedAt: opts.now,
-        executionIndex,
-        threadSurfaceId,
-      },
-    }
+    return autoCreateSpawnSurface(state, step, opts, threadSurfaceId)
   }
 
   if (existingSurface == null) {
     return { state, stepRun: null }
   }
 
+  return createReplacementStepRun(state, opts, threadSurfaceId)
+}
+
+function autoCreateSpawnSurface(
+  state: ThreadSurfaceState,
+  step: Step,
+  opts: BeginStepRunOptions,
+  threadSurfaceId: string,
+): { state: ThreadSurfaceState; stepRun: StepRunScope } {
+  const executionIndex = opts.executionIndex ?? state.runs.length + 1
+  const nextState = createChildThreadSurfaceRun(state, {
+    parentSurfaceId: ROOT_THREAD_SURFACE_ID,
+    parentAgentNodeId: step.id,
+    childSurfaceId: threadSurfaceId,
+    childSurfaceLabel: step.name,
+    createdAt: opts.now,
+    runId: opts.nextRunId,
+    startedAt: opts.now,
+    executionIndex,
+  }).state
+
+  return {
+    state: nextState,
+    stepRun: { runId: opts.nextRunId, startedAt: opts.now, executionIndex, threadSurfaceId },
+  }
+}
+
+function createReplacementStepRun(
+  state: ThreadSurfaceState,
+  opts: BeginStepRunOptions,
+  threadSurfaceId: string,
+): { state: ThreadSurfaceState; stepRun: StepRunScope } {
   const executionIndex = opts.executionIndex ?? state.runs.length + 1
   const nextState = createReplacementRun(state, {
     threadSurfaceId,
@@ -81,12 +92,7 @@ export function beginStepRunIfSurfaceExists(
 
   return {
     state: nextState,
-    stepRun: {
-      runId: opts.nextRunId,
-      startedAt: opts.now,
-      executionIndex,
-      threadSurfaceId,
-    },
+    stepRun: { runId: opts.nextRunId, startedAt: opts.now, executionIndex, threadSurfaceId },
   }
 }
 

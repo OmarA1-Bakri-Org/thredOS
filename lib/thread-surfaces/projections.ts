@@ -197,26 +197,7 @@ export function projectLaneBoard({ threadSurfaces, runs, mergeEvents, runIds }: 
     })
   })
 
-  rows.sort((left, right) => {
-    const leftMerge = rowMergeOrder.get(left.runId)
-    const rightMerge = rowMergeOrder.get(right.runId)
-
-    if (leftMerge && rightMerge) {
-      if (leftMerge.clusterOrder !== rightMerge.clusterOrder) {
-        return leftMerge.clusterOrder - rightMerge.clusterOrder
-      }
-      if (leftMerge.role !== rightMerge.role) {
-        return leftMerge.role - rightMerge.role
-      }
-      if (leftMerge.mergeExecutionIndex !== rightMerge.mergeExecutionIndex) {
-        return leftMerge.mergeExecutionIndex - rightMerge.mergeExecutionIndex
-      }
-      return leftMerge.sourcePosition - rightMerge.sourcePosition
-    }
-    if (leftMerge) return -1
-    if (rightMerge) return 1
-    return (left.executionIndex ?? Number.MAX_SAFE_INTEGER) - (right.executionIndex ?? Number.MAX_SAFE_INTEGER)
-  })
+  rows.sort((left, right) => compareLaneRows(left, right, rowMergeOrder))
 
   return {
     rows: rows.map(row => ({ ...row })),
@@ -230,6 +211,27 @@ export function projectLaneBoard({ threadSurfaces, runs, mergeEvents, runIds }: 
       mergeKind: event.mergeKind,
     })),
   }
+}
+
+function compareMergeSortKeys(left: LaneRowMergeSortKey, right: LaneRowMergeSortKey): number {
+  if (left.clusterOrder !== right.clusterOrder) return left.clusterOrder - right.clusterOrder
+  if (left.role !== right.role) return left.role - right.role
+  if (left.mergeExecutionIndex !== right.mergeExecutionIndex) return left.mergeExecutionIndex - right.mergeExecutionIndex
+  return left.sourcePosition - right.sourcePosition
+}
+
+function compareLaneRows(
+  left: LaneBoardRow,
+  right: LaneBoardRow,
+  mergeOrder: Map<string, LaneRowMergeSortKey>,
+): number {
+  const leftMerge = mergeOrder.get(left.runId)
+  const rightMerge = mergeOrder.get(right.runId)
+
+  if (leftMerge && rightMerge) return compareMergeSortKeys(leftMerge, rightMerge)
+  if (leftMerge) return -1
+  if (rightMerge) return 1
+  return (left.executionIndex ?? Number.MAX_SAFE_INTEGER) - (right.executionIndex ?? Number.MAX_SAFE_INTEGER)
 }
 
 function latestRun(runs: RunScope[]): RunScope | undefined {
