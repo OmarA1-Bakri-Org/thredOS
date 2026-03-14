@@ -270,6 +270,16 @@ export function resolveSkillsForAgent(agent: AgentRegistration | null): ThreadSk
 }
 
 /**
+ * Check whether an agent has been granted the spawn skill.
+ * Spawn-skilled agents automatically create child thread surfaces
+ * when their step executes.
+ */
+export function hasSpawnSkill(agent: AgentRegistration | null): boolean {
+  const skills = resolveSkillsForAgent(agent)
+  return skills.some(s => s.id === 'spawn')
+}
+
+/**
  * Project skills onto each thread surface by resolving the registered
  * agent for that surface and extracting skill data.
  */

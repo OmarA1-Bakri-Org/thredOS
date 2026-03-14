@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import type { MergeEvent, RunScope, ThreadSurface } from './types'
 import type { AgentRegistration } from '../agents/types'
-import { projectHierarchy, projectLaneBoard, projectSkills, resolveDefaultDisplayRun, resolveSkillsForAgent } from './projections'
+import { hasSpawnSkill, projectHierarchy, projectLaneBoard, projectSkills, resolveDefaultDisplayRun, resolveSkillsForAgent } from './projections'
 
 const surfaces: ThreadSurface[] = [
   {
@@ -500,5 +500,58 @@ describe('thread surface projections', () => {
     expect(projections[0].skills.length).toBeGreaterThan(0)
     expect(projections[0].skills.some(s => s.inherited)).toBe(true)
     expect(projections[0].skills.some(s => !s.inherited)).toBe(true)
+  })
+
+  // ── hasSpawnSkill ───────────────────────────────────────────────────
+
+  test('hasSpawnSkill returns true when agent has spawn in metadata.skills', () => {
+    const agent: AgentRegistration = {
+      id: 'agt-1',
+      name: 'Spawner',
+      registeredAt: '2026-03-14T00:00:00.000Z',
+      builderId: 'omar',
+      builderName: 'Omar',
+      threadSurfaceIds: [],
+      metadata: {
+        skills: [
+          { id: 'search', label: 'Search', inherited: false },
+          { id: 'spawn', label: 'Spawn', inherited: false },
+        ],
+      },
+    }
+    expect(hasSpawnSkill(agent)).toBe(true)
+  })
+
+  test('hasSpawnSkill returns false when agent has no spawn skill', () => {
+    const agent: AgentRegistration = {
+      id: 'agt-2',
+      name: 'Worker',
+      registeredAt: '2026-03-14T00:00:00.000Z',
+      builderId: 'omar',
+      builderName: 'Omar',
+      threadSurfaceIds: [],
+      metadata: {
+        skills: [
+          { id: 'search', label: 'Search', inherited: false },
+        ],
+      },
+    }
+    expect(hasSpawnSkill(agent)).toBe(false)
+  })
+
+  test('hasSpawnSkill returns false when agent is null', () => {
+    expect(hasSpawnSkill(null)).toBe(false)
+  })
+
+  test('hasSpawnSkill returns false when agent has no metadata', () => {
+    const agent: AgentRegistration = {
+      id: 'agt-3',
+      name: 'Bare',
+      registeredAt: '2026-03-14T00:00:00.000Z',
+      builderId: 'omar',
+      builderName: 'Omar',
+      threadSurfaceIds: [],
+    }
+    expect(hasSpawnSkill(agent)).toBe(false)
   })
 })
