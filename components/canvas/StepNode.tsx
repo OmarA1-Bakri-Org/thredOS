@@ -21,6 +21,7 @@ export interface StepNodeData {
   model: string
   color: string
   phaseId: string | null
+  childCount: number
   [key: string]: unknown
 }
 
@@ -34,6 +35,8 @@ function StepNodeComponent({ id, data }: NodeProps<Node<StepNodeData>>) {
   const isPhaseHighlighted = !!selectedPhaseId && d.phaseId === selectedPhaseId
   const isPhaseDimmed = !!selectedPhaseId && d.phaseId !== selectedPhaseId
 
+  const pushDepth = useUIStore(s => s.pushDepth)
+
   const handleSelect = useCallback(() => setSelected(id), [setSelected, id])
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -45,6 +48,16 @@ function StepNodeComponent({ id, data }: NodeProps<Node<StepNodeData>>) {
     [handleSelect],
   )
 
+  const handleDoubleClick = useCallback(() => {
+    if (d.childCount > 0) {
+      pushDepth({
+        threadSurfaceId: `thread-${id}`,
+        surfaceLabel: d.name,
+        depth: 1, // will be resolved by the caller
+      })
+    }
+  }, [d.childCount, d.name, id, pushDepth])
+
   const typeColor = TYPE_COLORS[d.type] || '#64748b'
   const cornerColor = isSelected ? d.color : 'rgba(148,163,184,0.18)'
 
@@ -54,6 +67,7 @@ function StepNodeComponent({ id, data }: NodeProps<Node<StepNodeData>>) {
       tabIndex={0}
       aria-label={`Step ${d.name}, status ${d.status}`}
       onClick={handleSelect}
+      onDoubleClick={handleDoubleClick}
       onKeyDown={handleKeyDown}
       className={`cursor-pointer group transition-opacity duration-200 ${isPhaseDimmed ? 'opacity-35' : 'opacity-100'}`}
       style={{ width: 220 }}
@@ -142,6 +156,19 @@ function StepNodeComponent({ id, data }: NodeProps<Node<StepNodeData>>) {
               {d.model}
             </span>
           </div>
+
+          {/* Row 4: Child count depth indicator */}
+          {d.childCount > 0 && (
+            <div className="mt-1.5 flex items-center gap-1">
+              <span
+                className="inline-flex items-center gap-0.5 px-1.5 py-[1px] font-mono text-[9px] tracking-[0.1em] leading-tight border border-emerald-600/30 bg-emerald-900/15 text-emerald-400 cursor-pointer"
+                title={`${d.childCount} child thread${d.childCount > 1 ? 's' : ''} — double-click to drill in`}
+              >
+                <span className="text-[8px]">▼</span>
+                {d.childCount}
+              </span>
+            </div>
+          )}
         </div>
       </div>
       <Handle

@@ -22,6 +22,12 @@ import { createLaneBoardModel } from '@/components/lanes/useLaneBoard'
 import { resolveThreadSurfaceCanvasData } from './threadSurfaceScaffold'
 import { resolveThreadSurfaceFocusedDetail } from './threadSurfaceFocus'
 import { buildWorkflowLaneContext, contentCreatorWorkflow, resolveWorkflowReferenceStep } from '@/lib/workflows'
+import { PortalTransition } from './PortalTransition'
+import { ContextDimOverlay } from './ContextDimOverlay'
+import { PathBar } from '@/components/navigation/PathBar'
+import { selectCurrentDepthSurfaceId, selectCurrentDepthLevel } from '@/lib/ui/store'
+import { useDepthKeyboardNav } from './useDepthKeyboardNav'
+import { deriveStepThreadSurfaceId } from '@/lib/thread-surfaces/constants'
 
 const nodeTypes = {
   stepNode: StepNode,
@@ -36,14 +42,16 @@ function SequenceFlowGraph({
   status,
   isLoading,
   isError,
+  childCountByStepId,
 }: {
   minimapVisible: boolean
   status: ReturnType<typeof useStatus>['data']
   isLoading: boolean
   isError: boolean
+  childCountByStepId?: Map<string, number>
 }) {
   const searchQuery = useUIStore(s => s.searchQuery)
-  const { nodes, edges } = useSequenceGraph(status, searchQuery)
+  const { nodes, edges } = useSequenceGraph(status, searchQuery, childCountByStepId)
   const { fitView } = useReactFlow()
   const { menu, openMenu, closeMenu } = useCanvasContextMenu()
 
@@ -121,6 +129,10 @@ function CanvasInner() {
   const setSelectedThreadSurfaceId = useUIStore(s => s.setSelectedThreadSurfaceId)
   const setSelectedRunId = useUIStore(s => s.setSelectedRunId)
   const setViewMode = useUIStore(s => s.setViewMode)
+  const currentDepthSurfaceId = useUIStore(selectCurrentDepthSurfaceId)
+  const currentDepthLevel = useUIStore(selectCurrentDepthLevel)
+  const portalDirection = useUIStore(s => s.portalDirection)
+  useDepthKeyboardNav()
 
   const threadSurfaceData = useMemo(
     () => resolveThreadSurfaceCanvasData({ status, threadSurfaces, runs, mergeEvents }),
@@ -174,6 +186,18 @@ function CanvasInner() {
       workflowByThreadSurfaceId[row.threadSurfaceId] = buildWorkflowLaneContext(contentCreatorWorkflow, workflowStep)
     }
   }
+  const childCountByStepId = useMemo(() => {
+    const map = new Map<string, number>()
+    const prefix = 'thread-'
+    for (const surface of threadSurfaceData.threadSurfaces) {
+      if (surface.childSurfaceIds.length > 0 && surface.id.startsWith(prefix)) {
+        const stepId = surface.id.slice(prefix.length)
+        map.set(stepId, surface.childSurfaceIds.length)
+      }
+    }
+    return map
+  }, [threadSurfaceData.threadSurfaces])
+
   const shouldRenderSequenceFlow = status != null
 
   if (isLoading && !hasRealThreadSurfaceData) return <LoadingSpinner message="Loading sequence..." />
@@ -187,14 +211,28 @@ function CanvasInner() {
 
   if (viewMode === 'hierarchy') {
     return (
-      <ReactFlowProvider>
-        <SequenceFlowGraph
-          minimapVisible={minimapVisible}
-          status={status}
-          isLoading={isLoading}
-          isError={isError}
-        />
-      </ReactFlowProvider>
+      <div className="relative h-full w-full overflow-hidden">
+        <PortalTransition
+          depthKey={currentDepthSurfaceId ?? 'root'}
+          direction={portalDirection}
+        >
+          <ReactFlowProvider>
+            <SequenceFlowGraph
+              minimapVisible={minimapVisible}
+              status={status}
+              isLoading={isLoading}
+              isError={isError}
+              childCountByStepId={childCountByStepId}
+            />
+          </ReactFlowProvider>
+        </PortalTransition>
+        <ContextDimOverlay depth={currentDepthLevel} />
+        {currentDepthLevel > 0 && (
+          <div className="absolute top-3 left-3 z-20">
+            <PathBar />
+          </div>
+        )}
+      </div>
     )
   }
 

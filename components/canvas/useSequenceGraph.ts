@@ -16,7 +16,11 @@ const GROUP_PADDING = 36
 
 const elk = new ELK()
 
-export function useSequenceGraph(status: SequenceStatus | undefined, searchQuery: string) {
+export function useSequenceGraph(
+  status: SequenceStatus | undefined,
+  searchQuery: string,
+  childCountByStepId?: Map<string, number>,
+) {
   const [layoutResult, setLayoutResult] = useState<{ nodes: Node[]; edges: Edge[] }>({ nodes: [], edges: [] })
 
   const inputKey = useMemo(() => {
@@ -112,7 +116,7 @@ export function useSequenceGraph(status: SequenceStatus | undefined, searchQuery
             id: elkNode.id,
             type: isFusionSynth ? 'fusionNode' : 'stepNode',
             position: { x, y },
-            data: { ...step, color: STATUS_COLORS[step.status] || '#94a3b8', phaseId: stepPhaseMap.get(step.id) ?? null },
+            data: { ...step, color: STATUS_COLORS[step.status] || '#94a3b8', phaseId: stepPhaseMap.get(step.id) ?? null, childCount: childCountByStepId?.get(step.id) ?? 0 },
           })
 
           if (step.groupId) {
@@ -176,7 +180,7 @@ export function useSequenceGraph(status: SequenceStatus | undefined, searchQuery
     })
 
     return () => { cancelled = true }
-  }, [inputKey, status, searchQuery])
+  }, [inputKey, status, searchQuery, childCountByStepId])
 
   if (!status) return { nodes: [] as Node[], edges: [] as Edge[] }
   return layoutResult
