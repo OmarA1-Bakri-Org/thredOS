@@ -209,23 +209,31 @@ thread template apply chained --name "Pipeline"
 
 Available templates: `base`, `parallel`, `chained`, `fusion`, `orchestrated`, `long-autonomy`
 
-### `thread control <action> <stepId>`
+### `thread event spawn-child <childStepId> [options]`
 
-Process control operations (stop, restart, signal).
-
-```bash
-thread control stop research
-thread control restart research
-```
-
-### `thread event <stepId> [options]`
-
-Stream or query runtime events for a step.
+Emit a spawn-child runtime event.
 
 ```bash
-thread event research
-thread event research --json
+thread event spawn-child worker-1 --label "Worker" --kind orchestrator --parent-step-id main-step
 ```
+
+Options:
+- `--label` — Display label for the child
+- `--kind` — Spawn kind (`orchestrator`, `watchdog`, `fanout`)
+- `--parent-step-id` — Parent step ID (optional)
+
+### `thread event merge-into <destinationStepId> [options]`
+
+Emit a merge-into runtime event.
+
+```bash
+thread event merge-into synthesizer --sources worker-1,worker-2 --kind single
+```
+
+Options:
+- `--sources` — Comma-separated source step IDs
+- `--kind` — Merge kind (`single`, `block`)
+- `--summary` — Optional merge summary
 
 ## Environment Variables
 
