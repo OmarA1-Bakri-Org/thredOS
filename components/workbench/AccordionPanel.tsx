@@ -1,84 +1,144 @@
 'use client'
 
-import { useState } from 'react'
-import { Info, Layers3, ShieldCheck, GitBranch, Activity, Sparkles, BarChart3, Scan } from 'lucide-react'
+import { useState, useMemo } from 'react'
+import {
+  Info,
+  Layers3,
+  Workflow,
+  Box,
+  Bot,
+  ShieldCheck,
+  Play,
+} from 'lucide-react'
 import { useUIStore } from '@/lib/ui/store'
 import type { LucideIcon } from 'lucide-react'
-import { ThreadNavigatorContent } from './ThreadNavigatorContent'
-import { SkillsContent } from './SkillsContent'
-import { StepDetailContent } from '@/components/inspector/StepDetailContent'
-import { DependenciesContent } from '@/components/inspector/DependenciesContent'
-import { ThreadContextContent } from '@/components/inspector/ThreadContextContent'
-import { StructureContent } from '@/components/inspector/StructureContent'
-import { ThreadInspectorContent } from './ThreadInspectorContent'
+import { SequenceSection } from './sections/SequenceSection'
+import { PhaseSection } from './sections/PhaseSection'
+import { NodeSection } from './sections/NodeSection'
+import { AgentSection } from './sections/AgentSection'
+import { GateSection } from './sections/GateSection'
+import { RunSection } from './sections/RunSection'
 
+/**
+ * Left rail section definition.
+ * Follows the thread construction cadence:
+ *   SEQUENCE → PHASE → NODE → AGENT → GATE → RUN
+ */
 interface AccordionSection {
   key: string
   label: string
   shortLabel: string
   icon: LucideIcon
   description: string
-  content: React.ReactNode
+  /** Accent color classes for active state — each section has a subtle identity */
+  accent: {
+    border: string
+    bg: string
+    text: string
+    iconActive: string
+  }
 }
 
 const sections: AccordionSection[] = [
   {
-    key: 'navigator',
-    label: 'NAVIGATOR',
-    shortLabel: 'NAV',
+    key: 'sequence',
+    label: 'SEQUENCE',
+    shortLabel: 'SEQ',
     icon: Layers3,
-    description: 'Browse and select thread surfaces. Shows all sequences with depth and thread index.',
-    content: <ThreadNavigatorContent />,
+    description: 'Thread surface, type (base/p/c/f/b/l), templates, and phase overview.',
+    accent: {
+      border: 'border-sky-500/40',
+      bg: 'bg-sky-500/8',
+      text: 'text-sky-300',
+      iconActive: 'text-sky-400',
+    },
   },
   {
-    key: 'step-detail',
-    label: 'STEP / GATE DETAIL',
-    shortLabel: 'DETAIL',
+    key: 'phase',
+    label: 'PHASE',
+    shortLabel: 'PHS',
+    icon: Workflow,
+    description: 'Phase navigator — select, add, reorder. Each phase = node + agent + gate.',
+    accent: {
+      border: 'border-violet-500/40',
+      bg: 'bg-violet-500/8',
+      text: 'text-violet-300',
+      iconActive: 'text-violet-400',
+    },
+  },
+  {
+    key: 'node',
+    label: 'NODE',
+    shortLabel: 'NODE',
+    icon: Box,
+    description: 'Node configuration scoped to selected phase. Add, edit, configure work units.',
+    accent: {
+      border: 'border-amber-500/40',
+      bg: 'bg-amber-500/8',
+      text: 'text-amber-300',
+      iconActive: 'text-amber-400',
+    },
+  },
+  {
+    key: 'agent',
+    label: 'AGENT',
+    shortLabel: 'AGT',
+    icon: Bot,
+    description: 'Build, register, assign agents. Workshop, roster, performance, and tool inventory.',
+    accent: {
+      border: 'border-emerald-500/40',
+      bg: 'bg-emerald-500/8',
+      text: 'text-emerald-300',
+      iconActive: 'text-emerald-400',
+    },
+  },
+  {
+    key: 'gate',
+    label: 'GATE',
+    shortLabel: 'GATE',
     icon: ShieldCheck,
-    description: 'Inspect and edit the selected step or gate — name, type, model, status, dependencies, and actions.',
-    content: <StepDetailContent />,
+    description: 'Quality checkpoint for selected phase. Pass/fail criteria, time/quality ratio.',
+    accent: {
+      border: 'border-rose-500/40',
+      bg: 'bg-rose-500/8',
+      text: 'text-rose-300',
+      iconActive: 'text-rose-400',
+    },
   },
   {
-    key: 'dependencies',
-    label: 'DEPENDENCIES',
-    shortLabel: 'DEPS',
-    icon: GitBranch,
-    description: 'View upstream dependencies for the selected node. Add or remove dependency links.',
-    content: <DependenciesContent />,
-  },
-  {
-    key: 'thread-context',
-    label: 'THREAD CONTEXT',
-    shortLabel: 'CTX',
-    icon: Activity,
-    description: 'Run summary, provenance, notes, and discussion for the focused thread surface.',
-    content: <ThreadContextContent />,
-  },
-  {
-    key: 'skills',
-    label: 'SKILLS',
-    shortLabel: 'SKILLS',
-    icon: Sparkles,
-    description: 'Skill inventory available to this thread — shows registered capabilities and their status.',
-    content: <SkillsContent />,
-  },
-  {
-    key: 'thread-inspector',
-    label: 'THREAD INSPECTOR',
-    shortLabel: 'THREAD',
-    icon: Scan,
-    description: 'Unified thread/run inspector — identity, run context, skills, and provenance for the focused thread surface.',
-    content: <ThreadInspectorContent />,
-  },
-  {
-    key: 'structure',
-    label: 'STRUCTURE',
-    shortLabel: 'STRUCT',
-    icon: BarChart3,
-    description: 'Workflow blueprint and step context — phase breakdown, prerequisites, gates, and signals.',
-    content: <StructureContent />,
+    key: 'run',
+    label: 'RUN',
+    shortLabel: 'RUN',
+    icon: Play,
+    description: 'Execute, monitor, control the sequence. Status, history, provenance, notes.',
+    accent: {
+      border: 'border-cyan-500/40',
+      bg: 'bg-cyan-500/8',
+      text: 'text-cyan-300',
+      iconActive: 'text-cyan-400',
+    },
   },
 ]
+
+/** Section content renderer — mounts the right component per key */
+function SectionContent({ sectionKey }: { sectionKey: string }) {
+  switch (sectionKey) {
+    case 'sequence':
+      return <SequenceSection />
+    case 'phase':
+      return <PhaseSection />
+    case 'node':
+      return <NodeSection />
+    case 'agent':
+      return <AgentSection />
+    case 'gate':
+      return <GateSection />
+    case 'run':
+      return <RunSection />
+    default:
+      return null
+  }
+}
 
 function InfoButton({ description }: { description: string }) {
   const [show, setShow] = useState(false)
@@ -106,6 +166,7 @@ function InfoButton({ description }: { description: string }) {
 export function AccordionPanel() {
   const activeAccordionSections = useUIStore((s) => s.activeAccordionSections)
   const setActiveAccordionSections = useUIStore((s) => s.setActiveAccordionSections)
+  const selectedPhaseId = useUIStore((s) => s.selectedPhaseId)
 
   const toggleSection = (key: string) => {
     if (activeAccordionSections.includes(key)) {
@@ -124,13 +185,19 @@ export function AccordionPanel() {
       ? 'w-[50vw] max-w-[760px]'
       : 'w-[65vw] max-w-[1100px]'
 
+  /** Phase-scoped sections show a scope indicator */
+  const phaseScopedSections = useMemo(() => new Set(['node', 'agent', 'gate']), [])
+
   return (
     <div className={`${panelWidth} shrink-0 border-r border-slate-800/80 bg-[#08101d] flex flex-col overflow-hidden transition-all duration-200`}>
-      {/* Horizontal tab bar */}
+      {/* Section navigation tabs */}
       <div className="shrink-0 border-b border-slate-800/60 px-2 py-2">
         <div className="flex flex-wrap gap-1">
-          {sections.map(({ key, shortLabel, icon: Icon, description }) => {
+          {sections.map(({ key, shortLabel, icon: Icon, description, accent }) => {
             const isActive = activeAccordionSections.includes(key)
+            const isPhaseScoped = phaseScopedSections.has(key)
+            const hasPhaseContext = isPhaseScoped && !!selectedPhaseId
+
             return (
               <div key={key} className="flex items-center">
                 <button
@@ -138,19 +205,23 @@ export function AccordionPanel() {
                   onClick={() => toggleSection(key)}
                   className={`group flex items-center gap-1.5 rounded-l-lg px-2 py-1.5 transition-all ${
                     isActive
-                      ? 'bg-sky-500/12 border border-r-0 border-sky-500/40 text-sky-300'
+                      ? `${accent.bg} border ${accent.border} border-r-0 ${accent.text}`
                       : 'border border-r-0 border-transparent text-slate-500 hover:bg-slate-800/60 hover:text-slate-300'
                   }`}
                   aria-pressed={isActive}
                 >
-                  <Icon className={`h-3 w-3 ${isActive ? 'text-sky-400' : 'text-slate-500 group-hover:text-slate-400'}`} />
+                  <Icon className={`h-3 w-3 ${isActive ? accent.iconActive : 'text-slate-500 group-hover:text-slate-400'}`} />
                   <span className="font-mono text-[9px] uppercase tracking-[0.14em]">
                     {shortLabel}
                   </span>
+                  {/* Phase scope dot for NODE/AGENT/GATE when phase is selected */}
+                  {hasPhaseContext && (
+                    <span className="h-1 w-1 rounded-full bg-emerald-400" />
+                  )}
                 </button>
                 <div className={`flex items-center rounded-r-lg py-1.5 pr-1 ${
                   isActive
-                    ? 'bg-sky-500/12 border border-l-0 border-sky-500/40'
+                    ? `${accent.bg} border ${accent.border} border-l-0`
                     : 'border border-l-0 border-transparent'
                 }`}>
                   <InfoButton description={description} />
@@ -167,7 +238,10 @@ export function AccordionPanel() {
           <div className="flex h-full items-center justify-center px-6 py-12 text-center">
             <div>
               <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-slate-600">No panels open</div>
-              <div className="mt-2 text-xs text-slate-500">Select a tab above to inspect your thread.</div>
+              <div className="mt-2 text-xs text-slate-500">Select a section above to begin building your thread.</div>
+              <div className="mt-4 flex flex-col gap-1 text-[10px] text-slate-600">
+                <span>SEQUENCE → PHASE → NODE → AGENT → GATE → RUN</span>
+              </div>
             </div>
           </div>
         )}
@@ -180,7 +254,7 @@ export function AccordionPanel() {
         >
           {sections
             .filter(({ key }) => activeAccordionSections.includes(key))
-            .map(({ key, label, icon: Icon, description, content }) => (
+            .map(({ key, label, icon: Icon, description, accent }) => (
               <div
                 key={key}
                 className={`break-inside-avoid ${
@@ -194,8 +268,8 @@ export function AccordionPanel() {
                     ? 'rounded-t-lg border-b border-slate-700/40 bg-[#0a1428]'
                     : 'border-b border-slate-800/40 bg-[#060e1a]'
                 }`}>
-                  <Icon className="h-3 w-3 text-sky-400" />
-                  <span className="font-mono text-[9px] uppercase tracking-[0.18em] text-slate-400">{label}</span>
+                  <Icon className={`h-3 w-3 ${accent.iconActive}`} />
+                  <span className={`font-mono text-[9px] uppercase tracking-[0.18em] ${accent.text}`}>{label}</span>
                   <InfoButton description={description} />
                   <button
                     type="button"
@@ -206,7 +280,7 @@ export function AccordionPanel() {
                   </button>
                 </div>
                 <div className={`overflow-y-auto px-4 py-3 ${colCount > 1 ? 'max-h-[35vh]' : 'max-h-[40vh]'}`}>
-                  {content}
+                  <SectionContent sectionKey={key} />
                 </div>
               </div>
             ))}

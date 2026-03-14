@@ -19,6 +19,9 @@ export interface LaneBoardState {
 
 export type CreateNodeKind = 'step' | 'gate'
 
+/** The 6 left-rail sections following thread construction flow */
+export type AccordionSectionId = 'sequence' | 'phase' | 'node' | 'agent' | 'gate' | 'run'
+
 interface UIStore {
   productEntry: ProductEntryMode | null
   setProductEntry: (entry: ProductEntryMode) => void
@@ -42,6 +45,11 @@ interface UIStore {
   setSelectedThreadSurfaceId: (id: string | null) => void
   selectedRunId: string | null
   setSelectedRunId: (id: string | null) => void
+  /** Phase-scoped navigation — scopes NODE/AGENT/GATE to selected phase */
+  selectedPhaseId: string | null
+  setSelectedPhaseId: (id: string | null) => void
+  /** Selects a phase and auto-opens the node section for it */
+  selectPhaseAndFocus: (phaseId: string) => void
   hierarchyViewport: HierarchyViewportState
   setHierarchyViewport: (viewport: HierarchyViewportState) => void
   laneFocusThreadSurfaceId: string | null
@@ -102,6 +110,15 @@ export const useUIStore = create<UIStore>((set) => ({
     }),
   selectedRunId: null,
   setSelectedRunId: (id) => set({ selectedRunId: id }),
+  selectedPhaseId: null,
+  setSelectedPhaseId: (id) => set({ selectedPhaseId: id }),
+  selectPhaseAndFocus: (phaseId) =>
+    set((s) => ({
+      selectedPhaseId: phaseId,
+      activeAccordionSections: s.activeAccordionSections.includes('node')
+        ? s.activeAccordionSections
+        : [...s.activeAccordionSections, 'node'],
+    })),
   hierarchyViewport: defaultHierarchyViewport,
   setHierarchyViewport: (viewport) => set({ hierarchyViewport: viewport }),
   laneFocusThreadSurfaceId: null,
@@ -134,9 +151,9 @@ export const useUIStore = create<UIStore>((set) => ({
         focusedThreadSurfaceId: threadSurfaceId,
         focusedRunId: runId,
       },
-      activeAccordionSections: state.activeAccordionSections.includes('thread-inspector')
+      activeAccordionSections: state.activeAccordionSections.includes('run')
         ? state.activeAccordionSections
-        : [...state.activeAccordionSections, 'thread-inspector'],
+        : [...state.activeAccordionSections, 'run'],
     })),
   chatPosition: { x: 0, y: 0 },
   setChatPosition: (pos) => set({ chatPosition: pos }),
@@ -146,7 +163,7 @@ export const useUIStore = create<UIStore>((set) => ({
   createDialogKind: 'step',
   openCreateDialog: (kind) => set({ createDialogOpen: true, createDialogKind: kind }),
   closeCreateDialog: () => set({ createDialogOpen: false }),
-  activeAccordionSections: ['navigator'],
+  activeAccordionSections: ['sequence'],
   setActiveAccordionSections: (sections) => set({ activeAccordionSections: sections }),
   expandAccordionSection: (section) => set((s) => ({
     activeAccordionSections: s.activeAccordionSections.includes(section)

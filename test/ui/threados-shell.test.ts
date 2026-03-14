@@ -47,12 +47,16 @@ describe('ThreadOS Shell — Token & Component Structure', () => {
 
   // ── AccordionPanel ─────────────────────────────────────────────────────
 
-  test('AccordionPanel registers thread-inspector section', () => {
+  test('AccordionPanel registers 6-section structure (sequence/phase/node/agent/gate/run)', () => {
     const accordionPath = join(componentsDir, 'workbench/AccordionPanel.tsx')
     const source = readFileSync(accordionPath, 'utf-8')
 
-    expect(source).toContain("'thread-inspector'")
-    expect(source).toContain('ThreadInspectorContent')
+    expect(source).toContain("'sequence'")
+    expect(source).toContain("'phase'")
+    expect(source).toContain("'node'")
+    expect(source).toContain("'agent'")
+    expect(source).toContain("'gate'")
+    expect(source).toContain("'run'")
   })
 
   // ── ThreadInspector ────────────────────────────────────────────────────
