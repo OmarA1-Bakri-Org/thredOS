@@ -10,7 +10,8 @@ import type { Gate } from '@/lib/sequence/schema'
 const InsertSchema = z.object({ action: z.literal('insert'), gateId: z.string(), name: z.string().optional(), dependsOn: z.array(z.string()).optional() })
 const ApproveSchema = z.object({ action: z.literal('approve'), gateId: z.string() })
 const BlockSchema = z.object({ action: z.literal('block'), gateId: z.string() })
-const BodySchema = z.union([InsertSchema, ApproveSchema, BlockSchema])
+const RmSchema = z.object({ action: z.literal('rm'), gateId: z.string() })
+const BodySchema = z.union([InsertSchema, ApproveSchema, BlockSchema, RmSchema])
 
 export async function GET() {
   try {
@@ -35,6 +36,23 @@ export async function POST(request: Request) {
       await writeSequence(bp, seq)
       await auditLog('gate.insert', body.gateId)
       return NextResponse.json({ success: true, action: 'insert', gateId: body.gateId })
+    }
+
+    if (body.action === 'rm') {
+      const idx = seq.gates.findIndex(g => g.id === body.gateId)
+      if (idx === -1) throw new GateNotFoundError(body.gateId)
+
+      const stepDeps = seq.steps.filter(s => s.depends_on.includes(body.gateId))
+      const gateDeps = seq.gates.filter(g => g.depends_on.includes(body.gateId))
+      if (stepDeps.length > 0 || gateDeps.length > 0) {
+        const allDeps = [...stepDeps.map(s => s.id), ...gateDeps.map(g => g.id)]
+        return jsonError(`Nodes [${allDeps.join(', ')}] depend on '${body.gateId}'`, 'HAS_DEPENDENTS', 409)
+      }
+
+      seq.gates.splice(idx, 1)
+      await writeSequence(bp, seq)
+      await auditLog('gate.rm', body.gateId)
+      return NextResponse.json({ success: true, action: 'rm', gateId: body.gateId })
     }
 
     const gate = seq.gates.find(g => g.id === body.gateId)

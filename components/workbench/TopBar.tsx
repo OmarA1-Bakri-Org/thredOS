@@ -1,10 +1,11 @@
 'use client'
 
-import { useEffect, useRef, useCallback } from 'react'
-import { MessageSquare, Moon, PanelLeft, Play, Plus, Search, ShieldCheck, Sun } from 'lucide-react'
+import { useEffect, useRef, useCallback, useState } from 'react'
+import { FilePlus2, MessageSquare, Moon, PanelLeft, Play, Plus, Search, ShieldCheck, Sun } from 'lucide-react'
 import { useTheme } from 'next-themes'
-import { useRunRunnable, useStatus } from '@/lib/ui/api'
+import { useRunRunnable, useStatus, useResetSequence } from '@/lib/ui/api'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { useUIStore, type ProductEntryMode, type ThreadSurfaceViewMode } from '@/lib/ui/store'
 
 const productEntries: Array<{ value: ProductEntryMode; label: string; disabled?: boolean }> = [
@@ -20,6 +21,8 @@ const viewModes: Array<{ value: ThreadSurfaceViewMode; label: string; disabled?:
 export function TopBar() {
   const { data: status } = useStatus()
   const runRunnable = useRunRunnable()
+  const resetSequence = useResetSequence()
+  const [confirmNew, setConfirmNew] = useState(false)
   const searchQuery = useUIStore(s => s.searchQuery)
   const setSearchQuery = useUIStore(s => s.setSearchQuery)
   const productEntry = useUIStore(s => s.productEntry)
@@ -129,6 +132,16 @@ export function TopBar() {
         <div data-workbench-cluster="primary-actions" className="flex items-center gap-2 border border-slate-800 bg-[#0a101a] px-2 py-2">
           <Button
             type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setConfirmNew(true)}
+            disabled={resetSequence.isPending}
+          >
+            <FilePlus2 className="h-3.5 w-3.5" />
+            New
+          </Button>
+          <Button
+            type="button"
             variant="warning"
             size="sm"
             onClick={() => openCreateDialog('step')}
@@ -196,6 +209,19 @@ export function TopBar() {
           </Button>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={confirmNew}
+        title="Create new thread?"
+        description="This clears the current sequence (all steps and gates) and starts fresh."
+        confirmLabel="New thread"
+        tone="destructive"
+        onCancel={() => setConfirmNew(false)}
+        onConfirm={() => {
+          setConfirmNew(false)
+          resetSequence.mutate({ name: 'New Sequence' })
+        }}
+      />
     </div>
   )
 }

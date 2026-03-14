@@ -1,10 +1,11 @@
 'use client'
 
-import { useCallback, useMemo } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useReactFlow, useStore as useFlowStore } from '@xyflow/react'
 import { X, Play, Square, RotateCcw, Copy, Trash2, Pencil, Check, Ban } from 'lucide-react'
 import { useUIStore } from '@/lib/ui/store'
-import { useStatus, useRunStep, useStopStep, useRestartStep, useApproveGate, useBlockGate } from '@/lib/ui/api'
+import { useStatus, useRunStep, useStopStep, useRestartStep, useApproveGate, useBlockGate, useRemoveStep, useRemoveGate, useCloneStep } from '@/lib/ui/api'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 
 const TYPE_COLORS: Record<string, string> = {
   base: '#64748b',
@@ -63,6 +64,10 @@ export function NodeDetailCard() {
   const restartStep = useRestartStep()
   const approveGate = useApproveGate()
   const blockGate = useBlockGate()
+  const removeStep = useRemoveStep()
+  const removeGate = useRemoveGate()
+  const cloneStep = useCloneStep()
+  const [confirmDelete, setConfirmDelete] = useState(false)
 
   const { getNode } = useReactFlow()
   const transform = useFlowStore(s => s.transform) // [x, y, zoom]
@@ -327,22 +332,25 @@ export function NodeDetailCard() {
             </>
           )}
           <div className="ml-auto flex items-center gap-1">
+            {isStep && (
+              <button
+                type="button"
+                onClick={() => {
+                  const newId = `${selectedNodeId}-copy`
+                  cloneStep.mutate({ sourceId: selectedNodeId, newId }, {
+                    onSuccess: () => setSelectedNodeId(newId),
+                  })
+                }}
+                disabled={cloneStep.isPending}
+                className="rounded p-1 text-slate-500 transition-colors hover:bg-slate-800 hover:text-slate-300"
+                title="Clone agent"
+              >
+                <Copy className="h-3 w-3" />
+              </button>
+            )}
             <button
               type="button"
-              className="rounded p-1 text-slate-500 transition-colors hover:bg-slate-800 hover:text-slate-300"
-              title="Edit agent"
-            >
-              <Pencil className="h-3 w-3" />
-            </button>
-            <button
-              type="button"
-              className="rounded p-1 text-slate-500 transition-colors hover:bg-slate-800 hover:text-slate-300"
-              title="Clone agent"
-            >
-              <Copy className="h-3 w-3" />
-            </button>
-            <button
-              type="button"
+              onClick={() => setConfirmDelete(true)}
               className="rounded p-1 text-slate-500 transition-colors hover:bg-rose-900/30 hover:text-rose-300"
               title="Delete"
             >
@@ -350,6 +358,25 @@ export function NodeDetailCard() {
             </button>
           </div>
         </div>
+
+        {confirmDelete && (
+          <ConfirmDialog
+            open
+            title={`Delete ${selectedNodeId}?`}
+            description={`This permanently removes the ${isGate ? 'gate' : 'step'} from the sequence.`}
+            confirmLabel="Delete"
+            tone="destructive"
+            onCancel={() => setConfirmDelete(false)}
+            onConfirm={() => {
+              setConfirmDelete(false)
+              if (isGate) {
+                removeGate.mutate(selectedNodeId, { onSuccess: () => setSelectedNodeId(null) })
+              } else {
+                removeStep.mutate(selectedNodeId, { onSuccess: () => setSelectedNodeId(null) })
+              }
+            }}
+          />
+        )}
       </article>
     </div>
   )

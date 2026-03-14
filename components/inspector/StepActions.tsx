@@ -4,10 +4,10 @@ import { useMemo, useState, useCallback } from 'react'
 import { AlertTriangle, Copy, Play, RotateCcw, ShieldCheck, Square, StopCircle, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
-import { useApproveGate, useBlockGate, useRestartStep, useRunStep, useStopStep, useRemoveStep, useCloneStep } from '@/lib/ui/api'
+import { useApproveGate, useBlockGate, useRestartStep, useRunStep, useStopStep, useRemoveStep, useRemoveGate, useCloneStep } from '@/lib/ui/api'
 import { useUIStore } from '@/lib/ui/store'
 
-type PendingAction = 'block-gate' | 'stop-step' | 'delete-node' | null
+type PendingAction = 'block-gate' | 'stop-step' | 'delete-node' | 'delete-gate' | null
 
 export function StepActions({ nodeId, isGate }: { nodeId: string; isGate: boolean }) {
   const runStep = useRunStep()
@@ -16,6 +16,7 @@ export function StepActions({ nodeId, isGate }: { nodeId: string; isGate: boolea
   const approveGate = useApproveGate()
   const blockGate = useBlockGate()
   const removeStep = useRemoveStep()
+  const removeGate = useRemoveGate()
   const cloneStep = useCloneStep()
   const setSelectedNodeId = useUIStore(s => s.setSelectedNodeId)
   const [pendingAction, setPendingAction] = useState<PendingAction>(null)
@@ -28,10 +29,11 @@ export function StepActions({ nodeId, isGate }: { nodeId: string; isGate: boolea
       approveGate.error ??
       blockGate.error ??
       removeStep.error ??
+      removeGate.error ??
       cloneStep.error
 
     return error instanceof Error ? error.message : null
-  }, [approveGate.error, blockGate.error, restartStep.error, runStep.error, stopStep.error, removeStep.error, cloneStep.error])
+  }, [approveGate.error, blockGate.error, restartStep.error, runStep.error, stopStep.error, removeStep.error, removeGate.error, cloneStep.error])
 
   const handleDelete = useCallback(() => {
     setPendingAction(null)
@@ -46,6 +48,13 @@ export function StepActions({ nodeId, isGate }: { nodeId: string; isGate: boolea
       onSuccess: () => setSelectedNodeId(newId),
     })
   }, [nodeId, cloneStep, setSelectedNodeId])
+
+  const handleDeleteGate = useCallback(() => {
+    setPendingAction(null)
+    removeGate.mutate(nodeId, {
+      onSuccess: () => setSelectedNodeId(null),
+    })
+  }, [nodeId, removeGate, setSelectedNodeId])
 
   if (isGate) {
     return (
@@ -69,6 +78,19 @@ export function StepActions({ nodeId, isGate }: { nodeId: string; isGate: boolea
           >
             <StopCircle className="h-4 w-4" />
             {blockGate.isPending ? 'Blocking' : 'Block'}
+          </Button>
+        </div>
+
+        <div className="flex flex-wrap gap-2 border-t border-slate-800/60 pt-3">
+          <Button
+            type="button"
+            variant="destructive"
+            size="sm"
+            onClick={() => setPendingAction('delete-gate')}
+            disabled={removeGate.isPending}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            {removeGate.isPending ? 'Deleting...' : 'Delete'}
           </Button>
         </div>
 
@@ -97,6 +119,24 @@ export function StepActions({ nodeId, isGate }: { nodeId: string; isGate: boolea
             setPendingAction(null)
             blockGate.mutate(nodeId)
           }}
+        />
+
+        <ConfirmDialog
+          open={pendingAction === 'delete-gate'}
+          title={`Delete gate ${nodeId}?`}
+          description="This permanently removes the gate from the sequence."
+          confirmLabel="Delete gate"
+          tone="destructive"
+          details={
+            <div className="space-y-2 text-sm">
+              <div className="flex items-center gap-2 text-rose-100">
+                <AlertTriangle className="h-4 w-4" />
+                This action cannot be undone.
+              </div>
+            </div>
+          }
+          onCancel={() => setPendingAction(null)}
+          onConfirm={handleDeleteGate}
         />
       </div>
     )
