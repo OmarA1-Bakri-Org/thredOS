@@ -6,6 +6,8 @@ const uiState: Record<string, unknown> = {
   setProductEntry: () => {},
   selectedNodeId: null as string | null,
   setSelectedNodeId: (id: string | null) => { uiState.selectedNodeId = id },
+  selectedPhaseId: null as string | null,
+  setSelectedPhaseId: (id: string | null) => { uiState.selectedPhaseId = id },
   leftRailOpen: false,
   toggleLeftRail: () => {},
   closeLeftRail: () => {},
@@ -69,6 +71,7 @@ const { StepNode } = await import('./StepNode')
 
 beforeEach(() => {
   uiState.selectedNodeId = null
+  uiState.selectedPhaseId = null
 })
 
 const baseProps = {
@@ -80,6 +83,7 @@ const baseProps = {
     type: 'base',
     model: 'claude-code',
     color: '#3b82f6',
+    phaseId: 'phase-step-1',
   },
   type: 'stepNode',
   xPos: 0,
@@ -274,5 +278,34 @@ describe('StepNode', () => {
     const markup = renderToStaticMarkup(<StepNode {...baseProps} />)
     expect(markup).toContain(`${baseProps.data.color}cc`)
     expect(markup).toContain(`${baseProps.data.color}15`)
+  })
+
+  test('phase-highlighted node shows emerald scope ring', () => {
+    uiState.selectedPhaseId = 'phase-step-1'
+    const markup = renderToStaticMarkup(<StepNode {...baseProps} />)
+    // Emerald phase border color
+    expect(markup).toContain('rgba(52,211,153,0.5)')
+    // Emerald phase glow
+    expect(markup).toContain('rgba(52,211,153,0.12)')
+  })
+
+  test('non-phase node dims when a phase is selected', () => {
+    uiState.selectedPhaseId = 'phase-step-other'
+    const markup = renderToStaticMarkup(<StepNode {...baseProps} />)
+    expect(markup).toContain('opacity-35')
+  })
+
+  test('node is fully opaque when no phase is selected', () => {
+    uiState.selectedPhaseId = null
+    const markup = renderToStaticMarkup(<StepNode {...baseProps} />)
+    expect(markup).toContain('opacity-100')
+    expect(markup).not.toContain('opacity-35')
+  })
+
+  test('node is fully opaque when it belongs to the selected phase', () => {
+    uiState.selectedPhaseId = 'phase-step-1'
+    const markup = renderToStaticMarkup(<StepNode {...baseProps} />)
+    expect(markup).toContain('opacity-100')
+    expect(markup).not.toContain('opacity-35')
   })
 })

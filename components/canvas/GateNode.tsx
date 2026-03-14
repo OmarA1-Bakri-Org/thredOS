@@ -9,6 +9,7 @@ export interface GateNodeData {
   name: string
   status: string
   color: string
+  phaseId: string | null
   [key: string]: unknown
 }
 
@@ -16,7 +17,10 @@ function GateNodeComponent({ id, data }: NodeProps<Node<GateNodeData>>) {
   const d = data as GateNodeData
   const selectedNodeId = useUIStore(s => s.selectedNodeId)
   const setSelected = useUIStore(s => s.setSelectedNodeId)
+  const selectedPhaseId = useUIStore(s => s.selectedPhaseId)
   const isSelected = selectedNodeId === id
+  const isPhaseHighlighted = !!selectedPhaseId && d.phaseId === selectedPhaseId
+  const isPhaseDimmed = !!selectedPhaseId && d.phaseId !== selectedPhaseId
 
   const handleSelect = useCallback(() => setSelected(id), [setSelected, id])
   const handleKeyDown = useCallback(
@@ -36,7 +40,7 @@ function GateNodeComponent({ id, data }: NodeProps<Node<GateNodeData>>) {
       aria-label={`Gate ${d.name}, status ${d.status}`}
       onClick={handleSelect}
       onKeyDown={handleKeyDown}
-      className="cursor-pointer flex items-center justify-center focus:outline-none"
+      className={`cursor-pointer flex items-center justify-center focus:outline-none transition-opacity duration-200 ${isPhaseDimmed ? 'opacity-35' : 'opacity-100'}`}
       style={{ width: 96, height: 96 }}
     >
       <Handle
@@ -56,10 +60,12 @@ function GateNodeComponent({ id, data }: NodeProps<Node<GateNodeData>>) {
           width: 64,
           height: 64,
           background: `linear-gradient(135deg, ${d.color}10, #0a101a 70%)`,
-          border: `1.5px solid ${isSelected ? d.color + 'bb' : d.color + '60'}`,
+          border: `1.5px solid ${isSelected ? d.color + 'bb' : isPhaseHighlighted ? 'rgba(52,211,153,0.5)' : d.color + '60'}`,
           transform: 'rotate(45deg)',
           boxShadow: isSelected
             ? `0 0 28px ${d.color}25, inset 0 0 18px ${d.color}0a`
+            : isPhaseHighlighted
+            ? '0 0 16px rgba(52,211,153,0.12), 0 0 4px rgba(52,211,153,0.08)'
             : `0 0 12px ${d.color}10`,
         }}
       >

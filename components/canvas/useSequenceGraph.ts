@@ -5,6 +5,7 @@ import ELK from 'elkjs/lib/elk.bundled.js'
 import type { Node, Edge } from '@xyflow/react'
 import type { SequenceStatus } from '@/app/api/status/route'
 import { STATUS_COLORS } from '@/lib/ui/constants'
+import { derivePhases, findPhaseForStep, findPhaseForGate } from '@/lib/ui/phases'
 
 const NODE_WIDTH = 220
 const NODE_HEIGHT = 68
@@ -31,6 +32,15 @@ export function useSequenceGraph(status: SequenceStatus | undefined, searchQuery
 
     const stepMap = new Map(status.steps.map(s => [s.id, s]))
     const gateMap = new Map(status.gates.map(g => [g.id, g]))
+
+    // Derive phase membership for each node (used for panel ↔ canvas sync)
+    const phaseDerivation = derivePhases(status.steps, status.gates)
+    const stepPhaseMap = new Map<string, string>()
+    const gatePhaseMap = new Map<string, string>()
+    for (const phase of phaseDerivation.phases) {
+      for (const stepId of phase.stepIds) stepPhaseMap.set(stepId, phase.id)
+      for (const gateId of phase.gateIds) gatePhaseMap.set(gateId, phase.id)
+    }
 
     const elkNodes: Array<{ id: string; width: number; height: number }> = []
     const elkEdges: Array<{ id: string; sources: string[]; targets: string[] }> = []
@@ -102,7 +112,7 @@ export function useSequenceGraph(status: SequenceStatus | undefined, searchQuery
             id: elkNode.id,
             type: isFusionSynth ? 'fusionNode' : 'stepNode',
             position: { x, y },
-            data: { ...step, color: STATUS_COLORS[step.status] || '#94a3b8' },
+            data: { ...step, color: STATUS_COLORS[step.status] || '#94a3b8', phaseId: stepPhaseMap.get(step.id) ?? null },
           })
 
           if (step.groupId) {
@@ -123,7 +133,7 @@ export function useSequenceGraph(status: SequenceStatus | undefined, searchQuery
             id: elkNode.id,
             type: 'gateNode',
             position: { x, y },
-            data: { ...gate, color: STATUS_COLORS[gate.status] || '#94a3b8' },
+            data: { ...gate, color: STATUS_COLORS[gate.status] || '#94a3b8', phaseId: gatePhaseMap.get(gate.id) ?? null },
           })
         }
       }

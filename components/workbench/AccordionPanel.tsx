@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import {
   Info,
   Layers3,
@@ -11,6 +11,8 @@ import {
   Play,
 } from 'lucide-react'
 import { useUIStore } from '@/lib/ui/store'
+import { useStatus } from '@/lib/ui/api'
+import { derivePhases, findPhaseForStep, findPhaseForGate } from '@/lib/ui/phases'
 import type { LucideIcon } from 'lucide-react'
 import { SequenceSection } from './sections/SequenceSection'
 import { PhaseSection } from './sections/PhaseSection'
@@ -167,6 +169,30 @@ export function AccordionPanel() {
   const activeAccordionSections = useUIStore((s) => s.activeAccordionSections)
   const setActiveAccordionSections = useUIStore((s) => s.setActiveAccordionSections)
   const selectedPhaseId = useUIStore((s) => s.selectedPhaseId)
+  const selectedNodeId = useUIStore((s) => s.selectedNodeId)
+  const setSelectedPhaseId = useUIStore((s) => s.setSelectedPhaseId)
+  const expandAccordionSection = useUIStore((s) => s.expandAccordionSection)
+  const { data: status } = useStatus()
+
+  // ── Canvas → Panel sync ──────────────────────────────────────────────
+  // When a node is clicked on the canvas, derive which phase owns it
+  // and auto-select that phase + expand the relevant section.
+  const prevNodeIdRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!selectedNodeId || !status || selectedNodeId === prevNodeIdRef.current) return
+    prevNodeIdRef.current = selectedNodeId
+
+    const derivation = derivePhases(status.steps, status.gates)
+    const phase =
+      findPhaseForStep(derivation.phases, selectedNodeId) ??
+      findPhaseForGate(derivation.phases, selectedNodeId)
+
+    if (phase) {
+      setSelectedPhaseId(phase.id)
+      const isGate = status.gates.some(g => g.id === selectedNodeId)
+      expandAccordionSection(isGate ? 'gate' : 'node')
+    }
+  }, [selectedNodeId, status, setSelectedPhaseId, expandAccordionSection])
 
   const toggleSection = (key: string) => {
     if (activeAccordionSections.includes(key)) {

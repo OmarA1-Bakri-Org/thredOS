@@ -6,6 +6,8 @@ const uiState: Record<string, unknown> = {
   setProductEntry: () => {},
   selectedNodeId: null as string | null,
   setSelectedNodeId: (id: string | null) => { uiState.selectedNodeId = id },
+  selectedPhaseId: null as string | null,
+  setSelectedPhaseId: (id: string | null) => { uiState.selectedPhaseId = id },
   leftRailOpen: false,
   toggleLeftRail: () => {},
   closeLeftRail: () => {},
@@ -69,6 +71,7 @@ const { GateNode } = await import('./GateNode')
 
 beforeEach(() => {
   uiState.selectedNodeId = null
+  uiState.selectedPhaseId = null
 })
 
 const baseProps = {
@@ -78,6 +81,7 @@ const baseProps = {
     name: 'Review Gate',
     status: 'PENDING',
     color: '#94a3b8',
+    phaseId: 'phase-step-1',
   },
   type: 'gateNode',
   xPos: 0,
@@ -214,5 +218,32 @@ describe('GateNode', () => {
     }
     const markup = renderToStaticMarkup(<GateNode {...props} />)
     expect(markup).toContain('aria-label="Gate Security Check, status PENDING"')
+  })
+
+  test('phase-highlighted gate shows emerald scope ring', () => {
+    uiState.selectedPhaseId = 'phase-step-1'
+    const markup = renderToStaticMarkup(<GateNode {...baseProps} />)
+    expect(markup).toContain('rgba(52,211,153,0.5)')
+    expect(markup).toContain('rgba(52,211,153,0.12)')
+  })
+
+  test('non-phase gate dims when a phase is selected', () => {
+    uiState.selectedPhaseId = 'phase-step-other'
+    const markup = renderToStaticMarkup(<GateNode {...baseProps} />)
+    expect(markup).toContain('opacity-35')
+  })
+
+  test('gate is fully opaque when no phase is selected', () => {
+    uiState.selectedPhaseId = null
+    const markup = renderToStaticMarkup(<GateNode {...baseProps} />)
+    expect(markup).toContain('opacity-100')
+    expect(markup).not.toContain('opacity-35')
+  })
+
+  test('gate is fully opaque when it belongs to the selected phase', () => {
+    uiState.selectedPhaseId = 'phase-step-1'
+    const markup = renderToStaticMarkup(<GateNode {...baseProps} />)
+    expect(markup).toContain('opacity-100')
+    expect(markup).not.toContain('opacity-35')
   })
 })

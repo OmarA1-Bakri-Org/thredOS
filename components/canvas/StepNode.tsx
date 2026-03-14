@@ -20,6 +20,7 @@ export interface StepNodeData {
   type: string
   model: string
   color: string
+  phaseId: string | null
   [key: string]: unknown
 }
 
@@ -27,8 +28,11 @@ function StepNodeComponent({ id, data }: NodeProps<Node<StepNodeData>>) {
   const d = data as StepNodeData
   const selectedNodeId = useUIStore(s => s.selectedNodeId)
   const setSelected = useUIStore(s => s.setSelectedNodeId)
+  const selectedPhaseId = useUIStore(s => s.selectedPhaseId)
   const isSelected = selectedNodeId === id
   const isRunning = d.status === 'RUNNING'
+  const isPhaseHighlighted = !!selectedPhaseId && d.phaseId === selectedPhaseId
+  const isPhaseDimmed = !!selectedPhaseId && d.phaseId !== selectedPhaseId
 
   const handleSelect = useCallback(() => setSelected(id), [setSelected, id])
   const handleKeyDown = useCallback(
@@ -51,7 +55,7 @@ function StepNodeComponent({ id, data }: NodeProps<Node<StepNodeData>>) {
       aria-label={`Step ${d.name}, status ${d.status}`}
       onClick={handleSelect}
       onKeyDown={handleKeyDown}
-      className="cursor-pointer group"
+      className={`cursor-pointer group transition-opacity duration-200 ${isPhaseDimmed ? 'opacity-35' : 'opacity-100'}`}
       style={{ width: 220 }}
     >
       <Handle
@@ -69,9 +73,11 @@ function StepNodeComponent({ id, data }: NodeProps<Node<StepNodeData>>) {
         className="relative overflow-hidden transition-all duration-200"
         style={{
           background: `linear-gradient(145deg, ${d.color}0a 0%, #0a101a 45%)`,
-          border: `1px solid ${isSelected ? d.color + '70' : 'rgba(51,65,85,0.45)'}`,
+          border: `1px solid ${isSelected ? d.color + '70' : isPhaseHighlighted ? 'rgba(52,211,153,0.5)' : 'rgba(51,65,85,0.45)'}`,
           boxShadow: isSelected
             ? `0 0 24px ${d.color}1a, inset 0 1px 30px ${d.color}08`
+            : isPhaseHighlighted
+            ? '0 0 16px rgba(52,211,153,0.12), 0 0 4px rgba(52,211,153,0.08)'
             : isRunning
             ? `0 0 16px ${d.color}12`
             : '0 2px 10px rgba(0,0,0,0.35)',
