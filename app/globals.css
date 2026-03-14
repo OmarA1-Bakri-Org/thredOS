@@ -194,6 +194,34 @@
   }
 }
 
+/* ── ThreadOS dark scrollbars ───────────────────────────────────── */
+/* Thin, near-invisible scrollbars that respect the dark atmosphere  */
+
+/* WebKit (Chrome, Edge, Safari) */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.18);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.35);
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.18) transparent;
+}
+
 /* ThreadOS canvas — edge flow animation for RUNNING edges */
 .threados-edge-flow {
   animation: threados-edge-flow 0.8s linear infinite;

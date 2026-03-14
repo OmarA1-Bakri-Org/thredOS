@@ -88,8 +88,8 @@ describe('AccordionPanel', () => {
 
   test('renders the panel container with single-column width when few sections open', () => {
     const markup = renderToStaticMarkup(<AccordionPanel />)
-    // With only 1 section open, panel stays at 380px
-    expect(markup).toContain('w-[380px]')
+    // With only 1 section open, panel stays at 380px (inline style)
+    expect(markup).toContain('width:380px')
   })
 
   test('renders info buttons on each section', () => {

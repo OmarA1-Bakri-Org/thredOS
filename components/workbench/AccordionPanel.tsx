@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import {
   Info,
   Layers3,
@@ -205,17 +205,58 @@ export function AccordionPanel() {
   const openCount = activeAccordionSections.length
   // Scale columns: 1 col up to 2 sections, 2 cols for 3-4, 3 cols for 5+
   const colCount = openCount <= 2 ? 1 : openCount <= 4 ? 2 : 3
-  const panelWidth = colCount === 1
-    ? 'w-[380px]'
-    : colCount === 2
-      ? 'w-[50vw] max-w-[760px]'
-      : 'w-[65vw] max-w-[1100px]'
+
+  // ── Resize handle ─────────────────────────────────────────────────
+  const MIN_WIDTH = 300
+  const MAX_WIDTH = 1200
+  const defaultWidth = colCount === 1 ? 380 : colCount === 2 ? 640 : 920
+  const [panelWidthPx, setPanelWidthPx] = useState(defaultWidth)
+  const isResizingRef = useRef(false)
+
+  // Sync default width when colCount changes (user opens/closes sections)
+  const prevColCountRef = useRef(colCount)
+  useEffect(() => {
+    if (colCount !== prevColCountRef.current) {
+      prevColCountRef.current = colCount
+      setPanelWidthPx(colCount === 1 ? 380 : colCount === 2 ? 640 : 920)
+    }
+  }, [colCount])
+
+  const handleResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    isResizingRef.current = true
+    const startX = e.clientX
+    const startWidth = panelWidthPx
+
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      if (!isResizingRef.current) return
+      const delta = moveEvent.clientX - startX
+      const newWidth = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, startWidth + delta))
+      setPanelWidthPx(newWidth)
+    }
+
+    const onMouseUp = () => {
+      isResizingRef.current = false
+      document.removeEventListener('mousemove', onMouseMove)
+      document.removeEventListener('mouseup', onMouseUp)
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+    }
+
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+    document.addEventListener('mousemove', onMouseMove)
+    document.addEventListener('mouseup', onMouseUp)
+  }, [panelWidthPx])
 
   /** Phase-scoped sections show a scope indicator */
   const phaseScopedSections = useMemo(() => new Set(['node', 'agent', 'gate']), [])
 
   return (
-    <div className={`${panelWidth} shrink-0 border-r border-slate-800/80 bg-[#08101d] flex flex-col overflow-hidden transition-all duration-200`}>
+    <div
+      className="relative shrink-0 border-r border-slate-800/80 bg-[#08101d] flex flex-col overflow-hidden"
+      style={{ width: panelWidthPx }}
+    >
       {/* Section navigation tabs */}
       <div className="shrink-0 border-b border-slate-800/60 px-2 py-2">
         <div className="flex flex-wrap gap-1">
@@ -273,8 +314,8 @@ export function AccordionPanel() {
         )}
         <div
           className={
-            colCount === 3 ? 'columns-3 gap-3 p-3'
-              : colCount === 2 ? 'columns-2 gap-3 p-3'
+            colCount === 3 ? 'grid grid-cols-3 gap-3 p-3'
+              : colCount === 2 ? 'grid grid-cols-2 gap-3 p-3'
                 : ''
           }
         >
@@ -283,9 +324,9 @@ export function AccordionPanel() {
             .map(({ key, label, icon: Icon, description, accent }) => (
               <div
                 key={key}
-                className={`break-inside-avoid ${
+                className={`${
                   colCount > 1
-                    ? 'mb-3 rounded border border-slate-700/50 bg-[#060e1a] shadow-md shadow-black/20'
+                    ? 'rounded border border-slate-700/50 bg-[#060e1a] shadow-md shadow-black/20'
                     : 'border-b border-slate-800/60'
                 }`}
               >
@@ -311,6 +352,17 @@ export function AccordionPanel() {
               </div>
             ))}
         </div>
+      </div>
+
+      {/* Resize handle — drag to widen/narrow the panel */}
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize panel"
+        onMouseDown={handleResizeStart}
+        className="absolute right-0 top-0 z-30 h-full w-1.5 cursor-col-resize group"
+      >
+        <div className="h-full w-full transition-colors group-hover:bg-sky-500/25 group-active:bg-sky-500/40" />
       </div>
     </div>
   )
