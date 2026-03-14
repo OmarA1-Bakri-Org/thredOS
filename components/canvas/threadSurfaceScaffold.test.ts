@@ -9,6 +9,7 @@ import {
 const status: SequenceStatus = {
   name: 'Sequence Scaffold',
   version: '1.0',
+  thread_type: undefined,
   steps: [],
   gates: [],
   summary: {

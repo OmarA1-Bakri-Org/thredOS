@@ -2,7 +2,7 @@
 
 import { useCallback, useMemo, useState } from 'react'
 import { useReactFlow, useStore as useFlowStore } from '@xyflow/react'
-import { X, Play, Square, RotateCcw, Copy, Trash2, Pencil, Check, Ban } from 'lucide-react'
+import { X, Play, Square, RotateCcw, Copy, Trash2, Check, Ban } from 'lucide-react'
 import { useUIStore } from '@/lib/ui/store'
 import { useStatus, useRunStep, useStopStep, useRestartStep, useApproveGate, useBlockGate, useRemoveStep, useRemoveGate, useCloneStep } from '@/lib/ui/api'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
@@ -336,7 +336,7 @@ export function NodeDetailCard() {
               <button
                 type="button"
                 onClick={() => {
-                  const newId = `${selectedNodeId}-copy`
+                  const newId = `${selectedNodeId}-copy-${Date.now().toString(36).slice(-4)}`
                   cloneStep.mutate({ sourceId: selectedNodeId, newId }, {
                     onSuccess: () => setSelectedNodeId(newId),
                   })

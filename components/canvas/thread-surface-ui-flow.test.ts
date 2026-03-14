@@ -94,6 +94,7 @@ const multiThreadState = JSON.parse(
 const legacyStatus: SequenceStatus = {
   name: 'Legacy Sequence',
   version: '1.0',
+  thread_type: undefined,
   steps: [],
   gates: [],
   summary: {

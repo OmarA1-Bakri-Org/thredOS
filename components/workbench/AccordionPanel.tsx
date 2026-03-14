@@ -197,6 +197,16 @@ export function AccordionPanel() {
     }
   }, [selectedNodeId, status, setSelectedPhaseId, expandAccordionSection])
 
+  // ── Reset state when sequence is cleared ───────────────────────────
+  // When "New" clears all steps/gates, reset stale phase selection and
+  // collapse back to the default SEQUENCE section.
+  useEffect(() => {
+    if (status && status.steps.length === 0 && status.gates.length === 0) {
+      setActiveAccordionSections(['sequence'])
+      setSelectedPhaseId(null)
+    }
+  }, [status?.steps.length, status?.gates.length, setActiveAccordionSections, setSelectedPhaseId])
+
   const toggleSection = (key: string) => {
     if (activeAccordionSections.includes(key)) {
       setActiveAccordionSections(activeAccordionSections.filter(s => s !== key))

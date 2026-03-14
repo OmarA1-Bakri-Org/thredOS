@@ -45,6 +45,7 @@ function buildStatus(sequence: Sequence, mprocsMap: Record<string, number>) {
   return {
     name: sequence.name,
     version: sequence.version,
+    thread_type: sequence.thread_type,
     steps: sequence.steps.map(s => mapStep(s, mprocsMap)),
     gates: sequence.gates.map(g => ({
       id: g.id, name: g.name, status: g.status, dependsOn: g.depends_on,

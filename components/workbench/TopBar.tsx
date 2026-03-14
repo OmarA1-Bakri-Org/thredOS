@@ -23,6 +23,7 @@ export function TopBar() {
   const runRunnable = useRunRunnable()
   const resetSequence = useResetSequence()
   const [confirmNew, setConfirmNew] = useState(false)
+  const [newSeqName, setNewSeqName] = useState('New Sequence')
   const searchQuery = useUIStore(s => s.searchQuery)
   const setSearchQuery = useUIStore(s => s.setSearchQuery)
   const productEntry = useUIStore(s => s.productEntry)
@@ -134,7 +135,7 @@ export function TopBar() {
             type="button"
             variant="outline"
             size="sm"
-            onClick={() => setConfirmNew(true)}
+            onClick={() => { setNewSeqName('New Sequence'); setConfirmNew(true) }}
             disabled={resetSequence.isPending}
           >
             <FilePlus2 className="h-3.5 w-3.5" />
@@ -219,8 +220,21 @@ export function TopBar() {
         onCancel={() => setConfirmNew(false)}
         onConfirm={() => {
           setConfirmNew(false)
-          resetSequence.mutate({ name: 'New Sequence' })
+          resetSequence.mutate({ name: newSeqName || 'New Sequence' })
         }}
+        details={
+          <label className="block space-y-1">
+            <span className="text-[11px] uppercase tracking-[0.16em] text-slate-400">Thread name</span>
+            <input
+              type="text"
+              value={newSeqName}
+              onChange={e => setNewSeqName(e.target.value)}
+              placeholder="Sequence name"
+              className="w-full rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 px-2 py-1 text-sm"
+              autoFocus
+            />
+          </label>
+        }
       />
     </div>
   )

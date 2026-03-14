@@ -18,6 +18,7 @@ const multiThreadState = JSON.parse(
 const status: SequenceStatus = {
   name: 'Content Creator',
   version: '1.0',
+  thread_type: undefined,
   steps: [
     {
       id: 'draft_linkedin',

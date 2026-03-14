@@ -355,12 +355,14 @@ describe('CanvasContextMenu', () => {
     expect(slot.onClick).toBeDefined()
     slot.onClick!()
     expect(cloneCalls).toHaveLength(1)
-    expect(cloneCalls[0]!.args).toEqual({ sourceId: 'step-abc', newId: 'step-abc-copy' })
+    const cloneArgs = cloneCalls[0]!.args as { sourceId: string; newId: string }
+    expect(cloneArgs.sourceId).toBe('step-abc')
+    expect(cloneArgs.newId).toMatch(/^step-abc-copy-[a-z0-9]{4}$/)
     expect(closed).toBeTrue()
     const selectedIds: unknown[] = []
     apiState.setSelectedNodeId = (id: unknown) => selectedIds.push(id)
     cloneCalls[0]!.opts.onSuccess()
-    expect(selectedIds).toEqual(['step-abc-copy'])
+    expect(selectedIds).toEqual([cloneArgs.newId])
   })
 
   test('Delete button calls setConfirmDelete with nodeId and invokes onClose (line 110)', () => {

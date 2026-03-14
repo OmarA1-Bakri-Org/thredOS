@@ -274,6 +274,34 @@ export function useThreadSurfaceSkills(threadSurfaceId: string | null) {
   })
 }
 
+export function useRenameSequence() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (name: string) => postJson('/api/sequence', { action: 'rename', name }),
+    onSuccess: () => invalidateRuntimeQueries(qc),
+    onError: (error) => { console.error('Rename sequence failed:', error) },
+  })
+}
+
+export function useSetThreadType() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (thread_type: string) => postJson('/api/sequence', { action: 'set-type', thread_type }),
+    onSuccess: () => invalidateRuntimeQueries(qc),
+    onError: (error) => { console.error('Set thread type failed:', error) },
+  })
+}
+
+export function useApplyTemplate() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (args: { type: string; name: string }) =>
+      postJson('/api/sequence', { action: 'apply-template', ...args }),
+    onSuccess: () => invalidateRuntimeQueries(qc),
+    onError: (error) => { console.error('Apply template failed:', error) },
+  })
+}
+
 export function useResetSequence() {
   const qc = useQueryClient()
   return useMutation({
