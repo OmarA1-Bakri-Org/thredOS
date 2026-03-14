@@ -34,83 +34,17 @@ export async function compilePrompt(opts: CompileOptions): Promise<string> {
 
   const sections: string[] = []
 
-  // Header
-  sections.push(`# ThreadOS Step Execution: ${step.name}`)
-  sections.push('')
+  sections.push(buildHeaderSection(step, stepId))
+  sections.push(buildThreadTypeSection(step, sequence))
+  sections.push(buildTaskSection(rawPrompt))
+  sections.push(buildSequenceStateSection(stepId, sequence))
+  sections.push(await buildArtifactsSection(step, sequence, basePath, maxChars))
+  sections.push(buildWorkingDirSection(step, basePath))
+  sections.push(await buildFileTreeSection(basePath))
+  sections.push(buildConstraintsSection(opts))
 
-  // Identity
-  sections.push('## Identity')
-  sections.push(`You are executing step \`${stepId}\` ("${step.name}") in a ThreadOS sequence.`)
-  sections.push(`Thread type: ${step.type} | Model: ${step.model}`)
-  sections.push('')
+  let compiled = sections.filter(Boolean).join('\n')
 
-  // Thread-type-specific framing
-  const typeContext = buildThreadTypeContext(step, sequence)
-  if (typeContext) {
-    sections.push(typeContext)
-    sections.push('')
-  }
-
-  // The actual task
-  sections.push('## Your Task')
-  sections.push('')
-  sections.push(rawPrompt.trim())
-  sections.push('')
-
-  // Sequence state (compact)
-  sections.push('## Sequence State')
-  sections.push('')
-  sections.push(buildSequenceState(stepId, sequence))
-  sections.push('')
-
-  // Dependency artifacts (truncated to budget)
-  const artifacts = await loadDependencyArtifacts(step, sequence, basePath)
-  if (artifacts.length > 0) {
-    sections.push('## Prior Step Outputs')
-    sections.push('')
-    const artifactBudget = Math.floor(maxChars * 0.3) // 30% of budget for artifacts
-    sections.push(formatArtifacts(artifacts, artifactBudget))
-    sections.push('')
-  }
-
-  // Working directory
-  const cwd = step.cwd || basePath
-  sections.push('## Working Directory')
-  sections.push('')
-  sections.push(`\`${cwd}\``)
-  sections.push('')
-
-  // Project file tree (top level only)
-  const fileTree = await buildFileTree(basePath)
-  if (fileTree) {
-    sections.push('## Project Files')
-    sections.push('')
-    sections.push(fileTree)
-    sections.push('')
-  }
-
-  // Constraints
-  sections.push('## Constraints')
-  sections.push('')
-  if (step.timeout_ms) {
-    sections.push(`- Timeout: ${Math.round(step.timeout_ms / 1000)}s`)
-  }
-  sections.push('- Exit 0 on success, non-zero on failure')
-  sections.push('- Exit 42 if you need human review before continuing')
-  sections.push('- If you create files, list them as: FILES_CREATED: path1, path2, ...')
-  if (opts.runtimeEventLogPath) {
-    sections.push(`- If you delegate work or merge work into another thread, append one JSON object per line to THREADOS_EVENT_LOG (${opts.runtimeEventLogPath})`)
-    sections.push('- Runtime event types: `spawn-child` with childStepId/childLabel/spawnKind, and `merge-into` with destinationStepId/sourceStepIds/mergeKind')
-    if (opts.runtimeEventEmitterCommand) {
-      sections.push(`- Prefer the emitter command exposed in THREADOS_EVENT_EMITTER. Use \`${opts.runtimeEventEmitterCommand} spawn-child <child-step-id> --label <child label> --kind <orchestrator|watchdog|fanout>\` for child delegation.`)
-      sections.push(`- Use \`${opts.runtimeEventEmitterCommand} merge-into <destination-step-id> --sources <source-a,source-b> --kind <single|block>\` for merges.`)
-    }
-  }
-  sections.push('')
-
-  let compiled = sections.join('\n')
-
-  // Enforce token budget by truncating from the middle (preserve task + constraints)
   if (compiled.length > maxChars) {
     compiled = truncateToFit(compiled, maxChars)
   }
@@ -118,57 +52,133 @@ export async function compilePrompt(opts: CompileOptions): Promise<string> {
   return compiled
 }
 
+function buildHeaderSection(step: Step, stepId: string): string {
+  return [
+    `# ThreadOS Step Execution: ${step.name}`,
+    '',
+    '## Identity',
+    `You are executing step \`${stepId}\` ("${step.name}") in a ThreadOS sequence.`,
+    `Thread type: ${step.type} | Model: ${step.model}`,
+    '',
+  ].join('\n')
+}
+
+function buildThreadTypeSection(step: Step, sequence: Sequence): string {
+  const typeContext = buildThreadTypeContext(step, sequence)
+  return typeContext ? `${typeContext}\n` : ''
+}
+
+function buildTaskSection(rawPrompt: string): string {
+  return ['## Your Task', '', rawPrompt.trim(), ''].join('\n')
+}
+
+function buildSequenceStateSection(stepId: string, sequence: Sequence): string {
+  return ['## Sequence State', '', buildSequenceState(stepId, sequence), ''].join('\n')
+}
+
+async function buildArtifactsSection(step: Step, sequence: Sequence, basePath: string, maxChars: number): string {
+  const artifacts = await loadDependencyArtifacts(step, sequence, basePath)
+  if (artifacts.length === 0) return ''
+
+  const artifactBudget = Math.floor(maxChars * 0.3)
+  return ['## Prior Step Outputs', '', formatArtifacts(artifacts, artifactBudget), ''].join('\n')
+}
+
+function buildWorkingDirSection(step: Step, basePath: string): string {
+  const cwd = step.cwd || basePath
+  return ['## Working Directory', '', `\`${cwd}\``, ''].join('\n')
+}
+
+async function buildFileTreeSection(basePath: string): string {
+  const fileTree = await buildFileTree(basePath)
+  if (!fileTree) return ''
+  return ['## Project Files', '', fileTree, ''].join('\n')
+}
+
+function buildConstraintsSection(opts: CompileOptions): string {
+  const lines = ['## Constraints', '']
+
+  if (opts.step.timeout_ms) {
+    lines.push(`- Timeout: ${Math.round(opts.step.timeout_ms / 1000)}s`)
+  }
+
+  lines.push('- Exit 0 on success, non-zero on failure')
+  lines.push('- Exit 42 if you need human review before continuing')
+  lines.push('- If you create files, list them as: FILES_CREATED: path1, path2, ...')
+
+  if (opts.runtimeEventLogPath) {
+    lines.push(`- If you delegate work or merge work into another thread, append one JSON object per line to THREADOS_EVENT_LOG (${opts.runtimeEventLogPath})`)
+    lines.push('- Runtime event types: `spawn-child` with childStepId/childLabel/spawnKind, and `merge-into` with destinationStepId/sourceStepIds/mergeKind')
+    if (opts.runtimeEventEmitterCommand) {
+      lines.push(`- Prefer the emitter command exposed in THREADOS_EVENT_EMITTER. Use \`${opts.runtimeEventEmitterCommand} spawn-child <child-step-id> --label <child label> --kind <orchestrator|watchdog|fanout>\` for child delegation.`)
+      lines.push(`- Use \`${opts.runtimeEventEmitterCommand} merge-into <destination-step-id> --sources <source-a,source-b> --kind <single|block>\` for merges.`)
+    }
+  }
+
+  lines.push('')
+  return lines.join('\n')
+}
+
 /**
  * Build thread-type-specific context framing
  */
-function buildThreadTypeContext(step: Step, sequence: Sequence): string | null {
-  const allSteps = sequence.steps
 
-  switch (step.type) {
-    case 'c': {
-      // Chained: show phase position
+interface ThreadTypeRule {
+  match: (step: Step, allSteps: Step[]) => boolean
+  build: (step: Step, allSteps: Step[]) => string
+}
+
+const THREAD_TYPE_RULES: Record<string, ThreadTypeRule> = {
+  c: {
+    match: () => true,
+    build: (step, allSteps) => {
       const chainSteps = allSteps.filter(s => s.type === 'c')
       const position = chainSteps.findIndex(s => s.id === step.id) + 1
       return `**Chained workflow** \u2014 This is phase ${position} of ${chainSteps.length}. Complete your phase fully before the next phase begins.`
-    }
-
-    case 'p': {
-      // Parallel: show group context (guard against missing group_id)
+    },
+  },
+  p: {
+    match: () => true,
+    build: (step, allSteps) => {
       if (!step.group_id) {
         return `**Parallel execution** \u2014 You are one of multiple parallel workers. Work independently. Do not coordinate with other workers.`
       }
       const groupSteps = allSteps.filter(s => s.group_id === step.group_id)
       const workerN = groupSteps.findIndex(s => s.id === step.id) + 1
       return `**Parallel execution** \u2014 You are worker ${workerN} of ${groupSteps.length} in group \`${step.group_id}\`. Work independently. Do not coordinate with other workers.`
-    }
-
-    case 'f': {
+    },
+  },
+  f: {
+    match: (step) => Boolean(step.fusion_synth || step.fusion_candidates),
+    build: (step, allSteps) => {
       if (step.fusion_synth) {
         const candidates = allSteps.filter(s => s.fusion_candidates)
         return `**Fusion synthesis** \u2014 You are the synthesis step. ${candidates.length} candidates have produced independent solutions. Review all candidate outputs below and synthesize the best parts into a single unified solution.`
       }
-      if (step.fusion_candidates) {
-        const candidates = allSteps.filter(s => s.fusion_candidates)
-        return `**Fusion candidate** \u2014 You are one of ${candidates.length} candidates. Produce your best independent solution. A synthesis step will later merge the best parts from all candidates.`
-      }
-      return null
-    }
-
-    case 'b': {
-      const prevSteps = step.depends_on
-      if (prevSteps.length > 0) {
-        return `**Baton hand-off** \u2014 The previous agent(s) (${prevSteps.join(', ')}) have completed their work. Continue from where they left off. Their output is in "Prior Step Outputs" below.`
+      const candidates = allSteps.filter(s => s.fusion_candidates)
+      return `**Fusion candidate** \u2014 You are one of ${candidates.length} candidates. Produce your best independent solution. A synthesis step will later merge the best parts from all candidates.`
+    },
+  },
+  b: {
+    match: () => true,
+    build: (step) => {
+      if (step.depends_on.length > 0) {
+        return `**Baton hand-off** \u2014 The previous agent(s) (${step.depends_on.join(', ')}) have completed their work. Continue from where they left off. Their output is in "Prior Step Outputs" below.`
       }
       return `**Baton initiator** \u2014 You are starting a baton workflow. Subsequent agents will continue from your output.`
-    }
+    },
+  },
+  l: {
+    match: () => true,
+    build: (step) => `**Long autonomy** \u2014 You have extended autonomous operation time. Work independently toward the goal. If you need to save progress, write checkpoints to \`.threados/state/${step.id}.json\`.`,
+  },
+}
 
-    case 'l': {
-      return `**Long autonomy** \u2014 You have extended autonomous operation time. Work independently toward the goal. If you need to save progress, write checkpoints to \`.threados/state/${step.id}.json\`.`
-    }
-
-    default:
-      return null
-  }
+function buildThreadTypeContext(step: Step, sequence: Sequence): string | null {
+  const rule = THREAD_TYPE_RULES[step.type]
+  if (!rule) return null
+  if (!rule.match(step, sequence.steps)) return null
+  return rule.build(step, sequence.steps)
 }
 
 /**
@@ -177,22 +187,19 @@ function buildThreadTypeContext(step: Step, sequence: Sequence): string | null {
 function buildSequenceState(currentStepId: string, sequence: Sequence): string {
   const lines: string[] = []
 
-  const done = sequence.steps.filter(s => s.status === 'DONE')
-  const running = sequence.steps.filter(s => s.status === 'RUNNING')
-  const ready = sequence.steps.filter(s => s.status === 'READY' && s.id !== currentStepId)
-  const failed = sequence.steps.filter(s => s.status === 'FAILED')
+  const statusGroups: Array<{ filter: (s: Step) => boolean; label: string; format?: (s: Step) => string }> = [
+    { filter: s => s.status === 'DONE', label: 'Completed' },
+    { filter: s => s.status === 'RUNNING', label: 'Running', format: s => `${s.id}${s.id === currentStepId ? ' \u2190 you' : ''}` },
+    { filter: s => s.status === 'READY' && s.id !== currentStepId, label: 'Pending' },
+    { filter: s => s.status === 'FAILED', label: 'Failed' },
+  ]
 
-  if (done.length > 0) {
-    lines.push(`Completed: ${done.map(s => s.id).join(', ')}`)
-  }
-  if (running.length > 0) {
-    lines.push(`Running: ${running.map(s => `${s.id}${s.id === currentStepId ? ' \u2190 you' : ''}`).join(', ')}`)
-  }
-  if (ready.length > 0) {
-    lines.push(`Pending: ${ready.map(s => s.id).join(', ')}`)
-  }
-  if (failed.length > 0) {
-    lines.push(`Failed: ${failed.map(s => s.id).join(', ')}`)
+  for (const { filter, label, format } of statusGroups) {
+    const matching = sequence.steps.filter(filter)
+    if (matching.length > 0) {
+      const formatter = format ?? ((s: Step) => s.id)
+      lines.push(`${label}: ${matching.map(formatter).join(', ')}`)
+    }
   }
 
   const gates = sequence.gates
@@ -222,41 +229,56 @@ async function loadDependencyArtifacts(
     const depStep = sequence.steps.find(s => s.id === depId)
     if (!depStep || depStep.status !== 'DONE') continue
 
-    try {
-      // Find the most recent run for this step (sort by mtime, newest first)
-      const runDirNames = await readdir(runsDir).catch(() => [] as string[])
-      const runDirsWithTime: { name: string; mtime: number }[] = []
-      for (const name of runDirNames) {
-        const stepArtifactDir = join(runsDir, name, depId)
-        try {
-          const s = await stat(stepArtifactDir)
-          runDirsWithTime.push({ name, mtime: s.mtimeMs })
-        } catch { /* no artifacts for this dep in this run */ }
-      }
-      runDirsWithTime.sort((a, b) => b.mtime - a.mtime) // newest first
-
-      let latestStdout = ''
-      let latestDuration: number | undefined
-      for (const { name: runId } of runDirsWithTime) {
-        const stdoutPath = join(runsDir, runId, depId, 'stdout.log')
-        const statusPath = join(runsDir, runId, depId, 'status.json')
-        try {
-          latestStdout = await readFile(stdoutPath, 'utf-8')
-          try {
-            const statusJson = JSON.parse(await readFile(statusPath, 'utf-8'))
-            latestDuration = statusJson.duration
-          } catch { /* no status file */ }
-          break // found the latest
-        } catch { continue }
-      }
-
-      if (latestStdout.trim()) {
-        artifacts.push({ stepId: depId, stdout: latestStdout, duration: latestDuration })
-      }
-    } catch { /* no artifacts for this dep */ }
+    const artifact = await loadSingleArtifact(runsDir, depId)
+    if (artifact) artifacts.push(artifact)
   }
 
   return artifacts
+}
+
+async function loadSingleArtifact(runsDir: string, depId: string): Promise<DependencyArtifact | null> {
+  try {
+    const runDirNames = await readdir(runsDir).catch(() => [] as string[])
+    const runDirsWithTime = await collectRunDirsWithTime(runsDir, runDirNames, depId)
+    runDirsWithTime.sort((a, b) => b.mtime - a.mtime)
+
+    for (const { name: runId } of runDirsWithTime) {
+      const result = await readArtifactFromRun(runsDir, runId, depId)
+      if (result) return result
+    }
+  } catch { /* no artifacts for this dep */ }
+  return null
+}
+
+async function collectRunDirsWithTime(runsDir: string, runDirNames: string[], depId: string) {
+  const results: { name: string; mtime: number }[] = []
+  for (const name of runDirNames) {
+    const stepArtifactDir = join(runsDir, name, depId)
+    try {
+      const s = await stat(stepArtifactDir)
+      results.push({ name, mtime: s.mtimeMs })
+    } catch { /* no artifacts for this dep in this run */ }
+  }
+  return results
+}
+
+async function readArtifactFromRun(runsDir: string, runId: string, depId: string): Promise<DependencyArtifact | null> {
+  const stdoutPath = join(runsDir, runId, depId, 'stdout.log')
+  const statusPath = join(runsDir, runId, depId, 'status.json')
+  try {
+    const stdout = await readFile(stdoutPath, 'utf-8')
+    if (!stdout.trim()) return null
+
+    let duration: number | undefined
+    try {
+      const statusJson = JSON.parse(await readFile(statusPath, 'utf-8'))
+      duration = statusJson.duration
+    } catch { /* no status file */ }
+
+    return { stepId: depId, stdout, duration }
+  } catch {
+    return null
+  }
 }
 
 /**

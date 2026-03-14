@@ -3,30 +3,53 @@ import { readSequence } from '@/lib/sequence/parser'
 import { readMprocsMap } from '@/lib/mprocs/state'
 import { getBasePath } from '@/lib/config'
 import { handleError } from '@/lib/api-helpers'
-import type { Sequence } from '@/lib/sequence/schema'
+import type { Sequence, Step } from '@/lib/sequence/schema'
+
+interface StatusSummary {
+  total: number
+  ready: number
+  running: number
+  done: number
+  failed: number
+  blocked: number
+  needsReview: number
+}
+
+const STATUS_KEYS: Record<string, keyof Omit<StatusSummary, 'total'>> = {
+  READY: 'ready',
+  RUNNING: 'running',
+  DONE: 'done',
+  FAILED: 'failed',
+  BLOCKED: 'blocked',
+  NEEDS_REVIEW: 'needsReview',
+}
+
+function buildSummary(steps: Step[]): StatusSummary {
+  const summary: StatusSummary = { total: steps.length, ready: 0, running: 0, done: 0, failed: 0, blocked: 0, needsReview: 0 }
+  for (const s of steps) {
+    const key = STATUS_KEYS[s.status]
+    if (key) summary[key]++
+  }
+  return summary
+}
+
+function mapStep(s: Step, mprocsMap: Record<string, number>) {
+  return {
+    id: s.id, name: s.name, type: s.type, status: s.status,
+    model: s.model, dependsOn: s.depends_on, processIndex: mprocsMap[s.id],
+    groupId: s.group_id, fusionCandidates: s.fusion_candidates, fusionSynth: s.fusion_synth,
+  }
+}
 
 function buildStatus(sequence: Sequence, mprocsMap: Record<string, number>) {
-  const summary = { total: sequence.steps.length, ready: 0, running: 0, done: 0, failed: 0, blocked: 0, needsReview: 0 }
-  for (const s of sequence.steps) {
-    if (s.status === 'READY') summary.ready++
-    else if (s.status === 'RUNNING') summary.running++
-    else if (s.status === 'DONE') summary.done++
-    else if (s.status === 'FAILED') summary.failed++
-    else if (s.status === 'BLOCKED') summary.blocked++
-    else if (s.status === 'NEEDS_REVIEW') summary.needsReview++
-  }
   return {
     name: sequence.name,
     version: sequence.version,
-    steps: sequence.steps.map(s => ({
-      id: s.id, name: s.name, type: s.type, status: s.status,
-      model: s.model, dependsOn: s.depends_on, processIndex: mprocsMap[s.id],
-      groupId: s.group_id, fusionCandidates: s.fusion_candidates, fusionSynth: s.fusion_synth,
-    })),
+    steps: sequence.steps.map(s => mapStep(s, mprocsMap)),
     gates: sequence.gates.map(g => ({
       id: g.id, name: g.name, status: g.status, dependsOn: g.depends_on,
     })),
-    summary,
+    summary: buildSummary(sequence.steps),
   }
 }
 

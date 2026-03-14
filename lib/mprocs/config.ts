@@ -19,21 +19,45 @@ interface MprocsConfig {
 const DEFAULT_SERVER_HOST = '127.0.0.1'
 const DEFAULT_SERVER_PORT = 4050
 
+/** Model-to-CLI mapping for known model types. */
+const MODEL_COMMAND_MAP: Record<string, (step: Step) => string[]> = {
+  'claude-code': (step) => ['claude', '--prompt-file', step.prompt_file],
+  'codex': (step) => ['codex', '--prompt-file', step.prompt_file],
+  'gemini': (step) => ['gemini', '--prompt-file', step.prompt_file],
+}
+
 /**
  * Generate a command array for a step based on its model type
  */
 function generateStepCommand(step: Step): string[] {
-  // Base command depends on model type
-  switch (step.model) {
-    case 'claude-code':
-      return ['claude', '--prompt-file', step.prompt_file]
-    case 'codex':
-      return ['codex', '--prompt-file', step.prompt_file]
-    case 'gemini':
-      return ['gemini', '--prompt-file', step.prompt_file]
-    default:
-      // Fallback for unknown models
-      return ['echo', `Running step: ${step.id}`]
+  const commandBuilder = MODEL_COMMAND_MAP[step.model]
+  return commandBuilder ? commandBuilder(step) : ['echo', `Running step: ${step.id}`]
+}
+
+interface MprocsOptions {
+  serverHost?: string
+  serverPort?: number
+  autostart?: boolean
+}
+
+function buildProcs(steps: Step[], commandFn: (step: Step) => string[], autostart: boolean): Record<string, MprocsProcessConfig> {
+  const procs: Record<string, MprocsProcessConfig> = {}
+  for (const step of steps) {
+    procs[step.id] = {
+      name: step.name,
+      cmd: commandFn(step),
+      ...(step.cwd && { cwd: step.cwd }),
+      autostart,
+    }
+  }
+  return procs
+}
+
+function resolveOptions(options?: MprocsOptions) {
+  return {
+    serverHost: options?.serverHost ?? DEFAULT_SERVER_HOST,
+    serverPort: options?.serverPort ?? DEFAULT_SERVER_PORT,
+    autostart: options?.autostart ?? false,
   }
 }
 
@@ -46,35 +70,13 @@ function generateStepCommand(step: Step): string[] {
  */
 export function generateMprocsConfig(
   sequence: Sequence,
-  options?: {
-    serverHost?: string
-    serverPort?: number
-    autostart?: boolean
-  }
+  options?: MprocsOptions,
 ): string {
-  const serverHost = options?.serverHost ?? DEFAULT_SERVER_HOST
-  const serverPort = options?.serverPort ?? DEFAULT_SERVER_PORT
-  const autostart = options?.autostart ?? false
-
-  const procs: Record<string, MprocsProcessConfig> = {}
-
-  for (const step of sequence.steps) {
-    procs[step.id] = {
-      name: step.name,
-      cmd: generateStepCommand(step),
-      ...(step.cwd && { cwd: step.cwd }),
-      autostart,
-    }
-  }
-
+  const { serverHost, serverPort, autostart } = resolveOptions(options)
   const config: MprocsConfig = {
-    server: {
-      host: serverHost,
-      port: serverPort,
-    },
-    procs,
+    server: { host: serverHost, port: serverPort },
+    procs: buildProcs(sequence.steps, generateStepCommand, autostart),
   }
-
   return YAML.stringify(config, { indent: 2 })
 }
 
@@ -87,32 +89,11 @@ export function generateMprocsConfig(
  */
 export function generateMprocsConfigObject(
   sequence: Sequence,
-  options?: {
-    serverHost?: string
-    serverPort?: number
-    autostart?: boolean
-  }
+  options?: MprocsOptions,
 ): MprocsConfig {
-  const serverHost = options?.serverHost ?? DEFAULT_SERVER_HOST
-  const serverPort = options?.serverPort ?? DEFAULT_SERVER_PORT
-  const autostart = options?.autostart ?? false
-
-  const procs: Record<string, MprocsProcessConfig> = {}
-
-  for (const step of sequence.steps) {
-    procs[step.id] = {
-      name: step.name,
-      cmd: generateStepCommand(step),
-      ...(step.cwd && { cwd: step.cwd }),
-      autostart,
-    }
-  }
-
+  const { serverHost, serverPort, autostart } = resolveOptions(options)
   return {
-    server: {
-      host: serverHost,
-      port: serverPort,
-    },
-    procs,
+    server: { host: serverHost, port: serverPort },
+    procs: buildProcs(sequence.steps, generateStepCommand, autostart),
   }
 }

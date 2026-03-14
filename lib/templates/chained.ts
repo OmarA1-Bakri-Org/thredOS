@@ -7,6 +7,38 @@ export interface ChainedTemplateOptions {
   gates?: boolean
 }
 
+function buildStepDependency(prefix: string, index: number, addGates: boolean): string[] {
+  if (index <= 1) return []
+  const depId = addGates ? `${prefix}-gate-${index - 1}` : `${prefix}-${index - 1}`
+  return [depId]
+}
+
+function buildStep(prefix: string, index: number, model: string, deps: string[]): Step {
+  const id = `${prefix}-${index}`
+  return {
+    id,
+    name: `${prefix} ${index}`,
+    type: 'c',
+    model,
+    prompt_file: `.threados/prompts/${id}.md`,
+    depends_on: deps,
+    status: 'READY',
+  }
+}
+
+function buildGate(prefix: string, index: number): Gate {
+  const stepId = `${prefix}-${index}`
+  const gateId = `${prefix}-gate-${index}`
+  return {
+    id: gateId,
+    name: `Gate after ${stepId}`,
+    depends_on: [stepId],
+    status: 'PENDING',
+    cascade: false,
+    childGateIds: [],
+  }
+}
+
 export function generateChained(opts: ChainedTemplateOptions = {}): { steps: Step[]; gates: Gate[] } {
   const prefix = opts.prefix || 'chain'
   const count = opts.count || 3
@@ -17,35 +49,11 @@ export function generateChained(opts: ChainedTemplateOptions = {}): { steps: Ste
   const gates: Gate[] = []
 
   for (let i = 1; i <= count; i++) {
-    const id = `${prefix}-${i}`
-    const deps: string[] = []
-    if (i > 1) {
-      if (addGates) {
-        deps.push(`${prefix}-gate-${i - 1}`)
-      } else {
-        deps.push(`${prefix}-${i - 1}`)
-      }
-    }
-    steps.push({
-      id,
-      name: `${prefix} ${i}`,
-      type: 'c',
-      model,
-      prompt_file: `.threados/prompts/${id}.md`,
-      depends_on: deps,
-      status: 'READY',
-    })
+    const deps = buildStepDependency(prefix, i, addGates)
+    steps.push(buildStep(prefix, i, model, deps))
 
     if (addGates && i < count) {
-      const gateId = `${prefix}-gate-${i}`
-      gates.push({
-        id: gateId,
-        name: `Gate after ${id}`,
-        depends_on: [id],
-        status: 'PENDING',
-        cascade: false,
-        childGateIds: [],
-      })
+      gates.push(buildGate(prefix, i))
     }
   }
   return { steps, gates }

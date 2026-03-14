@@ -24,6 +24,11 @@ const formatValidationCountByStepId: Record<string, number> = {
   publish_newsletter: rawWorkflow.format_rules.newsletter.rules.length,
 }
 
+const STEP_DEFAULTS: Pick<WorkflowStep, 'condition' | 'dependsOn'> = {
+  condition: null,
+  dependsOn: [],
+}
+
 function normalizeStep(step: RawWorkflow['steps'][number]): WorkflowStep {
   const gateCount = step.gates ? Object.values(step.gates).flat().length : 0
   const outputKeys = (step.actions ?? [])
@@ -35,8 +40,8 @@ function normalizeStep(step: RawWorkflow['steps'][number]): WorkflowStep {
     phase: step.phase,
     execution: step.execution,
     description: step.description,
-    condition: step.condition ?? null,
-    dependsOn: step.depends_on ?? [],
+    condition: step.condition ?? STEP_DEFAULTS.condition,
+    dependsOn: step.depends_on ?? STEP_DEFAULTS.dependsOn,
     timeoutMs: step.timeout_ms,
     actionTypes: [...new Set((step.actions ?? []).map(action => action.type))],
     outputKeys: [...new Set(outputKeys)],
