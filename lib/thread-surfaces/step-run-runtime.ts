@@ -5,6 +5,8 @@ import type { ThreadSurfaceState } from '@/lib/thread-surfaces/repository'
 import type { RuntimeDelegationEvent } from '@/lib/thread-surfaces/runtime-event-log'
 import { deriveStepThreadSurfaceId, ROOT_THREAD_SURFACE_ID } from '@/lib/thread-surfaces/constants'
 import { deriveChildSequenceRef, type PendingChildSequence } from '@/lib/thread-surfaces/provision-child-sequence'
+import type { AgentRegistration } from '@/lib/agents/types'
+import { hasSpawnSkill } from '@/lib/thread-surfaces/projections'
 
 export interface StepRunScope {
   runId: string
@@ -28,6 +30,7 @@ interface FinalizeStepRunOptions {
   nextRunId: () => string
   nextEventId: () => string
   nextMergeId: () => string
+  agent?: AgentRegistration | null
 }
 
 export function beginStepRunIfSurfaceExists(
@@ -94,7 +97,7 @@ export function finalizeStepRunWithRuntimeEvents(
       nextRunId: opts.nextRunId,
       nextEventId: opts.nextEventId,
       nextMergeId: opts.nextMergeId,
-    })
+    }, opts.agent)
     nextState = result.state
     pendingChildSequences = result.pendingChildSequences
   }
@@ -150,12 +153,31 @@ function persistRuntimeDelegationEvents(
     nextEventId: () => string
     nextMergeId: () => string
   },
+  agent?: AgentRegistration | null,
 ): { state: ThreadSurfaceState; pendingChildSequences: PendingChildSequence[] } {
   let nextState = state
   const pendingChildSequences: PendingChildSequence[] = []
+  const canSpawn = hasSpawnSkill(agent ?? null)
 
   for (const event of runtimeEvents) {
     if (event.eventType === 'spawn-child') {
+      if (!canSpawn) {
+        nextState = {
+          ...nextState,
+          runEvents: [
+            ...nextState.runEvents,
+            {
+              id: ids.nextEventId(),
+              eventType: 'spawn-denied' as const,
+              runId: stepRun.runId,
+              threadSurfaceId: stepRun.threadSurfaceId,
+              createdAt: event.createdAt,
+              payload: { reason: 'agent lacks spawn skill', childStepId: event.childStepId },
+            },
+          ],
+        }
+        continue
+      }
       const parentThreadSurfaceId = event.parentStepId
         ? deriveStepThreadSurfaceId(event.parentStepId)
         : stepRun.threadSurfaceId

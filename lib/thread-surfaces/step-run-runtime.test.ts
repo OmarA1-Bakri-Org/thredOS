@@ -3,6 +3,7 @@ import type { Step } from '@/lib/sequence/schema'
 import { emptyThreadSurfaceState, createRootThreadSurfaceRun, createChildThreadSurfaceRun } from '@/lib/thread-surfaces/mutations'
 import { beginStepRunIfSurfaceExists, finalizeStepRunWithRuntimeEvents } from '@/lib/thread-surfaces/step-run-runtime'
 import type { RuntimeDelegationEvent } from '@/lib/thread-surfaces/runtime-event-log'
+import type { AgentRegistration } from '../agents/types'
 
 function buildStep(overrides: Partial<Step> = {}): Step {
   return {
@@ -18,6 +19,16 @@ function buildStep(overrides: Partial<Step> = {}): Step {
 }
 
 describe('step run runtime helpers', () => {
+  const spawnAgent: AgentRegistration = {
+    id: 'agt-spawner',
+    name: 'Spawner',
+    registeredAt: '2026-03-14T00:00:00.000Z',
+    builderId: 'omar',
+    builderName: 'Omar',
+    threadSurfaceIds: [],
+    metadata: { skills: [{ id: 'spawn', label: 'Spawn', inherited: false }] },
+  }
+
   test('beginStepRunIfSurfaceExists leaves state unchanged for unseen step surfaces', () => {
     const started = createRootThreadSurfaceRun(emptyThreadSurfaceState, {
       surfaceId: 'thread-root',
@@ -101,6 +112,7 @@ describe('step run runtime helpers', () => {
       nextRunId: () => 'run-generated',
       nextEventId: () => 'event-generated',
       nextMergeId: () => 'merge-generated',
+      agent: spawnAgent,
     })
 
     expect(result.stepRun).toEqual({
@@ -214,6 +226,59 @@ describe('step run runtime helpers', () => {
     expect(result.pendingChildSequences).toEqual([])
   })
 
+  test('finalizeStepRunWithRuntimeEvents rejects spawn-child events from agents without spawn skill', () => {
+    const started = createRootThreadSurfaceRun(emptyThreadSurfaceState, {
+      surfaceId: 'thread-root',
+      surfaceLabel: 'Sequence',
+      createdAt: '2026-03-09T10:00:00.000Z',
+      runId: 'run-root',
+      startedAt: '2026-03-09T10:00:00.000Z',
+      executionIndex: 1,
+    }).state
+
+    const agent: AgentRegistration = {
+      id: 'agt-no-spawn',
+      name: 'No Spawn Agent',
+      registeredAt: '2026-03-14T00:00:00.000Z',
+      builderId: 'omar',
+      builderName: 'Omar',
+      threadSurfaceIds: [],
+      metadata: { skills: [{ id: 'search', label: 'Search', inherited: false }] },
+    }
+
+    const runtimeEvents: RuntimeDelegationEvent[] = [{
+      eventType: 'spawn-child',
+      createdAt: '2026-03-09T10:01:05.000Z',
+      childStepId: 'child-step',
+      childLabel: 'Child Step',
+      spawnKind: 'orchestrator',
+    }]
+
+    const result = finalizeStepRunWithRuntimeEvents(started, {
+      step: buildStep(),
+      stepRun: null,
+      success: true,
+      endedAt: '2026-03-09T10:01:10.000Z',
+      runtimeEvents,
+      nextRunId: () => 'run-generated',
+      nextEventId: () => 'event-generated',
+      nextMergeId: () => 'merge-generated',
+      agent,
+    })
+
+    // Spawn-child events should be filtered out — no child surface created
+    expect(result.state.threadSurfaces.map(s => s.id)).not.toContain('thread-child-step')
+    expect(result.pendingChildSequences).toEqual([])
+    // A spawn-denied event should be recorded
+    expect(result.state.runEvents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          eventType: 'spawn-denied',
+        }),
+      ]),
+    )
+  })
+
   test('finalizeStepRunWithRuntimeEvents uses threadType from spawn event', () => {
     const started = createRootThreadSurfaceRun(emptyThreadSurfaceState, {
       surfaceId: 'thread-root',
@@ -242,6 +307,7 @@ describe('step run runtime helpers', () => {
       nextRunId: () => 'run-generated',
       nextEventId: () => 'event-generated',
       nextMergeId: () => 'merge-generated',
+      agent: spawnAgent,
     })
 
     expect(result.pendingChildSequences).toEqual([{
