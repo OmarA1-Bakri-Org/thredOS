@@ -19,6 +19,7 @@ interface BeginStepRunOptions {
   now: string
   nextRunId: string
   executionIndex?: number
+  agent?: AgentRegistration | null
 }
 
 interface FinalizeStepRunOptions {
@@ -40,6 +41,31 @@ export function beginStepRunIfSurfaceExists(
 ): { state: ThreadSurfaceState; stepRun: StepRunScope | null } {
   const threadSurfaceId = deriveStepThreadSurfaceId(step.id)
   const existingSurface = state.threadSurfaces.find(surface => surface.id === threadSurfaceId) ?? null
+
+  // Auto-create child surface for spawn-skilled agents
+  if (existingSurface == null && hasSpawnSkill(opts.agent ?? null)) {
+    const executionIndex = opts.executionIndex ?? state.runs.length + 1
+    const nextState = createChildThreadSurfaceRun(state, {
+      parentSurfaceId: ROOT_THREAD_SURFACE_ID,
+      parentAgentNodeId: step.id,
+      childSurfaceId: threadSurfaceId,
+      childSurfaceLabel: step.name,
+      createdAt: opts.now,
+      runId: opts.nextRunId,
+      startedAt: opts.now,
+      executionIndex,
+    }).state
+
+    return {
+      state: nextState,
+      stepRun: {
+        runId: opts.nextRunId,
+        startedAt: opts.now,
+        executionIndex,
+        threadSurfaceId,
+      },
+    }
+  }
 
   if (existingSurface == null) {
     return { state, stepRun: null }

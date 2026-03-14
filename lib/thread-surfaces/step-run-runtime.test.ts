@@ -85,6 +85,62 @@ describe('step run runtime helpers', () => {
     expect(result.state.threadSurfaces).toHaveLength(2)
   })
 
+  test('beginStepRunIfSurfaceExists auto-creates child surface for spawn-skilled agents', () => {
+    const started = createRootThreadSurfaceRun(emptyThreadSurfaceState, {
+      surfaceId: 'thread-root',
+      surfaceLabel: 'Sequence',
+      createdAt: '2026-03-09T10:00:00.000Z',
+      runId: 'run-root',
+      startedAt: '2026-03-09T10:00:00.000Z',
+      executionIndex: 1,
+    }).state
+
+    const result = beginStepRunIfSurfaceExists(started, buildStep(), {
+      now: '2026-03-09T10:01:00.000Z',
+      nextRunId: 'run-step',
+      executionIndex: 2,
+      agent: spawnAgent,
+    })
+
+    // Should have auto-created the thread surface
+    expect(result.stepRun).not.toBeNull()
+    expect(result.stepRun?.threadSurfaceId).toBe('thread-step-a')
+    expect(result.state.threadSurfaces.map(s => s.id)).toContain('thread-step-a')
+    // The new surface should be a child of thread-root
+    expect(result.state.threadSurfaces.find(s => s.id === 'thread-root')?.childSurfaceIds).toContain('thread-step-a')
+  })
+
+  test('beginStepRunIfSurfaceExists returns null for non-spawn agents when surface missing', () => {
+    const started = createRootThreadSurfaceRun(emptyThreadSurfaceState, {
+      surfaceId: 'thread-root',
+      surfaceLabel: 'Sequence',
+      createdAt: '2026-03-09T10:00:00.000Z',
+      runId: 'run-root',
+      startedAt: '2026-03-09T10:00:00.000Z',
+      executionIndex: 1,
+    }).state
+
+    const noSpawnAgent: AgentRegistration = {
+      id: 'agt-worker',
+      name: 'Worker',
+      registeredAt: '2026-03-14T00:00:00.000Z',
+      builderId: 'omar',
+      builderName: 'Omar',
+      threadSurfaceIds: [],
+      metadata: { skills: [{ id: 'search', label: 'Search', inherited: false }] },
+    }
+
+    const result = beginStepRunIfSurfaceExists(started, buildStep(), {
+      now: '2026-03-09T10:01:00.000Z',
+      nextRunId: 'run-step',
+      executionIndex: 2,
+      agent: noSpawnAgent,
+    })
+
+    expect(result.stepRun).toBeNull()
+    expect(result.state).toEqual(started)
+  })
+
   test('finalizeStepRunWithRuntimeEvents materializes missing step surfaces for spawn-child events', () => {
     const started = createRootThreadSurfaceRun(emptyThreadSurfaceState, {
       surfaceId: 'thread-root',
