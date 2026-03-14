@@ -4,8 +4,28 @@ import { readPackState } from '@/lib/packs/repository'
 import { buildAgentProfile, type ProfileNodeContext } from '@/lib/agents/profile'
 import { readThreadRunnerState } from '@/lib/thread-runner/repository'
 import { readThreadSurfaceState } from '@/lib/thread-surfaces/repository'
+import type { AgentRegistration } from '@/lib/agents/types'
 
 const BASE_PATH = process.cwd()
+
+function buildProfileNodeContext(
+  surfaceState: Awaited<ReturnType<typeof readThreadSurfaceState>>,
+  agent: AgentRegistration,
+  threadSurfaceId: string,
+): ProfileNodeContext {
+  const surface = surfaceState.threadSurfaces.find(s => s.id === threadSurfaceId)
+  const run = surfaceState.runs.find(r => r.threadSurfaceId === threadSurfaceId)
+
+  return {
+    surfaceLabel: surface?.surfaceLabel ?? 'Unknown',
+    depth: surface?.depth ?? 0,
+    childCount: surface?.childSurfaceIds.length ?? 0,
+    role: surface?.role ?? null,
+    runStatus: run?.runStatus ?? null,
+    runSummary: run?.runSummary ?? null,
+    linkedSurfaceCount: agent.threadSurfaceIds.length,
+  }
+}
 
 export async function GET(request: Request) {
   try {
@@ -17,41 +37,21 @@ export async function GET(request: Request) {
     }
 
     const agentState = await readAgentState(BASE_PATH)
-
-    // Find the agent whose threadSurfaceIds includes the given threadSurfaceId
     const agent = agentState.agents.find(a => a.threadSurfaceIds.includes(threadSurfaceId)) ?? null
 
     if (!agent) {
       return Response.json({ profile: null })
     }
 
-    // Load all data sources in parallel
     const [packState, runnerState, surfaceState] = await Promise.all([
       readPackState(BASE_PATH),
       readThreadRunnerState(BASE_PATH),
       readThreadSurfaceState(BASE_PATH),
     ])
 
-    // Compute agent stats from race data
     const stats = aggregateAgentStats(agent.id, runnerState.races, runnerState.combatantRuns)
-
-    // Find the agent's pack by matching builderId
     const pack = packState.packs.find(p => p.builderId === agent.builderId) ?? null
-
-    // Build ProfileNodeContext from thread surface data
-    const surface = surfaceState.threadSurfaces.find(s => s.id === threadSurfaceId)
-    const run = surfaceState.runs.find(r => r.threadSurfaceId === threadSurfaceId)
-
-    const node: ProfileNodeContext = {
-      surfaceLabel: surface?.surfaceLabel ?? 'Unknown',
-      depth: surface?.depth ?? 0,
-      childCount: surface?.childSurfaceIds.length ?? 0,
-      role: surface?.role ?? null,
-      runStatus: run?.runStatus ?? null,
-      runSummary: run?.runSummary ?? null,
-      linkedSurfaceCount: agent.threadSurfaceIds.length,
-    }
-
+    const node = buildProfileNodeContext(surfaceState, agent, threadSurfaceId)
     const profile = buildAgentProfile({ agent, stats, pack, node })
 
     return Response.json({ profile })

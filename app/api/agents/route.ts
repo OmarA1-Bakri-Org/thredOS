@@ -13,34 +13,46 @@ export async function GET() {
   }
 }
 
+interface RequiredStringField {
+  value: unknown
+  label: string
+}
+
+function validateRequiredStrings(fields: RequiredStringField[]): NextResponse | null {
+  for (const { value, label } of fields) {
+    if (!value || typeof value !== 'string') {
+      return jsonError(`Missing or invalid ${label}`, 'VALIDATION_ERROR', 400)
+    }
+  }
+  return null
+}
+
+function buildAgent(body: Partial<AgentRegistration>): AgentRegistration {
+  return {
+    id: body.id!,
+    name: body.name!,
+    description: body.description,
+    registeredAt: body.registeredAt || new Date().toISOString(),
+    builderId: body.builderId!,
+    builderName: body.builderName!,
+    threadSurfaceIds: Array.isArray(body.threadSurfaceIds) ? body.threadSurfaceIds : [],
+    metadata: body.metadata,
+  }
+}
+
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as Partial<AgentRegistration>
 
-    if (!body.id || typeof body.id !== 'string') {
-      return jsonError('Missing or invalid agent id', 'VALIDATION_ERROR', 400)
-    }
-    if (!body.name || typeof body.name !== 'string') {
-      return jsonError('Missing or invalid agent name', 'VALIDATION_ERROR', 400)
-    }
-    if (!body.builderId || typeof body.builderId !== 'string') {
-      return jsonError('Missing or invalid builderId', 'VALIDATION_ERROR', 400)
-    }
-    if (!body.builderName || typeof body.builderName !== 'string') {
-      return jsonError('Missing or invalid builderName', 'VALIDATION_ERROR', 400)
-    }
+    const validationError = validateRequiredStrings([
+      { value: body.id, label: 'agent id' },
+      { value: body.name, label: 'agent name' },
+      { value: body.builderId, label: 'builderId' },
+      { value: body.builderName, label: 'builderName' },
+    ])
+    if (validationError) return validationError
 
-    const agent: AgentRegistration = {
-      id: body.id,
-      name: body.name,
-      description: body.description,
-      registeredAt: body.registeredAt || new Date().toISOString(),
-      builderId: body.builderId,
-      builderName: body.builderName,
-      threadSurfaceIds: Array.isArray(body.threadSurfaceIds) ? body.threadSurfaceIds : [],
-      metadata: body.metadata,
-    }
-
+    const agent = buildAgent(body)
     const bp = getBasePath()
 
     const updated = await updateAgentState(bp, (state) => {

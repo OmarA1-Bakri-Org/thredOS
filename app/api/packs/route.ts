@@ -3,6 +3,15 @@ import type { Pack, PackStatus, PackType } from '@/lib/packs/types'
 
 const repo = new PackRepository()
 
+const REQUIRED_PACK_FIELDS = ['builderId', 'builderName', 'division', 'classification', 'type'] as const
+
+function validateRequiredPackFields(body: Record<string, unknown>): string | null {
+  const missing = REQUIRED_PACK_FIELDS.filter(field => !body[field])
+  return missing.length > 0
+    ? `Missing required fields: ${REQUIRED_PACK_FIELDS.join(', ')}`
+    : null
+}
+
 export async function GET() {
   const packs = repo.listPacks()
   return Response.json({ packs })
@@ -20,8 +29,9 @@ export async function POST(request: Request) {
       type: PackType
     }
 
-    if (!builderId || !builderName || !division || !classification || !type) {
-      return Response.json({ error: 'Missing required fields: builderId, builderName, division, classification, type' }, { status: 400 })
+    const validationError = validateRequiredPackFields(body)
+    if (validationError) {
+      return Response.json({ error: validationError }, { status: 400 })
     }
 
     const pack: Pack = {

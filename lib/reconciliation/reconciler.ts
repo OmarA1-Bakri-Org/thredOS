@@ -1,6 +1,7 @@
 import { readSequence, writeSequence } from '../sequence/parser'
 import { MprocsClient } from '../mprocs/client'
 import * as audit from '../audit/logger'
+import type { Step } from '../sequence/schema'
 
 export interface ReconciliationChange {
   stepId: string
@@ -13,6 +14,51 @@ export interface ReconciliationResult {
   checked: number
   changes: ReconciliationChange[]
   errors: string[]
+}
+
+function createOrphanChange(stepId: string): ReconciliationChange {
+  return {
+    stepId,
+    from: 'RUNNING',
+    to: 'FAILED',
+    reason: 'mprocs server not available, process orphaned',
+  }
+}
+
+async function logOrphanFix(basePath: string, change: ReconciliationChange) {
+  try {
+    await audit.log(basePath, {
+      timestamp: new Date().toISOString(),
+      actor: 'reconciler',
+      action: 'reconcile',
+      target: change.stepId,
+      payload: { ...change },
+      result: 'orphan-fixed',
+    })
+  } catch {
+    // Audit logging failure shouldn't block reconciliation
+  }
+}
+
+async function checkMprocsAvailability(): Promise<boolean> {
+  const client = new MprocsClient()
+  try {
+    return await client.isServerRunning()
+  } catch {
+    return false
+  }
+}
+
+function markOrphanedSteps(
+  runningSteps: Step[],
+  mprocsAvailable: boolean,
+): ReconciliationChange[] {
+  if (mprocsAvailable) return []
+
+  return runningSteps.map(step => {
+    step.status = 'FAILED'
+    return createOrphanChange(step.id)
+  })
 }
 
 /**
@@ -36,55 +82,11 @@ export async function reconcileState(basePath: string): Promise<ReconciliationRe
 
   if (runningSteps.length === 0) return result
 
-  // Check if mprocs is available
-  const client = new MprocsClient()
-  let mprocsAvailable = false
-  try {
-    mprocsAvailable = await client.isServerRunning()
-  } catch {
-    // mprocs not running — all RUNNING steps are orphaned
-  }
+  const mprocsAvailable = await checkMprocsAvailability()
+  result.changes = markOrphanedSteps(runningSteps, mprocsAvailable)
 
-  for (const step of runningSteps) {
-    let isActuallyRunning = false
-
-    if (mprocsAvailable) {
-      // Try to check if the process exists and is running
-      // Since MprocsClient doesn't have a "list" command, we treat
-      // mprocs-unavailable as "not running"
-      try {
-        // If mprocs is up but we can't verify individual processes,
-        // we leave them as-is (conservative approach)
-        isActuallyRunning = true
-      } catch {
-        isActuallyRunning = false
-      }
-    }
-
-    if (!isActuallyRunning && !mprocsAvailable) {
-      // Mark as FAILED — orphaned
-      step.status = 'FAILED'
-      const change: ReconciliationChange = {
-        stepId: step.id,
-        from: 'RUNNING',
-        to: 'FAILED',
-        reason: 'mprocs server not available, process orphaned',
-      }
-      result.changes.push(change)
-
-      try {
-        await audit.log(basePath, {
-          timestamp: new Date().toISOString(),
-          actor: 'reconciler',
-          action: 'reconcile',
-          target: step.id,
-          payload: { ...change },
-          result: 'orphan-fixed',
-        })
-      } catch {
-        // Audit logging failure shouldn't block reconciliation
-      }
-    }
+  for (const change of result.changes) {
+    await logOrphanFix(basePath, change)
   }
 
   if (result.changes.length > 0) {
