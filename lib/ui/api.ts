@@ -140,6 +140,15 @@ export function useBlockGate() {
   })
 }
 
+export function useRemoveGate() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (gateId: string) => postJson('/api/gate', { action: 'rm', gateId }),
+    onSuccess: () => invalidateRuntimeQueries(qc),
+    onError: (error) => { console.error('Remove gate failed:', error) },
+  })
+}
+
 // ── Construction mutations ──────────────────────────────────────────
 
 export interface AddStepInput {
@@ -262,6 +271,15 @@ export function useThreadSurfaceSkills(threadSurfaceId: string | null) {
     },
     enabled: !!threadSurfaceId,
     staleTime: 30_000,
+  })
+}
+
+export function useResetSequence() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (input: { name?: string }) => postJson('/api/sequence', { action: 'reset', name: input.name }),
+    onSuccess: () => invalidateRuntimeQueries(qc),
+    onError: (error) => { console.error('Reset sequence failed:', error) },
   })
 }
 

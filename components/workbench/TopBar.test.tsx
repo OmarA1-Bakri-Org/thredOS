@@ -25,6 +25,10 @@ mock.module('@/lib/ui/api', () => ({
     mutate: () => {},
     isPending: false,
   }),
+  useResetSequence: () => ({
+    mutate: () => {},
+    isPending: false,
+  }),
 }))
 
 const { TopBar } = await import('./TopBar')

@@ -61,11 +61,13 @@ mock.module('@/lib/ui/api', () => ({
   useBlockGate: () => ({ mutate: () => {}, isPending: false, error: null }),
   useEditStep: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false, error: null }),
   useRemoveStep: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false, error: null }),
+  useRemoveGate: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false, error: null }),
   useCloneStep: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false, error: null }),
   useAddStep: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
   useInsertGate: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
   useAddDep: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
   useRemoveDep: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+  useResetSequence: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
 }))
 
 afterEach(() => { mock.restore() })
@@ -146,10 +148,10 @@ describe('StepActions — gate mode', () => {
     expect(markup).not.toContain('Restart')
   })
 
-  test('does not render Clone/Delete in gate mode', () => {
+  test('does not render Clone in gate mode but renders Delete', () => {
     const markup = renderToStaticMarkup(<StepActions nodeId="gate-1" isGate={true} />)
     expect(markup).not.toContain('Clone')
-    expect(markup).not.toContain('Delete')
+    expect(markup).toContain('Delete')
   })
 
   test('renders success variant for Approve button', () => {

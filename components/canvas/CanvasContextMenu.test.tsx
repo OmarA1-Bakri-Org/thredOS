@@ -48,6 +48,12 @@ mock.module('@/lib/ui/api', () => ({
     isPending: false,
     error: null,
   }),
+  useRemoveGate: () => ({
+    mutate: (...args: unknown[]) => apiState.removeMutate(...args),
+    mutateAsync: async () => ({}),
+    isPending: false,
+    error: null,
+  }),
   useCloneStep: () => ({
     mutate: (...args: unknown[]) => apiState.cloneMutate(...args),
     mutateAsync: async () => ({}),
@@ -58,6 +64,7 @@ mock.module('@/lib/ui/api', () => ({
   useInsertGate: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
   useAddDep: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
   useRemoveDep: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+  useResetSequence: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
 }))
 
 // ---------------------------------------------------------------------------

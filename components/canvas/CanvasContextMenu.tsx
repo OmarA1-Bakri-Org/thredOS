@@ -3,7 +3,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { Copy, Play, Plus, ShieldCheck, Square, Trash2 } from 'lucide-react'
 import { useUIStore } from '@/lib/ui/store'
-import { useRunStep, useStopStep, useRemoveStep, useCloneStep } from '@/lib/ui/api'
+import { useRunStep, useStopStep, useRemoveStep, useRemoveGate, useCloneStep, useStatus } from '@/lib/ui/api'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 
 interface ContextMenuState {
@@ -32,12 +32,27 @@ interface CanvasContextMenuProps {
 export function CanvasContextMenu({ menu, onClose }: CanvasContextMenuProps) {
   const openCreateDialog = useUIStore(s => s.openCreateDialog)
   const setSelectedNodeId = useUIStore(s => s.setSelectedNodeId)
+  const { data: status } = useStatus()
   const runStep = useRunStep()
   const stopStep = useStopStep()
   const removeStep = useRemoveStep()
+  const removeGate = useRemoveGate()
   const cloneStep = useCloneStep()
   const ref = useRef<HTMLDivElement>(null)
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
+
+  const isGateNode = useCallback((nodeId: string) => {
+    if (!status) return false
+    return status.gates.some((g: { id: string }) => g.id === nodeId)
+  }, [status])
+
+  const handleDeleteNode = useCallback((nodeId: string) => {
+    if (isGateNode(nodeId)) {
+      removeGate.mutate(nodeId, { onSuccess: () => setSelectedNodeId(null) })
+    } else {
+      removeStep.mutate(nodeId, { onSuccess: () => setSelectedNodeId(null) })
+    }
+  }, [isGateNode, removeGate, removeStep, setSelectedNodeId])
 
   useEffect(() => {
     if (!menu) return
@@ -64,7 +79,7 @@ export function CanvasContextMenu({ menu, onClose }: CanvasContextMenuProps) {
       tone="destructive"
       onCancel={() => setConfirmDelete(null)}
       onConfirm={() => {
-        removeStep.mutate(confirmDelete!, { onSuccess: () => setSelectedNodeId(null) })
+        handleDeleteNode(confirmDelete!)
         setConfirmDelete(null)
       }}
     />
@@ -135,7 +150,7 @@ export function CanvasContextMenu({ menu, onClose }: CanvasContextMenuProps) {
           tone="destructive"
           onCancel={() => setConfirmDelete(null)}
           onConfirm={() => {
-            removeStep.mutate(confirmDelete, { onSuccess: () => setSelectedNodeId(null) })
+            handleDeleteNode(confirmDelete)
             setConfirmDelete(null)
           }}
         />
