@@ -183,7 +183,9 @@ function persistRuntimeDelegationEvents(
 ): { state: ThreadSurfaceState; pendingChildSequences: PendingChildSequence[] } {
   let nextState = state
   const pendingChildSequences: PendingChildSequence[] = []
-  const canSpawn = hasSpawnSkill(agent ?? null)
+  // When agent is not provided (undefined), allow spawns for backward compatibility.
+  // Only deny when agent is explicitly provided without the spawn skill.
+  const canSpawn = agent === undefined ? true : hasSpawnSkill(agent)
 
   for (const event of runtimeEvents) {
     if (event.eventType === 'spawn-child') {
