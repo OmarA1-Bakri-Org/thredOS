@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo } from 'react'
 import { ReactFlow, ReactFlowProvider, MiniMap, Controls, Background, useReactFlow } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { useStatus, useThreadMerges, useThreadRuns, useThreadSurfaces, useAgentProfile } from '@/lib/ui/api'
+import { useStatus, useThreadMerges, useThreadRuns, useThreadSurfaces } from '@/lib/ui/api'
 import { useUIStore } from '@/lib/ui/store'
 import { useSequenceGraph } from './useSequenceGraph'
 import { StepNode } from './StepNode'
@@ -16,8 +16,6 @@ import { NodeDetailCard } from './NodeDetailCard'
 import { AgentDetailCard } from './AgentDetailCard'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { EmptyState } from '@/components/EmptyState'
-import { useHierarchyGraph } from '@/components/hierarchy/useHierarchyGraph'
-import { HierarchyView, type HierarchyViewNode } from '@/components/hierarchy/HierarchyView'
 import { LaneBoardView } from '@/components/lanes/LaneBoardView'
 import { FocusedLanePlane } from '@/components/lanes/FocusedLanePlane'
 import { createLaneBoardModel } from '@/components/lanes/useLaneBoard'
@@ -115,7 +113,6 @@ function CanvasInner() {
   const minimapVisible = useUIStore(s => s.minimapVisible)
   const viewMode = useUIStore(s => s.viewMode)
   const selectedThreadSurfaceId = useUIStore(s => s.selectedThreadSurfaceId)
-  const { data: agentProfile } = useAgentProfile(selectedThreadSurfaceId)
   const selectedRunId = useUIStore(s => s.selectedRunId)
   const laneFocusThreadSurfaceId = useUIStore(s => s.laneFocusThreadSurfaceId)
   const selectedNodeId = useUIStore(s => s.selectedNodeId)
@@ -130,17 +127,6 @@ function CanvasInner() {
     [mergeEvents, runs, status, threadSurfaces],
   )
   const hasRealThreadSurfaceData = threadSurfaceData.source === 'api'
-  const selectedRunIdBySurfaceId = useMemo(
-    () => (selectedThreadSurfaceId && selectedRunId ? { [selectedThreadSurfaceId]: selectedRunId } : {}),
-    [selectedRunId, selectedThreadSurfaceId],
-  )
-
-  useHierarchyGraph({
-    threadSurfaces: threadSurfaceData.threadSurfaces,
-    runs: threadSurfaceData.runs,
-    zoom: 1,
-    selectedRunIdBySurfaceId,
-  })
 
   const laneBoard = createLaneBoardModel({
     threadSurfaces: threadSurfaceData.threadSurfaces,
@@ -190,33 +176,6 @@ function CanvasInner() {
   }
   const shouldRenderSequenceFlow = status != null
 
-  // Build HierarchyViewNodes for the agent cards — must be before early returns
-  // to satisfy React's rules of hooks (useMemo must be called unconditionally)
-  const hierarchyViewNodes: HierarchyViewNode[] = useMemo(() =>
-    threadSurfaceData.threadSurfaces.map(ts => {
-      const surfaceRuns = threadSurfaceData.runs.filter(r => r.threadSurfaceId === ts.id)
-      const latestRun = surfaceRuns.length > 0
-        ? surfaceRuns.reduce((a, b) => (a.startedAt > b.startedAt ? a : b))
-        : null
-
-      return {
-        id: ts.id,
-        surfaceLabel: ts.surfaceLabel,
-        depth: ts.depth,
-        childCount: ts.childSurfaceIds.length,
-        runStatus: latestRun?.runStatus ?? null,
-        runSummary: latestRun?.runSummary ?? null,
-        role: ts.role ?? null,
-        surfaceDescription: ts.surfaceDescription ?? null,
-        clickTarget: {
-          threadSurfaceId: ts.id,
-          runId: latestRun?.id ?? null,
-        },
-      }
-    }),
-    [threadSurfaceData.threadSurfaces, threadSurfaceData.runs],
-  )
-
   if (isLoading && !hasRealThreadSurfaceData) return <LoadingSpinner message="Loading sequence..." />
   if (isError && !hasRealThreadSurfaceData) return <div className="flex h-full items-center justify-center text-sm text-destructive">Failed to load sequence status</div>
   if (
@@ -226,42 +185,16 @@ function CanvasInner() {
     return <EmptyState />
   }
 
-  const selectedHierarchyNode = hierarchyViewNodes.find(
-    n => n.clickTarget.threadSurfaceId === selectedThreadSurfaceId,
-  )
-
   if (viewMode === 'hierarchy') {
     return (
-      <div className="flex h-full flex-col">
-        <div className={`${selectedHierarchyNode ? 'h-[45%]' : 'h-full'} min-h-0 transition-all duration-300`}>
-          <ReactFlowProvider>
-            <SequenceFlowGraph
-              minimapVisible={minimapVisible}
-              status={status}
-              isLoading={isLoading}
-              isError={isError}
-            />
-          </ReactFlowProvider>
-        </div>
-        {selectedHierarchyNode && (
-          <div className="min-h-0 flex-1 overflow-y-auto border-t border-slate-700/60 bg-[#07101b]">
-            <HierarchyView
-              nodes={hierarchyViewNodes}
-              selectedThreadSurfaceId={selectedThreadSurfaceId}
-              profile={agentProfile ?? undefined}
-              onSelectThread={(threadSurfaceId, runId) => {
-                setSelectedThreadSurfaceId(threadSurfaceId)
-                setSelectedRunId(runId)
-              }}
-              onOpenLane={(threadSurfaceId, runId) => {
-                setViewMode('lanes')
-                setSelectedThreadSurfaceId(threadSurfaceId)
-                setSelectedRunId(runId)
-              }}
-            />
-          </div>
-        )}
-      </div>
+      <ReactFlowProvider>
+        <SequenceFlowGraph
+          minimapVisible={minimapVisible}
+          status={status}
+          isLoading={isLoading}
+          isError={isError}
+        />
+      </ReactFlowProvider>
     )
   }
 
