@@ -1,5 +1,6 @@
 import { projectHierarchy, resolveDefaultDisplayRun } from '@/lib/thread-surfaces/projections'
 import type { RunStatus, RunScope, ThreadSurface } from '@/lib/thread-surfaces/types'
+import type { HierarchyProjectionNode } from '@/lib/thread-surfaces/projections'
 
 export const HierarchyZoomBandValues = ['macro', 'meso', 'micro'] as const
 export type HierarchyZoomBand = typeof HierarchyZoomBandValues[number]
@@ -85,41 +86,75 @@ export function useHierarchyGraph({
   const surfacesById = new Map(threadSurfaces.map(surface => [surface.id, surface]))
 
   return {
-    nodes: hierarchy.nodes.map(node => {
-      const surfaceRuns = runsBySurfaceId.get(node.id) ?? []
-      const defaultRun = resolveDefaultDisplayRun(surfaceRuns)
-      const selectedRunId = selectedRunIdBySurfaceId[node.id] ?? null
-      const selectedRun = selectedRunId ? surfaceRuns.find(run => run.id === selectedRunId) ?? null : null
-      const displayRun = selectedRun ?? defaultRun ?? null
-      const surface = surfacesById.get(node.id)
-
-      return {
-        ...node,
-        metadata: {
-          childCount: node.childSurfaceIds.length,
-          surfaceDescription: surface?.surfaceDescription ?? null,
-          role: surface?.role ?? null,
-          runSummary: displayRun?.runSummary ?? null,
-          runNotes: displayRun?.runNotes ?? null,
-          runDiscussion: displayRun?.runDiscussion ?? null,
-          displayRunStatus: displayRun?.runStatus ?? null,
-        },
-        runContext: {
-          selectedRunId,
-          defaultRunId: defaultRun?.id ?? null,
-          displayRunId: displayRun?.id ?? null,
-          displayRunStatus: displayRun?.runStatus ?? null,
-        },
-        clickTarget: {
-          threadSurfaceId: node.id,
-          runId: displayRun?.id ?? null,
-          runSelection: selectedRun ? 'selected' : defaultRun ? 'default' : 'none',
-        },
-      }
-    }),
+    nodes: hierarchy.nodes.map(node =>
+      buildGraphNode(node, surfacesById, runsBySurfaceId, selectedRunIdBySurfaceId),
+    ),
     edges: hierarchy.edges,
     zoomBand,
     metadataDisclosure,
+  }
+}
+
+function buildGraphNode(
+  node: HierarchyProjectionNode,
+  surfacesById: Map<string, ThreadSurface>,
+  runsBySurfaceId: Map<string, RunScope[]>,
+  selectedRunIdBySurfaceId: Record<string, string | undefined>,
+): HierarchyGraphNode {
+  const surfaceRuns = runsBySurfaceId.get(node.id) ?? []
+  const defaultRun = resolveDefaultDisplayRun(surfaceRuns)
+  const selectedRunId = selectedRunIdBySurfaceId[node.id] ?? null
+  const selectedRun = selectedRunId ? surfaceRuns.find(run => run.id === selectedRunId) ?? null : null
+  const displayRun = selectedRun ?? defaultRun ?? null
+  const surface = surfacesById.get(node.id)
+
+  return {
+    ...node,
+    metadata: buildNodeMetadata(surface, displayRun, node.childSurfaceIds.length),
+    runContext: buildRunContext(selectedRunId, defaultRun, displayRun),
+    clickTarget: buildClickTarget(node.id, displayRun, selectedRun, defaultRun),
+  }
+}
+
+function buildNodeMetadata(
+  surface: ThreadSurface | undefined,
+  displayRun: RunScope | null,
+  childCount: number,
+): HierarchyNodeMetadata {
+  return {
+    childCount,
+    surfaceDescription: surface?.surfaceDescription ?? null,
+    role: surface?.role ?? null,
+    runSummary: displayRun?.runSummary ?? null,
+    runNotes: displayRun?.runNotes ?? null,
+    runDiscussion: displayRun?.runDiscussion ?? null,
+    displayRunStatus: displayRun?.runStatus ?? null,
+  }
+}
+
+function buildRunContext(
+  selectedRunId: string | null,
+  defaultRun: RunScope | undefined,
+  displayRun: RunScope | null,
+): HierarchyRunContext {
+  return {
+    selectedRunId,
+    defaultRunId: defaultRun?.id ?? null,
+    displayRunId: displayRun?.id ?? null,
+    displayRunStatus: displayRun?.runStatus ?? null,
+  }
+}
+
+function buildClickTarget(
+  threadSurfaceId: string,
+  displayRun: RunScope | null,
+  selectedRun: RunScope | null,
+  defaultRun: RunScope | undefined,
+): HierarchyClickTarget {
+  return {
+    threadSurfaceId,
+    runId: displayRun?.id ?? null,
+    runSelection: selectedRun ? 'selected' : defaultRun ? 'default' : 'none',
   }
 }
 
@@ -129,33 +164,25 @@ function deriveHierarchyZoomBand(zoom: number): HierarchyZoomBand {
   return 'macro'
 }
 
+const ZOOM_BAND_FIELDS: Record<HierarchyZoomBand, HierarchyVisibleField[]> = {
+  macro: ['surfaceLabel', 'displayRunStatus'],
+  meso: ['surfaceLabel', 'displayRunStatus', 'surfaceDescription', 'role', 'runSummary', 'childCount'],
+  micro: [
+    'surfaceLabel',
+    'displayRunStatus',
+    'surfaceDescription',
+    'role',
+    'runSummary',
+    'childCount',
+    'runNotes',
+    'runDiscussion',
+  ],
+}
+
 function deriveHierarchyMetadataDisclosure(zoomBand: HierarchyZoomBand): HierarchyMetadataDisclosure {
-  if (zoomBand === 'macro') {
-    return {
-      zoomBand,
-      visibleFields: ['surfaceLabel', 'displayRunStatus'],
-    }
-  }
-
-  if (zoomBand === 'meso') {
-    return {
-      zoomBand,
-      visibleFields: ['surfaceLabel', 'displayRunStatus', 'surfaceDescription', 'role', 'runSummary', 'childCount'],
-    }
-  }
-
   return {
     zoomBand,
-    visibleFields: [
-      'surfaceLabel',
-      'displayRunStatus',
-      'surfaceDescription',
-      'role',
-      'runSummary',
-      'childCount',
-      'runNotes',
-      'runDiscussion',
-    ],
+    visibleFields: ZOOM_BAND_FIELDS[zoomBand],
   }
 }
 
