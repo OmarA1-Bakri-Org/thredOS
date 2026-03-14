@@ -19,7 +19,10 @@ Use `.env.example` as the source of truth for local setup.
 |------|------|------|------|
 | `THREADOS_BASE_PATH` | No | `./` / `process.cwd()` fallback | API routes resolve `.threados/` data from this base path |
 | `THREADOS_MPROCS_PATH` | No | auto-resolved (`mprocs` or vendored path) | Override when `mprocs` is not on PATH |
-| `ANTHROPIC_API_KEY` | Optional by workflow | unset | Needed for Anthropic-backed chat behavior |
+| `THREADOS_MODEL` | No | `gpt-4o` | Model ID — auto-routes to correct backend (e.g. `gpt-4o`, `claude-sonnet-4-20250514`) |
+| `OPENAI_API_KEY` | By model | unset | Required for OpenAI models (gpt-*, o1-*, o3-*, o4-*) |
+| `OPENROUTER_API_KEY` | By model | unset | Universal relay — supports 100+ models including Claude, Llama, Gemini |
+| `ANTHROPIC_API_KEY` | Optional | unset | Direct Anthropic access (future — currently routed via OpenRouter) |
 
 ## Policy (SAFE/POWER)
 
@@ -41,30 +44,83 @@ Run `thread --help` for the full command reference.
 ## Project Structure
 
 ```text
-lib/seqctl/          # CLI command handlers (thread init, step, run, etc.)
-lib/sequence/        # Schema (Zod), YAML parser, DAG validation
-lib/runner/          # Step execution wrapper with timeout/capture
-lib/mprocs/          # mprocs process manager adapter
-lib/policy/          # Safety policy engine (SAFE/POWER modes)
+lib/agents/          # Agent registration, profile builder, stats tracking
 lib/audit/           # Append-only audit logger
 lib/chat/            # Chat orchestrator (system prompt, action validator)
-lib/templates/       # Thread type template generators (base/p/c/f/b/l)
-lib/reconciliation/  # State reconciliation between sequence and mprocs
-lib/prompts/         # Prompt file CRUD manager
 lib/fs/              # Atomic file operations
+lib/llm/             # LLM abstraction layer (model registry, provider routing)
+lib/mprocs/          # mprocs process manager adapter
+lib/packs/           # Pack and status records (Challenger/Champion/Hero)
+lib/policy/          # Safety policy engine (SAFE/POWER modes)
+lib/prompts/         # Prompt file CRUD manager
+lib/provenance/      # Provenance tracking for thread artifacts
+lib/reconciliation/  # State reconciliation between sequence and mprocs
+lib/runner/          # Step execution wrapper with timeout/capture
+lib/seqctl/          # CLI command handlers (thread init, step, run, etc.)
+lib/sequence/        # Schema (Zod), YAML parser, DAG validation
+lib/templates/       # Thread type template generators (base/p/c/f/b/l)
+lib/thread-runner/   # Verified-run, race, and eligibility contracts
+lib/thread-surfaces/ # Thread surface runtime (events, mutations, projections, spawn)
+lib/ui/              # UI state management (React Query hooks, Zustand store, phases)
+lib/workflows/       # Workflow templates and content-creator definitions
 lib/errors.ts        # Error class hierarchy
 app/                 # Next.js UI + API routes
-app/api/             # REST endpoints (sequence, step, gate, group, etc.)
-components/          # React components (canvas, inspector, chat, toolbar)
+app/api/             # REST endpoints (21 route groups — see below)
+components/          # React components (14 directories — see below)
 docs/                # CLI reference, thread types guide, policy docs
 test/                # Integration and API tests
 test/fixtures/       # Shared test data
 test/helpers/        # Test utilities (temp dirs, sequence builders)
 ```
 
+### API Routes
+
+```text
+app/api/agent-profile/    # Agent profile builder
+app/api/agents/           # Agent registry and stats
+app/api/apply/            # Apply chat-proposed actions
+app/api/audit/            # Audit log queries
+app/api/chat/             # Chat orchestrator endpoint
+app/api/dep/              # Dependency management
+app/api/fusion/           # Fusion pattern operations
+app/api/gate/             # Gate insert/approve/block/rm
+app/api/group/            # Parallel group management
+app/api/packs/            # Pack and status records
+app/api/restart/          # Restart stopped steps
+app/api/run/              # Step/group execution
+app/api/sequence/         # Sequence CRUD (read/reset)
+app/api/status/           # Sequence status queries
+app/api/step/             # Step CRUD operations
+app/api/stop/             # Stop running steps
+app/api/thread-annotations/ # Thread surface annotations
+app/api/thread-merges/    # Thread merge/convergence
+app/api/thread-runner/    # Thread Runner eligibility + runs
+app/api/thread-runs/      # Thread run lifecycle
+app/api/thread-surfaces/  # Thread surface runtime state
+```
+
+### Component Directories
+
+```text
+components/canvas/        # React Flow canvas (nodes, edges, context menu, detail cards)
+components/chat/          # Chat panel and message rendering
+components/command/       # Command palette
+components/entry/         # Entry screen (ThreadOS / Thread Runner paths)
+components/hierarchy/     # Hierarchy view with focused thread cards
+components/inspector/     # Step/gate inspector and detail panels
+components/lanes/         # Lane board view (run-scoped execution surface)
+components/navigation/    # Navigation components
+components/skills/        # Skill inventory display
+components/thread-runner/ # Thread Runner UI components
+components/toolbar/       # Toolbar components
+components/ui/            # Shared UI primitives (shadcn/ui-style)
+components/workbench/     # Workbench shell (top bar, accordion, sections)
+components/workflows/     # Workflow template UI
+```
+
 ## Architecture
 
-The system has three layers:
+The system has four layers:
 
 **Sequence model** — `.threados/sequence.yaml` is the source of truth. Zod
 schema validates all mutations. DAG validation prevents cycles. Gates block
@@ -75,6 +131,13 @@ called programmatically by LLM orchestrators. All commands support `--json`.
 
 **Runtime** — mprocs manages parallel processes. Runner wrapper standardises
 stdout/stderr capture, timeout handling, and artifact collection per step.
+Thread surfaces track runtime events, spawn child sequences, and manage
+merge/convergence across depth levels.
+
+**LLM layer** — Model-agnostic provider routing. `THREADOS_MODEL` selects any
+model by ID; the registry auto-routes to OpenAI, OpenRouter, or Anthropic
+backends. Provider abstraction in `lib/llm/` keeps the rest of the system
+model-agnostic.
 
 ## Key Design Decisions
 
@@ -96,6 +159,7 @@ bun test                         # Full suite
 bun test lib/sequence/           # Module-specific
 bun test test/integration/       # Integration tests
 bun test test/api/               # API route tests
+bun test:ui                      # Playwright E2E tests
 ```
 
 Tests use Bun's built-in test runner. Integration tests create temp directories,

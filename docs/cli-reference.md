@@ -209,13 +209,34 @@ thread template apply chained --name "Pipeline"
 
 Available templates: `base`, `parallel`, `chained`, `fusion`, `orchestrated`, `long-autonomy`
 
+### `thread control <action> <stepId>`
+
+Process control operations (stop, restart, signal).
+
+```bash
+thread control stop research
+thread control restart research
+```
+
+### `thread event <stepId> [options]`
+
+Stream or query runtime events for a step.
+
+```bash
+thread event research
+thread event research --json
+```
+
 ## Environment Variables
 
 See `.env.example` for local defaults and expected values:
 
-- `THREADOS_BASE_PATH`
-- `THREADOS_MPROCS_PATH`
-- `ANTHROPIC_API_KEY`
+- `THREADOS_BASE_PATH` — Base directory for `.threados/` data
+- `THREADOS_MPROCS_PATH` — Custom mprocs binary path
+- `THREADOS_MODEL` — Model ID (auto-routes to correct backend)
+- `OPENAI_API_KEY` — Direct OpenAI access
+- `OPENROUTER_API_KEY` — Universal relay for 100+ models
+- `ANTHROPIC_API_KEY` — Direct Anthropic access (future)
 
 ## Policy Modes
 
