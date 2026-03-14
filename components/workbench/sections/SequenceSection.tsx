@@ -3,7 +3,8 @@
 import { useState } from 'react'
 import { Layers3, FileStack, ChevronRight, Pencil, Check, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { useThreadSurfaces, useStatus, useRenameSequence, useSetThreadType } from '@/lib/ui/api'
+import { useThreadSurfaces, useStatus, useRenameSequence, useSetThreadType, useApplyTemplate } from '@/lib/ui/api'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { useUIStore, selectCurrentDepthSurfaceId } from '@/lib/ui/store'
 import { derivePhases } from '@/lib/ui/phases'
 
@@ -25,8 +26,10 @@ export function SequenceSection() {
 
   const renameMutation = useRenameSequence()
   const setThreadType = useSetThreadType()
+  const applyTemplate = useApplyTemplate()
   const [editingName, setEditingName] = useState(false)
   const [nameValue, setNameValue] = useState('')
+  const [pendingTemplate, setPendingTemplate] = useState<string | null>(null)
 
   const autoDerivation = status
     ? derivePhases(status.steps, status.gates)
@@ -222,7 +225,16 @@ export function SequenceSection() {
             <button
               key={t.value}
               type="button"
-              className="group border border-slate-800 bg-[#0a101a] px-2.5 py-2 text-left transition-all hover:border-sky-500/30 hover:bg-sky-500/5"
+              onClick={() => {
+                const hasSteps = status && status.steps.length > 0
+                if (hasSteps) {
+                  setPendingTemplate(t.value)
+                } else {
+                  applyTemplate.mutate({ type: t.value, name: status?.name || 'New Sequence' })
+                }
+              }}
+              disabled={applyTemplate.isPending}
+              className="group border border-slate-800 bg-[#0a101a] px-2.5 py-2 text-left transition-all hover:border-sky-500/30 hover:bg-sky-500/5 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <div className="font-mono text-[10px] uppercase tracking-[0.14em] text-slate-300 group-hover:text-sky-200">
                 {t.label}
@@ -234,6 +246,22 @@ export function SequenceSection() {
           ))}
         </div>
       </div>
+
+      {/* Confirm template application when sequence has existing steps */}
+      <ConfirmDialog
+        open={pendingTemplate !== null}
+        title="Apply template?"
+        description="This will replace the current sequence with the selected template. All existing phases and gates will be removed."
+        confirmLabel="Apply template"
+        tone="warning"
+        onCancel={() => setPendingTemplate(null)}
+        onConfirm={() => {
+          if (pendingTemplate) {
+            applyTemplate.mutate({ type: pendingTemplate, name: status?.name || 'New Sequence' })
+          }
+          setPendingTemplate(null)
+        }}
+      />
     </div>
   )
 }

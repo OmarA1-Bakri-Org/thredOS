@@ -292,6 +292,16 @@ export function useSetThreadType() {
   })
 }
 
+export function useApplyTemplate() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (args: { type: string; name: string }) =>
+      postJson('/api/sequence', { action: 'apply-template', ...args }),
+    onSuccess: () => invalidateRuntimeQueries(qc),
+    onError: (error) => { console.error('Apply template failed:', error) },
+  })
+}
+
 export function useResetSequence() {
   const qc = useQueryClient()
   return useMutation({
