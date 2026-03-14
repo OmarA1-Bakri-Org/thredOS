@@ -285,6 +285,178 @@ async function finalizeStepRunScope(
   }
 }
 
+/** Output an error via JSON or stderr, then exit */
+function exitWithError(errorMsg: string, json: boolean): never {
+  if (json) {
+    console.log(JSON.stringify({ error: errorMsg, success: false }))
+  } else {
+    console.error(errorMsg)
+  }
+  process.exit(1)
+}
+
+/** Handle `run step <stepId>` */
+async function handleRunStep(
+  basePath: string,
+  sequence: Sequence,
+  mprocsClient: MprocsClient,
+  args: string[],
+  options: CLIOptions
+): Promise<void> {
+  const stepId = args[0]
+  if (!stepId) return exitWithError('Step ID required: seqctl run step <stepId>', options.json)
+
+  const runId = randomUUID()
+  const startedAt = new Date().toISOString()
+  await createRootRunScopeForCommand(basePath, sequence.name, runId, startedAt)
+
+  const result = await executeSingleStep(basePath, sequence, stepId, runId, mprocsClient)
+  await finalizeRootRunScopeForCommand(basePath, runId, result.success, `step:${stepId}`)
+
+  const mprocsMap = await readMprocsMap(basePath)
+  const processIndex = Object.keys(mprocsMap).length
+  await updateStepProcess(basePath, stepId, processIndex)
+
+  if (options.json) {
+    console.log(JSON.stringify(result))
+  } else if (result.success) {
+    console.log(`Step '${stepId}' completed successfully`)
+    console.log(`Duration: ${result.duration}ms`)
+    console.log(`Artifacts: ${result.artifactPath}`)
+  } else {
+    console.error(`Step '${stepId}' failed: ${result.error || 'Unknown error'}`)
+  }
+}
+
+/** Handle `run runnable` — execute all ready steps */
+async function handleRunRunnable(
+  basePath: string,
+  sequence: Sequence,
+  mprocsClient: MprocsClient,
+  options: CLIOptions
+): Promise<void> {
+  const runnableSteps = getRunnableSteps(sequence)
+
+  if (runnableSteps.length === 0) {
+    const result: RunRunnableResult = { success: true, executed: [], skipped: [], error: 'No runnable steps found' }
+    if (options.json) { console.log(JSON.stringify(result)) } else { console.log('No runnable steps found') }
+    return
+  }
+
+  const runId = randomUUID()
+  const startedAt = new Date().toISOString()
+  await createRootRunScopeForCommand(basePath, sequence.name, runId, startedAt)
+
+  const order = topologicalSort(sequence)
+  const orderedRunnable = order.filter(id => runnableSteps.some(s => s.id === id))
+  const executed: RunStepResult[] = []
+  const skipped: string[] = []
+
+  for (const stepId of orderedRunnable) {
+    const stepResult = await executeSingleStep(basePath, sequence, stepId, runId, mprocsClient)
+    executed.push(stepResult)
+
+    if (!stepResult.success) {
+      collectSkippedDependents(sequence, stepId, orderedRunnable, executed, skipped)
+    }
+  }
+
+  const result: RunRunnableResult = { success: executed.every(e => e.success), executed, skipped }
+  await finalizeRootRunScopeForCommand(basePath, runId, result.success, 'mode:runnable')
+  outputRunnableResult(result, options)
+}
+
+function collectSkippedDependents(
+  sequence: Sequence,
+  failedStepId: string,
+  orderedRunnable: string[],
+  executed: RunStepResult[],
+  skipped: string[]
+): void {
+  const dependentSteps = sequence.steps.filter(s =>
+    s.depends_on.includes(failedStepId) && orderedRunnable.includes(s.id)
+  )
+  for (const dep of dependentSteps) {
+    if (!executed.some(e => e.stepId === dep.id)) {
+      skipped.push(dep.id)
+    }
+  }
+}
+
+function outputRunnableResult(result: RunRunnableResult, options: CLIOptions): void {
+  if (options.json) {
+    console.log(JSON.stringify(result))
+    return
+  }
+  console.log(`Executed ${result.executed.length} step(s)`)
+  for (const e of result.executed) {
+    console.log(`  ${e.stepId}: ${e.success ? 'DONE' : 'FAILED'} (${e.duration}ms)`)
+  }
+  if (result.skipped.length > 0) {
+    console.log(`Skipped ${result.skipped.length} step(s) due to failures:`)
+    for (const s of result.skipped) { console.log(`  ${s}`) }
+  }
+}
+
+/** Handle `run group <groupId>` */
+async function handleRunGroup(
+  basePath: string,
+  sequence: Sequence,
+  mprocsClient: MprocsClient,
+  args: string[],
+  options: CLIOptions
+): Promise<void> {
+  const groupId = args[0]
+  if (!groupId) return exitWithError('Group ID required: seqctl run group <groupId>', options.json)
+
+  const groupSteps = sequence.steps.filter(s => s.group_id === groupId)
+  if (groupSteps.length === 0) return exitWithError(`No steps found in group '${groupId}'`, options.json)
+
+  const runId = randomUUID()
+  const startedAt = new Date().toISOString()
+  await createRootRunScopeForCommand(basePath, sequence.name, runId, startedAt)
+
+  const runnableInGroup = groupSteps.filter(s => {
+    if (s.status !== 'READY') return false
+    const doneSteps = new Set(sequence.steps.filter(st => st.status === 'DONE').map(st => st.id))
+    const approvedGates = new Set(sequence.gates.filter(g => g.status === 'APPROVED').map(g => g.id))
+    const completed = new Set([...doneSteps, ...approvedGates])
+    return s.depends_on.every(dep => completed.has(dep))
+  })
+
+  const executed: RunStepResult[] = []
+  for (const step of runnableInGroup) {
+    executed.push(await executeSingleStep(basePath, sequence, step.id, runId, mprocsClient))
+  }
+
+  const result: RunRunnableResult = { success: executed.every(e => e.success), executed, skipped: [] }
+  await finalizeRootRunScopeForCommand(basePath, runId, result.success, `group:${groupId}`)
+
+  if (options.json) {
+    console.log(JSON.stringify(result))
+  } else {
+    console.log(`Executed ${executed.length} step(s) from group '${groupId}'`)
+    for (const e of executed) {
+      console.log(`  ${e.stepId}: ${e.success ? 'DONE' : 'FAILED'} (${e.duration}ms)`)
+    }
+  }
+}
+
+type RunSubcommandHandler = (
+  basePath: string,
+  sequence: Sequence,
+  mprocsClient: MprocsClient,
+  args: string[],
+  options: CLIOptions
+) => Promise<void>
+
+const runSubcommands: Record<string, RunSubcommandHandler> = {
+  step: handleRunStep,
+  runnable: (basePath, sequence, mprocsClient, _args, options) =>
+    handleRunRunnable(basePath, sequence, mprocsClient, options),
+  group: handleRunGroup,
+}
+
 /**
  * Run command handler
  */
@@ -294,196 +466,14 @@ export async function runCommand(
   options: CLIOptions
 ): Promise<void> {
   const basePath = options.basePath ?? process.cwd()
-
-  // Read and validate sequence
   const sequence = await readSequence(basePath)
   validateDAG(sequence)
   const mprocsClient = new MprocsClient()
 
-  if (subcommand === 'step') {
-    // Run a specific step
-    const stepId = args[0]
-    if (!stepId) {
-      const errorMsg = 'Step ID required: seqctl run step <stepId>'
-      if (options.json) {
-        console.log(JSON.stringify({ error: errorMsg, success: false }))
-      } else {
-        console.error(errorMsg)
-      }
-      process.exit(1)
-    }
-
-    const runId = randomUUID()
-    const startedAt = new Date().toISOString()
-    await createRootRunScopeForCommand(basePath, sequence.name, runId, startedAt)
-
-    const result = await executeSingleStep(
-      basePath,
-      sequence,
-      stepId,
-      runId,
-      mprocsClient
-    )
-    await finalizeRootRunScopeForCommand(basePath, runId, result.success, `step:${stepId}`)
-
-    // Update mprocs map
-    const mprocsMap = await readMprocsMap(basePath)
-    const processIndex = Object.keys(mprocsMap).length
-    await updateStepProcess(basePath, stepId, processIndex)
-
-    if (options.json) {
-      console.log(JSON.stringify(result))
-    } else {
-      if (result.success) {
-        console.log(`Step '${stepId}' completed successfully`)
-        console.log(`Duration: ${result.duration}ms`)
-        console.log(`Artifacts: ${result.artifactPath}`)
-      } else {
-        console.error(`Step '${stepId}' failed: ${result.error || 'Unknown error'}`)
-      }
-    }
-  } else if (subcommand === 'runnable') {
-    // Run all runnable steps
-    const runnableSteps = getRunnableSteps(sequence)
-
-    if (runnableSteps.length === 0) {
-    const result: RunRunnableResult = {
-      success: true,
-      executed: [],
-      skipped: [],
-      error: 'No runnable steps found',
-      }
-      if (options.json) {
-        console.log(JSON.stringify(result))
-      } else {
-        console.log('No runnable steps found')
-      }
-      return
-    }
-
-    const runId = randomUUID()
-    const startedAt = new Date().toISOString()
-    await createRootRunScopeForCommand(basePath, sequence.name, runId, startedAt)
-
-    // Get topological order and filter to runnable
-    const order = topologicalSort(sequence)
-    const orderedRunnable = order.filter(id =>
-      runnableSteps.some(s => s.id === id)
-    )
-
-    const executed: RunStepResult[] = []
-    const skipped: string[] = []
-
-    for (const stepId of orderedRunnable) {
-      const result = await executeSingleStep(
-        basePath,
-        sequence,
-        stepId,
-        runId,
-        mprocsClient
-      )
-      executed.push(result)
-
-      // If a step fails, we might want to skip dependent steps
-      if (!result.success) {
-        // Find steps that depend on this one and mark them as skipped
-        const dependentSteps = sequence.steps.filter(s =>
-          s.depends_on.includes(stepId) && orderedRunnable.includes(s.id)
-        )
-        for (const dep of dependentSteps) {
-          if (!executed.some(e => e.stepId === dep.id)) {
-            skipped.push(dep.id)
-          }
-        }
-      }
-    }
-
-    const result: RunRunnableResult = {
-      success: executed.every(e => e.success),
-      executed,
-      skipped,
-    }
-    await finalizeRootRunScopeForCommand(basePath, runId, result.success, 'mode:runnable')
-
-    if (options.json) {
-      console.log(JSON.stringify(result))
-    } else {
-      console.log(`Executed ${executed.length} step(s)`)
-      for (const e of executed) {
-        const status = e.success ? 'DONE' : 'FAILED'
-        console.log(`  ${e.stepId}: ${status} (${e.duration}ms)`)
-      }
-      if (skipped.length > 0) {
-        console.log(`Skipped ${skipped.length} step(s) due to failures:`)
-        for (const s of skipped) {
-          console.log(`  ${s}`)
-        }
-      }
-    }
-  } else if (subcommand === 'group') {
-    // Run all READY steps in a group
-    const groupId = args[0]
-    if (!groupId) {
-      const errorMsg = 'Group ID required: seqctl run group <groupId>'
-      if (options.json) {
-        console.log(JSON.stringify({ error: errorMsg, success: false }))
-      } else {
-        console.error(errorMsg)
-      }
-      process.exit(1)
-    }
-
-    const groupSteps = sequence.steps.filter(s => s.group_id === groupId)
-    if (groupSteps.length === 0) {
-      const errorMsg = `No steps found in group '${groupId}'`
-      if (options.json) {
-        console.log(JSON.stringify({ error: errorMsg, success: false }))
-      } else {
-        console.error(errorMsg)
-      }
-      process.exit(1)
-    }
-
-    const runId = randomUUID()
-    const startedAt = new Date().toISOString()
-    await createRootRunScopeForCommand(basePath, sequence.name, runId, startedAt)
-
-    const runnableInGroup = groupSteps.filter(s => {
-      if (s.status !== 'READY') return false
-      const doneSteps = new Set(sequence.steps.filter(st => st.status === 'DONE').map(st => st.id))
-      const approvedGates = new Set(sequence.gates.filter(g => g.status === 'APPROVED').map(g => g.id))
-      const completed = new Set([...doneSteps, ...approvedGates])
-      return s.depends_on.every(dep => completed.has(dep))
-    })
-
-    const executed: RunStepResult[] = []
-    for (const step of runnableInGroup) {
-      executed.push(await executeSingleStep(basePath, sequence, step.id, runId, mprocsClient))
-    }
-
-    const result: RunRunnableResult = {
-      success: executed.every(e => e.success),
-      executed,
-      skipped: [],
-    }
-    await finalizeRootRunScopeForCommand(basePath, runId, result.success, `group:${groupId}`)
-
-    if (options.json) {
-      console.log(JSON.stringify(result))
-    } else {
-      console.log(`Executed ${executed.length} step(s) from group '${groupId}'`)
-      for (const e of executed) {
-        const status = e.success ? 'DONE' : 'FAILED'
-        console.log(`  ${e.stepId}: ${status} (${e.duration}ms)`)
-      }
-    }
-  } else {
-    const errorMsg = 'Unknown subcommand. Usage: seqctl run step|runnable|group'
-    if (options.json) {
-      console.log(JSON.stringify({ error: errorMsg, success: false }))
-    } else {
-      console.error(errorMsg)
-    }
-    process.exit(1)
+  const handler = subcommand ? runSubcommands[subcommand] : undefined
+  if (!handler) {
+    return exitWithError('Unknown subcommand. Usage: seqctl run step|runnable|group', options.json)
   }
+
+  await handler(basePath, sequence, mprocsClient, args, options)
 }

@@ -20,6 +20,36 @@ interface CLIOptions {
   basePath?: string
 }
 
+interface TemplateGenResult {
+  steps: Step[]
+  gates: Gate[]
+}
+
+type TemplateGenerator = (commonOpts: Record<string, unknown>, values: Record<string, unknown>) => TemplateGenResult
+
+const templateGenerators: Record<string, TemplateGenerator> = {
+  base: (opts) => ({ steps: generateBase(opts), gates: [] }),
+  parallel: (opts) => ({ steps: generateParallel(opts), gates: [] }),
+  chained: (opts, values) => {
+    const result = generateChained({ ...opts, gates: values.gates as boolean | undefined })
+    return { steps: result.steps, gates: result.gates }
+  },
+  fusion: (opts) => ({ steps: generateFusion({ ...opts, candidateCount: opts.count as number | undefined }), gates: [] }),
+  orchestrated: (opts) => ({ steps: generateOrchestrated({ ...opts, workerCount: opts.count as number | undefined }), gates: [] }),
+  'long-autonomy': (opts, values) => ({
+    steps: generateLongAutonomy({
+      ...opts,
+      timeoutMs: values['timeout-ms'] ? parseInt(values['timeout-ms'] as string) : undefined,
+    }),
+    gates: [],
+  }),
+}
+
+function exitTemplateError(error: string, json: boolean): never {
+  if (json) { console.log(JSON.stringify({ success: false, error })) } else { console.error(error) }
+  process.exit(1)
+}
+
 export async function templateCommand(
   subcommand: string | undefined,
   args: string[],
@@ -28,16 +58,15 @@ export async function templateCommand(
   const basePath = options.basePath ?? process.cwd()
 
   if (subcommand !== 'apply') {
-    const error = `Unknown subcommand. Usage: seqctl template apply <type> [options]\nTypes: ${TEMPLATE_TYPES.join(', ')}`
-    if (options.json) { console.log(JSON.stringify({ success: false, error })) } else { console.error(error) }
-    process.exit(1)
+    return exitTemplateError(`Unknown subcommand. Usage: seqctl template apply <type> [options]\nTypes: ${TEMPLATE_TYPES.join(', ')}`, options.json)
   }
 
   const templateType = args[0]
   if (!templateType || !(TEMPLATE_TYPES as readonly string[]).includes(templateType)) {
-    const error = new InvalidTemplateError(templateType || '(none)').message + `. Available: ${TEMPLATE_TYPES.join(', ')}`
-    if (options.json) { console.log(JSON.stringify({ success: false, error })) } else { console.error(error) }
-    process.exit(1)
+    return exitTemplateError(
+      new InvalidTemplateError(templateType || '(none)').message + `. Available: ${TEMPLATE_TYPES.join(', ')}`,
+      options.json,
+    )
   }
 
   const { values } = parseArgs({
@@ -59,35 +88,8 @@ export async function templateCommand(
     model: (values.model as 'claude-code' | 'codex' | 'gemini') || undefined,
   }
 
-  let newSteps: Step[] = []
-  let newGates: Gate[] = []
-
-  switch (templateType) {
-    case 'base':
-      newSteps = generateBase(commonOpts)
-      break
-    case 'parallel':
-      newSteps = generateParallel(commonOpts)
-      break
-    case 'chained': {
-      const result = generateChained({ ...commonOpts, gates: values.gates as boolean | undefined })
-      newSteps = result.steps
-      newGates = result.gates
-      break
-    }
-    case 'fusion':
-      newSteps = generateFusion({ ...commonOpts, candidateCount: commonOpts.count })
-      break
-    case 'orchestrated':
-      newSteps = generateOrchestrated({ ...commonOpts, workerCount: commonOpts.count })
-      break
-    case 'long-autonomy':
-      newSteps = generateLongAutonomy({
-        ...commonOpts,
-        timeoutMs: values['timeout-ms'] ? parseInt(values['timeout-ms'] as string) : undefined,
-      })
-      break
-  }
+  const generator = templateGenerators[templateType]
+  const { steps: newSteps, gates: newGates } = generator(commonOpts, values)
 
   const sequence = await readSequence(basePath)
   sequence.steps.push(...newSteps)
@@ -96,9 +98,7 @@ export async function templateCommand(
   try {
     validateDAG(sequence)
   } catch (error) {
-    const msg = error instanceof Error ? error.message : 'DAG validation failed'
-    if (options.json) { console.log(JSON.stringify({ success: false, error: msg })) } else { console.error(msg) }
-    process.exit(1)
+    return exitTemplateError(error instanceof Error ? error.message : 'DAG validation failed', options.json)
   }
 
   await writeSequence(basePath, sequence)
