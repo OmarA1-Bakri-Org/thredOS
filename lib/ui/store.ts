@@ -124,6 +124,8 @@ export const useUIStore = create<UIStore>((set) => ({
   setSelectedThreadSurfaceId: (id) =>
     set({
       selectedThreadSurfaceId: id,
+      selectedPhaseId: null,
+      selectedNodeId: null,
       ...(id != null ? { inspectorOpen: true } : {}),
     }),
   selectedRunId: null,
