@@ -1,4 +1,6 @@
+import type { AgentRegistration } from '@/lib/agents/types'
 import type { Sequence, Step } from '@/lib/sequence/schema'
+import { hasSpawnSkill } from '@/lib/thread-surfaces/projections'
 
 export type SpawnKind = 'orchestrator' | 'watchdog' | 'fanout'
 
@@ -15,9 +17,14 @@ export interface SpawnSpec {
 interface DeriveSpawnSpecsForStepArgs {
   sequence: Sequence
   step: Step
+  agent: AgentRegistration | null
 }
 
-export function deriveSpawnSpecsForStep({ sequence, step }: DeriveSpawnSpecsForStepArgs): SpawnSpec[] {
+export function deriveSpawnSpecsForStep({ sequence, step, agent }: DeriveSpawnSpecsForStepArgs): SpawnSpec[] {
+  if (!hasSpawnSkill(agent)) {
+    return []
+  }
+
   const orchestratedChildren = sequence.steps
     .filter(candidate => candidate.id !== step.id && candidate.orchestrator === step.id)
     .map((childStep, index) => ({
