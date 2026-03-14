@@ -14,6 +14,8 @@ const threadSurfaces: ThreadSurface[] = [
     surfaceLabel: 'Master',
     createdAt,
     childSurfaceIds: ['thread-research', 'thread-synth'],
+    sequenceRef: null,
+    spawnedByAgentId: null,
   },
   {
     id: 'thread-research',
@@ -23,6 +25,8 @@ const threadSurfaces: ThreadSurface[] = [
     surfaceLabel: 'Research',
     createdAt,
     childSurfaceIds: [],
+    sequenceRef: null,
+    spawnedByAgentId: null,
   },
   {
     id: 'thread-review',
@@ -32,6 +36,8 @@ const threadSurfaces: ThreadSurface[] = [
     surfaceLabel: 'Review',
     createdAt,
     childSurfaceIds: [],
+    sequenceRef: null,
+    spawnedByAgentId: null,
   },
   {
     id: 'thread-synth',
@@ -41,6 +47,8 @@ const threadSurfaces: ThreadSurface[] = [
     surfaceLabel: 'Synthesis',
     createdAt,
     childSurfaceIds: [],
+    sequenceRef: null,
+    spawnedByAgentId: null,
   },
 ]
 

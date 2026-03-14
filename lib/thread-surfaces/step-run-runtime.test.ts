@@ -130,6 +130,18 @@ describe('step run runtime helpers', () => {
         runSummary: 'step:step-a',
       }),
     )
+    // Verify child surface has sequenceRef set
+    const childSurface = result.state.threadSurfaces.find(surface => surface.id === 'thread-child-step')
+    expect(childSurface?.sequenceRef).toBe('.threados/sequences/thread-child-step/sequence.yaml')
+    expect(childSurface?.spawnedByAgentId).toBe('step-a')
+
+    // Verify pendingChildSequences returned for provisioning
+    expect(result.pendingChildSequences).toEqual([{
+      surfaceId: 'thread-child-step',
+      sequenceRef: '.threados/sequences/thread-child-step/sequence.yaml',
+      sequenceName: 'Child Step',
+      threadType: 'base',
+    }])
   })
 
   test('finalizeStepRunWithRuntimeEvents records merge events in emitted source order', () => {
@@ -199,5 +211,44 @@ describe('step run runtime helpers', () => {
         runStatus: 'successful',
       }),
     )
+    expect(result.pendingChildSequences).toEqual([])
+  })
+
+  test('finalizeStepRunWithRuntimeEvents uses threadType from spawn event', () => {
+    const started = createRootThreadSurfaceRun(emptyThreadSurfaceState, {
+      surfaceId: 'thread-root',
+      surfaceLabel: 'Sequence',
+      createdAt: '2026-03-09T10:00:00.000Z',
+      runId: 'run-root',
+      startedAt: '2026-03-09T10:00:00.000Z',
+      executionIndex: 1,
+    }).state
+
+    const runtimeEvents: RuntimeDelegationEvent[] = [{
+      eventType: 'spawn-child',
+      createdAt: '2026-03-09T10:01:05.000Z',
+      childStepId: 'parallel-child',
+      childLabel: 'Parallel Child',
+      spawnKind: 'fanout',
+      threadType: 'parallel',
+    }]
+
+    const result = finalizeStepRunWithRuntimeEvents(started, {
+      step: buildStep(),
+      stepRun: null,
+      success: true,
+      endedAt: '2026-03-09T10:01:10.000Z',
+      runtimeEvents,
+      nextRunId: () => 'run-generated',
+      nextEventId: () => 'event-generated',
+      nextMergeId: () => 'merge-generated',
+    })
+
+    expect(result.pendingChildSequences).toEqual([{
+      surfaceId: 'thread-parallel-child',
+      sequenceRef: '.threados/sequences/thread-parallel-child/sequence.yaml',
+      sequenceName: 'Parallel Child',
+      threadType: 'parallel',
+    }])
   })
 })

@@ -19,6 +19,8 @@ describe('thread surface api response unwrappers', () => {
         surfaceLabel: 'Master',
         createdAt: '2026-03-09T00:00:00.000Z',
         childSurfaceIds: [],
+        sequenceRef: null,
+        spawnedByAgentId: null,
       },
     ]
 
@@ -34,6 +36,8 @@ describe('thread surface api response unwrappers', () => {
         startedAt: '2026-03-09T00:00:00.000Z',
         endedAt: null,
         executionIndex: 1,
+        parentRunId: null,
+        childIndex: null,
       },
     ]
 
@@ -82,6 +86,8 @@ describe('thread surface api response unwrappers', () => {
         surfaceLabel: 'Root',
         createdAt: '2026-03-09T00:00:00.000Z',
         childSurfaceIds: ['thread-child-a', 'thread-child-b'],
+        sequenceRef: null,
+        spawnedByAgentId: null,
       },
       {
         id: 'thread-child-a',
@@ -93,6 +99,8 @@ describe('thread surface api response unwrappers', () => {
         role: 'researcher',
         createdAt: '2026-03-09T01:00:00.000Z',
         childSurfaceIds: [],
+        sequenceRef: null,
+        spawnedByAgentId: null,
       },
       {
         id: 'thread-child-b',
@@ -102,6 +110,8 @@ describe('thread surface api response unwrappers', () => {
         surfaceLabel: 'Child B',
         createdAt: '2026-03-09T02:00:00.000Z',
         childSurfaceIds: [],
+        sequenceRef: null,
+        spawnedByAgentId: null,
       },
     ]
 
@@ -123,6 +133,8 @@ describe('thread surface api response unwrappers', () => {
         startedAt: '2026-03-09T00:00:00.000Z',
         endedAt: null,
         executionIndex: 1,
+        parentRunId: null,
+        childIndex: null,
       },
       {
         id: 'run-2',
@@ -135,6 +147,8 @@ describe('thread surface api response unwrappers', () => {
         runSummary: 'Completed analysis',
         runNotes: 'Extra notes',
         runDiscussion: 'Discussion content',
+        parentRunId: null,
+        childIndex: null,
       },
       {
         id: 'run-3',
@@ -142,6 +156,8 @@ describe('thread surface api response unwrappers', () => {
         runStatus: 'failed',
         startedAt: '2026-03-09T03:00:00.000Z',
         endedAt: '2026-03-09T03:30:00.000Z',
+        parentRunId: null,
+        childIndex: null,
       },
     ]
 

@@ -6,6 +6,8 @@ import { getRuntimeEventLogPath } from '../runner/artifacts'
 const SpawnKindSchema = z.enum(['orchestrator', 'watchdog', 'fanout'])
 const MergeKindSchema = z.enum(['single', 'block'])
 
+const ThreadTypeSchema = z.enum(['base', 'parallel', 'chained', 'fusion', 'orchestrated', 'long-autonomy'])
+
 const SpawnChildEventSchema = z.object({
   eventType: z.literal('spawn-child'),
   createdAt: z.string(),
@@ -13,6 +15,7 @@ const SpawnChildEventSchema = z.object({
   childLabel: z.string().min(1),
   spawnKind: SpawnKindSchema,
   parentStepId: z.string().min(1).optional(),
+  threadType: ThreadTypeSchema.optional(),
 })
 
 const MergeIntoEventSchema = z.object({

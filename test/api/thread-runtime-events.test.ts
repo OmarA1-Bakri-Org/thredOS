@@ -271,6 +271,8 @@ describe.serial('thread runtime event persistence', () => {
           surfaceLabel: 'Fusion Runtime',
           createdAt: '2026-03-09T12:00:00.000Z',
           childSurfaceIds: ['thread-candidate-a', 'thread-candidate-b'],
+          sequenceRef: null,
+          spawnedByAgentId: null,
         },
         {
           id: 'thread-candidate-a',
@@ -280,6 +282,8 @@ describe.serial('thread runtime event persistence', () => {
           surfaceLabel: 'Candidate A',
           createdAt: '2026-03-09T12:00:01.000Z',
           childSurfaceIds: [],
+          sequenceRef: null,
+          spawnedByAgentId: null,
         },
         {
           id: 'thread-candidate-b',
@@ -289,6 +293,8 @@ describe.serial('thread runtime event persistence', () => {
           surfaceLabel: 'Candidate B',
           createdAt: '2026-03-09T12:00:02.000Z',
           childSurfaceIds: [],
+          sequenceRef: null,
+          spawnedByAgentId: null,
         },
         {
           id: 'thread-fusion-synth',
@@ -298,6 +304,8 @@ describe.serial('thread runtime event persistence', () => {
           surfaceLabel: 'Fusion Synth',
           createdAt: '2026-03-09T12:00:03.000Z',
           childSurfaceIds: [],
+          sequenceRef: null,
+          spawnedByAgentId: null,
         },
       ],
       runs: [
@@ -308,6 +316,8 @@ describe.serial('thread runtime event persistence', () => {
           startedAt: '2026-03-09T12:00:00.000Z',
           endedAt: '2026-03-09T12:00:15.000Z',
           executionIndex: 1,
+          parentRunId: null,
+          childIndex: null,
         },
         {
           id: 'run-candidate-a',
@@ -316,6 +326,8 @@ describe.serial('thread runtime event persistence', () => {
           startedAt: '2026-03-09T12:00:01.000Z',
           endedAt: '2026-03-09T12:00:15.000Z',
           executionIndex: 2,
+          parentRunId: null,
+          childIndex: null,
         },
         {
           id: 'run-candidate-b',
@@ -324,6 +336,8 @@ describe.serial('thread runtime event persistence', () => {
           startedAt: '2026-03-09T12:00:02.000Z',
           endedAt: '2026-03-09T12:00:15.000Z',
           executionIndex: 3,
+          parentRunId: null,
+          childIndex: null,
         },
         {
           id: 'run-fusion-seed',
@@ -332,6 +346,8 @@ describe.serial('thread runtime event persistence', () => {
           startedAt: '2026-03-09T12:00:03.000Z',
           endedAt: '2026-03-09T12:00:15.000Z',
           executionIndex: 4,
+          parentRunId: null,
+          childIndex: null,
         },
       ],
       mergeEvents: [],
@@ -407,6 +423,8 @@ describe.serial('thread runtime event persistence', () => {
           surfaceLabel: 'Emitter Merge Runtime',
           createdAt: '2026-03-09T12:00:00.000Z',
           childSurfaceIds: ['thread-candidate-a', 'thread-candidate-b'],
+          sequenceRef: null,
+          spawnedByAgentId: null,
         },
         {
           id: 'thread-candidate-a',
@@ -416,6 +434,8 @@ describe.serial('thread runtime event persistence', () => {
           surfaceLabel: 'Candidate A',
           createdAt: '2026-03-09T12:00:01.000Z',
           childSurfaceIds: [],
+          sequenceRef: null,
+          spawnedByAgentId: null,
         },
         {
           id: 'thread-candidate-b',
@@ -425,6 +445,8 @@ describe.serial('thread runtime event persistence', () => {
           surfaceLabel: 'Candidate B',
           createdAt: '2026-03-09T12:00:02.000Z',
           childSurfaceIds: [],
+          sequenceRef: null,
+          spawnedByAgentId: null,
         },
       ],
       runs: [
@@ -435,6 +457,8 @@ describe.serial('thread runtime event persistence', () => {
           startedAt: '2026-03-09T12:00:00.000Z',
           endedAt: '2026-03-09T12:00:15.000Z',
           executionIndex: 1,
+          parentRunId: null,
+          childIndex: null,
         },
         {
           id: 'run-candidate-a',
@@ -443,6 +467,8 @@ describe.serial('thread runtime event persistence', () => {
           startedAt: '2026-03-09T12:00:01.000Z',
           endedAt: '2026-03-09T12:00:15.000Z',
           executionIndex: 2,
+          parentRunId: null,
+          childIndex: null,
         },
         {
           id: 'run-candidate-b',
@@ -451,6 +477,8 @@ describe.serial('thread runtime event persistence', () => {
           startedAt: '2026-03-09T12:00:02.000Z',
           endedAt: '2026-03-09T12:00:15.000Z',
           executionIndex: 3,
+          parentRunId: null,
+          childIndex: null,
         },
       ],
       mergeEvents: [],

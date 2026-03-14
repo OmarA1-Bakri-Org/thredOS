@@ -15,6 +15,7 @@ import { readThreadSurfaceState, writeThreadSurfaceState } from '../../thread-su
 import { completeRun, createReplacementRun, createRootThreadSurfaceRun } from '../../thread-surfaces/mutations'
 import { beginStepRunIfSurfaceExists, finalizeStepRunWithRuntimeEvents, type StepRunScope } from '../../thread-surfaces/step-run-runtime'
 import { readRuntimeEventLog, type RuntimeDelegationEvent } from '../../thread-surfaces/runtime-event-log'
+import { provisionAllChildSequences } from '../../thread-surfaces/provision-child-sequence'
 
 const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000 // 30 minutes
 const THREADOS_EVENT_EMITTER_COMMAND = 'thread event'
@@ -277,6 +278,10 @@ async function finalizeStepRunScope(
 
   if (finalized.stepRun != null) {
     await writeThreadSurfaceState(basePath, finalized.state)
+  }
+
+  if (finalized.pendingChildSequences.length > 0) {
+    await provisionAllChildSequences(basePath, finalized.pendingChildSequences)
   }
 }
 

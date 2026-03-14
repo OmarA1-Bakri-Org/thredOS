@@ -22,6 +22,12 @@ export type CreateNodeKind = 'step' | 'gate'
 /** The 6 left-rail sections following thread construction flow */
 export type AccordionSectionId = 'sequence' | 'phase' | 'node' | 'agent' | 'gate' | 'run'
 
+export interface NavFrame {
+  threadSurfaceId: string
+  surfaceLabel: string
+  depth: number
+}
+
 interface UIStore {
   productEntry: ProductEntryMode | null
   setProductEntry: (entry: ProductEntryMode) => void
@@ -69,6 +75,18 @@ interface UIStore {
   setActiveAccordionSections: (sections: string[]) => void
   expandAccordionSection: (section: string) => void
   collapseAccordionSection: (section: string) => void
+  navigationStack: NavFrame[]
+  portalDirection: 'forward' | 'back' | null
+  pushDepth: (frame: NavFrame) => void
+  popDepth: () => void
+  jumpToDepth: (index: number) => void
+  resetNavigation: (root: NavFrame) => void
+  currentDepthSurfaceId: string | null
+  currentDepthLevel: number
+  pathSegments: Array<{ id: string; label: string; depth: number }>
+  expandedChildSurfaceIds: string[]
+  toggleChildSurfaceExpanded: (surfaceId: string) => void
+  collapseAllChildSurfaces: () => void
 }
 
 const defaultHierarchyViewport: HierarchyViewportState = {
@@ -173,4 +191,59 @@ export const useUIStore = create<UIStore>((set) => ({
   collapseAccordionSection: (section) => set((s) => ({
     activeAccordionSections: s.activeAccordionSections.filter(id => id !== section),
   })),
+  navigationStack: [],
+  portalDirection: null,
+  pushDepth: (frame) => set((s) => ({
+    navigationStack: [...s.navigationStack, frame],
+    portalDirection: 'forward' as const,
+    selectedThreadSurfaceId: frame.threadSurfaceId,
+  })),
+  popDepth: () => set((s) => {
+    if (s.navigationStack.length <= 1) return {}
+    const nextStack = s.navigationStack.slice(0, -1)
+    const top = nextStack[nextStack.length - 1]
+    return {
+      navigationStack: nextStack,
+      portalDirection: 'back' as const,
+      selectedThreadSurfaceId: top?.threadSurfaceId ?? null,
+    }
+  }),
+  jumpToDepth: (index) => set((s) => {
+    if (index < 0 || index >= s.navigationStack.length) return {}
+    const nextStack = s.navigationStack.slice(0, index + 1)
+    const top = nextStack[nextStack.length - 1]
+    return {
+      navigationStack: nextStack,
+      portalDirection: 'back' as const,
+      selectedThreadSurfaceId: top?.threadSurfaceId ?? null,
+    }
+  }),
+  resetNavigation: (root) => set({
+    navigationStack: [root],
+    portalDirection: null,
+  }),
+  currentDepthSurfaceId: null,
+  currentDepthLevel: 0,
+  pathSegments: [],
+  expandedChildSurfaceIds: [],
+  toggleChildSurfaceExpanded: (surfaceId) => set((s) => ({
+    expandedChildSurfaceIds: s.expandedChildSurfaceIds.includes(surfaceId)
+      ? s.expandedChildSurfaceIds.filter(id => id !== surfaceId)
+      : [...s.expandedChildSurfaceIds, surfaceId],
+  })),
+  collapseAllChildSurfaces: () => set({ expandedChildSurfaceIds: [] }),
 }))
+
+export const selectCurrentDepthSurfaceId = (s: UIStore): string | null => {
+  const stack = s.navigationStack
+  return stack.length > 0 ? stack[stack.length - 1].threadSurfaceId : null
+}
+
+export const selectCurrentDepthLevel = (s: UIStore): number => {
+  const stack = s.navigationStack
+  return stack.length > 0 ? stack[stack.length - 1].depth : 0
+}
+
+export const selectPathSegments = (s: UIStore): Array<{ id: string; label: string; depth: number }> => {
+  return s.navigationStack.map(f => ({ id: f.threadSurfaceId, label: f.surfaceLabel, depth: f.depth }))
+}

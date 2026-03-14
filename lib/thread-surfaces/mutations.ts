@@ -1,6 +1,8 @@
 import type { MergeEvent, MergeKind, RunEvent, RunScope, RunStatus, ThreadSurface } from './types'
 import {
   InvalidThreadSurfaceMergeError,
+  SpawnDepthExceededError,
+  SpawnLimitExceededError,
   ThreadSurfaceAlreadyExistsError,
   ThreadSurfaceNotFoundError,
   ThreadSurfaceRunScopeNotFoundError,
@@ -27,6 +29,13 @@ interface CreateChildThreadSurfaceRunArgs {
   runId: string
   startedAt: string
   executionIndex?: number
+  sequenceRef?: string | null
+  parentRunId?: string | null
+  childIndex?: number | null
+  spawnedByAgentId?: string | null
+  maxSpawnDepth?: number
+  maxChildrenPerSurface?: number
+  maxTotalSurfaces?: number
 }
 
 interface CreateReplacementRunArgs {
@@ -90,6 +99,8 @@ export function createRootThreadSurfaceRun(state: ThreadSurfaceState, args: Crea
     surfaceLabel: args.surfaceLabel,
     createdAt: args.createdAt,
     childSurfaceIds: [],
+    sequenceRef: null,
+    spawnedByAgentId: null,
   }
 
   const run = createRunScope({
@@ -121,6 +132,24 @@ export function createChildThreadSurfaceRun(state: ThreadSurfaceState, args: Cre
   }
 
   const parent = state.threadSurfaces[parentIndex]
+
+  if (args.maxSpawnDepth != null) {
+    const childDepth = parent.depth + 1
+    if (childDepth > args.maxSpawnDepth) {
+      throw new SpawnDepthExceededError(childDepth, args.maxSpawnDepth)
+    }
+  }
+  if (args.maxChildrenPerSurface != null) {
+    if (parent.childSurfaceIds.length >= args.maxChildrenPerSurface) {
+      throw new SpawnLimitExceededError('children', parent.childSurfaceIds.length, args.maxChildrenPerSurface)
+    }
+  }
+  if (args.maxTotalSurfaces != null) {
+    if (state.threadSurfaces.length >= args.maxTotalSurfaces) {
+      throw new SpawnLimitExceededError('total', state.threadSurfaces.length, args.maxTotalSurfaces)
+    }
+  }
+
   const childSurface: ThreadSurface = {
     id: args.childSurfaceId,
     parentSurfaceId: parent.id,
@@ -129,6 +158,8 @@ export function createChildThreadSurfaceRun(state: ThreadSurfaceState, args: Cre
     surfaceLabel: args.childSurfaceLabel,
     createdAt: args.createdAt,
     childSurfaceIds: [],
+    sequenceRef: args.sequenceRef ?? null,
+    spawnedByAgentId: args.spawnedByAgentId ?? null,
   }
 
   const childRun = createRunScope({
@@ -136,6 +167,8 @@ export function createChildThreadSurfaceRun(state: ThreadSurfaceState, args: Cre
     threadSurfaceId: args.childSurfaceId,
     startedAt: args.startedAt,
     executionIndex: args.executionIndex,
+    parentRunId: args.parentRunId ?? null,
+    childIndex: args.childIndex ?? null,
   })
 
   const nextThreadSurfaces = [...state.threadSurfaces]
@@ -301,11 +334,15 @@ function createRunScope({
   threadSurfaceId,
   startedAt,
   executionIndex,
+  parentRunId,
+  childIndex,
 }: {
   runId: string
   threadSurfaceId: string
   startedAt: string
   executionIndex?: number
+  parentRunId?: string | null
+  childIndex?: number | null
 }): RunScope {
   return {
     id: runId,
@@ -313,6 +350,8 @@ function createRunScope({
     runStatus: 'running',
     startedAt,
     endedAt: null,
+    parentRunId: parentRunId ?? null,
+    childIndex: childIndex ?? null,
     ...(executionIndex != null ? { executionIndex } : {}),
   }
 }

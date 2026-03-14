@@ -32,7 +32,7 @@ const baseSequence: Sequence = {
     },
   ],
   gates: [
-    { id: 'gate-1', name: 'Gate One', depends_on: ['step-1'], status: 'PENDING' },
+    { id: 'gate-1', name: 'Gate One', depends_on: ['step-1'], status: 'PENDING', cascade: false, childGateIds: [] },
   ],
 }
 

@@ -21,6 +21,8 @@ const threadSurfaces: ThreadSurface[] = [
     surfaceLabel: 'Master',
     createdAt: '2026-03-09T00:00:00.000Z',
     childSurfaceIds: ['thread-research', 'thread-outreach', 'thread-synthesis'],
+    sequenceRef: null,
+    spawnedByAgentId: null,
   },
   {
     id: 'thread-research',
@@ -30,6 +32,8 @@ const threadSurfaces: ThreadSurface[] = [
     surfaceLabel: 'Research',
     createdAt: '2026-03-09T00:01:00.000Z',
     childSurfaceIds: [],
+    sequenceRef: null,
+    spawnedByAgentId: null,
   },
   {
     id: 'thread-outreach',
@@ -39,6 +43,8 @@ const threadSurfaces: ThreadSurface[] = [
     surfaceLabel: 'Outreach',
     createdAt: '2026-03-09T00:02:00.000Z',
     childSurfaceIds: [],
+    sequenceRef: null,
+    spawnedByAgentId: null,
   },
   {
     id: 'thread-synthesis',
@@ -48,6 +54,8 @@ const threadSurfaces: ThreadSurface[] = [
     surfaceLabel: 'Synthesis',
     createdAt: '2026-03-09T00:03:00.000Z',
     childSurfaceIds: [],
+    sequenceRef: null,
+    spawnedByAgentId: null,
   },
   {
     id: 'thread-review',
@@ -57,6 +65,8 @@ const threadSurfaces: ThreadSurface[] = [
     surfaceLabel: 'Review',
     createdAt: '2026-03-09T00:04:00.000Z',
     childSurfaceIds: [],
+    sequenceRef: null,
+    spawnedByAgentId: null,
   },
 ]
 
@@ -70,6 +80,8 @@ describe('createLaneBoardModel', () => {
         startedAt: '2026-03-09T00:00:00.000Z',
         endedAt: null,
         executionIndex: 30,
+        parentRunId: null,
+        childIndex: null,
       },
       {
         id: 'run-research',
@@ -78,6 +90,8 @@ describe('createLaneBoardModel', () => {
         startedAt: '2026-03-09T00:01:00.000Z',
         endedAt: '2026-03-09T00:05:00.000Z',
         executionIndex: 10,
+        parentRunId: null,
+        childIndex: null,
       },
       {
         id: 'run-outreach',
@@ -86,6 +100,8 @@ describe('createLaneBoardModel', () => {
         startedAt: '2026-03-09T00:02:00.000Z',
         endedAt: '2026-03-09T00:06:00.000Z',
         executionIndex: 20,
+        parentRunId: null,
+        childIndex: null,
       },
     ]
 
@@ -112,6 +128,8 @@ describe('createLaneBoardModel', () => {
         runStatus: 'pending',
         startedAt: '2026-03-09T00:00:00.000Z',
         endedAt: null,
+        parentRunId: null,
+        childIndex: null,
       },
       {
         id: 'run-research-draft',
@@ -119,6 +137,8 @@ describe('createLaneBoardModel', () => {
         runStatus: 'pending',
         startedAt: '2026-03-09T00:01:00.000Z',
         endedAt: null,
+        parentRunId: null,
+        childIndex: null,
       },
       {
         id: 'run-outreach-draft',
@@ -126,6 +146,8 @@ describe('createLaneBoardModel', () => {
         runStatus: 'pending',
         startedAt: '2026-03-09T00:02:00.000Z',
         endedAt: null,
+        parentRunId: null,
+        childIndex: null,
       },
     ]
 
@@ -153,6 +175,8 @@ describe('createLaneBoardModel', () => {
         startedAt: '2026-03-09T00:00:00.000Z',
         endedAt: null,
         executionIndex: 30,
+        parentRunId: null,
+        childIndex: null,
       },
       {
         id: 'run-research',
@@ -161,6 +185,8 @@ describe('createLaneBoardModel', () => {
         startedAt: '2026-03-09T00:01:00.000Z',
         endedAt: '2026-03-09T00:05:00.000Z',
         executionIndex: 10,
+        parentRunId: null,
+        childIndex: null,
       },
       {
         id: 'run-outreach-draft',
@@ -168,6 +194,8 @@ describe('createLaneBoardModel', () => {
         runStatus: 'pending',
         startedAt: '2026-03-09T00:02:00.000Z',
         endedAt: null,
+        parentRunId: null,
+        childIndex: null,
       },
       {
         id: 'run-review-draft',
@@ -175,6 +203,8 @@ describe('createLaneBoardModel', () => {
         runStatus: 'pending',
         startedAt: '2026-03-09T00:03:00.000Z',
         endedAt: null,
+        parentRunId: null,
+        childIndex: null,
       },
     ]
 
@@ -203,6 +233,8 @@ describe('createLaneBoardModel', () => {
         startedAt: '2026-03-09T00:00:00.000Z',
         endedAt: null,
         executionIndex: 40,
+        parentRunId: null,
+        childIndex: null,
       },
       {
         id: 'run-research',
@@ -211,6 +243,8 @@ describe('createLaneBoardModel', () => {
         startedAt: '2026-03-09T00:01:00.000Z',
         endedAt: '2026-03-09T00:04:00.000Z',
         executionIndex: 12,
+        parentRunId: null,
+        childIndex: null,
       },
       {
         id: 'run-outreach',
@@ -219,6 +253,8 @@ describe('createLaneBoardModel', () => {
         startedAt: '2026-03-09T00:02:00.000Z',
         endedAt: '2026-03-09T00:05:00.000Z',
         executionIndex: 13,
+        parentRunId: null,
+        childIndex: null,
       },
       {
         id: 'run-synthesis',
@@ -227,6 +263,8 @@ describe('createLaneBoardModel', () => {
         startedAt: '2026-03-09T00:03:00.000Z',
         endedAt: null,
         executionIndex: 14,
+        parentRunId: null,
+        childIndex: null,
       },
     ]
 
@@ -286,6 +324,8 @@ describe('createLaneBoardModel', () => {
         startedAt: '2026-03-09T00:01:00.000Z',
         endedAt: '2026-03-09T00:04:00.000Z',
         executionIndex: 12,
+        parentRunId: null,
+        childIndex: null,
       },
       {
         id: 'run-outreach',
@@ -294,6 +334,8 @@ describe('createLaneBoardModel', () => {
         startedAt: '2026-03-09T00:02:00.000Z',
         endedAt: '2026-03-09T00:05:00.000Z',
         executionIndex: 13,
+        parentRunId: null,
+        childIndex: null,
       },
       {
         id: 'run-synthesis',
@@ -302,6 +344,8 @@ describe('createLaneBoardModel', () => {
         startedAt: '2026-03-09T00:03:00.000Z',
         endedAt: null,
         executionIndex: 14,
+        parentRunId: null,
+        childIndex: null,
       },
     ]
 
@@ -349,6 +393,8 @@ describe('createLaneBoardModel', () => {
         startedAt: '2026-03-09T00:00:00.000Z',
         endedAt: null,
         executionIndex: 50,
+        parentRunId: null,
+        childIndex: null,
       },
       {
         id: 'run-review',
@@ -357,6 +403,8 @@ describe('createLaneBoardModel', () => {
         startedAt: '2026-03-09T00:07:00.000Z',
         endedAt: null,
         executionIndex: 25,
+        parentRunId: null,
+        childIndex: null,
       },
       {
         id: 'run-synthesis',
@@ -365,6 +413,8 @@ describe('createLaneBoardModel', () => {
         startedAt: '2026-03-09T00:03:00.000Z',
         endedAt: null,
         executionIndex: 14,
+        parentRunId: null,
+        childIndex: null,
       },
       {
         id: 'run-research',
@@ -373,6 +423,8 @@ describe('createLaneBoardModel', () => {
         startedAt: '2026-03-09T00:01:00.000Z',
         endedAt: '2026-03-09T00:04:00.000Z',
         executionIndex: 12,
+        parentRunId: null,
+        childIndex: null,
       },
       {
         id: 'run-outreach',
@@ -381,6 +433,8 @@ describe('createLaneBoardModel', () => {
         startedAt: '2026-03-09T00:02:00.000Z',
         endedAt: '2026-03-09T00:05:00.000Z',
         executionIndex: 13,
+        parentRunId: null,
+        childIndex: null,
       },
     ]
 
@@ -441,6 +495,8 @@ describe('createLaneBoardModel', () => {
         startedAt: '2026-03-09T00:00:00.000Z',
         endedAt: null,
         executionIndex: 50,
+        parentRunId: null,
+        childIndex: null,
       },
       {
         id: 'run-research',
@@ -449,6 +505,8 @@ describe('createLaneBoardModel', () => {
         startedAt: '2026-03-09T00:01:00.000Z',
         endedAt: '2026-03-09T00:04:00.000Z',
         executionIndex: 12,
+        parentRunId: null,
+        childIndex: null,
       },
       {
         id: 'run-outreach',
@@ -457,6 +515,8 @@ describe('createLaneBoardModel', () => {
         startedAt: '2026-03-09T00:02:00.000Z',
         endedAt: '2026-03-09T00:05:00.000Z',
         executionIndex: 13,
+        parentRunId: null,
+        childIndex: null,
       },
       {
         id: 'run-synthesis',
@@ -465,6 +525,8 @@ describe('createLaneBoardModel', () => {
         startedAt: '2026-03-09T00:03:00.000Z',
         endedAt: null,
         executionIndex: 14,
+        parentRunId: null,
+        childIndex: null,
       },
     ]
 

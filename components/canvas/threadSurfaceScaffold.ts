@@ -35,6 +35,8 @@ export function buildThreadSurfaceScaffold(status: SequenceStatus): ThreadSurfac
     role: 'orchestrator',
     createdAt: STATUS_TIMESTAMP,
     childSurfaceIds: [],
+    sequenceRef: null,
+    spawnedByAgentId: null,
   }
 
   const runStatus = deriveRunStatus(status)
@@ -48,6 +50,8 @@ export function buildThreadSurfaceScaffold(status: SequenceStatus): ThreadSurfac
     runSummary: buildRunSummary(status),
     runNotes: 'Sequence-backed scaffold for hierarchy-to-lane navigation.',
     runDiscussion: 'Full recursive thread-surface data will replace this scaffold once the backend exposes real thread runs.',
+    parentRunId: null,
+    childIndex: null,
   }
 
   return {

@@ -17,6 +17,8 @@ const surface: ThreadSurface = {
   role: 'specialist',
   createdAt: '2026-03-09T00:01:00.000Z',
   childSurfaceIds: [],
+  sequenceRef: null,
+  spawnedByAgentId: null,
 }
 
 const runs: RunScope[] = [
@@ -29,6 +31,8 @@ const runs: RunScope[] = [
     runSummary: 'Research succeeded',
     runNotes: 'Initial note',
     runDiscussion: 'Initial discussion',
+    parentRunId: null,
+    childIndex: null,
   },
   {
     id: 'run-research-failed',
@@ -39,6 +43,8 @@ const runs: RunScope[] = [
     runSummary: 'Research failed',
     runNotes: 'Failure note',
     runDiscussion: 'Failure discussion',
+    parentRunId: null,
+    childIndex: null,
   },
 ]
 

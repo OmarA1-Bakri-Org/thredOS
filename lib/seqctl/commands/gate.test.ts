@@ -30,7 +30,7 @@ describe('gate approve', () => {
   test('approves a gate', async () => {
     const seq = makeSequence({
       steps: [makeStep({ id: 'a' })],
-      gates: [{ id: 'gate-1', name: 'G', depends_on: ['a'], status: 'PENDING' }],
+      gates: [{ id: 'gate-1', name: 'G', depends_on: ['a'], status: 'PENDING', cascade: false, childGateIds: [] }],
     })
     await writeTestSequence(tempDir, seq)
     await gateCommand('approve', ['gate-1'], { ...jsonOpts, basePath: tempDir })
@@ -43,7 +43,7 @@ describe('gate block', () => {
   test('blocks a gate', async () => {
     const seq = makeSequence({
       steps: [makeStep({ id: 'a' })],
-      gates: [{ id: 'gate-1', name: 'G', depends_on: ['a'], status: 'PENDING' }],
+      gates: [{ id: 'gate-1', name: 'G', depends_on: ['a'], status: 'PENDING', cascade: false, childGateIds: [] }],
     })
     await writeTestSequence(tempDir, seq)
     await gateCommand('block', ['gate-1'], { ...jsonOpts, basePath: tempDir })
@@ -56,7 +56,7 @@ describe('gate list', () => {
   test('lists gates as JSON', async () => {
     const seq = makeSequence({
       steps: [makeStep({ id: 'a' })],
-      gates: [{ id: 'gate-1', name: 'G', depends_on: ['a'], status: 'PENDING' }],
+      gates: [{ id: 'gate-1', name: 'G', depends_on: ['a'], status: 'PENDING', cascade: false, childGateIds: [] }],
     })
     await writeTestSequence(tempDir, seq)
     const logs: string[] = []
@@ -72,7 +72,7 @@ describe('gate list', () => {
   test('lists gates in human-readable format', async () => {
     const seq = makeSequence({
       steps: [makeStep({ id: 'a' })],
-      gates: [{ id: 'gate-1', name: 'Quality Gate', depends_on: ['a'], status: 'PENDING' }],
+      gates: [{ id: 'gate-1', name: 'Quality Gate', depends_on: ['a'], status: 'PENDING', cascade: false, childGateIds: [] }],
     })
     await writeTestSequence(tempDir, seq)
     const logs: string[] = []
@@ -159,7 +159,7 @@ describe('gate insert error paths', () => {
   test('insert fails when gate already exists', async () => {
     const seq = makeSequence({
       steps: [makeStep({ id: 'a' })],
-      gates: [{ id: 'gate-1', name: 'G', depends_on: ['a'], status: 'PENDING' }],
+      gates: [{ id: 'gate-1', name: 'G', depends_on: ['a'], status: 'PENDING', cascade: false, childGateIds: [] }],
     })
     await writeTestSequence(tempDir, seq)
     const logs: string[] = []
@@ -213,7 +213,7 @@ describe('gate human-readable output', () => {
   test('approve prints human-readable success', async () => {
     const seq = makeSequence({
       steps: [makeStep({ id: 'a' })],
-      gates: [{ id: 'gate-1', name: 'G', depends_on: ['a'], status: 'PENDING' }],
+      gates: [{ id: 'gate-1', name: 'G', depends_on: ['a'], status: 'PENDING', cascade: false, childGateIds: [] }],
     })
     await writeTestSequence(tempDir, seq)
     const logs: string[] = []
@@ -227,7 +227,7 @@ describe('gate human-readable output', () => {
   test('block prints human-readable success', async () => {
     const seq = makeSequence({
       steps: [makeStep({ id: 'a' })],
-      gates: [{ id: 'gate-1', name: 'G', depends_on: ['a'], status: 'PENDING' }],
+      gates: [{ id: 'gate-1', name: 'G', depends_on: ['a'], status: 'PENDING', cascade: false, childGateIds: [] }],
     })
     await writeTestSequence(tempDir, seq)
     const logs: string[] = []

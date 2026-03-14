@@ -25,6 +25,8 @@ function buildRootState(): ThreadSurfaceState {
     surfaceLabel: 'Master thread',
     createdAt: timestamp,
     childSurfaceIds: [],
+    sequenceRef: null,
+    spawnedByAgentId: null,
   }
 
   const rootRun: RunScope = {
@@ -34,6 +36,8 @@ function buildRootState(): ThreadSurfaceState {
     startedAt: timestamp,
     endedAt: '2026-03-09T10:05:00.000Z',
     executionIndex: 1,
+    parentRunId: null,
+    childIndex: null,
   }
 
   return {
@@ -62,6 +66,8 @@ describe('thread surface lifecycle mutations', () => {
       depth: 0,
       surfaceLabel: 'Master thread',
       childSurfaceIds: [],
+      sequenceRef: null,
+      spawnedByAgentId: null,
     })
     expect(result.run).toMatchObject({
       id: 'run-root-001',
@@ -92,6 +98,8 @@ describe('thread surface lifecycle mutations', () => {
       parentAgentNodeId: 'step-research',
       depth: 1,
       childSurfaceIds: [],
+      sequenceRef: null,
+      spawnedByAgentId: null,
     })
     expect(result.childRun).toMatchObject({
       id: 'run-research-001',
@@ -116,6 +124,8 @@ describe('thread surface lifecycle mutations', () => {
       id: 'run-root-001',
       runStatus: 'successful',
       endedAt: '2026-03-09T10:05:00.000Z',
+      parentRunId: null,
+      childIndex: null,
     })
     expect(result.run).toMatchObject({
       id: 'run-root-002',
@@ -123,6 +133,8 @@ describe('thread surface lifecycle mutations', () => {
       runStatus: 'running',
       endedAt: null,
       executionIndex: 3,
+      parentRunId: null,
+      childIndex: null,
     })
     expect(result.state.runs.map(run => run.id)).toEqual(['run-root-001', 'run-root-002'])
   })
@@ -196,6 +208,8 @@ describe('thread surface lifecycle mutations', () => {
           startedAt: timestamp,
           endedAt: null,
           executionIndex: 4,
+          parentRunId: null,
+          childIndex: null,
         },
       ],
       mergeEvents: [],
@@ -262,6 +276,8 @@ describe('thread surface lifecycle mutations', () => {
           startedAt: timestamp,
           endedAt: null,
           executionIndex: 1,
+          parentRunId: null,
+          childIndex: null,
         },
       ],
       mergeEvents: [],
@@ -280,6 +296,8 @@ describe('thread surface lifecycle mutations', () => {
       runStatus: 'successful',
       endedAt: '2026-03-09T10:30:00.000Z',
       runSummary: 'Completed without errors',
+      parentRunId: null,
+      childIndex: null,
     })
     expect(result.state.runs).toHaveLength(1)
   })
@@ -295,6 +313,8 @@ describe('thread surface lifecycle mutations', () => {
           runStatus: 'running',
           startedAt: timestamp,
           endedAt: null,
+          parentRunId: null,
+          childIndex: null,
         },
       ],
       mergeEvents: [],
@@ -311,6 +331,8 @@ describe('thread surface lifecycle mutations', () => {
       id: 'run-failing',
       runStatus: 'failed',
       endedAt: '2026-03-09T10:45:00.000Z',
+      parentRunId: null,
+      childIndex: null,
     })
     expect(result.run.runSummary).toBeUndefined()
   })
@@ -334,6 +356,8 @@ describe('run query helpers', () => {
       runStatus: 'successful',
       startedAt: '2026-03-09T08:00:00.000Z',
       endedAt: '2026-03-09T08:30:00.000Z',
+      parentRunId: null,
+      childIndex: null,
     },
     {
       id: 'run-mid',
@@ -341,6 +365,8 @@ describe('run query helpers', () => {
       runStatus: 'failed',
       startedAt: '2026-03-09T09:00:00.000Z',
       endedAt: '2026-03-09T09:30:00.000Z',
+      parentRunId: null,
+      childIndex: null,
     },
     {
       id: 'run-active',
@@ -348,6 +374,8 @@ describe('run query helpers', () => {
       runStatus: 'running',
       startedAt: '2026-03-09T10:00:00.000Z',
       endedAt: null,
+      parentRunId: null,
+      childIndex: null,
     },
     {
       id: 'run-other-surface',
@@ -355,6 +383,8 @@ describe('run query helpers', () => {
       runStatus: 'pending',
       startedAt: '2026-03-09T11:00:00.000Z',
       endedAt: null,
+      parentRunId: null,
+      childIndex: null,
     },
   ]
 
@@ -396,6 +426,8 @@ describe('run query helpers', () => {
         runStatus: 'successful',
         startedAt: '2026-03-09T08:00:00.000Z',
         endedAt: '2026-03-09T08:30:00.000Z',
+        parentRunId: null,
+        childIndex: null,
       },
       {
         id: 'run-cancelled',
@@ -403,6 +435,8 @@ describe('run query helpers', () => {
         runStatus: 'cancelled',
         startedAt: '2026-03-09T09:00:00.000Z',
         endedAt: '2026-03-09T09:30:00.000Z',
+        parentRunId: null,
+        childIndex: null,
       },
     ]
     const result = findLatestActiveRunForSurface(completedRuns, 'thread-root')

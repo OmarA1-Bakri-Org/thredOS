@@ -25,6 +25,7 @@ describe('thread surface domain types', () => {
       'merge-occurred',
       'run-cancelled',
       'run-completed',
+      'gate-cascade',
     ])
   })
 
@@ -37,6 +38,8 @@ describe('thread surface domain types', () => {
       surfaceLabel: 'Master thread',
       createdAt: '2026-03-09T00:00:00.000Z',
       childSurfaceIds: ['thread-research', 'thread-outreach'],
+      sequenceRef: null,
+      spawnedByAgentId: null,
     }
 
     expect(threadSurface.surfaceLabel).toBe('Master thread')
@@ -58,6 +61,8 @@ describe('thread surface domain types', () => {
       runSummary: 'Initial execution attempt',
       runNotes: 'Fresh run created instead of restarting',
       runDiscussion: 'Discussing current attempt only',
+      parentRunId: null,
+      childIndex: null,
     }
 
     expect(run.threadSurfaceId).toBe('thread-master')

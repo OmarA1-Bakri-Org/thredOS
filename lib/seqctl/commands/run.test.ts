@@ -278,7 +278,7 @@ describe('run runnable — no runnable steps', () => {
         makeStep({ id: 'a', status: 'DONE' }),
         makeStep({ id: 'b', status: 'READY', depends_on: ['a', 'gate-1'] }),
       ],
-      gates: [{ id: 'gate-1', name: 'Gate', depends_on: ['a'], status: 'PENDING' }],
+      gates: [{ id: 'gate-1', name: 'Gate', depends_on: ['a'], status: 'PENDING', cascade: false, childGateIds: [] }],
     })
     await writeTestSequence(tempDir, seq)
 

@@ -15,6 +15,7 @@ export const RunEventTypeValues = [
   'merge-occurred',
   'run-cancelled',
   'run-completed',
+  'gate-cascade',
 ] as const
 export type RunEventType = typeof RunEventTypeValues[number]
 
@@ -29,6 +30,8 @@ export interface ThreadSurface {
   registeredAgentId?: string
   createdAt: string
   childSurfaceIds: string[]
+  sequenceRef: string | null
+  spawnedByAgentId: string | null
 }
 
 export interface RunScope {
@@ -42,6 +45,8 @@ export interface RunScope {
   runSummary?: string
   runNotes?: string
   runDiscussion?: string
+  parentRunId: string | null
+  childIndex: number | null
 }
 
 export interface RunEventPayloadByType {
@@ -71,6 +76,11 @@ export interface RunEventPayloadByType {
   }
   'run-completed': {
     summary?: string
+  }
+  'gate-cascade': {
+    sourceGateId: string
+    targetGateId: string
+    cascadeResult: 'blocked' | 'approved'
   }
 }
 

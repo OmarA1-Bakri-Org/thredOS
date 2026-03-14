@@ -80,8 +80,8 @@ describe('compilePrompt', () => {
   test('includes gate state', async () => {
     const step = makeStep()
     const seq = makeSequence([step], [
-      { id: 'gate-review', name: 'Review', status: 'APPROVED', depends_on: [] },
-      { id: 'gate-deploy', name: 'Deploy', status: 'PENDING', depends_on: [] },
+      { id: 'gate-review', name: 'Review', status: 'APPROVED', depends_on: [], cascade: false, childGateIds: [] },
+      { id: 'gate-deploy', name: 'Deploy', status: 'PENDING', depends_on: [], cascade: false, childGateIds: [] },
     ])
 
     const result = await compilePrompt({

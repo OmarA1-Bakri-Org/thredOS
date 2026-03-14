@@ -29,7 +29,7 @@ export async function POST(request: Request) {
 
     if (body.action === 'insert') {
       if (seq.gates.some(g => g.id === body.gateId)) return jsonError(`Gate '${body.gateId}' already exists`, 'CONFLICT', 409)
-      const gate: Gate = { id: body.gateId, name: body.name || body.gateId, depends_on: body.dependsOn || [], status: 'PENDING' }
+      const gate: Gate = { id: body.gateId, name: body.name || body.gateId, depends_on: body.dependsOn || [], status: 'PENDING', cascade: false, childGateIds: [] }
       seq.gates.push(gate)
       validateDAG(seq)
       await writeSequence(bp, seq)

@@ -172,3 +172,17 @@ export class MissingLlmProviderConfigError extends ThreadOSError {
     this.name = 'MissingLlmProviderConfigError'
   }
 }
+
+export class SpawnDepthExceededError extends ThreadOSError {
+  constructor(currentDepth: number, maxDepth: number) {
+    super(`Spawn depth ${currentDepth} exceeds maximum allowed depth of ${maxDepth}`, 'SPAWN_DEPTH_EXCEEDED')
+    this.name = 'SpawnDepthExceededError'
+  }
+}
+
+export class SpawnLimitExceededError extends ThreadOSError {
+  constructor(limitType: 'children' | 'total', current: number, max: number) {
+    super(`Spawn limit exceeded: ${limitType} count ${current} exceeds maximum of ${max}`, 'SPAWN_LIMIT_EXCEEDED')
+    this.name = 'SpawnLimitExceededError'
+  }
+}

@@ -26,7 +26,7 @@ const mockSequence: Sequence = {
     },
   ],
   gates: [
-    { id: 'gate-1', name: 'Review Gate', depends_on: ['step-1'], status: 'PENDING' },
+    { id: 'gate-1', name: 'Review Gate', depends_on: ['step-1'], status: 'PENDING', cascade: false, childGateIds: [] },
   ],
 }
 

@@ -12,6 +12,8 @@ const surfaces: ThreadSurface[] = [
     surfaceLabel: 'Master',
     createdAt: '2026-03-09T00:00:00.000Z',
     childSurfaceIds: ['thread-research', 'thread-outreach', 'thread-synthesis'],
+    sequenceRef: null,
+    spawnedByAgentId: null,
   },
   {
     id: 'thread-research',
@@ -21,6 +23,8 @@ const surfaces: ThreadSurface[] = [
     surfaceLabel: 'Research',
     createdAt: '2026-03-09T00:01:00.000Z',
     childSurfaceIds: [],
+    sequenceRef: null,
+    spawnedByAgentId: null,
   },
   {
     id: 'thread-outreach',
@@ -30,6 +34,8 @@ const surfaces: ThreadSurface[] = [
     surfaceLabel: 'Outreach',
     createdAt: '2026-03-09T00:02:00.000Z',
     childSurfaceIds: [],
+    sequenceRef: null,
+    spawnedByAgentId: null,
   },
   {
     id: 'thread-synthesis',
@@ -39,6 +45,8 @@ const surfaces: ThreadSurface[] = [
     surfaceLabel: 'Synthesis',
     createdAt: '2026-03-09T00:03:00.000Z',
     childSurfaceIds: [],
+    sequenceRef: null,
+    spawnedByAgentId: null,
   },
 ]
 
@@ -68,6 +76,8 @@ describe('thread surface projections', () => {
         runStatus: 'failed',
         startedAt: '2026-03-09T00:00:00.000Z',
         endedAt: '2026-03-09T00:10:00.000Z',
+        parentRunId: null,
+        childIndex: null,
       },
       {
         id: 'run-success',
@@ -75,6 +85,8 @@ describe('thread surface projections', () => {
         runStatus: 'successful',
         startedAt: '2026-03-09T01:00:00.000Z',
         endedAt: '2026-03-09T01:10:00.000Z',
+        parentRunId: null,
+        childIndex: null,
       },
       {
         id: 'run-cancelled',
@@ -82,6 +94,8 @@ describe('thread surface projections', () => {
         runStatus: 'cancelled',
         startedAt: '2026-03-09T02:00:00.000Z',
         endedAt: '2026-03-09T02:05:00.000Z',
+        parentRunId: null,
+        childIndex: null,
       },
     ]
 
@@ -95,6 +109,8 @@ describe('thread surface projections', () => {
         runStatus: 'running',
         startedAt: '2026-03-09T03:00:00.000Z',
         endedAt: null,
+        parentRunId: null,
+        childIndex: null,
       },
     ]
 
@@ -113,6 +129,8 @@ describe('thread surface projections', () => {
         startedAt: '2026-03-08T00:00:00.000Z',
         endedAt: '2026-03-08T00:10:00.000Z',
         executionIndex: 1,
+        parentRunId: null,
+        childIndex: null,
       },
       {
         id: 'run-master',
@@ -121,6 +139,8 @@ describe('thread surface projections', () => {
         startedAt: '2026-03-09T00:00:00.000Z',
         endedAt: '2026-03-09T00:10:00.000Z',
         executionIndex: 15,
+        parentRunId: null,
+        childIndex: null,
       },
       {
         id: 'run-research',
@@ -129,6 +149,8 @@ describe('thread surface projections', () => {
         startedAt: '2026-03-09T00:01:00.000Z',
         endedAt: '2026-03-09T00:04:00.000Z',
         executionIndex: 12,
+        parentRunId: null,
+        childIndex: null,
       },
       {
         id: 'run-outreach',
@@ -137,6 +159,8 @@ describe('thread surface projections', () => {
         startedAt: '2026-03-09T00:02:00.000Z',
         endedAt: '2026-03-09T00:05:00.000Z',
         executionIndex: 13,
+        parentRunId: null,
+        childIndex: null,
       },
       {
         id: 'run-synthesis',
@@ -145,6 +169,8 @@ describe('thread surface projections', () => {
         startedAt: '2026-03-09T00:03:00.000Z',
         endedAt: null,
         executionIndex: 14,
+        parentRunId: null,
+        childIndex: null,
       },
     ]
 
@@ -212,6 +238,8 @@ describe('thread surface projections', () => {
         startedAt: '2026-03-09T00:00:00.000Z',
         endedAt: '2026-03-09T00:10:00.000Z',
         executionIndex: 15,
+        parentRunId: null,
+        childIndex: null,
       },
       {
         id: 'run-research',
@@ -220,6 +248,8 @@ describe('thread surface projections', () => {
         startedAt: '2026-03-09T00:01:00.000Z',
         endedAt: '2026-03-09T00:04:00.000Z',
         executionIndex: 12,
+        parentRunId: null,
+        childIndex: null,
       },
       {
         id: 'run-outreach-old',
@@ -228,6 +258,8 @@ describe('thread surface projections', () => {
         startedAt: '2026-03-09T00:01:30.000Z',
         endedAt: '2026-03-09T00:02:00.000Z',
         executionIndex: 11,
+        parentRunId: null,
+        childIndex: null,
       },
       {
         id: 'run-outreach-current',
@@ -236,6 +268,8 @@ describe('thread surface projections', () => {
         startedAt: '2026-03-09T00:02:00.000Z',
         endedAt: '2026-03-09T00:05:00.000Z',
         executionIndex: 13,
+        parentRunId: null,
+        childIndex: null,
       },
       {
         id: 'run-synthesis',
@@ -244,6 +278,8 @@ describe('thread surface projections', () => {
         startedAt: '2026-03-09T00:03:00.000Z',
         endedAt: null,
         executionIndex: 14,
+        parentRunId: null,
+        childIndex: null,
       },
     ]
 
@@ -373,6 +409,8 @@ describe('thread surface projections', () => {
         registeredAgentId: 'agent-master',
         createdAt: '2026-03-09T00:00:00.000Z',
         childSurfaceIds: ['ts-worker'],
+        sequenceRef: null,
+        spawnedByAgentId: null,
       },
       {
         id: 'ts-worker',
@@ -383,6 +421,8 @@ describe('thread surface projections', () => {
         registeredAgentId: 'agent-worker',
         createdAt: '2026-03-09T00:01:00.000Z',
         childSurfaceIds: [],
+        sequenceRef: null,
+        spawnedByAgentId: null,
       },
     ]
 
@@ -448,6 +488,8 @@ describe('thread surface projections', () => {
         surfaceLabel: 'Orphan',
         createdAt: '2026-03-09T00:00:00.000Z',
         childSurfaceIds: [],
+        sequenceRef: null,
+        spawnedByAgentId: null,
       },
     ]
 

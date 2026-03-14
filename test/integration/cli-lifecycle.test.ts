@@ -354,6 +354,8 @@ describe('CLI lifecycle integration', () => {
           id: 'thread-delegate-step',
           parentSurfaceId: 'thread-root',
           childSurfaceIds: ['thread-delegate-child-a', 'thread-delegate-child-b'],
+          sequenceRef: null,
+          spawnedByAgentId: null,
         }),
         expect.objectContaining({
           id: 'thread-delegate-child-a',
@@ -417,6 +419,8 @@ describe('CLI lifecycle integration', () => {
           surfaceLabel: 'CLI Merge Event Sequence',
           createdAt: '2026-03-09T10:00:00.000Z',
           childSurfaceIds: ['thread-candidate-a', 'thread-candidate-b'],
+          sequenceRef: null,
+          spawnedByAgentId: null,
         },
         {
           id: 'thread-candidate-a',
@@ -426,6 +430,8 @@ describe('CLI lifecycle integration', () => {
           surfaceLabel: 'Candidate A',
           createdAt: '2026-03-09T10:00:01.000Z',
           childSurfaceIds: [],
+          sequenceRef: null,
+          spawnedByAgentId: null,
         },
         {
           id: 'thread-candidate-b',
@@ -435,6 +441,8 @@ describe('CLI lifecycle integration', () => {
           surfaceLabel: 'Candidate B',
           createdAt: '2026-03-09T10:00:02.000Z',
           childSurfaceIds: [],
+          sequenceRef: null,
+          spawnedByAgentId: null,
         },
       ],
       runs: [
@@ -445,6 +453,8 @@ describe('CLI lifecycle integration', () => {
           startedAt: '2026-03-09T10:00:00.000Z',
           endedAt: '2026-03-09T10:00:15.000Z',
           executionIndex: 1,
+          parentRunId: null,
+          childIndex: null,
         },
         {
           id: 'run-candidate-a',
@@ -453,6 +463,8 @@ describe('CLI lifecycle integration', () => {
           startedAt: '2026-03-09T10:00:01.000Z',
           endedAt: '2026-03-09T10:00:15.000Z',
           executionIndex: 2,
+          parentRunId: null,
+          childIndex: null,
         },
         {
           id: 'run-candidate-b',
@@ -461,6 +473,8 @@ describe('CLI lifecycle integration', () => {
           startedAt: '2026-03-09T10:00:02.000Z',
           endedAt: '2026-03-09T10:00:15.000Z',
           executionIndex: 3,
+          parentRunId: null,
+          childIndex: null,
         },
       ],
       mergeEvents: [],

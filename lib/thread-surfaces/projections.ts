@@ -77,6 +77,50 @@ export function projectHierarchy(threadSurfaces: ThreadSurface[]): HierarchyProj
   }
 }
 
+export function projectChildrenOf(threadSurfaces: ThreadSurface[], parentSurfaceId: string): ThreadSurface[] {
+  return threadSurfaces.filter(surface => surface.parentSurfaceId === parentSurfaceId)
+}
+
+export interface AncestryPathSegment {
+  id: string
+  label: string
+  depth: number
+}
+
+export function projectAncestryPath(threadSurfaces: ThreadSurface[], surfaceId: string): AncestryPathSegment[] {
+  const surfaceMap = new Map(threadSurfaces.map(s => [s.id, s]))
+  const path: AncestryPathSegment[] = []
+  let current = surfaceMap.get(surfaceId)
+
+  while (current) {
+    path.unshift({ id: current.id, label: current.surfaceLabel, depth: current.depth })
+    current = current.parentSurfaceId ? surfaceMap.get(current.parentSurfaceId) : undefined
+  }
+
+  return path
+}
+
+export function projectDepthScopedLaneBoard(
+  threadSurfaces: ThreadSurface[],
+  runs: RunScope[],
+  mergeEvents: MergeEvent[],
+  parentSurfaceId: string,
+): LaneBoardProjection {
+  const childSurfaces = projectChildrenOf(threadSurfaces, parentSurfaceId)
+  const childSurfaceIds = new Set(childSurfaces.map(s => s.id))
+  const childRuns = runs.filter(run => childSurfaceIds.has(run.threadSurfaceId))
+  const childMergeEvents = mergeEvents.filter(event =>
+    childSurfaceIds.has(event.destinationThreadSurfaceId)
+  )
+
+  return projectLaneBoard({
+    threadSurfaces: childSurfaces,
+    runs: childRuns,
+    mergeEvents: childMergeEvents,
+    runIds: childRuns.map(run => run.id),
+  })
+}
+
 export function resolveDefaultDisplayRun(runs: RunScope[]): RunScope | undefined {
   const activeRuns = runs.filter(run => run.runStatus === 'pending' || run.runStatus === 'running')
   if (activeRuns.length > 0) return latestRun(activeRuns)

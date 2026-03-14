@@ -48,6 +48,8 @@ export async function gateCommand(
         name: (values.name as string) || gateId,
         depends_on: values['depends-on'] ? (values['depends-on'] as string).split(',').map(s => s.trim()) : [],
         status: 'PENDING',
+        cascade: false,
+        childGateIds: [],
       }
 
       sequence.gates.push(gate)
