@@ -14,6 +14,7 @@ const storeState = {
   setSelectedPhaseId: (_id: string | null) => {},
   selectPhaseAndFocus: (_phaseId: string) => {},
   selectedRunId: null as string | null,
+  navigationStack: [] as Array<{ threadSurfaceId: string; surfaceLabel: string; depth: number }>,
 }
 
 mock.module('@/lib/ui/store', () => ({
@@ -24,6 +25,14 @@ mock.module('@/lib/ui/store', () => ({
       getState: () => storeState,
     },
   ),
+  selectCurrentDepthSurfaceId: (s: typeof storeState) => {
+    const stack = s.navigationStack
+    return stack.length > 0 ? stack[stack.length - 1].threadSurfaceId : null
+  },
+  selectCurrentDepthLevel: (s: typeof storeState) => {
+    const stack = s.navigationStack
+    return stack.length > 0 ? stack[stack.length - 1].depth : 0
+  },
 }))
 
 mock.module('@/lib/ui/api', () => ({

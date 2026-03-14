@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { Layers3, FileStack, ChevronRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useThreadSurfaces, useStatus } from '@/lib/ui/api'
-import { useUIStore } from '@/lib/ui/store'
+import { useUIStore, selectCurrentDepthSurfaceId } from '@/lib/ui/store'
 import { derivePhases } from '@/lib/ui/phases'
 
 const THREAD_TYPES = [
@@ -21,6 +21,7 @@ export function SequenceSection() {
   const { data: status } = useStatus()
   const selectedThreadSurfaceId = useUIStore(s => s.selectedThreadSurfaceId)
   const setSelectedThreadSurfaceId = useUIStore(s => s.setSelectedThreadSurfaceId)
+  const currentDepthSurfaceId = useUIStore(selectCurrentDepthSurfaceId)
 
   const autoDerivation = status
     ? derivePhases(status.steps, status.gates)
@@ -116,10 +117,19 @@ export function SequenceSection() {
       <div>
         <div className="flex items-center gap-2 pb-2">
           <Layers3 className="h-3 w-3 text-slate-500" />
-          <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Thread surfaces</div>
+          <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">
+            {currentDepthSurfaceId ? 'Scoped surfaces' : 'Thread surfaces'}
+          </div>
         </div>
         <div className="space-y-1.5">
-          {threadSurfaces && threadSurfaces.length > 0 ? threadSurfaces.map(surface => {
+          {threadSurfaces && threadSurfaces.length > 0 ? threadSurfaces
+            .filter(surface => {
+              // When at root depth, show all surfaces
+              if (!currentDepthSurfaceId) return true
+              // When at a specific depth, show the focused surface and its direct children
+              return surface.id === currentDepthSurfaceId || surface.parentSurfaceId === currentDepthSurfaceId
+            })
+            .map(surface => {
             const selected = selectedThreadSurfaceId === surface.id
             return (
               <Button

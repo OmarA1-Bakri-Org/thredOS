@@ -28,6 +28,7 @@ const storeState: Record<string, unknown> = {
   activeAccordionSections: ['sequence', 'phase'],
   setActiveAccordionSections: () => {},
   selectedRunId: null,
+  navigationStack: [],
 }
 
 mock.module('@/lib/ui/store', () => ({
@@ -38,6 +39,10 @@ mock.module('@/lib/ui/store', () => ({
       getState: () => storeState,
     },
   ),
+  selectCurrentDepthSurfaceId: (s: Record<string, unknown>) => {
+    const stack = s.navigationStack as Array<{ threadSurfaceId: string }> | undefined
+    return stack && stack.length > 0 ? stack[stack.length - 1].threadSurfaceId : null
+  },
 }))
 
 mock.module('@/lib/ui/api', () => ({

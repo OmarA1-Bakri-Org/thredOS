@@ -10,7 +10,8 @@ import {
   ShieldCheck,
   Play,
 } from 'lucide-react'
-import { useUIStore } from '@/lib/ui/store'
+import { useUIStore, selectCurrentDepthSurfaceId, selectCurrentDepthLevel } from '@/lib/ui/store'
+import { PathBar } from '@/components/navigation/PathBar'
 import { useStatus } from '@/lib/ui/api'
 import { derivePhases, findPhaseForStep, findPhaseForGate } from '@/lib/ui/phases'
 import type { LucideIcon } from 'lucide-react'
@@ -173,6 +174,8 @@ export function AccordionPanel() {
   const setSelectedPhaseId = useUIStore((s) => s.setSelectedPhaseId)
   const expandAccordionSection = useUIStore((s) => s.expandAccordionSection)
   const { data: status } = useStatus()
+  const currentDepthSurfaceId = useUIStore(selectCurrentDepthSurfaceId)
+  const currentDepthLevel = useUIStore(selectCurrentDepthLevel)
 
   // ── Canvas → Panel sync ──────────────────────────────────────────────
   // When a node is clicked on the canvas, derive which phase owns it
@@ -298,6 +301,16 @@ export function AccordionPanel() {
           })}
         </div>
       </div>
+
+      {/* Depth scope indicator — shows PathBar when navigated into a child surface */}
+      {currentDepthLevel > 0 && (
+        <div className="shrink-0 border-b border-slate-800/60 px-3 py-2 bg-[#060e1a]">
+          <div className="flex items-center gap-2">
+            <span className="font-mono text-[9px] uppercase tracking-[0.18em] text-slate-600">Scope</span>
+            <PathBar />
+          </div>
+        </div>
+      )}
 
       {/* Content area — masonry column flow when multiple sections are open */}
       <div className="min-h-0 flex-1 overflow-y-auto">
