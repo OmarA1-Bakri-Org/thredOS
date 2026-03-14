@@ -17,6 +17,7 @@ export const RunEventTypeValues = [
   'run-completed',
   'gate-cascade',
   'spawn-limit-warning',
+  'spawn-denied',
 ] as const
 export type RunEventType = typeof RunEventTypeValues[number]
 
@@ -87,6 +88,10 @@ export interface RunEventPayloadByType {
     limitType: 'depth' | 'children' | 'total'
     currentValue: number
     maxValue: number
+  }
+  'spawn-denied': {
+    reason: string
+    childStepId: string
   }
 }
 

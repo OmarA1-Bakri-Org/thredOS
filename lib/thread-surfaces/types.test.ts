@@ -27,6 +27,7 @@ describe('thread surface domain types', () => {
       'run-completed',
       'gate-cascade',
       'spawn-limit-warning',
+      'spawn-denied',
     ])
   })
 
@@ -117,5 +118,17 @@ describe('thread surface domain types', () => {
       sourceThreadSurfaceIds: ['thread-research'],
       sourceRunIds: ['run-research'],
     })
+  })
+
+  test('RunEvent accepts spawn-denied eventType', () => {
+    const event: RunEvent = {
+      id: 'evt-denied',
+      eventType: 'spawn-denied',
+      runId: 'run-1',
+      threadSurfaceId: 'thread-step-a',
+      createdAt: '2026-03-14T00:00:00.000Z',
+      payload: { reason: 'agent lacks spawn skill', childStepId: 'child-1' },
+    }
+    expect(event.eventType).toBe('spawn-denied')
   })
 })
