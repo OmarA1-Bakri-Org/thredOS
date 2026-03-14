@@ -227,23 +227,15 @@ describe('GateNode', () => {
     expect(markup).toContain('rgba(52,211,153,0.12)')
   })
 
-  test('non-phase gate dims when a phase is selected', () => {
+  test('gate is never dimmed regardless of phase selection', () => {
     uiState.selectedPhaseId = 'phase-step-other'
     const markup = renderToStaticMarkup(<GateNode {...baseProps} />)
-    expect(markup).toContain('opacity-35')
-  })
-
-  test('gate is fully opaque when no phase is selected', () => {
-    uiState.selectedPhaseId = null
-    const markup = renderToStaticMarkup(<GateNode {...baseProps} />)
-    expect(markup).toContain('opacity-100')
     expect(markup).not.toContain('opacity-35')
   })
 
-  test('gate is fully opaque when it belongs to the selected phase', () => {
-    uiState.selectedPhaseId = 'phase-step-1'
+  test('gate has no opacity class when no phase is selected', () => {
+    uiState.selectedPhaseId = null
     const markup = renderToStaticMarkup(<GateNode {...baseProps} />)
-    expect(markup).toContain('opacity-100')
     expect(markup).not.toContain('opacity-35')
   })
 })

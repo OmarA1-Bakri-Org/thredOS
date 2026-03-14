@@ -20,7 +20,6 @@ function GateNodeComponent({ id, data }: NodeProps<Node<GateNodeData>>) {
   const selectedPhaseId = useUIStore(s => s.selectedPhaseId)
   const isSelected = selectedNodeId === id
   const isPhaseHighlighted = !!selectedPhaseId && d.phaseId === selectedPhaseId
-  const isPhaseDimmed = !!selectedPhaseId && d.phaseId !== selectedPhaseId
 
   const handleSelect = useCallback(() => setSelected(id), [setSelected, id])
   const handleKeyDown = useCallback(
@@ -40,7 +39,7 @@ function GateNodeComponent({ id, data }: NodeProps<Node<GateNodeData>>) {
       aria-label={`Gate ${d.name}, status ${d.status}`}
       onClick={handleSelect}
       onKeyDown={handleKeyDown}
-      className={`cursor-pointer flex items-center justify-center focus:outline-none transition-opacity duration-200 ${isPhaseDimmed ? 'opacity-35' : 'opacity-100'}`}
+      className="cursor-pointer flex items-center justify-center focus:outline-none"
       style={{ width: 96, height: 96 }}
     >
       <Handle

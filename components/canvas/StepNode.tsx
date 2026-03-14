@@ -33,7 +33,6 @@ function StepNodeComponent({ id, data }: NodeProps<Node<StepNodeData>>) {
   const isSelected = selectedNodeId === id
   const isRunning = d.status === 'RUNNING'
   const isPhaseHighlighted = !!selectedPhaseId && d.phaseId === selectedPhaseId
-  const isPhaseDimmed = !!selectedPhaseId && d.phaseId !== selectedPhaseId
 
   const pushDepth = useUIStore(s => s.pushDepth)
 
@@ -69,7 +68,7 @@ function StepNodeComponent({ id, data }: NodeProps<Node<StepNodeData>>) {
       onClick={handleSelect}
       onDoubleClick={handleDoubleClick}
       onKeyDown={handleKeyDown}
-      className={`cursor-pointer group transition-opacity duration-200 ${isPhaseDimmed ? 'opacity-35' : 'opacity-100'}`}
+      className="cursor-pointer group"
       style={{ width: 220 }}
     >
       <Handle
