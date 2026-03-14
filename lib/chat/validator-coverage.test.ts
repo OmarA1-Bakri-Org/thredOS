@@ -152,13 +152,21 @@ describe('ActionValidator.dryRun — additional coverage', () => {
     expect(result.errors[0]).toContain('Invalid type')
   })
 
-  test('step update with invalid model returns error', async () => {
+  test('step update with empty model returns error', async () => {
+    const v = new ActionValidator(testDir)
+    const result = await v.dryRun([
+      { command: 'step update', args: { id: 'step-1', model: '' } },
+    ])
+    expect(result.valid).toBe(false)
+    expect(result.errors[0]).toContain('Invalid model')
+  })
+
+  test('step update with any non-empty model string is accepted', async () => {
     const v = new ActionValidator(testDir)
     const result = await v.dryRun([
       { command: 'step update', args: { id: 'step-1', model: 'gpt-5' } },
     ])
-    expect(result.valid).toBe(false)
-    expect(result.errors[0]).toContain('Invalid model')
+    expect(result.valid).toBe(true)
   })
 
   test('step update with invalid status returns error', async () => {

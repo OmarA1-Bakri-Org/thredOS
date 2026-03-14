@@ -55,11 +55,11 @@ describe('StepSchema', () => {
     expect(result.success).toBe(false)
   })
 
-  test('validates model enum', () => {
-    for (const m of ['claude-code', 'codex', 'gemini']) {
+  test('accepts any non-empty model string (model-agnostic)', () => {
+    for (const m of ['claude-code', 'codex', 'gemini', 'shell', 'gpt-4o', 'meta-llama/llama-3.1-70b']) {
       expect(StepSchema.safeParse({ ...validStep, model: m }).success).toBe(true)
     }
-    expect(StepSchema.safeParse({ ...validStep, model: 'gpt-4' }).success).toBe(false)
+    expect(StepSchema.safeParse({ ...validStep, model: '' }).success).toBe(false)
   })
 
   test('validates status enum', () => {

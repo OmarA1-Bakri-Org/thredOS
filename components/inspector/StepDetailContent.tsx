@@ -55,8 +55,8 @@ export function StepDetailContent() {
       <div>
         <div className="text-lg font-semibold tracking-tight text-white">{step!.id}</div>
         <div className="mt-2 flex flex-wrap gap-2 text-[11px] uppercase tracking-[0.18em]">
-          <span className="border border-sky-500/45 bg-sky-500/10 px-3 py-1 text-sky-100">{step!.type}</span>
-          <span className="border border-slate-700 bg-slate-950/60 px-3 py-1 text-slate-200">{step!.model}</span>
+          <button type="button" className="cursor-pointer border border-sky-500/45 bg-sky-500/10 px-3 py-1 text-sky-100 transition-all duration-150 hover:bg-sky-500/25 hover:border-sky-400/70 hover:shadow-[0_0_8px_rgba(56,189,248,0.25)] hover:text-sky-50">{step!.type}</button>
+          <button type="button" className="cursor-pointer border border-slate-700 bg-slate-950/60 px-3 py-1 text-slate-200 transition-all duration-150 hover:bg-slate-800/80 hover:border-slate-500/70 hover:shadow-[0_0_8px_rgba(148,163,184,0.2)] hover:text-white">{step!.model}</button>
           <span className="border border-emerald-500/35 bg-emerald-500/10 px-3 py-1 text-emerald-100">{step!.status}</span>
         </div>
       </div>

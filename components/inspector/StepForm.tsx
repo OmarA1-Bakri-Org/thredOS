@@ -4,6 +4,7 @@ import { useState, useCallback } from 'react'
 import { Check, Pencil, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useEditStep, useStatus, useAddDep, useRemoveDep } from '@/lib/ui/api'
+import { ModelPopout } from './ModelPopout'
 
 const STEP_TYPES = [
   { value: 'base', label: 'Base', color: '#64748b' },
@@ -12,13 +13,6 @@ const STEP_TYPES = [
   { value: 'f', label: 'Fusion', color: '#fbbf24' },
   { value: 'b', label: 'Branch', color: '#a78bfa' },
   { value: 'l', label: 'Loop', color: '#34d399' },
-] as const
-
-const MODELS = [
-  { value: 'claude-code', label: 'Claude Code' },
-  { value: 'codex', label: 'Codex' },
-  { value: 'gemini', label: 'Gemini' },
-  { value: 'shell', label: 'Shell' },
 ] as const
 
 interface StepData {
@@ -240,21 +234,8 @@ export function StepForm({ step }: { step: StepData }) {
       {/* Model */}
       <div className="border border-amber-500/30 bg-amber-500/5 px-4 py-3">
         <label className="block font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">Model</label>
-        <div className="mt-1.5 flex flex-wrap gap-1.5">
-          {MODELS.map(m => (
-            <button
-              key={m.value}
-              type="button"
-              onClick={() => setEditModel(m.value)}
-              className={`px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.12em] transition-all border ${
-                editModel === m.value
-                  ? 'border-sky-500/50 bg-sky-500/12 text-sky-100'
-                  : 'border-slate-700/40 bg-transparent text-slate-500'
-              }`}
-            >
-              {m.label}
-            </button>
-          ))}
+        <div className="mt-1.5">
+          <ModelPopout value={editModel} onChange={setEditModel} />
         </div>
       </div>
 

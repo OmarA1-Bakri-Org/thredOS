@@ -10,7 +10,10 @@ export type StepStatus = z.infer<typeof StepStatusSchema>
 export const StepTypeSchema = z.enum(['base', 'p', 'c', 'f', 'b', 'l'])
 export type StepType = z.infer<typeof StepTypeSchema>
 
-export const ModelTypeSchema = z.enum(['claude-code', 'codex', 'gemini', 'shell'])
+/** Known model presets shown in the UI picker — any string is valid for model-agnostic support. */
+export const KNOWN_MODELS = ['claude-code', 'codex', 'gemini', 'shell'] as const
+
+export const ModelTypeSchema = z.string().min(1, { message: 'Model identifier is required' })
 export type ModelType = z.infer<typeof ModelTypeSchema>
 
 export const FailPolicySchema = z.enum(['stop-all', 'continue', 'retry'])
