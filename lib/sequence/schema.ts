@@ -58,6 +58,9 @@ export const GateSchema = z.object({
   status: GateStatusSchema.default('PENDING'),
   cascade: z.boolean().default(false),
   childGateIds: z.array(z.string()).default([]),
+  description: z.string().optional(),
+  acceptance_conditions: z.array(z.string()).optional(),
+  required_review: z.boolean().optional(),
 })
 
 export const PolicySchema = z.object({
