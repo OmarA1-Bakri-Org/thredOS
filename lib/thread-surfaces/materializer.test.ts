@@ -193,7 +193,7 @@ describe('materializer', () => {
 
   test('reconcileSurfacesWithSequence removes orphaned surfaces', () => {
     // State has surfaces for step-a and step-b, but only step-a is in the sequence
-    let state = materializeBulkStepSurfaces(EMPTY_STATE, [{ id: 'a', name: 'A' }, { id: 'b', name: 'B' }], 'Seq', NOW)
+    const state = materializeBulkStepSurfaces(EMPTY_STATE, [{ id: 'a', name: 'A' }, { id: 'b', name: 'B' }], 'Seq', NOW)
     const result = reconcileSurfacesWithSequence(state, [{ id: 'a', name: 'A' }], 'Seq', NOW)
     expect(result.threadSurfaces).toHaveLength(2) // root + step-a only
     expect(result.threadSurfaces.find(s => s.id === 'thread-b')).toBeUndefined()
