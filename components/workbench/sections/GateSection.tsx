@@ -3,7 +3,7 @@
 import { useState, useCallback } from 'react'
 import { ShieldCheck, ShieldAlert, ShieldX, CheckCircle2, Plus, X } from 'lucide-react'
 import { useUIStore } from '@/lib/ui/store'
-import { useStatus, useUpdateGate } from '@/lib/ui/api'
+import { useStatus, useUpdateGate, useGateMetrics } from '@/lib/ui/api'
 import { derivePhases } from '@/lib/ui/phases'
 import { StepActions } from '@/components/inspector/StepActions'
 
@@ -149,6 +149,32 @@ function GateCriteriaEditor({
   )
 }
 
+function GateMetricsCards({ gateId }: { gateId: string }) {
+  const { data: metrics } = useGateMetrics(gateId)
+  const formatTime = (ms: number) => {
+    if (ms === 0) return '\u2014'
+    if (ms < 60_000) return `${(ms / 1000).toFixed(0)}s`
+    return `${(ms / 60_000).toFixed(1)}m`
+  }
+
+  return (
+    <div className="grid grid-cols-2 gap-2">
+      <div className="border border-slate-800 bg-[#0a101a] px-3 py-2.5">
+        <div className="font-mono text-[9px] uppercase tracking-[0.14em] text-slate-600">Time/quality</div>
+        <div className="mt-1 text-sm font-semibold text-white">
+          {metrics ? formatTime(metrics.avgTimeToApprovalMs) : '\u2014'}
+        </div>
+      </div>
+      <div className="border border-slate-800 bg-[#0a101a] px-3 py-2.5">
+        <div className="font-mono text-[9px] uppercase tracking-[0.14em] text-slate-600">Pass rate</div>
+        <div className="mt-1 text-sm font-semibold text-white">
+          {metrics && metrics.totalAttempts > 0 ? `${metrics.approvalRate}%` : '\u2014'}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function GateSection() {
   const selectedPhaseId = useUIStore(s => s.selectedPhaseId)
   const { data: status } = useStatus()
@@ -228,17 +254,8 @@ export function GateSection() {
           {/* Gate criteria editing */}
           <GateCriteriaEditor gateId={gate.id} description={gate.description} acceptanceConditions={gate.acceptance_conditions} requiredReview={gate.required_review} />
 
-          {/* Gate quality metrics placeholder */}
-          <div className="grid grid-cols-2 gap-2">
-            <div className="border border-slate-800 bg-[#0a101a] px-3 py-2.5">
-              <div className="font-mono text-[9px] uppercase tracking-[0.14em] text-slate-600">Time/quality</div>
-              <div className="mt-1 text-sm font-semibold text-white">—</div>
-            </div>
-            <div className="border border-slate-800 bg-[#0a101a] px-3 py-2.5">
-              <div className="font-mono text-[9px] uppercase tracking-[0.14em] text-slate-600">Pass rate</div>
-              <div className="mt-1 text-sm font-semibold text-white">—</div>
-            </div>
-          </div>
+          {/* Gate quality metrics */}
+          <GateMetricsCards gateId={gate.id} />
 
           {/* Gate actions (approve/block) */}
           <StepActions
