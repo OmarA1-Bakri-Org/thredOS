@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { Bot, Wrench, UserCheck, Users, BarChart3, Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useUIStore } from '@/lib/ui/store'
-import { useStatus, useAgentProfile, useThreadSurfaceSkills, useListAgents, useRegisterAgent, useAssignAgent } from '@/lib/ui/api'
+import { useStatus, useSequence, useAgentProfile, useThreadSurfaceSkills, useListAgents, useRegisterAgent, useAssignAgent } from '@/lib/ui/api'
 import { derivePhases } from '@/lib/ui/phases'
 import { ModelPopout } from '@/components/inspector/ModelPopout'
 
@@ -188,9 +188,53 @@ function RosterView() {
   )
 }
 
+function StepAgentAssignRow({ stepId, stepModel, currentAgentId }: { stepId: string; stepModel: string; currentAgentId?: string }) {
+  const { data: agents } = useListAgents()
+  const assignAgent = useAssignAgent()
+  const currentAgent = agents?.find(a => a.id === currentAgentId)
+
+  const handleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const value = e.target.value
+    assignAgent.mutate({ stepId, agentId: value || null })
+  }
+
+  return (
+    <div className="border border-slate-800 bg-[#0a101a] px-3 py-2.5">
+      <div className="flex items-center justify-between">
+        <div>
+          <div className="text-sm text-slate-200">{stepId}</div>
+          <div className="mt-0.5 font-mono text-[9px] uppercase tracking-[0.14em] text-slate-600">
+            {stepModel}
+          </div>
+        </div>
+        {currentAgent && (
+          <div className="flex items-center gap-1">
+            <Bot className="h-3 w-3 text-emerald-400" />
+            <span className="font-mono text-[9px] text-emerald-300">{currentAgent.name}</span>
+          </div>
+        )}
+      </div>
+      <select
+        aria-label={`Assign agent to ${stepId}`}
+        value={currentAgentId ?? ''}
+        onChange={handleChange}
+        disabled={assignAgent.isPending}
+        className="mt-2 w-full border border-slate-700 bg-[#060e1a] px-2 py-1 font-mono text-[10px] text-slate-300 outline-none focus:border-emerald-500/50"
+      >
+        <option value="">Unassigned</option>
+        {agents?.map(agent => (
+          <option key={agent.id} value={agent.id}>{agent.name}{agent.model ? ` (${agent.model})` : ''}</option>
+        ))}
+      </select>
+    </div>
+  )
+}
+
 function AssignView() {
   const selectedPhaseId = useUIStore(s => s.selectedPhaseId)
   const { data: status } = useStatus()
+  const { data: sequence } = useSequence()
+  const { data: agents } = useListAgents()
   const phaseDerivation = status ? derivePhases(status.steps, status.gates) : null
   const selectedPhase = phaseDerivation?.phases.find(p => p.id === selectedPhaseId)
 
@@ -200,6 +244,22 @@ function AssignView() {
         <div className="text-sm text-slate-500">Select a phase to assign an agent.</div>
         <div className="mt-1 text-[11px] text-slate-600">
           Agents are assigned to nodes within phases.
+        </div>
+      </div>
+    )
+  }
+
+  if (!agents || agents.length === 0) {
+    return (
+      <div className="space-y-3">
+        <div className="flex items-center gap-2 border-b border-slate-800/60 pb-2">
+          <div className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+          <span className="font-mono text-[9px] uppercase tracking-[0.14em] text-emerald-400/70">
+            {selectedPhase.label}
+          </span>
+        </div>
+        <div className="border border-dashed border-slate-800 px-3 py-4 text-center text-sm text-slate-500">
+          No agents registered yet. Build one in the Workshop tab first.
         </div>
       </div>
     )
@@ -218,19 +278,14 @@ function AssignView() {
       </div>
       {selectedPhase.stepIds.map(stepId => {
         const step = status?.steps.find(s => s.id === stepId)
+        const seqStep = sequence?.steps.find(s => s.id === stepId)
         return (
-          <div key={stepId} className="flex items-center justify-between border border-slate-800 bg-[#0a101a] px-3 py-2.5">
-            <div>
-              <div className="text-sm text-slate-200">{stepId}</div>
-              <div className="mt-0.5 font-mono text-[9px] uppercase tracking-[0.14em] text-slate-600">
-                {step?.model ?? 'No model'}
-              </div>
-            </div>
-            <Button type="button" variant="outline" size="sm" className="h-6 gap-1 px-2 font-mono text-[9px] uppercase">
-              <UserCheck className="h-3 w-3" />
-              Assign
-            </Button>
-          </div>
+          <StepAgentAssignRow
+            key={stepId}
+            stepId={stepId}
+            stepModel={step?.model ?? 'No model'}
+            currentAgentId={seqStep?.assigned_agent_id}
+          />
         )
       })}
     </div>
