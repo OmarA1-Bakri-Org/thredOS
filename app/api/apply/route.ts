@@ -1,7 +1,6 @@
 import { NextRequest } from 'next/server'
 import { ActionValidator, type ProposedAction } from '@/lib/chat/validator'
-
-const BASE_PATH = process.cwd()
+import { getBasePath } from '@/lib/config'
 
 export async function POST(request: NextRequest) {
   try {
@@ -17,7 +16,7 @@ export async function POST(request: NextRequest) {
       return Response.json({ success: false, errors: ['Too many actions (max 50)'] }, { status: 400 })
     }
 
-    const validator = new ActionValidator(BASE_PATH)
+    const validator = new ActionValidator(getBasePath())
     const result = await validator.apply(actions)
     return Response.json(result)
   } catch {

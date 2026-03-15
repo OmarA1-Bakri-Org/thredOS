@@ -3,6 +3,8 @@ import { PolicyEngine } from '../policy/engine'
 import * as audit from '../audit/logger'
 import YAML from 'yaml'
 import { StepSchema, StepTypeSchema, ModelTypeSchema, StepStatusSchema, FailPolicySchema, type Sequence } from '../sequence/schema'
+import { updateThreadSurfaceState } from '@/lib/thread-surfaces/repository'
+import { materializeStepSurface, removeStepSurface } from '@/lib/thread-surfaces/materializer'
 
 export interface ProposedAction {
   command: string
@@ -169,6 +171,22 @@ export class ActionValidator {
       }
 
       await writeSequence(this.basePath, sequence)
+
+      // Materialize/remove thread surfaces for step mutations
+      const now = new Date().toISOString()
+      for (const action of actions) {
+        if (action.command === 'step add' && action.args.id) {
+          await updateThreadSurfaceState(this.basePath, s =>
+            materializeStepSurface(s, String(action.args.id), String(action.args.name || action.args.id), sequence.name, now)
+          )
+        }
+        if (action.command === 'step remove' && action.args.id) {
+          await updateThreadSurfaceState(this.basePath, s =>
+            removeStepSurface(s, String(action.args.id))
+          )
+        }
+      }
+
       return { success: true, results }
     } catch (error) {
       return { success: false, results: [{ error: (error as Error).message }] }
