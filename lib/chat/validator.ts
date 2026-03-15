@@ -403,11 +403,13 @@ const actionAppliers: Record<string, ActionApplier> = {
       step.type = 'f'
     }
     if (!seq.steps.some(s => s.id === synthId)) {
-      seq.steps.push({
+      const synthStep = StepSchema.safeParse({
         id: synthId, name: `Fusion synth: ${synthId}`, type: 'f',
         model: 'claude-code', prompt_file: `.threados/prompts/${synthId}.md`,
         depends_on: candidateIds.map(String), status: 'READY', fusion_synth: true,
-      } as any)
+      })
+      if (!synthStep.success) return `Invalid synth step: ${synthStep.error.issues.map(i => i.message).join(', ')}`
+      seq.steps.push(synthStep.data)
     }
     return null
   },
