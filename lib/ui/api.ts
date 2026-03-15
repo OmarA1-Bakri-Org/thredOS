@@ -5,6 +5,7 @@ import type { Sequence } from '@/lib/sequence/schema'
 import type { SequenceStatus } from '@/app/api/status/route'
 import type { MergeEvent, RunScope, ThreadSurface, ThreadSkillBadge } from '@/lib/thread-surfaces/types'
 import type { ThreadCardProfile } from '@/components/hierarchy/FocusedThreadCard'
+import type { AgentRegistration } from '@/lib/agents/types'
 import { resolveSkillsForAgent } from '@/lib/thread-surfaces/projections'
 
 interface ThreadSurfacesResponse {
@@ -125,9 +126,22 @@ export function useRestartStep() {
 export function useApproveGate() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (gateId: string) => postJson('/api/gate', { action: 'approve', gateId }),
+    mutationFn: ({ gateId, acknowledged_conditions }: { gateId: string; acknowledged_conditions?: boolean }) =>
+      postJson('/api/gate', { action: 'approve', gateId, acknowledged_conditions }),
     onSuccess: () => invalidateRuntimeQueries(qc),
     onError: (error) => { console.error('Approve gate failed:', error) },
+  })
+}
+
+export function useUpdateGate() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (input: {
+      gateId: string; name?: string; description?: string;
+      acceptance_conditions?: string[]; required_review?: boolean;
+    }) => postJson('/api/gate', { action: 'update', ...input }),
+    onSuccess: () => invalidateRuntimeQueries(qc),
+    onError: (error) => { console.error('Update gate failed:', error) },
   })
 }
 
@@ -244,6 +258,41 @@ export function useAgentProfile(threadSurfaceId: string | null) {
     enabled: !!threadSurfaceId,
     retry: false,
     staleTime: 30_000,
+  })
+}
+
+// ── Agent CRUD hooks ─────────────────────────────────────────────────
+
+export function useListAgents() {
+  return useQuery<AgentRegistration[]>({
+    queryKey: ['agents'],
+    queryFn: async () => {
+      const res = await fetchJson<{ agents: AgentRegistration[] }>('/api/agents')
+      return res.agents
+    },
+    staleTime: 30_000,
+  })
+}
+
+export function useRegisterAgent() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (input: {
+      id: string; name: string; builderId: string; builderName: string;
+      model?: string; skills?: Array<{ id: string; label: string }>
+    }) => postJson('/api/agents', input),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['agents'] }) },
+    onError: (error) => { console.error('Register agent failed:', error) },
+  })
+}
+
+export function useAssignAgent() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ stepId, agentId }: { stepId: string; agentId: string | null }) =>
+      postJson('/api/step', { action: 'edit', stepId, assignedAgentId: agentId }),
+    onSuccess: () => invalidateRuntimeQueries(qc),
+    onError: (error) => { console.error('Assign agent failed:', error) },
   })
 }
 

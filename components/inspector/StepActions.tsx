@@ -63,7 +63,7 @@ export function StepActions({ nodeId, isGate }: { nodeId: string; isGate: boolea
           <Button
             type="button"
             variant="success"
-            onClick={() => approveGate.mutate(nodeId)}
+            onClick={() => approveGate.mutate({ gateId: nodeId })}
             disabled={approveGate.isPending}
           >
             <ShieldCheck className="h-4 w-4" />
