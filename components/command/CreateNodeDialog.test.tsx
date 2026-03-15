@@ -75,6 +75,8 @@ mock.module('@/lib/ui/api', () => ({
   useApplyTemplate: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
   useRemoveGate: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
   useResetSequence: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+  useAgentPerformance: () => ({ data: null, isLoading: false }),
+  useGateMetrics: () => ({ data: null, isLoading: false }),
 }))
 
 

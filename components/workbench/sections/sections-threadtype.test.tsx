@@ -78,6 +78,8 @@ mock.module('@/lib/ui/api', () => ({
   useInsertGate: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
   useAddDep: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
   useRemoveDep: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+  useAgentPerformance: () => ({ data: null, isLoading: false }),
+  useGateMetrics: () => ({ data: null, isLoading: false }),
 }))
 
 const { SequenceSection } = await import('./SequenceSection')

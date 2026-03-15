@@ -68,6 +68,8 @@ mock.module('@/lib/ui/api', () => ({
   useAddDep: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
   useRemoveDep: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
   useResetSequence: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+  useAgentPerformance: () => ({ data: null, isLoading: false }),
+  useGateMetrics: () => ({ data: null, isLoading: false }),
 }))
 
 afterEach(() => { mock.restore() })
@@ -199,6 +201,8 @@ describe('StepActions — pending states', () => {
       useInsertGate: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
       useAddDep: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
       useRemoveDep: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+      useAgentPerformance: () => ({ data: null, isLoading: false }),
+      useGateMetrics: () => ({ data: null, isLoading: false }),
     }))
     mock.module('@/lib/ui/store', () => ({
       useUIStore: Object.assign(
@@ -231,6 +235,8 @@ describe('StepActions — pending states', () => {
       useInsertGate: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
       useAddDep: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
       useRemoveDep: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+      useAgentPerformance: () => ({ data: null, isLoading: false }),
+      useGateMetrics: () => ({ data: null, isLoading: false }),
     }))
     mock.module('@/lib/ui/store', () => ({
       useUIStore: Object.assign(
@@ -263,6 +269,8 @@ describe('StepActions — pending states', () => {
       useInsertGate: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
       useAddDep: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
       useRemoveDep: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+      useAgentPerformance: () => ({ data: null, isLoading: false }),
+      useGateMetrics: () => ({ data: null, isLoading: false }),
     }))
     mock.module('@/lib/ui/store', () => ({
       useUIStore: Object.assign(
@@ -296,6 +304,8 @@ describe('StepActions — pending states', () => {
       useInsertGate: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
       useAddDep: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
       useRemoveDep: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+      useAgentPerformance: () => ({ data: null, isLoading: false }),
+      useGateMetrics: () => ({ data: null, isLoading: false }),
     }))
     mock.module('@/lib/ui/store', () => ({
       useUIStore: Object.assign(
@@ -328,6 +338,8 @@ describe('StepActions — pending states', () => {
       useInsertGate: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
       useAddDep: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
       useRemoveDep: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+      useAgentPerformance: () => ({ data: null, isLoading: false }),
+      useGateMetrics: () => ({ data: null, isLoading: false }),
     }))
     mock.module('@/lib/ui/store', () => ({
       useUIStore: Object.assign(

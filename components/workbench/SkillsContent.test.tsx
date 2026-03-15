@@ -8,6 +8,8 @@ mock.module('@/lib/ui/store', () => ({
 
 mock.module('@/lib/ui/api', () => ({
   useThreadSurfaceSkills: () => ({
+  useAgentPerformance: () => ({ data: null, isLoading: false }),
+  useGateMetrics: () => ({ data: null, isLoading: false }),
     data: [
       { id: 'search', label: 'Search', inherited: false },
       { id: 'files', label: 'Files', inherited: false },

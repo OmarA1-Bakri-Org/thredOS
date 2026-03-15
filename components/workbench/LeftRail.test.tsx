@@ -52,6 +52,8 @@ mock.module('@/lib/ui/api', () => ({
   useAddStep: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false, error: null }),
   useInsertGate: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false, error: null }),
   useThreadSurfaceSkills: () => ({ data: [{ id: 'search', label: 'Search', inherited: false }] }),
+  useAgentPerformance: () => ({ data: null, isLoading: false }),
+  useGateMetrics: () => ({ data: null, isLoading: false }),
 }))
 
 const { LeftRail } = await import('./LeftRail')

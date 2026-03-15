@@ -37,6 +37,8 @@ mock.module('@/lib/ui/api', () => ({
   useInsertGate: noopMutation,
   useAddDep: noopMutation,
   useRemoveDep: noopMutation,
+  useAgentPerformance: () => ({ data: null, isLoading: false }),
+  useGateMetrics: () => ({ data: null, isLoading: false }),
 }))
 
 const { ThreadContextContent } = await import('./ThreadContextContent')

@@ -18,6 +18,8 @@ mock.module('@/lib/ui/store', () => ({
 
 mock.module('@/lib/ui/api', () => ({
   useThreadSurfaces: () => ({
+  useAgentPerformance: () => ({ data: null, isLoading: false }),
+  useGateMetrics: () => ({ data: null, isLoading: false }),
     data: [
       { id: 'thread-master', surfaceLabel: 'Master Thread', depth: 0, role: 'orchestrator', childSurfaceIds: ['thread-child'] },
       { id: 'thread-child', surfaceLabel: 'Child Thread', depth: 1, role: 'worker', childSurfaceIds: [] },

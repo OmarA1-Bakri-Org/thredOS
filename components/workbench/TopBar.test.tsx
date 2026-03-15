@@ -29,6 +29,8 @@ mock.module('@/lib/ui/api', () => ({
     mutate: () => {},
     isPending: false,
   }),
+  useAgentPerformance: () => ({ data: null, isLoading: false }),
+  useGateMetrics: () => ({ data: null, isLoading: false }),
 }))
 
 const { TopBar } = await import('./TopBar')
