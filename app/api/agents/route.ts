@@ -37,6 +37,8 @@ function buildAgent(body: Partial<AgentRegistration>): AgentRegistration {
     builderName: body.builderName!,
     threadSurfaceIds: Array.isArray(body.threadSurfaceIds) ? body.threadSurfaceIds : [],
     metadata: body.metadata,
+    model: body.model,
+    skills: Array.isArray(body.skills) ? body.skills : undefined,
   }
 }
 
