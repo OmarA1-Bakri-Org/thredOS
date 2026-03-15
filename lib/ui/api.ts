@@ -481,3 +481,52 @@ export function useOptimizeWorkflow() {
     onError: (error) => { console.error('Optimize workflow failed:', error) },
   })
 }
+
+// ── Thread Runner race hooks ─────────────────────────────────────────
+
+export function useListRaces() {
+  return useQuery<import('@/lib/thread-runner/types').Race[]>({
+    queryKey: ['thread-runner-races'],
+    queryFn: async () => {
+      const res = await fetchJson<{ races: import('@/lib/thread-runner/types').Race[] }>('/api/thread-runner/race')
+      return res.races
+    },
+    staleTime: 10_000,
+  })
+}
+
+export function useRaceResults(raceId: string | null) {
+  return useQuery<import('@/lib/thread-runner/types').RaceResult | null>({
+    queryKey: ['thread-runner-race-results', raceId],
+    queryFn: async () => {
+      if (!raceId) return null
+      const res = await fetchJson<{ results: import('@/lib/thread-runner/types').RaceResult }>(
+        `/api/thread-runner/race?raceId=${encodeURIComponent(raceId)}`
+      )
+      return res.results
+    },
+    enabled: !!raceId,
+    staleTime: 5_000,
+  })
+}
+
+export function useEnrollRace() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (input: { name: string; division: string; classification: string; maxCombatants?: number }) =>
+      postJson('/api/thread-runner/race', { action: 'enroll', ...input }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['thread-runner-races'] }) },
+  })
+}
+
+export function useRecordRun() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (input: { raceId: string; combatantId: string; threadSurfaceId: string }) =>
+      postJson('/api/thread-runner/race', { action: 'record-run', ...input }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['thread-runner-races'] })
+      qc.invalidateQueries({ queryKey: ['thread-runner-race-results'] })
+    },
+  })
+}

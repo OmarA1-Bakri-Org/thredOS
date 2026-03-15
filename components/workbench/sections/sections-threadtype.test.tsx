@@ -86,6 +86,10 @@ mock.module('@/lib/ui/api', () => ({
   useBuilderProfile: () => ({ data: null, isLoading: false }),
   useThreadRunnerEligibility: () => ({ data: { eligible: false, requirements: [] }, isLoading: false }),
   useOptimizeWorkflow: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+  useListRaces: () => ({ data: [], isLoading: false }),
+  useRaceResults: () => ({ data: null, isLoading: false }),
+  useEnrollRace: () => ({ mutate: () => {}, isPending: false }),
+  useRecordRun: () => ({ mutate: () => {}, isPending: false }),
 }))
 
 const { SequenceSection } = await import('./SequenceSection')

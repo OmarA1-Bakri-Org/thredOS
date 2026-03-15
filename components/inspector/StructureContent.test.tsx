@@ -41,6 +41,10 @@ mock.module('@/lib/ui/api', () => ({
   useBuilderProfile: () => ({ data: null, isLoading: false }),
   useThreadRunnerEligibility: () => ({ data: { eligible: false, requirements: [] }, isLoading: false }),
   useOptimizeWorkflow: noopMutation,
+  useListRaces: () => ({ data: [], isLoading: false }),
+  useRaceResults: () => ({ data: null, isLoading: false }),
+  useEnrollRace: noopMutation,
+  useRecordRun: noopMutation,
 }))
 
 const { StructureContent } = await import('./StructureContent')
