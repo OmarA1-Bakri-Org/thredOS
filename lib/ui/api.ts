@@ -6,6 +6,7 @@ import type { SequenceStatus } from '@/app/api/status/route'
 import type { MergeEvent, RunScope, ThreadSurface, ThreadSkillBadge } from '@/lib/thread-surfaces/types'
 import type { ThreadCardProfile } from '@/components/hierarchy/FocusedThreadCard'
 import type { AgentRegistration } from '@/lib/agents/types'
+import type { GateMetrics } from '@/lib/gates/metrics'
 import { resolveSkillsForAgent } from '@/lib/thread-surfaces/projections'
 
 interface ThreadSurfacesResponse {
@@ -360,6 +361,28 @@ export function useResetSequence() {
   })
 }
 
+// ── Agent performance query ──────────────────────────────────────────
+
+export interface AgentPerformanceData {
+  totalRuns: number
+  passRate: number
+  avgTimeMs: number
+  quality: number
+}
+
+export function useAgentPerformance(agentId: string | null) {
+  return useQuery<AgentPerformanceData | null>({
+    queryKey: ['agent-performance', agentId],
+    queryFn: async () => {
+      if (!agentId) return null
+      const res = await fetchJson<{ stats: AgentPerformanceData | null }>(`/api/agent-stats?agentId=${encodeURIComponent(agentId)}`)
+      return res.stats
+    },
+    enabled: !!agentId,
+    staleTime: 30_000,
+  })
+}
+
 export function useRemoveDep() {
   const qc = useQueryClient()
   return useMutation({
@@ -367,5 +390,20 @@ export function useRemoveDep() {
       postJson('/api/dep', { action: 'rm', stepId, depId }),
     onSuccess: () => invalidateRuntimeQueries(qc),
     onError: (error) => { console.error('Remove dependency failed:', error) },
+  })
+}
+
+// ── Gate metrics query ──────────────────────────────────────────────
+
+export function useGateMetrics(gateId: string | null) {
+  return useQuery<GateMetrics | null>({
+    queryKey: ['gate-metrics', gateId],
+    queryFn: async () => {
+      if (!gateId) return null
+      const res = await fetchJson<{ metrics: GateMetrics }>(`/api/gate-metrics?gateId=${encodeURIComponent(gateId)}`)
+      return res.metrics
+    },
+    enabled: !!gateId,
+    staleTime: 30_000,
   })
 }
