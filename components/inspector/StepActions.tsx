@@ -9,7 +9,17 @@ import { useUIStore } from '@/lib/ui/store'
 
 type PendingAction = 'block-gate' | 'stop-step' | 'delete-node' | 'delete-gate' | null
 
-export function StepActions({ nodeId, isGate }: { nodeId: string; isGate: boolean }) {
+export function StepActions({
+  nodeId,
+  isGate,
+  acceptanceConditions,
+  requiredReview,
+}: {
+  nodeId: string
+  isGate: boolean
+  acceptanceConditions?: string[]
+  requiredReview?: boolean
+}) {
   const runStep = useRunStep()
   const stopStep = useStopStep()
   const restartStep = useRestartStep()
@@ -20,6 +30,9 @@ export function StepActions({ nodeId, isGate }: { nodeId: string; isGate: boolea
   const cloneStep = useCloneStep()
   const setSelectedNodeId = useUIStore(s => s.setSelectedNodeId)
   const [pendingAction, setPendingAction] = useState<PendingAction>(null)
+  const needsConditionAck = isGate && !!requiredReview && (acceptanceConditions?.length ?? 0) > 0
+  const [checkedConditions, setCheckedConditions] = useState<Set<number>>(new Set())
+  const allConditionsChecked = !needsConditionAck || checkedConditions.size === (acceptanceConditions?.length ?? 0)
 
   const errorMessage = useMemo(() => {
     const error =
@@ -56,15 +69,44 @@ export function StepActions({ nodeId, isGate }: { nodeId: string; isGate: boolea
     })
   }, [nodeId, removeGate, setSelectedNodeId])
 
+  const toggleCondition = useCallback((index: number) => {
+    setCheckedConditions(prev => {
+      const next = new Set(prev)
+      if (next.has(index)) next.delete(index)
+      else next.add(index)
+      return next
+    })
+  }, [])
+
   if (isGate) {
     return (
       <div className="space-y-3">
+        {/* Condition acknowledgment checklist */}
+        {needsConditionAck && (
+          <div className="border border-amber-500/30 bg-amber-500/5 px-3 py-3 space-y-2">
+            <div className="font-mono text-[10px] uppercase tracking-[0.14em] text-amber-400">
+              Review required — check all conditions before approving
+            </div>
+            {acceptanceConditions?.map((condition, i) => (
+              <label key={i} className="flex items-start gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={checkedConditions.has(i)}
+                  onChange={() => toggleCondition(i)}
+                  className="mt-0.5 h-3.5 w-3.5 rounded border-slate-600 bg-[#060e1a] text-emerald-500 focus:ring-emerald-500/30"
+                />
+                <span className="text-[12px] text-slate-300">{condition}</span>
+              </label>
+            ))}
+          </div>
+        )}
+
         <div className="flex flex-wrap gap-2">
           <Button
             type="button"
             variant="success"
-            onClick={() => approveGate.mutate({ gateId: nodeId })}
-            disabled={approveGate.isPending}
+            onClick={() => approveGate.mutate({ gateId: nodeId, acknowledged_conditions: needsConditionAck ? true : undefined })}
+            disabled={approveGate.isPending || !allConditionsChecked}
           >
             <ShieldCheck className="h-4 w-4" />
             {approveGate.isPending ? 'Approving' : 'Approve'}
