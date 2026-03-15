@@ -107,13 +107,36 @@ describe('ActionValidator.validate — additional coverage', () => {
     const v = new ActionValidator(testDir)
     const result = await v.validate([
       { command: 'run', args: {} },
-      { command: 'stop', args: {} },
+      { command: 'stop', args: { step_id: 'step-1' } },
       { command: 'restart', args: { step_id: 'step-1' } },
-      { command: 'group create', args: {} },
-      { command: 'fusion create', args: {} },
+      { command: 'group create', args: { id: 'grp-1', step_ids: ['step-1', 'step-2'] } },
+      { command: 'fusion create', args: { candidate_ids: ['step-1', 'step-2'], synth_id: 'synth-1' } },
     ])
     expect(result.valid).toBe(true)
     expect(result.errors).toHaveLength(0)
+  })
+
+  test('stop without step_id fails validation', async () => {
+    const v = new ActionValidator(testDir)
+    const result = await v.validate([{ command: 'stop', args: {} }])
+    expect(result.valid).toBe(false)
+    expect(result.errors).toContain('stop requires step_id')
+  })
+
+  test('group create without required fields fails validation', async () => {
+    const v = new ActionValidator(testDir)
+    const result = await v.validate([{ command: 'group create', args: {} }])
+    expect(result.valid).toBe(false)
+    expect(result.errors).toContain('group create requires id')
+    expect(result.errors).toContain('group create requires step_ids')
+  })
+
+  test('fusion create without required fields fails validation', async () => {
+    const v = new ActionValidator(testDir)
+    const result = await v.validate([{ command: 'fusion create', args: {} }])
+    expect(result.valid).toBe(false)
+    expect(result.errors).toContain('fusion create requires candidate_ids')
+    expect(result.errors).toContain('fusion create requires synth_id')
   })
 
   test('dep remove with both from and to passes', async () => {
@@ -278,16 +301,48 @@ describe('ActionValidator.dryRun — additional coverage', () => {
     expect(result.errors[0]).toContain('not found')
   })
 
-  test('runtime commands produce no diff changes', async () => {
+  test('run command produces no diff changes', async () => {
     const v = new ActionValidator(testDir)
     const result = await v.dryRun([
       { command: 'run', args: {} },
-      { command: 'stop', args: {} },
-      { command: 'restart', args: { step_id: 'step-1' } },
-      { command: 'group create', args: {} },
-      { command: 'fusion create', args: {} },
     ])
     expect(result.valid).toBe(true)
+  })
+
+  test('stop command changes step status in diff', async () => {
+    const v = new ActionValidator(testDir)
+    const result = await v.dryRun([
+      { command: 'stop', args: { step_id: 'step-1' } },
+    ])
+    expect(result.valid).toBe(true)
+    expect(result.diff).toContain('FAILED')
+  })
+
+  test('restart command changes step status in diff', async () => {
+    const v = new ActionValidator(testDir)
+    const result = await v.dryRun([
+      { command: 'restart', args: { step_id: 'step-1' } },
+    ])
+    expect(result.valid).toBe(true)
+    expect(result.diff).toContain('RUNNING')
+  })
+
+  test('group create sets group_id on steps in diff', async () => {
+    const v = new ActionValidator(testDir)
+    const result = await v.dryRun([
+      { command: 'group create', args: { id: 'grp-1', step_ids: ['step-1', 'step-2'] } },
+    ])
+    expect(result.valid).toBe(true)
+    expect(result.diff).toContain('grp-1')
+  })
+
+  test('fusion create creates synth step in diff', async () => {
+    const v = new ActionValidator(testDir)
+    const result = await v.dryRun([
+      { command: 'fusion create', args: { candidate_ids: ['step-1', 'step-2'], synth_id: 'synth-12' } },
+    ])
+    expect(result.valid).toBe(true)
+    expect(result.diff).toContain('synth-12')
   })
 
   test('step update with valid enum fields produces diff', async () => {
@@ -456,16 +511,55 @@ describe('ActionValidator.apply — additional coverage', () => {
     expect(result.results[0].error).toContain('Invalid fail_policy')
   })
 
-  test('apply runtime no-op commands succeed', async () => {
+  test('apply run no-op command succeeds', async () => {
     const v = new ActionValidator(testDir)
     const result = await v.apply([
       { command: 'run', args: {} },
-      { command: 'stop', args: {} },
-      { command: 'group create', args: {} },
-      { command: 'fusion create', args: {} },
     ])
     expect(result.success).toBe(true)
     expect(result.results.every(r => r.status === 'applied')).toBe(true)
+  })
+
+  test('apply stop command sets step to FAILED', async () => {
+    const v = new ActionValidator(testDir)
+    const result = await v.apply([
+      { command: 'stop', args: { step_id: 'step-1' } },
+    ])
+    expect(result.success).toBe(true)
+
+    const { readSequence } = await import('../sequence/parser')
+    const seq = await readSequence(testDir)
+    expect(seq.steps[0].status).toBe('FAILED')
+  })
+
+  test('apply group create sets group_id on steps', async () => {
+    const v = new ActionValidator(testDir)
+    const result = await v.apply([
+      { command: 'group create', args: { id: 'grp-1', step_ids: ['step-1', 'step-2'] } },
+    ])
+    expect(result.success).toBe(true)
+
+    const { readSequence } = await import('../sequence/parser')
+    const seq = await readSequence(testDir)
+    expect(seq.steps[0].group_id).toBe('grp-1')
+    expect(seq.steps[0].type).toBe('p')
+    expect(seq.steps[1].group_id).toBe('grp-1')
+  })
+
+  test('apply fusion create creates synth step', async () => {
+    const v = new ActionValidator(testDir)
+    const result = await v.apply([
+      { command: 'fusion create', args: { candidate_ids: ['step-1', 'step-2'], synth_id: 'synth-12' } },
+    ])
+    expect(result.success).toBe(true)
+
+    const { readSequence } = await import('../sequence/parser')
+    const seq = await readSequence(testDir)
+    expect(seq.steps[0].fusion_candidates).toBe(true)
+    expect(seq.steps[0].type).toBe('f')
+    const synthStep = seq.steps.find(s => s.id === 'synth-12')
+    expect(synthStep).toBeDefined()
+    expect(synthStep?.fusion_synth).toBe(true)
   })
 
   test('apply step add with invalid step schema returns error', async () => {

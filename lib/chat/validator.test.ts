@@ -27,6 +27,32 @@ const baseSequence: Sequence = {
   ],
 }
 
+const twoStepSequence: Sequence = {
+  version: '1.0',
+  name: 'test-seq-2',
+  steps: [
+    {
+      id: 'step-a',
+      name: 'Step A',
+      type: 'base',
+      model: 'claude-code',
+      prompt_file: 'prompts/step-a.md',
+      depends_on: [],
+      status: 'READY',
+    },
+    {
+      id: 'step-b',
+      name: 'Step B',
+      type: 'base',
+      model: 'claude-code',
+      prompt_file: 'prompts/step-b.md',
+      depends_on: [],
+      status: 'RUNNING',
+    },
+  ],
+  gates: [],
+}
+
 beforeEach(async () => {
   testDir = join(tmpdir(), `validator-test-${Date.now()}`)
   await mkdir(join(testDir, '.threados'), { recursive: true })
@@ -141,6 +167,128 @@ describe('ActionValidator.apply', () => {
     const seq = await readSequence(testDir)
     expect(seq.steps).toHaveLength(1)
     expect(seq.steps[0].depends_on).toHaveLength(0)
+  })
+})
+
+describe('ActionValidator stop/restart/group/fusion commands', () => {
+  test('stop sets step status to FAILED', async () => {
+    await writeSequence(testDir, twoStepSequence)
+    const v = new ActionValidator(testDir)
+    const result = await v.dryRun([{ command: 'stop', args: { step_id: 'step-b' } }])
+    expect(result.valid).toBe(true)
+    expect(result.diff).toContain('FAILED')
+  })
+
+  test('stop with nonexistent step returns error', async () => {
+    const v = new ActionValidator(testDir)
+    const result = await v.dryRun([{ command: 'stop', args: { step_id: 'nonexistent' } }])
+    expect(result.valid).toBe(false)
+    expect(result.errors[0]).toContain('not found')
+  })
+
+  test('stop without step_id returns validation error', async () => {
+    const v = new ActionValidator(testDir)
+    const result = await v.validate([{ command: 'stop', args: {} }])
+    expect(result.valid).toBe(false)
+    expect(result.errors[0]).toContain('stop requires step_id')
+  })
+
+  test('restart sets step status to RUNNING', async () => {
+    const v = new ActionValidator(testDir)
+    const result = await v.dryRun([{ command: 'restart', args: { step_id: 'step-1' } }])
+    expect(result.valid).toBe(true)
+    expect(result.diff).toContain('RUNNING')
+  })
+
+  test('restart with nonexistent step returns error', async () => {
+    const v = new ActionValidator(testDir)
+    const result = await v.dryRun([{ command: 'restart', args: { step_id: 'nonexistent' } }])
+    expect(result.valid).toBe(false)
+    expect(result.errors[0]).toContain('not found')
+  })
+
+  test('group create sets group_id and type on steps', async () => {
+    await writeSequence(testDir, twoStepSequence)
+    const v = new ActionValidator(testDir)
+    const result = await v.dryRun([{
+      command: 'group create',
+      args: { id: 'grp-1', step_ids: ['step-a', 'step-b'] },
+    }])
+    expect(result.valid).toBe(true)
+    expect(result.diff).toContain('grp-1')
+    expect(result.diff).toContain('type: p')
+  })
+
+  test('group create requires at least 2 step_ids', async () => {
+    await writeSequence(testDir, twoStepSequence)
+    const v = new ActionValidator(testDir)
+    const result = await v.dryRun([{
+      command: 'group create',
+      args: { id: 'grp-1', step_ids: ['step-a'] },
+    }])
+    expect(result.valid).toBe(false)
+    expect(result.errors[0]).toContain('at least 2')
+  })
+
+  test('group create requires id and step_ids', async () => {
+    const v = new ActionValidator(testDir)
+    const result = await v.validate([{ command: 'group create', args: {} }])
+    expect(result.valid).toBe(false)
+    expect(result.errors).toContain('group create requires id')
+    expect(result.errors).toContain('group create requires step_ids')
+  })
+
+  test('group create with nonexistent step returns error', async () => {
+    await writeSequence(testDir, twoStepSequence)
+    const v = new ActionValidator(testDir)
+    const result = await v.dryRun([{
+      command: 'group create',
+      args: { id: 'grp-1', step_ids: ['step-a', 'nonexistent'] },
+    }])
+    expect(result.valid).toBe(false)
+    expect(result.errors[0]).toContain('not found')
+  })
+
+  test('fusion create marks candidates and creates synth step', async () => {
+    await writeSequence(testDir, twoStepSequence)
+    const v = new ActionValidator(testDir)
+    const result = await v.dryRun([{
+      command: 'fusion create',
+      args: { candidate_ids: ['step-a', 'step-b'], synth_id: 'synth-ab' },
+    }])
+    expect(result.valid).toBe(true)
+    expect(result.diff).toContain('synth-ab')
+    expect(result.diff).toContain('type: f')
+  })
+
+  test('fusion create requires at least 2 candidate_ids', async () => {
+    await writeSequence(testDir, twoStepSequence)
+    const v = new ActionValidator(testDir)
+    const result = await v.dryRun([{
+      command: 'fusion create',
+      args: { candidate_ids: ['step-a'], synth_id: 'synth-a' },
+    }])
+    expect(result.valid).toBe(false)
+    expect(result.errors[0]).toContain('at least 2')
+  })
+
+  test('fusion create requires candidate_ids and synth_id', async () => {
+    const v = new ActionValidator(testDir)
+    const result = await v.validate([{ command: 'fusion create', args: {} }])
+    expect(result.valid).toBe(false)
+    expect(result.errors).toContain('fusion create requires candidate_ids')
+    expect(result.errors).toContain('fusion create requires synth_id')
+  })
+
+  test('fusion create with nonexistent candidate returns error', async () => {
+    await writeSequence(testDir, twoStepSequence)
+    const v = new ActionValidator(testDir)
+    const result = await v.dryRun([{
+      command: 'fusion create',
+      args: { candidate_ids: ['step-a', 'nonexistent'], synth_id: 'synth-x' },
+    }])
+    expect(result.valid).toBe(false)
+    expect(result.errors[0]).toContain('not found')
   })
 })
 

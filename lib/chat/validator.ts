@@ -50,8 +50,11 @@ const commandValidators: Record<string, ValidatorFn> = {
   'dep add': requireFields('dep add', ['from', 'to']),
   'dep remove': requireFields('dep remove', ['from', 'to']),
   'restart': requireFields('restart', ['step_id']),
+  'stop': requireFields('stop', ['step_id']),
   'gate approve': (action, errors) => { if (!action.args.id) errors.push('gate approve requires id') },
   'gate block': (action, errors) => { if (!action.args.id) errors.push('gate block requires id') },
+  'group create': requireFields('group create', ['id', 'step_ids']),
+  'fusion create': requireFields('fusion create', ['candidate_ids', 'synth_id']),
 }
 
 /** Allowed fields for step update to prevent arbitrary field injection */
@@ -360,10 +363,54 @@ const actionAppliers: Record<string, ActionApplier> = {
   'gate approve': (seq, action) => applyGateStatus(seq, action, 'APPROVED'),
   'gate block': (seq, action) => applyGateStatus(seq, action, 'BLOCKED'),
   'run': () => null,
-  'stop': () => null,
-  'restart': () => null,
-  'group create': () => null,
-  'fusion create': () => null,
+  'stop': (seq, action) => {
+    const stepId = String(action.args.step_id || '')
+    if (!stepId) return 'stop requires step_id'
+    const step = seq.steps.find(s => s.id === stepId)
+    if (!step) return `Step ${stepId} not found`
+    step.status = 'FAILED'
+    return null
+  },
+  'restart': (seq, action) => {
+    const stepId = String(action.args.step_id)
+    const step = seq.steps.find(s => s.id === stepId)
+    if (!step) return `Step ${stepId} not found`
+    step.status = 'RUNNING'
+    return null
+  },
+  'group create': (seq, action) => {
+    const groupId = String(action.args.id || '')
+    const stepIds = action.args.step_ids as string[] | undefined
+    if (!groupId) return 'group create requires id'
+    if (!Array.isArray(stepIds) || stepIds.length < 2) return 'group create requires at least 2 step_ids'
+    for (const sid of stepIds) {
+      const step = seq.steps.find(s => s.id === String(sid))
+      if (!step) return `Step ${sid} not found`
+      step.group_id = groupId
+      step.type = 'p'
+    }
+    return null
+  },
+  'fusion create': (seq, action) => {
+    const candidateIds = action.args.candidate_ids as string[] | undefined
+    const synthId = String(action.args.synth_id || '')
+    if (!Array.isArray(candidateIds) || candidateIds.length < 2) return 'fusion create requires at least 2 candidate_ids'
+    if (!synthId) return 'fusion create requires synth_id'
+    for (const cid of candidateIds) {
+      const step = seq.steps.find(s => s.id === String(cid))
+      if (!step) return `Step ${cid} not found`
+      step.fusion_candidates = true
+      step.type = 'f'
+    }
+    if (!seq.steps.some(s => s.id === synthId)) {
+      seq.steps.push({
+        id: synthId, name: `Fusion synth: ${synthId}`, type: 'f',
+        model: 'claude-code', prompt_file: `.threados/prompts/${synthId}.md`,
+        depends_on: candidateIds.map(String), status: 'READY', fusion_synth: true,
+      } as any)
+    }
+    return null
+  },
 }
 
 /**
