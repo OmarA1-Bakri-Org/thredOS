@@ -76,7 +76,7 @@ function buildSequenceStateSection(stepId: string, sequence: Sequence): string {
   return ['## Sequence State', '', buildSequenceState(stepId, sequence), ''].join('\n')
 }
 
-async function buildArtifactsSection(step: Step, sequence: Sequence, basePath: string, maxChars: number): string {
+async function buildArtifactsSection(step: Step, sequence: Sequence, basePath: string, maxChars: number): Promise<string> {
   const artifacts = await loadDependencyArtifacts(step, sequence, basePath)
   if (artifacts.length === 0) return ''
 
@@ -89,7 +89,7 @@ function buildWorkingDirSection(step: Step, basePath: string): string {
   return ['## Working Directory', '', `\`${cwd}\``, ''].join('\n')
 }
 
-async function buildFileTreeSection(basePath: string): string {
+async function buildFileTreeSection(basePath: string): Promise<string> {
   const fileTree = await buildFileTree(basePath)
   if (!fileTree) return ''
   return ['## Project Files', '', fileTree, ''].join('\n')

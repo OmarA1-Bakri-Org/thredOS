@@ -205,7 +205,7 @@ export function AccordionPanel() {
       setActiveAccordionSections(['sequence'])
       setSelectedPhaseId(null)
     }
-  }, [status?.steps.length, status?.gates.length, setActiveAccordionSections, setSelectedPhaseId])
+  }, [status, setActiveAccordionSections, setSelectedPhaseId])
 
   const toggleSection = (key: string) => {
     if (activeAccordionSections.includes(key)) {

@@ -1,6 +1,43 @@
 import { describe, test, expect, mock } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
 
+const storeState: Record<string, unknown> = {
+  setSelectedNodeId: (_id: string | null) => {},
+  selectPhaseAndFocus: (_phaseId: string) => {},
+  expandAccordionSection: (_section: string) => {},
+  selectedPhaseId: null,
+  selectedNodeId: null,
+  activeAccordionSections: ['sequence'],
+  setActiveAccordionSections: (_sections: string[]) => {},
+  selectedThreadSurfaceId: null,
+  setSelectedThreadSurfaceId: (_id: string | null) => {},
+  setSelectedPhaseId: (_id: string | null) => {},
+  collapseAccordionSection: (_section: string) => {},
+  selectedRunId: null,
+  navigationStack: [],
+}
+
+mock.module('@tanstack/react-query', () => ({
+  useQueryClient: () => ({
+    invalidateQueries: async () => {},
+    getQueryData: () => undefined,
+  }),
+  QueryClient: class {},
+  QueryClientProvider: ({ children }: { children: React.ReactNode }) => children,
+  useQuery: () => ({ data: undefined, isLoading: false }),
+  useMutation: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+}))
+
+mock.module('@/lib/ui/store', () => ({
+  useUIStore: Object.assign(
+    (selector: (s: typeof storeState) => unknown) => selector(storeState),
+    {
+      setState: (patch: Partial<typeof storeState>) => Object.assign(storeState, patch),
+      getState: () => storeState,
+    },
+  ),
+}))
+
 mock.module('@/lib/ui/api', () => ({
   useStatus: () => ({
     data: {
@@ -27,6 +64,17 @@ mock.module('@/lib/ui/api', () => ({
   useInsertGate: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
   useAddDep: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
   useRemoveDep: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+  useListAgents: () => ({ data: [], isLoading: false }),
+  useRegisterAgent: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+  useAssignAgent: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+  useAgentProfile: () => ({ data: null }),
+  useThreadSurfaceSkills: () => ({ data: [] }),
+  useUpdateGate: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+  useRenameSequence: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+  useSetThreadType: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+  useApplyTemplate: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+  useRemoveGate: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+  useResetSequence: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
 }))
 
 

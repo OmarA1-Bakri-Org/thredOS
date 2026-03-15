@@ -33,6 +33,7 @@ mock.module('@/lib/ui/store', () => ({
     const stack = s.navigationStack
     return stack.length > 0 ? stack[stack.length - 1].depth : 0
   },
+  selectPathSegments: () => [],
 }))
 
 mock.module('@/lib/ui/api', () => ({
@@ -72,6 +73,16 @@ mock.module('@/lib/ui/api', () => ({
   useInsertGate: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false, error: null }),
   useThreadSurfaceSkills: () => ({ data: [] }),
   useAgentProfile: () => ({ data: null }),
+  useListAgents: () => ({ data: [], isLoading: false }),
+  useRegisterAgent: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+  useAssignAgent: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+  useSequence: () => ({ data: null }),
+  useUpdateGate: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+  useRenameSequence: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+  useSetThreadType: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+  useApplyTemplate: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+  useRemoveGate: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+  useResetSequence: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
 }))
 
 const { AccordionPanel } = await import('./AccordionPanel')

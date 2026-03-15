@@ -21,6 +21,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Codacy auto-generated tool configs
+    ".codacy/**",
+    ".codacy-cli-v2/**",
   ]),
 ]);
 
