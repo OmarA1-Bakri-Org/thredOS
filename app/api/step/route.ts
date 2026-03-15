@@ -8,6 +8,8 @@ import { StepNotFoundError } from '@/lib/errors'
 import { writePrompt, deletePrompt, validatePromptExists } from '@/lib/prompts/manager'
 import { StepSchema, StepTypeSchema, ModelTypeSchema, StepStatusSchema, type Step } from '@/lib/sequence/schema'
 import type { Sequence } from '@/lib/sequence/schema'
+import { updateThreadSurfaceState } from '@/lib/thread-surfaces/repository'
+import { materializeStepSurface, removeStepSurface } from '@/lib/thread-surfaces/materializer'
 
 const AddSchema = z.object({
   action: z.literal('add'),
@@ -30,6 +32,7 @@ const EditSchema = z.object({
   status: z.string().optional(),
   dependsOn: z.array(z.string()).optional(),
   cwd: z.string().optional(),
+  assignedAgentId: z.string().nullable().optional(),
 })
 
 const RmSchema = z.object({ action: z.literal('rm'), stepId: z.string() })
@@ -76,6 +79,10 @@ async function handleAdd(body: AddBody, seq: Sequence, bp: string) {
     await writePrompt(bp, body.stepId, `# ${v.data.name}\n\n<!-- Add your prompt here -->\n`)
   }
 
+  await updateThreadSurfaceState(bp, s =>
+    materializeStepSurface(s, body.stepId, v.data.name, seq.name, new Date().toISOString())
+  )
+
   await auditLog('step.add', body.stepId)
   return NextResponse.json({ success: true, action: 'add', stepId: body.stepId })
 }
@@ -106,6 +113,10 @@ function applyEditFields(step: Step, body: EditBody): NextResponse | null {
   if (body.dependsOn) step.depends_on = body.dependsOn
   if (body.cwd) step.cwd = body.cwd
 
+  if (body.assignedAgentId !== undefined) {
+    step.assigned_agent_id = body.assignedAgentId ?? undefined
+  }
+
   return null // no error
 }
 
@@ -134,6 +145,9 @@ async function handleRm(body: RmBody, seq: Sequence, bp: string) {
   seq.steps.splice(idx, 1)
   await writeSequence(bp, seq)
   try { await deletePrompt(bp, body.stepId) } catch { /* ok */ }
+
+  await updateThreadSurfaceState(bp, s => removeStepSurface(s, body.stepId))
+
   await auditLog('step.rm', body.stepId)
   return NextResponse.json({ success: true, action: 'rm', stepId: body.stepId })
 }
@@ -150,6 +164,11 @@ async function handleClone(body: CloneBody, seq: Sequence, bp: string) {
   validateDAG(seq)
   await writeSequence(bp, seq)
   await writePrompt(bp, body.newId, `# ${cloned.name}\n\n<!-- Add your prompt here -->\n`)
+
+  await updateThreadSurfaceState(bp, s =>
+    materializeStepSurface(s, body.newId, cloned.name, seq.name, new Date().toISOString())
+  )
+
   await auditLog('step.clone', body.newId, { sourceId: body.sourceId })
   return NextResponse.json({ success: true, action: 'clone', stepId: body.newId })
 }
