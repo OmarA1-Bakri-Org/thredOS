@@ -81,4 +81,37 @@ describe('thread surface scaffold resolution', () => {
     expect(result.threadSurfaces).toEqual(threadSurfaces)
     expect(result.runs).toEqual(runs)
   })
+
+  test('returns api source when surfaces exist but runs are empty', () => {
+    const result = resolveThreadSurfaceCanvasData({
+      status,
+      threadSurfaces,
+      runs: [],
+      mergeEvents: [],
+    })
+
+    expect(result.source).toBe('api')
+    expect(result.threadSurfaces).toHaveLength(1)
+  })
+
+  test('returns status-scaffold when all collections are empty arrays', () => {
+    const result = resolveThreadSurfaceCanvasData({
+      status,
+      threadSurfaces: [],
+      runs: [],
+      mergeEvents: [],
+    })
+
+    expect(result.source).toBe('status-scaffold')
+  })
+
+  test('returns empty when no status and no data', () => {
+    const result = resolveThreadSurfaceCanvasData({
+      threadSurfaces: [],
+      runs: [],
+      mergeEvents: [],
+    })
+
+    expect(result.source).toBe('empty')
+  })
 })
