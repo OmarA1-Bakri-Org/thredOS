@@ -67,6 +67,12 @@ mock.module('@/lib/ui/api', () => ({
   useResetSequence: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
   useAgentPerformance: () => ({ data: null, isLoading: false }),
   useGateMetrics: () => ({ data: null, isLoading: false }),
+  useListPacks: () => ({ data: [], isLoading: false }),
+  useCreatePack: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+  usePromotePack: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+  useBuilderProfile: () => ({ data: null, isLoading: false }),
+  useThreadRunnerEligibility: () => ({ data: { eligible: false, requirements: [] }, isLoading: false }),
+  useOptimizeWorkflow: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
 }))
 
 // ---------------------------------------------------------------------------

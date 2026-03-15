@@ -407,3 +407,77 @@ export function useGateMetrics(gateId: string | null) {
     staleTime: 30_000,
   })
 }
+
+// ── Packs hooks ─────────────────────────────────────────────────────
+import type { Pack } from '@/lib/packs/types'
+
+export function useListPacks() {
+  return useQuery<Pack[]>({
+    queryKey: ['packs'],
+    queryFn: async () => {
+      const res = await fetchJson<{ packs: Pack[] }>('/api/packs')
+      return res.packs
+    },
+    staleTime: 30_000,
+  })
+}
+
+export function useCreatePack() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (input: {
+      id: string; type: string; division?: string; classification?: string;
+      builderId: string; builderName: string;
+    }) => postJson('/api/packs', { action: 'create', ...input }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['packs'] }) },
+    onError: (error) => { console.error('Create pack failed:', error) },
+  })
+}
+
+export function usePromotePack() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (packId: string) => postJson('/api/packs', { action: 'promote', packId }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['packs'] }) },
+    onError: (error) => { console.error('Promote pack failed:', error) },
+  })
+}
+
+// ── Builder profile hook ────────────────────────────────────────────
+import type { BuilderProfile } from '@/lib/builders/types'
+
+export function useBuilderProfile(builderId: string | null) {
+  return useQuery<BuilderProfile | null>({
+    queryKey: ['builder-profile', builderId],
+    queryFn: async () => {
+      if (!builderId) return null
+      const res = await fetchJson<{ profile: BuilderProfile }>(`/api/builder-profile?builderId=${encodeURIComponent(builderId)}`)
+      return res.profile
+    },
+    enabled: !!builderId,
+    staleTime: 30_000,
+  })
+}
+
+// ── Thread Runner eligibility hook ──────────────────────────────────
+import type { EligibilityStatus } from '@/lib/thread-runner/types'
+
+export function useThreadRunnerEligibility() {
+  return useQuery<EligibilityStatus>({
+    queryKey: ['thread-runner-eligibility'],
+    queryFn: () => fetchJson<EligibilityStatus>('/api/thread-runner/eligibility'),
+    staleTime: 60_000,
+  })
+}
+
+// ── Optimize workflow hook ──────────────────────────────────────────
+import type { OptimizationResult } from '@/lib/autoresearch/types'
+
+export function useOptimizeWorkflow() {
+  const qc = useQueryClient()
+  return useMutation<OptimizationResult>({
+    mutationFn: () => postJson<OptimizationResult>('/api/optimize', {}),
+    onSuccess: () => invalidateRuntimeQueries(qc),
+    onError: (error) => { console.error('Optimize workflow failed:', error) },
+  })
+}

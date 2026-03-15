@@ -8,14 +8,20 @@ mock.module('@/lib/ui/store', () => ({
 
 mock.module('@/lib/ui/api', () => ({
   useThreadSurfaceSkills: () => ({
-  useAgentPerformance: () => ({ data: null, isLoading: false }),
-  useGateMetrics: () => ({ data: null, isLoading: false }),
     data: [
       { id: 'search', label: 'Search', inherited: false },
       { id: 'files', label: 'Files', inherited: false },
       { id: 'model', label: 'Model', inherited: true },
     ],
   }),
+  useAgentPerformance: () => ({ data: null, isLoading: false }),
+  useGateMetrics: () => ({ data: null, isLoading: false }),
+  useListPacks: () => ({ data: [], isLoading: false }),
+  useCreatePack: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+  usePromotePack: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+  useBuilderProfile: () => ({ data: null, isLoading: false }),
+  useThreadRunnerEligibility: () => ({ data: { eligible: false, requirements: [] }, isLoading: false }),
+  useOptimizeWorkflow: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
 }))
 
 const { SkillsContent } = await import('./SkillsContent')

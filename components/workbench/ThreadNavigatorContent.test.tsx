@@ -18,13 +18,19 @@ mock.module('@/lib/ui/store', () => ({
 
 mock.module('@/lib/ui/api', () => ({
   useThreadSurfaces: () => ({
-  useAgentPerformance: () => ({ data: null, isLoading: false }),
-  useGateMetrics: () => ({ data: null, isLoading: false }),
     data: [
       { id: 'thread-master', surfaceLabel: 'Master Thread', depth: 0, role: 'orchestrator', childSurfaceIds: ['thread-child'] },
       { id: 'thread-child', surfaceLabel: 'Child Thread', depth: 1, role: 'worker', childSurfaceIds: [] },
     ],
   }),
+  useAgentPerformance: () => ({ data: null, isLoading: false }),
+  useGateMetrics: () => ({ data: null, isLoading: false }),
+  useListPacks: () => ({ data: [], isLoading: false }),
+  useCreatePack: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+  usePromotePack: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+  useBuilderProfile: () => ({ data: null, isLoading: false }),
+  useThreadRunnerEligibility: () => ({ data: { eligible: false, requirements: [] }, isLoading: false }),
+  useOptimizeWorkflow: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
 }))
 
 const { ThreadNavigatorContent } = await import('./ThreadNavigatorContent')
