@@ -1,7 +1,6 @@
-export interface ProposedAction {
-  command: string
-  args: Record<string, unknown>
-}
+import type { ProposedAction } from './validator'
+
+export type { ProposedAction }
 
 /**
  * Extract proposed actions from LLM response text.

@@ -2,6 +2,9 @@ import { NextRequest } from 'next/server'
 import { readSequence } from '@/lib/sequence/parser'
 import { getBasePath } from '@/lib/config'
 import { createConfiguredProvider, getConfiguredModel } from '@/lib/llm/providers'
+import { buildSystemPrompt } from '@/lib/chat/system-prompt'
+import { extractActions } from '@/lib/chat/extract-actions'
+import { ActionValidator } from '@/lib/chat/validator'
 import type { Sequence } from '@/lib/sequence/schema'
 
 const MAX_MESSAGE_LENGTH = 10_000
@@ -33,7 +36,7 @@ async function streamLlmResponse(
     const provider = createConfiguredProvider(process.env)
     if (!provider.client) return false
 
-    const systemPrompt = `You are a ThreadOS assistant helping manage a sequence with ${sequence.steps.length} steps. Help the user understand and modify their sequence.`
+    const systemPrompt = buildSystemPrompt(sequence)
     const completion = await provider.client.chat.completions.create({
       model: provider.defaultModel ?? resolvedModel,
       messages: [
@@ -43,14 +46,35 @@ async function streamLlmResponse(
       stream: true,
     })
 
+    let fullResponseText = ''
     for await (const chunk of completion) {
       const content = chunk.choices[0]?.delta?.content
       if (content) {
         send('message', { content, streaming: true })
+        fullResponseText += content
       }
     }
 
-    send('actions', { actions: [] })
+    // Extract proposed actions from LLM response
+    try {
+      const proposedActions = extractActions(fullResponseText)
+      if (proposedActions.length > 0) {
+        const validator = new ActionValidator(getBasePath())
+        const dryRunResult = await validator.dryRun(proposedActions)
+        send('actions', { actions: proposedActions })
+        if (dryRunResult.valid && dryRunResult.diff) {
+          send('diff', { diff: dryRunResult.diff })
+        } else if (!dryRunResult.valid) {
+          send('message', { content: `\n\nValidation: ${dryRunResult.errors.join(', ')}` })
+        }
+      } else {
+        send('actions', { actions: [] })
+      }
+    } catch (e) {
+      console.error('[chat/route] Action extraction failed:', e)
+      send('actions', { actions: [] })
+    }
+
     send('done', { model: resolvedModel })
     return true
   } catch {
