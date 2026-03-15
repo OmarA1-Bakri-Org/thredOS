@@ -8,10 +8,18 @@ import { GateNotFoundError } from '@/lib/errors'
 import type { Gate } from '@/lib/sequence/schema'
 
 const InsertSchema = z.object({ action: z.literal('insert'), gateId: z.string(), name: z.string().optional(), dependsOn: z.array(z.string()).optional() })
-const ApproveSchema = z.object({ action: z.literal('approve'), gateId: z.string() })
+const ApproveSchema = z.object({ action: z.literal('approve'), gateId: z.string(), acknowledged_conditions: z.boolean().optional() })
 const BlockSchema = z.object({ action: z.literal('block'), gateId: z.string() })
 const RmSchema = z.object({ action: z.literal('rm'), gateId: z.string() })
-const BodySchema = z.union([InsertSchema, ApproveSchema, BlockSchema, RmSchema])
+const UpdateSchema = z.object({
+  action: z.literal('update'),
+  gateId: z.string(),
+  name: z.string().optional(),
+  description: z.string().optional(),
+  acceptance_conditions: z.array(z.string()).optional(),
+  required_review: z.boolean().optional(),
+})
+const BodySchema = z.union([InsertSchema, ApproveSchema, BlockSchema, RmSchema, UpdateSchema])
 
 export async function GET() {
   try {
@@ -58,7 +66,22 @@ export async function POST(request: Request) {
     const gate = seq.gates.find(g => g.id === body.gateId)
     if (!gate) throw new GateNotFoundError(body.gateId)
 
+    if (body.action === 'update') {
+      if (body.name !== undefined) gate.name = body.name
+      if (body.description !== undefined) gate.description = body.description
+      if (body.acceptance_conditions !== undefined) gate.acceptance_conditions = body.acceptance_conditions
+      if (body.required_review !== undefined) gate.required_review = body.required_review
+      await writeSequence(bp, seq)
+      await auditLog('gate.update', body.gateId)
+      return NextResponse.json({ success: true, action: 'update', gateId: body.gateId })
+    }
+
     if (body.action === 'approve') {
+      if (gate.required_review && gate.acceptance_conditions?.length) {
+        if (!body.acknowledged_conditions) {
+          return jsonError('Gate requires review of acceptance conditions before approval', 'APPROVAL_GUARD', 400)
+        }
+      }
       gate.status = 'APPROVED'
       await writeSequence(bp, seq)
       await auditLog('gate.approve', body.gateId)
