@@ -111,6 +111,18 @@ describe('StepSchema', () => {
     const result = StepSchema.safeParse({ ...validStep, orchestrator: 'orch-1' })
     expect(result.success).toBe(true)
   })
+
+  test('accepts assigned_agent_id', () => {
+    const result = StepSchema.safeParse({ ...validStep, assigned_agent_id: 'agent-1' })
+    expect(result.success).toBe(true)
+    if (result.success) expect(result.data.assigned_agent_id).toBe('agent-1')
+  })
+
+  test('assigned_agent_id defaults to undefined', () => {
+    const result = StepSchema.safeParse(validStep)
+    expect(result.success).toBe(true)
+    if (result.success) expect(result.data.assigned_agent_id).toBeUndefined()
+  })
 })
 
 describe('GateSchema', () => {

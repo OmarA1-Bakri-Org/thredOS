@@ -43,6 +43,7 @@ export const StepSchema = z.object({
   orchestrator: z.string().optional(),
   timeout_ms: z.number().optional(),
   fail_policy: FailPolicySchema.optional(),
+  assigned_agent_id: z.string().optional(),
 })
 
 export const GateStatusSchema = z.enum(['PENDING', 'APPROVED', 'BLOCKED'])
