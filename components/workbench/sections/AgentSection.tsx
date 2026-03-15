@@ -4,9 +4,21 @@ import { useState } from 'react'
 import { Bot, Wrench, UserCheck, Users, BarChart3, Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useUIStore } from '@/lib/ui/store'
-import { useStatus, useAgentProfile, useThreadSurfaceSkills } from '@/lib/ui/api'
+import { useStatus, useAgentProfile, useThreadSurfaceSkills, useListAgents, useRegisterAgent, useAssignAgent } from '@/lib/ui/api'
 import { derivePhases } from '@/lib/ui/phases'
 import { ModelPopout } from '@/components/inspector/ModelPopout'
+
+const SKILL_CATALOG = [
+  { id: 'search', label: 'Search' },
+  { id: 'browser', label: 'Browser' },
+  { id: 'model', label: 'Model' },
+  { id: 'tools', label: 'Tools' },
+  { id: 'files', label: 'Files' },
+  { id: 'orchestration', label: 'Orchestration' },
+  { id: 'spawn', label: 'Spawn' },
+  { id: 'review', label: 'Review' },
+  { id: 'code', label: 'Code' },
+]
 
 type AgentTab = 'workshop' | 'roster' | 'assign' | 'performance' | 'tools'
 
@@ -21,6 +33,36 @@ const AGENT_TABS: Array<{ id: AgentTab; label: string; icon: typeof Bot }> = [
 function WorkshopView() {
   const [agentName, setAgentName] = useState('')
   const [selectedModel, setSelectedModel] = useState('claude-code')
+  const [selectedSkills, setSelectedSkills] = useState<Set<string>>(new Set())
+  const registerAgent = useRegisterAgent()
+
+  const toggleSkill = (skillId: string) => {
+    setSelectedSkills(prev => {
+      const next = new Set(prev)
+      if (next.has(skillId)) next.delete(skillId)
+      else next.add(skillId)
+      return next
+    })
+  }
+
+  const handleRegister = () => {
+    const trimmed = agentName.trim()
+    if (!trimmed) return
+    const agentId = trimmed.toLowerCase().replace(/[^a-z0-9-]/g, '-')
+    registerAgent.mutate({
+      id: agentId,
+      name: trimmed,
+      builderId: 'workshop',
+      builderName: 'Workshop',
+      model: selectedModel,
+      skills: SKILL_CATALOG.filter(s => selectedSkills.has(s.id)),
+    }, {
+      onSuccess: () => {
+        setAgentName('')
+        setSelectedSkills(new Set())
+      },
+    })
+  }
 
   return (
     <div className="space-y-3">
@@ -56,11 +98,27 @@ function WorkshopView() {
         </div>
       </div>
 
-      {/* Skills placeholder */}
+      {/* Skills */}
       <div className="border border-slate-800 bg-[#0a101a] px-3 py-3">
         <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Skills</div>
-        <div className="mt-2 text-[11px] text-slate-500">
-          Skill assignment will be available once the agent skills registry is wired.
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {SKILL_CATALOG.map(skill => {
+            const isSelected = selectedSkills.has(skill.id)
+            return (
+              <button
+                key={skill.id}
+                type="button"
+                onClick={() => toggleSkill(skill.id)}
+                className={`px-2 py-1 font-mono text-[9px] uppercase tracking-[0.12em] transition-all ${
+                  isSelected
+                    ? 'border border-emerald-500/50 bg-emerald-500/15 text-emerald-300'
+                    : 'border border-slate-700/50 bg-slate-950/40 text-slate-500 hover:border-slate-600 hover:text-slate-300'
+                }`}
+              >
+                {skill.label}
+              </button>
+            )
+          })}
         </div>
       </div>
 
@@ -69,11 +127,24 @@ function WorkshopView() {
         type="button"
         variant="success"
         className="w-full gap-2"
-        disabled={!agentName.trim()}
+        disabled={!agentName.trim() || registerAgent.isPending}
+        onClick={handleRegister}
       >
         <Bot className="h-4 w-4" />
-        Register agent
+        {registerAgent.isPending ? 'Registering...' : 'Register agent'}
       </Button>
+
+      {registerAgent.isError && (
+        <div className="border border-red-500/30 bg-red-500/10 px-3 py-2 text-[11px] text-red-300">
+          {(registerAgent.error as Error).message}
+        </div>
+      )}
+
+      {registerAgent.isSuccess && (
+        <div className="border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-[11px] text-emerald-300">
+          Agent registered successfully.
+        </div>
+      )}
     </div>
   )
 }
