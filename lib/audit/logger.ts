@@ -67,6 +67,13 @@ export async function read(basePath: string, options?: AuditReadOptions): Promis
 }
 
 /**
+ * Read all audit entries from the log file
+ */
+export async function readAll(basePath: string): Promise<AuditEntry[]> {
+  return read(basePath)
+}
+
+/**
  * Get the last n audit entries
  */
 export async function tail(basePath: string, n: number): Promise<AuditEntry[]> {
