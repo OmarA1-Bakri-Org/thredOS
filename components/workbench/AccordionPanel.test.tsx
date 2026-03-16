@@ -33,6 +33,7 @@ mock.module('@/lib/ui/store', () => ({
     const stack = s.navigationStack
     return stack.length > 0 ? stack[stack.length - 1].depth : 0
   },
+  selectPathSegments: () => [],
 }))
 
 mock.module('@/lib/ui/api', () => ({
@@ -72,6 +73,28 @@ mock.module('@/lib/ui/api', () => ({
   useInsertGate: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false, error: null }),
   useThreadSurfaceSkills: () => ({ data: [] }),
   useAgentProfile: () => ({ data: null }),
+  useListAgents: () => ({ data: [], isLoading: false }),
+  useRegisterAgent: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+  useAssignAgent: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+  useSequence: () => ({ data: null }),
+  useUpdateGate: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+  useRenameSequence: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+  useSetThreadType: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+  useApplyTemplate: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+  useRemoveGate: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+  useResetSequence: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+  useAgentPerformance: () => ({ data: null, isLoading: false }),
+  useGateMetrics: () => ({ data: null, isLoading: false }),
+  useListPacks: () => ({ data: [], isLoading: false }),
+  useCreatePack: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+  usePromotePack: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+  useBuilderProfile: () => ({ data: null, isLoading: false }),
+  useThreadRunnerEligibility: () => ({ data: { eligible: false, requirements: [] }, isLoading: false }),
+  useOptimizeWorkflow: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+  useListRaces: () => ({ data: [], isLoading: false }),
+  useRaceResults: () => ({ data: null, isLoading: false }),
+  useEnrollRace: () => ({ mutate: () => {}, isPending: false }),
+  useRecordRun: () => ({ mutate: () => {}, isPending: false }),
 }))
 
 const { AccordionPanel } = await import('./AccordionPanel')

@@ -49,6 +49,8 @@ function buildStatus(sequence: Sequence, mprocsMap: Record<string, number>) {
     steps: sequence.steps.map(s => mapStep(s, mprocsMap)),
     gates: sequence.gates.map(g => ({
       id: g.id, name: g.name, status: g.status, dependsOn: g.depends_on,
+      description: g.description, acceptance_conditions: g.acceptance_conditions,
+      required_review: g.required_review,
     })),
     summary: buildSummary(sequence.steps),
   }

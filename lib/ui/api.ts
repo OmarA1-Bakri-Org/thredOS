@@ -5,6 +5,8 @@ import type { Sequence } from '@/lib/sequence/schema'
 import type { SequenceStatus } from '@/app/api/status/route'
 import type { MergeEvent, RunScope, ThreadSurface, ThreadSkillBadge } from '@/lib/thread-surfaces/types'
 import type { ThreadCardProfile } from '@/components/hierarchy/FocusedThreadCard'
+import type { AgentRegistration } from '@/lib/agents/types'
+import type { GateMetrics } from '@/lib/gates/metrics'
 import { resolveSkillsForAgent } from '@/lib/thread-surfaces/projections'
 
 interface ThreadSurfacesResponse {
@@ -125,9 +127,22 @@ export function useRestartStep() {
 export function useApproveGate() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (gateId: string) => postJson('/api/gate', { action: 'approve', gateId }),
+    mutationFn: ({ gateId, acknowledged_conditions }: { gateId: string; acknowledged_conditions?: boolean }) =>
+      postJson('/api/gate', { action: 'approve', gateId, acknowledged_conditions }),
     onSuccess: () => invalidateRuntimeQueries(qc),
     onError: (error) => { console.error('Approve gate failed:', error) },
+  })
+}
+
+export function useUpdateGate() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (input: {
+      gateId: string; name?: string; description?: string;
+      acceptance_conditions?: string[]; required_review?: boolean;
+    }) => postJson('/api/gate', { action: 'update', ...input }),
+    onSuccess: () => invalidateRuntimeQueries(qc),
+    onError: (error) => { console.error('Update gate failed:', error) },
   })
 }
 
@@ -247,6 +262,41 @@ export function useAgentProfile(threadSurfaceId: string | null) {
   })
 }
 
+// ── Agent CRUD hooks ─────────────────────────────────────────────────
+
+export function useListAgents() {
+  return useQuery<AgentRegistration[]>({
+    queryKey: ['agents'],
+    queryFn: async () => {
+      const res = await fetchJson<{ agents: AgentRegistration[] }>('/api/agents')
+      return res.agents
+    },
+    staleTime: 30_000,
+  })
+}
+
+export function useRegisterAgent() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (input: {
+      id: string; name: string; builderId: string; builderName: string;
+      model?: string; skills?: Array<{ id: string; label: string }>
+    }) => postJson('/api/agents', input),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['agents'] }) },
+    onError: (error) => { console.error('Register agent failed:', error) },
+  })
+}
+
+export function useAssignAgent() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ stepId, agentId }: { stepId: string; agentId: string | null }) =>
+      postJson('/api/step', { action: 'edit', stepId, assignedAgentId: agentId }),
+    onSuccess: () => invalidateRuntimeQueries(qc),
+    onError: (error) => { console.error('Assign agent failed:', error) },
+  })
+}
+
 // ── Thread surface skill query ──────────────────────────────────────
 
 /**
@@ -311,6 +361,28 @@ export function useResetSequence() {
   })
 }
 
+// ── Agent performance query ──────────────────────────────────────────
+
+export interface AgentPerformanceData {
+  totalRuns: number
+  passRate: number
+  avgTimeMs: number
+  quality: number
+}
+
+export function useAgentPerformance(agentId: string | null) {
+  return useQuery<AgentPerformanceData | null>({
+    queryKey: ['agent-performance', agentId],
+    queryFn: async () => {
+      if (!agentId) return null
+      const res = await fetchJson<{ stats: AgentPerformanceData | null }>(`/api/agent-stats?agentId=${encodeURIComponent(agentId)}`)
+      return res.stats
+    },
+    enabled: !!agentId,
+    staleTime: 30_000,
+  })
+}
+
 export function useRemoveDep() {
   const qc = useQueryClient()
   return useMutation({
@@ -318,5 +390,143 @@ export function useRemoveDep() {
       postJson('/api/dep', { action: 'rm', stepId, depId }),
     onSuccess: () => invalidateRuntimeQueries(qc),
     onError: (error) => { console.error('Remove dependency failed:', error) },
+  })
+}
+
+// ── Gate metrics query ──────────────────────────────────────────────
+
+export function useGateMetrics(gateId: string | null) {
+  return useQuery<GateMetrics | null>({
+    queryKey: ['gate-metrics', gateId],
+    queryFn: async () => {
+      if (!gateId) return null
+      const res = await fetchJson<{ metrics: GateMetrics }>(`/api/gate-metrics?gateId=${encodeURIComponent(gateId)}`)
+      return res.metrics
+    },
+    enabled: !!gateId,
+    staleTime: 30_000,
+  })
+}
+
+// ── Packs hooks ─────────────────────────────────────────────────────
+import type { Pack } from '@/lib/packs/types'
+
+export function useListPacks() {
+  return useQuery<Pack[]>({
+    queryKey: ['packs'],
+    queryFn: async () => {
+      const res = await fetchJson<{ packs: Pack[] }>('/api/packs')
+      return res.packs
+    },
+    staleTime: 30_000,
+  })
+}
+
+export function useCreatePack() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (input: {
+      id: string; type: string; division?: string; classification?: string;
+      builderId: string; builderName: string;
+    }) => postJson('/api/packs', { action: 'create', ...input }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['packs'] }) },
+    onError: (error) => { console.error('Create pack failed:', error) },
+  })
+}
+
+export function usePromotePack() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (packId: string) => postJson('/api/packs', { action: 'promote', packId }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['packs'] }) },
+    onError: (error) => { console.error('Promote pack failed:', error) },
+  })
+}
+
+// ── Builder profile hook ────────────────────────────────────────────
+import type { BuilderProfile } from '@/lib/builders/types'
+
+export function useBuilderProfile(builderId: string | null) {
+  return useQuery<BuilderProfile | null>({
+    queryKey: ['builder-profile', builderId],
+    queryFn: async () => {
+      if (!builderId) return null
+      const res = await fetchJson<{ profile: BuilderProfile }>(`/api/builder-profile?builderId=${encodeURIComponent(builderId)}`)
+      return res.profile
+    },
+    enabled: !!builderId,
+    staleTime: 30_000,
+  })
+}
+
+// ── Thread Runner eligibility hook ──────────────────────────────────
+import type { EligibilityStatus } from '@/lib/thread-runner/types'
+
+export function useThreadRunnerEligibility() {
+  return useQuery<EligibilityStatus>({
+    queryKey: ['thread-runner-eligibility'],
+    queryFn: () => fetchJson<EligibilityStatus>('/api/thread-runner/eligibility'),
+    staleTime: 60_000,
+  })
+}
+
+// ── Optimize workflow hook ──────────────────────────────────────────
+import type { OptimizationResult } from '@/lib/autoresearch/types'
+
+export function useOptimizeWorkflow() {
+  const qc = useQueryClient()
+  return useMutation<OptimizationResult>({
+    mutationFn: () => postJson<OptimizationResult>('/api/optimize', {}),
+    onSuccess: () => invalidateRuntimeQueries(qc),
+    onError: (error) => { console.error('Optimize workflow failed:', error) },
+  })
+}
+
+// ── Thread Runner race hooks ─────────────────────────────────────────
+
+export function useListRaces() {
+  return useQuery<import('@/lib/thread-runner/types').Race[]>({
+    queryKey: ['thread-runner-races'],
+    queryFn: async () => {
+      const res = await fetchJson<{ races: import('@/lib/thread-runner/types').Race[] }>('/api/thread-runner/race')
+      return res.races
+    },
+    staleTime: 10_000,
+  })
+}
+
+export function useRaceResults(raceId: string | null) {
+  return useQuery<import('@/lib/thread-runner/types').RaceResult | null>({
+    queryKey: ['thread-runner-race-results', raceId],
+    queryFn: async () => {
+      if (!raceId) return null
+      const res = await fetchJson<{ results: import('@/lib/thread-runner/types').RaceResult }>(
+        `/api/thread-runner/race?raceId=${encodeURIComponent(raceId)}`
+      )
+      return res.results
+    },
+    enabled: !!raceId,
+    staleTime: 5_000,
+  })
+}
+
+export function useEnrollRace() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (input: { name: string; division: string; classification: string; maxCombatants?: number }) =>
+      postJson('/api/thread-runner/race', { action: 'enroll', ...input }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['thread-runner-races'] }) },
+  })
+}
+
+export function useRecordRun() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (input: { raceId: string; combatantId: string; threadSurfaceId: string }) =>
+      postJson('/api/thread-runner/race', { action: 'record-run', ...input }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['thread-runner-races'] })
+      qc.invalidateQueries({ queryKey: ['thread-runner-race-results'] })
+    },
   })
 }

@@ -14,6 +14,18 @@ mock.module('@/lib/ui/api', () => ({
       { id: 'model', label: 'Model', inherited: true },
     ],
   }),
+  useAgentPerformance: () => ({ data: null, isLoading: false }),
+  useGateMetrics: () => ({ data: null, isLoading: false }),
+  useListPacks: () => ({ data: [], isLoading: false }),
+  useCreatePack: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+  usePromotePack: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+  useBuilderProfile: () => ({ data: null, isLoading: false }),
+  useThreadRunnerEligibility: () => ({ data: { eligible: false, requirements: [] }, isLoading: false }),
+  useOptimizeWorkflow: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+  useListRaces: () => ({ data: [], isLoading: false }),
+  useRaceResults: () => ({ data: null, isLoading: false }),
+  useEnrollRace: () => ({ mutate: () => {}, isPending: false }),
+  useRecordRun: () => ({ mutate: () => {}, isPending: false }),
 }))
 
 const { SkillsContent } = await import('./SkillsContent')

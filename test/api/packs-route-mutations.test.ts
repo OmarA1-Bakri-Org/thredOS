@@ -1,22 +1,43 @@
-import { describe, test, expect } from 'bun:test'
+import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
+import { mkdtemp, rm, mkdir, writeFile } from 'fs/promises'
+import { join } from 'path'
+import { tmpdir } from 'os'
+import type { PackState } from '@/lib/packs/repository'
 
 /**
- * Tests for POST and PATCH on /api/packs route.
+ * Tests for POST actions (create / promote) on /api/packs route.
  *
- * The route uses an in-memory PackRepository at module level,
- * so we test against it directly without mocking.
+ * The route is file-backed via `.threados/state/packs.json`.
+ * Each test gets a fresh temp directory.
  */
 
-const { POST, PATCH } = await import('@/app/api/packs/route')
+let tempDir: string
 
-// ── POST tests ──────────────────────────────────────────────────────────
+beforeEach(async () => {
+  tempDir = await mkdtemp(join(tmpdir(), 'packs-mut-test-'))
+  const stateDir = join(tempDir, '.threados', 'state')
+  await mkdir(stateDir, { recursive: true })
+  const emptyState: PackState = { version: 1, packs: [] }
+  await writeFile(join(stateDir, 'packs.json'), JSON.stringify(emptyState, null, 2))
+  process.env.THREADOS_BASE_PATH = tempDir
+})
 
-describe('POST /api/packs', () => {
+afterEach(async () => {
+  delete process.env.THREADOS_BASE_PATH
+  await rm(tempDir, { recursive: true, force: true })
+})
+
+const { POST } = await import('@/app/api/packs/route')
+
+// ── POST create tests ────────────────────────────────────────────────────
+
+describe('POST /api/packs (create)', () => {
   test('creates a new pack with correct fields', async () => {
     const req = new Request('http://localhost/api/packs', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        action: 'create',
         id: 'pack-post-test-1',
         type: 'challenger',
         builderId: 'builder-1',
@@ -26,9 +47,8 @@ describe('POST /api/packs', () => {
       }),
     })
     const res = await POST(req)
-    expect(res.status).toBe(200)
+    expect(res.status).toBe(201)
     const body = await res.json()
-    expect(body.success).toBe(true)
     expect(body.pack).toBeDefined()
     expect(body.pack.id).toBe('pack-post-test-1')
     expect(body.pack.type).toBe('challenger')
@@ -37,7 +57,7 @@ describe('POST /api/packs', () => {
     expect(body.pack.division).toBe('open')
     expect(body.pack.classification).toBe('qualifier')
     expect(body.pack.highestStatus).toBe('challenger')
-    expect(body.pack.statusHistory).toEqual([])
+    expect(body.pack.statusHistory).toHaveLength(1)
     expect(body.pack.acquiredAt).toBeDefined()
   })
 
@@ -45,7 +65,7 @@ describe('POST /api/packs', () => {
     const req = new Request('http://localhost/api/packs', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: 'pack-incomplete' }),
+      body: JSON.stringify({ action: 'create', id: 'pack-incomplete' }),
     })
     const res = await POST(req)
     expect(res.status).toBe(400)
@@ -58,6 +78,7 @@ describe('POST /api/packs', () => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        action: 'create',
         type: 'challenger',
         builderName: 'Alice',
         division: 'open',
@@ -68,37 +89,37 @@ describe('POST /api/packs', () => {
     expect(res.status).toBe(400)
   })
 
-  test('auto-generates id when not provided', async () => {
+  test('defaults division and classification when not provided', async () => {
     const req = new Request('http://localhost/api/packs', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        action: 'create',
+        id: 'pack-defaults',
         type: 'champion',
         builderId: 'builder-2',
         builderName: 'Bob',
-        division: 'elite',
-        classification: 'finals',
       }),
     })
     const res = await POST(req)
-    expect(res.status).toBe(200)
+    expect(res.status).toBe(201)
     const body = await res.json()
     expect(body.pack.id).toBeDefined()
-    expect(typeof body.pack.id).toBe('string')
-    expect(body.pack.id.length).toBeGreaterThan(0)
+    expect(body.pack.division).toBe('Unclassified')
+    expect(body.pack.classification).toBe('Alpha')
   })
 })
 
-// ── PATCH tests ─────────────────────────────────────────────────────────
+// ── POST promote tests ──────────────────────────────────────────────────
 
-describe('PATCH /api/packs', () => {
-  test('promotes pack status successfully (challenger → champion)', async () => {
-    // First create a pack to promote
-    const createReq = new Request('http://localhost/api/packs', {
+describe('POST /api/packs (promote)', () => {
+  async function createPack(id: string) {
+    const req = new Request('http://localhost/api/packs', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        id: 'pack-promote-test',
+        action: 'create',
+        id,
         type: 'challenger',
         builderId: 'builder-3',
         builderName: 'Charlie',
@@ -106,143 +127,78 @@ describe('PATCH /api/packs', () => {
         classification: 'qualifier',
       }),
     })
-    const createRes = await POST(createReq)
-    expect(createRes.status).toBe(200)
+    const res = await POST(req)
+    expect(res.status).toBe(201)
+  }
 
-    // Now promote
-    const patchReq = new Request('http://localhost/api/packs', {
-      method: 'PATCH',
+  test('promotes pack status successfully (challenger to champion)', async () => {
+    await createPack('pack-promote-test')
+
+    const promoteReq = new Request('http://localhost/api/packs', {
+      method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        action: 'promote',
         packId: 'pack-promote-test',
-        newStatus: 'champion',
-        context: 'Won qualifier race',
       }),
     })
-    const res = await PATCH(patchReq)
+    const res = await POST(promoteReq)
     expect(res.status).toBe(200)
     const body = await res.json()
-    expect(body.success).toBe(true)
     expect(body.pack.highestStatus).toBe('champion')
-    expect(body.pack.statusHistory).toHaveLength(1)
+    expect(body.pack.statusHistory).toHaveLength(2)
   })
 
   test('returns 400 for non-existent pack', async () => {
     const req = new Request('http://localhost/api/packs', {
-      method: 'PATCH',
+      method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        action: 'promote',
         packId: 'pack-nonexistent-xyz',
-        newStatus: 'champion',
-        context: 'Nope',
       }),
     })
-    const res = await PATCH(req)
+    const res = await POST(req)
     expect(res.status).toBe(400)
     const body = await res.json()
     expect(body.error).toBeDefined()
   })
 
-  test('returns 400 for invalid status transition (hero → challenger)', async () => {
-    // Create a challenger, promote to champion, then to hero
-    const createReq = new Request('http://localhost/api/packs', {
+  test('returns 400 when hero tries to promote beyond max', async () => {
+    await createPack('pack-hero-test')
+
+    // Promote challenger -> champion
+    await POST(new Request('http://localhost/api/packs', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        id: 'pack-hero-downgrade-test',
-        type: 'challenger',
-        builderId: 'builder-4',
-        builderName: 'Diana',
-        division: 'open',
-        classification: 'qualifier',
-      }),
-    })
-    await POST(createReq)
-
-    // Promote to champion
-    await PATCH(new Request('http://localhost/api/packs', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        packId: 'pack-hero-downgrade-test',
-        newStatus: 'champion',
-        context: 'Won qualifier',
-      }),
+      body: JSON.stringify({ action: 'promote', packId: 'pack-hero-test' }),
     }))
 
-    // Promote to hero
-    await PATCH(new Request('http://localhost/api/packs', {
-      method: 'PATCH',
+    // Promote champion -> hero
+    await POST(new Request('http://localhost/api/packs', {
+      method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        packId: 'pack-hero-downgrade-test',
-        newStatus: 'hero',
-        context: 'Won finals',
-      }),
+      body: JSON.stringify({ action: 'promote', packId: 'pack-hero-test' }),
     }))
 
-    // Try to downgrade hero → challenger
-    const downgradeReq = new Request('http://localhost/api/packs', {
-      method: 'PATCH',
+    // Try to promote hero -> ???
+    const res = await POST(new Request('http://localhost/api/packs', {
+      method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        packId: 'pack-hero-downgrade-test',
-        newStatus: 'challenger',
-        context: 'Downgrade attempt',
-      }),
-    })
-    const res = await PATCH(downgradeReq)
+      body: JSON.stringify({ action: 'promote', packId: 'pack-hero-test' }),
+    }))
     expect(res.status).toBe(400)
     const body = await res.json()
-    expect(body.error).toContain('cannot be promoted')
+    expect(body.error).toContain('maximum status')
   })
 
   test('returns 400 when required fields are missing', async () => {
     const req = new Request('http://localhost/api/packs', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ packId: 'some-pack' }),
-    })
-    const res = await PATCH(req)
-    expect(res.status).toBe(400)
-  })
-
-  test('returns 400 for same-status promotion (champion → champion)', async () => {
-    // Create and promote to champion
-    const createReq = new Request('http://localhost/api/packs', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        id: 'pack-same-status-test',
-        type: 'challenger',
-        builderId: 'builder-5',
-        builderName: 'Eve',
-        division: 'open',
-        classification: 'qualifier',
-      }),
+      body: JSON.stringify({ action: 'promote' }),
     })
-    await POST(createReq)
-
-    await PATCH(new Request('http://localhost/api/packs', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        packId: 'pack-same-status-test',
-        newStatus: 'champion',
-        context: 'Won qualifier',
-      }),
-    }))
-
-    // Try same status again
-    const res = await PATCH(new Request('http://localhost/api/packs', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        packId: 'pack-same-status-test',
-        newStatus: 'champion',
-        context: 'Again',
-      }),
-    }))
+    const res = await POST(req)
     expect(res.status).toBe(400)
   })
 })

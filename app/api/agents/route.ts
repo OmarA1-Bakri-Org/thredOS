@@ -1,8 +1,28 @@
 import { NextResponse } from 'next/server'
+import { z } from 'zod'
 import { getBasePath } from '@/lib/config'
 import { handleError, jsonError } from '@/lib/api-helpers'
 import { readAgentState, updateAgentState } from '@/lib/agents/repository'
 import type { AgentRegistration } from '@/lib/agents/types'
+
+const AgentSkillSchema = z.object({
+  id: z.string().min(1),
+  label: z.string().min(1),
+  inherited: z.boolean().optional(),
+})
+
+const AgentBodySchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  description: z.string().optional(),
+  registeredAt: z.string().optional(),
+  builderId: z.string().min(1),
+  builderName: z.string().min(1),
+  threadSurfaceIds: z.array(z.string()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
+  model: z.string().min(1).optional(),
+  skills: z.array(AgentSkillSchema).optional(),
+})
 
 export async function GET() {
   try {
@@ -18,7 +38,7 @@ interface RequiredStringField {
   label: string
 }
 
-function validateRequiredStrings(fields: RequiredStringField[]): NextResponse | null {
+function _validateRequiredStrings(fields: RequiredStringField[]): NextResponse | null {
   for (const { value, label } of fields) {
     if (!value || typeof value !== 'string') {
       return jsonError(`Missing or invalid ${label}`, 'VALIDATION_ERROR', 400)
@@ -37,20 +57,18 @@ function buildAgent(body: Partial<AgentRegistration>): AgentRegistration {
     builderName: body.builderName!,
     threadSurfaceIds: Array.isArray(body.threadSurfaceIds) ? body.threadSurfaceIds : [],
     metadata: body.metadata,
+    model: body.model,
+    skills: Array.isArray(body.skills) ? body.skills : undefined,
   }
 }
 
 export async function POST(request: Request) {
   try {
-    const body = (await request.json()) as Partial<AgentRegistration>
-
-    const validationError = validateRequiredStrings([
-      { value: body.id, label: 'agent id' },
-      { value: body.name, label: 'agent name' },
-      { value: body.builderId, label: 'builderId' },
-      { value: body.builderName, label: 'builderName' },
-    ])
-    if (validationError) return validationError
+    const parsed = AgentBodySchema.safeParse(await request.json())
+    if (!parsed.success) {
+      return jsonError(parsed.error.issues.map(e => e.message).join(', '), 'VALIDATION_ERROR', 400)
+    }
+    const body = parsed.data
 
     const agent = buildAgent(body)
     const bp = getBasePath()

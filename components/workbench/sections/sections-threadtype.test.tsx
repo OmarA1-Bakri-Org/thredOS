@@ -43,6 +43,8 @@ mock.module('@/lib/ui/store', () => ({
     const stack = s.navigationStack as Array<{ threadSurfaceId: string }> | undefined
     return stack && stack.length > 0 ? stack[stack.length - 1].threadSurfaceId : null
   },
+  selectCurrentDepthLevel: () => 0,
+  selectPathSegments: () => [],
 }))
 
 mock.module('@/lib/ui/api', () => ({
@@ -51,6 +53,43 @@ mock.module('@/lib/ui/api', () => ({
     data: statusData,
     isLoading: false,
   }),
+  useRenameSequence: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+  useSetThreadType: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+  useApplyTemplate: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+  useListAgents: () => ({ data: [], isLoading: false }),
+  useRegisterAgent: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+  useAssignAgent: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+  useAgentProfile: () => ({ data: null }),
+  useSequence: () => ({ data: null }),
+  useThreadSurfaceSkills: () => ({ data: [] }),
+  useUpdateGate: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+  useRunRunnable: () => ({ mutate: () => {}, isPending: false }),
+  useRunStep: () => ({ mutate: () => {}, isPending: false, error: null }),
+  useStopStep: () => ({ mutate: () => {}, isPending: false, error: null }),
+  useRestartStep: () => ({ mutate: () => {}, isPending: false, error: null }),
+  useApproveGate: () => ({ mutate: () => {}, isPending: false, error: null }),
+  useBlockGate: () => ({ mutate: () => {}, isPending: false, error: null }),
+  useThreadRuns: () => ({ data: [] }),
+  useThreadMerges: () => ({ data: [] }),
+  useEditStep: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false, error: null }),
+  useRemoveStep: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false, error: null }),
+  useCloneStep: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false, error: null }),
+  useAddStep: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+  useInsertGate: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+  useAddDep: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+  useRemoveDep: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+  useAgentPerformance: () => ({ data: null, isLoading: false }),
+  useGateMetrics: () => ({ data: null, isLoading: false }),
+  useListPacks: () => ({ data: [], isLoading: false }),
+  useCreatePack: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+  usePromotePack: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+  useBuilderProfile: () => ({ data: null, isLoading: false }),
+  useThreadRunnerEligibility: () => ({ data: { eligible: false, requirements: [] }, isLoading: false }),
+  useOptimizeWorkflow: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+  useListRaces: () => ({ data: [], isLoading: false }),
+  useRaceResults: () => ({ data: null, isLoading: false }),
+  useEnrollRace: () => ({ mutate: () => {}, isPending: false }),
+  useRecordRun: () => ({ mutate: () => {}, isPending: false }),
 }))
 
 const { SequenceSection } = await import('./SequenceSection')

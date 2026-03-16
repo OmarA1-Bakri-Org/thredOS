@@ -1,81 +1,100 @@
-import { PackRepository } from '@/lib/packs/repository'
-import type { Pack, PackStatus, PackType } from '@/lib/packs/types'
-
-const repo = new PackRepository()
-
-const REQUIRED_PACK_FIELDS = ['builderId', 'builderName', 'division', 'classification', 'type'] as const
-
-function validateRequiredPackFields(body: Record<string, unknown>): string | null {
-  const missing = REQUIRED_PACK_FIELDS.filter(field => !body[field])
-  return missing.length > 0
-    ? `Missing required fields: ${REQUIRED_PACK_FIELDS.join(', ')}`
-    : null
-}
+import { NextResponse } from 'next/server'
+import { getBasePath } from '@/lib/config'
+import { readPackState, updatePackState } from '@/lib/packs/repository'
+import type { Pack, PackStatus } from '@/lib/packs/types'
 
 export async function GET() {
-  const packs = repo.listPacks()
-  return Response.json({ packs })
+  try {
+    const state = await readPackState(getBasePath())
+    return NextResponse.json({ packs: state.packs })
+  } catch {
+    return NextResponse.json({ error: 'Failed to read packs' }, { status: 500 })
+  }
+}
+
+const NEXT_STATUS: Record<PackStatus, PackStatus | null> = {
+  challenger: 'champion',
+  champion: 'hero',
+  hero: null,
 }
 
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const { id, builderId, builderName, division, classification, type } = body as {
-      id?: string
-      builderId: string
-      builderName: string
-      division: string
-      classification: string
-      type: PackType
+    const { action } = body as { action: string }
+    const bp = getBasePath()
+
+    if (action === 'create') {
+      const { id, type, division, classification, builderId, builderName } = body as {
+        id: string; type: string; division: string; classification: string
+        builderId: string; builderName: string
+      }
+      if (!id || !type || !builderId || !builderName) {
+        return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
+      }
+
+      const updated = await updatePackState(bp, (state) => {
+        if (state.packs.some(p => p.id === id)) {
+          throw new Error(`Pack '${id}' already exists`)
+        }
+        const pack: Pack = {
+          id,
+          type: type as Pack['type'],
+          division: division || 'Unclassified',
+          classification: classification || 'Alpha',
+          highestStatus: 'challenger',
+          statusHistory: [{ status: 'challenger', achievedAt: new Date().toISOString(), context: 'Pack created' }],
+          builderId,
+          builderName,
+          acquiredAt: new Date().toISOString(),
+        }
+        return { ...state, packs: [...state.packs, pack] }
+      })
+
+      const created = updated.packs.find(p => p.id === id)!
+      return NextResponse.json({ pack: created }, { status: 201 })
     }
 
-    const validationError = validateRequiredPackFields(body)
-    if (validationError) {
-      return Response.json({ error: validationError }, { status: 400 })
+    if (action === 'promote') {
+      const { packId } = body as { packId: string }
+      if (!packId) {
+        return NextResponse.json({ error: 'Missing packId' }, { status: 400 })
+      }
+
+      const updated = await updatePackState(bp, (state) => {
+        const pack = state.packs.find(p => p.id === packId)
+        if (!pack) throw new Error(`Pack '${packId}' not found`)
+
+        const next = NEXT_STATUS[pack.highestStatus]
+        if (!next) throw new Error(`Pack '${packId}' is already at maximum status (hero)`)
+
+        return {
+          ...state,
+          packs: state.packs.map(p =>
+            p.id === packId
+              ? {
+                  ...p,
+                  highestStatus: next,
+                  statusHistory: [...p.statusHistory, { status: next, achievedAt: new Date().toISOString(), context: `Promoted to ${next}` }],
+                }
+              : p
+          ),
+        }
+      })
+
+      const promoted = updated.packs.find(p => p.id === packId)!
+      return NextResponse.json({ pack: promoted })
     }
 
-    const pack: Pack = {
-      id: id ?? crypto.randomUUID(),
-      type,
-      builderId,
-      builderName,
-      division,
-      classification,
-      acquiredAt: new Date().toISOString(),
-      highestStatus: type,
-      statusHistory: [],
+    return NextResponse.json({ error: `Unknown action: ${action}` }, { status: 400 })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Internal server error'
+    if (message.includes('already exists')) {
+      return NextResponse.json({ error: message }, { status: 409 })
     }
-
-    repo.addPack(pack)
-
-    return Response.json({ success: true, pack })
-  } catch {
-    return Response.json({ error: 'Internal server error' }, { status: 500 })
-  }
-}
-
-export async function PATCH(request: Request) {
-  try {
-    const body = await request.json()
-    const { packId, newStatus, context } = body as {
-      packId: string
-      newStatus: PackStatus
-      context: string
+    if (message.includes('not found') || message.includes('maximum status')) {
+      return NextResponse.json({ error: message }, { status: 400 })
     }
-
-    if (!packId || !newStatus || !context) {
-      return Response.json({ error: 'Missing required fields: packId, newStatus, context' }, { status: 400 })
-    }
-
-    const promoted = repo.promoteStatus(packId, newStatus, context)
-
-    if (!promoted) {
-      return Response.json({ error: 'Pack not found or status cannot be promoted (must be unidirectional)' }, { status: 400 })
-    }
-
-    const pack = repo.listPacks().find(p => p.id === packId)
-    return Response.json({ success: true, pack })
-  } catch {
-    return Response.json({ error: 'Internal server error' }, { status: 500 })
+    return NextResponse.json({ error: message }, { status: 500 })
   }
 }

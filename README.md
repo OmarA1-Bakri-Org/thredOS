@@ -122,6 +122,12 @@ Opens the workbench at `http://localhost:3000`:
 
 ## Documentation
 
+- [Product Documentation Pack](docs/product/README.md)
+- [Founder Overview](docs/product/founder-overview.md)
+- [Current State of the Product](docs/product/current-state.md)
+- [Architecture Map](docs/product/architecture-map.md)
+- [Product Narrative](docs/product/product-narrative.md)
+- [Developer Onboarding](docs/product/developer-onboarding.md)
 - [CLI Reference](docs/cli-reference.md)
 - [Thread Types Guide](docs/thread-types.md)
 - [Policy Configuration](docs/policy.md)

@@ -77,6 +77,7 @@ export function resolveThreadSurfaceCanvasData({
   }
 
   if (status) {
+    console.warn('[ThreadOS] Falling back to status-scaffold — this should not happen in normal operation. Surfaces should be materialized on step/template CRUD.')
     return {
       source: 'status-scaffold',
       ...buildThreadSurfaceScaffold(status),

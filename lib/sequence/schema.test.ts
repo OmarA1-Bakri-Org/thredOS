@@ -111,6 +111,18 @@ describe('StepSchema', () => {
     const result = StepSchema.safeParse({ ...validStep, orchestrator: 'orch-1' })
     expect(result.success).toBe(true)
   })
+
+  test('accepts assigned_agent_id', () => {
+    const result = StepSchema.safeParse({ ...validStep, assigned_agent_id: 'agent-1' })
+    expect(result.success).toBe(true)
+    if (result.success) expect(result.data.assigned_agent_id).toBe('agent-1')
+  })
+
+  test('assigned_agent_id defaults to undefined', () => {
+    const result = StepSchema.safeParse(validStep)
+    expect(result.success).toBe(true)
+    if (result.success) expect(result.data.assigned_agent_id).toBeUndefined()
+  })
 })
 
 describe('GateSchema', () => {
@@ -122,6 +134,31 @@ describe('GateSchema', () => {
 
   test('rejects invalid gate ID', () => {
     expect(GateSchema.safeParse({ id: 'GATE!', name: 'G', depends_on: [] }).success).toBe(false)
+  })
+
+  test('accepts gate criteria fields', () => {
+    const result = GateSchema.safeParse({
+      id: 'gate-1', name: 'Gate', depends_on: ['step-1'],
+      description: 'Quality checkpoint',
+      acceptance_conditions: ['Tests pass', 'No lint errors'],
+      required_review: true,
+    })
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect(result.data.description).toBe('Quality checkpoint')
+      expect(result.data.acceptance_conditions).toHaveLength(2)
+      expect(result.data.required_review).toBe(true)
+    }
+  })
+
+  test('gate criteria fields default to undefined', () => {
+    const result = GateSchema.safeParse({ id: 'g', name: 'G', depends_on: [] })
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect(result.data.description).toBeUndefined()
+      expect(result.data.acceptance_conditions).toBeUndefined()
+      expect(result.data.required_review).toBeUndefined()
+    }
   })
 })
 

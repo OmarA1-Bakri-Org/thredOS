@@ -33,6 +33,18 @@ mock.module('@/lib/ui/api', () => ({
   useInsertGate: noopMutation,
   useAddDep: noopMutation,
   useRemoveDep: noopMutation,
+  useAgentPerformance: () => ({ data: null, isLoading: false }),
+  useGateMetrics: () => ({ data: null, isLoading: false }),
+  useListPacks: () => ({ data: [], isLoading: false }),
+  useCreatePack: noopMutation,
+  usePromotePack: noopMutation,
+  useBuilderProfile: () => ({ data: null, isLoading: false }),
+  useThreadRunnerEligibility: () => ({ data: { eligible: false, requirements: [] }, isLoading: false }),
+  useOptimizeWorkflow: noopMutation,
+  useListRaces: () => ({ data: [], isLoading: false }),
+  useRaceResults: () => ({ data: null, isLoading: false }),
+  useEnrollRace: noopMutation,
+  useRecordRun: noopMutation,
 }))
 
 const { DependenciesContent } = await import('./DependenciesContent')

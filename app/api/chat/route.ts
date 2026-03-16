@@ -2,11 +2,38 @@ import { NextRequest } from 'next/server'
 import { readSequence } from '@/lib/sequence/parser'
 import { getBasePath } from '@/lib/config'
 import { createConfiguredProvider, getConfiguredModel } from '@/lib/llm/providers'
+import { buildSystemPrompt } from '@/lib/chat/system-prompt'
+import { extractActions } from '@/lib/chat/extract-actions'
+import { ActionValidator } from '@/lib/chat/validator'
+import { CHAT_TOOLS, parseToolCallActions } from '@/lib/chat/chat-tools'
 import type { Sequence } from '@/lib/sequence/schema'
+import type { ProposedAction } from '@/lib/chat/extract-actions'
 
 const MAX_MESSAGE_LENGTH = 10_000
 
 type SendFn = (type: string, data: Record<string, unknown>) => void
+
+/**
+ * Validate proposed actions and emit actions/diff/validation SSE events.
+ * Shared by the tool_use, plain-text fallback, and streaming paths.
+ */
+async function emitValidatedActions(
+  send: SendFn,
+  proposedActions: ProposedAction[],
+): Promise<void> {
+  if (proposedActions.length > 0) {
+    const validator = new ActionValidator(getBasePath())
+    const dryRunResult = await validator.dryRun(proposedActions)
+    send('actions', { actions: proposedActions })
+    if (dryRunResult.valid && dryRunResult.diff) {
+      send('diff', { diff: dryRunResult.diff })
+    } else if (!dryRunResult.valid) {
+      send('message', { content: `\n\nValidation: ${dryRunResult.errors.join(', ')}` })
+    }
+  } else {
+    send('actions', { actions: [] })
+  }
+}
 
 function buildJsonErrorResponse(error: string, status: number): Response {
   return new Response(JSON.stringify({ error }), {
@@ -33,7 +60,58 @@ async function streamLlmResponse(
     const provider = createConfiguredProvider(process.env)
     if (!provider.client) return false
 
-    const systemPrompt = `You are a ThreadOS assistant helping manage a sequence with ${sequence.steps.length} steps. Help the user understand and modify their sequence.`
+    const systemPrompt = buildSystemPrompt(sequence)
+
+    // First: attempt non-streaming call with tool_use for structured output
+    try {
+      const toolResponse = await provider.client.chat.completions.create({
+        model: provider.defaultModel ?? resolvedModel,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: message },
+        ],
+        tools: CHAT_TOOLS,
+        tool_choice: 'auto',
+      })
+
+      const choice = toolResponse.choices[0]
+      if (choice?.message?.tool_calls?.length) {
+        // Structured tool_use response — preferred path
+        const textContent = choice.message.content ?? ''
+        if (textContent) {
+          send('message', { content: textContent })
+        }
+
+        const proposedActions = parseToolCallActions(choice.message.tool_calls)
+        await emitValidatedActions(send, proposedActions)
+
+        send('done', { model: resolvedModel, structured: true })
+        return true
+      }
+
+      // No tool calls — model responded with plain text.
+      const plainText = choice?.message?.content ?? ''
+      if (plainText) {
+        send('message', { content: plainText })
+      }
+
+      // Extract proposed actions from plain text (fallback)
+      try {
+        const proposedActions = extractActions(plainText)
+        await emitValidatedActions(send, proposedActions)
+      } catch (e) {
+        console.error('[chat/route] Action extraction failed:', e)
+        send('actions', { actions: [] })
+      }
+
+      send('done', { model: resolvedModel, structured: false })
+      return true
+    } catch (toolError) {
+      // tool_use not supported by this model/backend — fall back to streaming
+      console.warn('[chat/route] tool_use failed, falling back to streaming:', (toolError as Error).message)
+    }
+
+    // Fallback: streaming without tools (original path)
     const completion = await provider.client.chat.completions.create({
       model: provider.defaultModel ?? resolvedModel,
       messages: [
@@ -43,14 +121,24 @@ async function streamLlmResponse(
       stream: true,
     })
 
+    let fullResponseText = ''
     for await (const chunk of completion) {
       const content = chunk.choices[0]?.delta?.content
       if (content) {
         send('message', { content, streaming: true })
+        fullResponseText += content
       }
     }
 
-    send('actions', { actions: [] })
+    // Extract proposed actions from streamed text
+    try {
+      const proposedActions = extractActions(fullResponseText)
+      await emitValidatedActions(send, proposedActions)
+    } catch (e) {
+      console.error('[chat/route] Action extraction failed:', e)
+      send('actions', { actions: [] })
+    }
+
     send('done', { model: resolvedModel })
     return true
   } catch {

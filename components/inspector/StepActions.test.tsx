@@ -68,6 +68,18 @@ mock.module('@/lib/ui/api', () => ({
   useAddDep: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
   useRemoveDep: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
   useResetSequence: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+  useAgentPerformance: () => ({ data: null, isLoading: false }),
+  useGateMetrics: () => ({ data: null, isLoading: false }),
+  useListPacks: () => ({ data: [], isLoading: false }),
+  useCreatePack: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+  usePromotePack: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+  useBuilderProfile: () => ({ data: null, isLoading: false }),
+  useThreadRunnerEligibility: () => ({ data: { eligible: false, requirements: [] }, isLoading: false }),
+  useOptimizeWorkflow: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+  useListRaces: () => ({ data: [], isLoading: false }),
+  useRaceResults: () => ({ data: null, isLoading: false }),
+  useEnrollRace: () => ({ mutate: () => {}, isPending: false }),
+  useRecordRun: () => ({ mutate: () => {}, isPending: false }),
 }))
 
 afterEach(() => { mock.restore() })
@@ -199,6 +211,18 @@ describe('StepActions — pending states', () => {
       useInsertGate: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
       useAddDep: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
       useRemoveDep: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+      useAgentPerformance: () => ({ data: null, isLoading: false }),
+      useGateMetrics: () => ({ data: null, isLoading: false }),
+      useListPacks: () => ({ data: [], isLoading: false }),
+      useCreatePack: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+      usePromotePack: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+      useBuilderProfile: () => ({ data: null, isLoading: false }),
+      useThreadRunnerEligibility: () => ({ data: { eligible: false, requirements: [] }, isLoading: false }),
+      useOptimizeWorkflow: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+      useListRaces: () => ({ data: [], isLoading: false }),
+      useRaceResults: () => ({ data: null, isLoading: false }),
+      useEnrollRace: () => ({ mutate: () => {}, isPending: false }),
+      useRecordRun: () => ({ mutate: () => {}, isPending: false }),
     }))
     mock.module('@/lib/ui/store', () => ({
       useUIStore: Object.assign(
@@ -231,6 +255,18 @@ describe('StepActions — pending states', () => {
       useInsertGate: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
       useAddDep: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
       useRemoveDep: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+      useAgentPerformance: () => ({ data: null, isLoading: false }),
+      useGateMetrics: () => ({ data: null, isLoading: false }),
+      useListPacks: () => ({ data: [], isLoading: false }),
+      useCreatePack: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+      usePromotePack: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+      useBuilderProfile: () => ({ data: null, isLoading: false }),
+      useThreadRunnerEligibility: () => ({ data: { eligible: false, requirements: [] }, isLoading: false }),
+      useOptimizeWorkflow: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+      useListRaces: () => ({ data: [], isLoading: false }),
+      useRaceResults: () => ({ data: null, isLoading: false }),
+      useEnrollRace: () => ({ mutate: () => {}, isPending: false }),
+      useRecordRun: () => ({ mutate: () => {}, isPending: false }),
     }))
     mock.module('@/lib/ui/store', () => ({
       useUIStore: Object.assign(
@@ -263,6 +299,18 @@ describe('StepActions — pending states', () => {
       useInsertGate: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
       useAddDep: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
       useRemoveDep: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+      useAgentPerformance: () => ({ data: null, isLoading: false }),
+      useGateMetrics: () => ({ data: null, isLoading: false }),
+      useListPacks: () => ({ data: [], isLoading: false }),
+      useCreatePack: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+      usePromotePack: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+      useBuilderProfile: () => ({ data: null, isLoading: false }),
+      useThreadRunnerEligibility: () => ({ data: { eligible: false, requirements: [] }, isLoading: false }),
+      useOptimizeWorkflow: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+      useListRaces: () => ({ data: [], isLoading: false }),
+      useRaceResults: () => ({ data: null, isLoading: false }),
+      useEnrollRace: () => ({ mutate: () => {}, isPending: false }),
+      useRecordRun: () => ({ mutate: () => {}, isPending: false }),
     }))
     mock.module('@/lib/ui/store', () => ({
       useUIStore: Object.assign(
@@ -296,6 +344,18 @@ describe('StepActions — pending states', () => {
       useInsertGate: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
       useAddDep: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
       useRemoveDep: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+      useAgentPerformance: () => ({ data: null, isLoading: false }),
+      useGateMetrics: () => ({ data: null, isLoading: false }),
+      useListPacks: () => ({ data: [], isLoading: false }),
+      useCreatePack: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+      usePromotePack: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+      useBuilderProfile: () => ({ data: null, isLoading: false }),
+      useThreadRunnerEligibility: () => ({ data: { eligible: false, requirements: [] }, isLoading: false }),
+      useOptimizeWorkflow: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+      useListRaces: () => ({ data: [], isLoading: false }),
+      useRaceResults: () => ({ data: null, isLoading: false }),
+      useEnrollRace: () => ({ mutate: () => {}, isPending: false }),
+      useRecordRun: () => ({ mutate: () => {}, isPending: false }),
     }))
     mock.module('@/lib/ui/store', () => ({
       useUIStore: Object.assign(
@@ -328,6 +388,18 @@ describe('StepActions — pending states', () => {
       useInsertGate: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
       useAddDep: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
       useRemoveDep: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+      useAgentPerformance: () => ({ data: null, isLoading: false }),
+      useGateMetrics: () => ({ data: null, isLoading: false }),
+      useListPacks: () => ({ data: [], isLoading: false }),
+      useCreatePack: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+      usePromotePack: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+      useBuilderProfile: () => ({ data: null, isLoading: false }),
+      useThreadRunnerEligibility: () => ({ data: { eligible: false, requirements: [] }, isLoading: false }),
+      useOptimizeWorkflow: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+      useListRaces: () => ({ data: [], isLoading: false }),
+      useRaceResults: () => ({ data: null, isLoading: false }),
+      useEnrollRace: () => ({ mutate: () => {}, isPending: false }),
+      useRecordRun: () => ({ mutate: () => {}, isPending: false }),
     }))
     mock.module('@/lib/ui/store', () => ({
       useUIStore: Object.assign(

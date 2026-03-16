@@ -311,7 +311,7 @@ export function NodeDetailCard() {
             <>
               <button
                 type="button"
-                onClick={() => approveGate.mutate(selectedNodeId)}
+                onClick={() => approveGate.mutate({ gateId: selectedNodeId, acknowledged_conditions: true })}
                 disabled={approveGate.isPending || gate!.status === 'APPROVED'}
                 className="flex items-center gap-1 rounded px-2 py-1 font-mono text-[9px] uppercase tracking-[0.12em] text-emerald-300 transition-all hover:bg-emerald-500/15 disabled:opacity-40"
                 title="Approve gate"

@@ -3,6 +3,8 @@ import { PolicyEngine } from '../policy/engine'
 import * as audit from '../audit/logger'
 import YAML from 'yaml'
 import { StepSchema, StepTypeSchema, ModelTypeSchema, StepStatusSchema, FailPolicySchema, type Sequence } from '../sequence/schema'
+import { updateThreadSurfaceState } from '@/lib/thread-surfaces/repository'
+import { materializeStepSurface, removeStepSurface } from '@/lib/thread-surfaces/materializer'
 
 export interface ProposedAction {
   command: string
@@ -50,8 +52,11 @@ const commandValidators: Record<string, ValidatorFn> = {
   'dep add': requireFields('dep add', ['from', 'to']),
   'dep remove': requireFields('dep remove', ['from', 'to']),
   'restart': requireFields('restart', ['step_id']),
+  'stop': requireFields('stop', ['step_id']),
   'gate approve': (action, errors) => { if (!action.args.id) errors.push('gate approve requires id') },
   'gate block': (action, errors) => { if (!action.args.id) errors.push('gate block requires id') },
+  'group create': requireFields('group create', ['id', 'step_ids']),
+  'fusion create': requireFields('fusion create', ['candidate_ids', 'synth_id']),
 }
 
 /** Allowed fields for step update to prevent arbitrary field injection */
@@ -166,6 +171,22 @@ export class ActionValidator {
       }
 
       await writeSequence(this.basePath, sequence)
+
+      // Materialize/remove thread surfaces for step mutations
+      const now = new Date().toISOString()
+      for (const action of actions) {
+        if (action.command === 'step add' && action.args.id) {
+          await updateThreadSurfaceState(this.basePath, s =>
+            materializeStepSurface(s, String(action.args.id), String(action.args.name || action.args.id), sequence.name, now)
+          )
+        }
+        if (action.command === 'step remove' && action.args.id) {
+          await updateThreadSurfaceState(this.basePath, s =>
+            removeStepSurface(s, String(action.args.id))
+          )
+        }
+      }
+
       return { success: true, results }
     } catch (error) {
       return { success: false, results: [{ error: (error as Error).message }] }
@@ -357,13 +378,75 @@ const actionAppliers: Record<string, ActionApplier> = {
   },
   'dep add': applyDepAdd,
   'dep remove': applyDepRemove,
-  'gate approve': (seq, action) => applyGateStatus(seq, action, 'APPROVED'),
+  'gate approve': (seq, action) => {
+    const gate = seq.gates.find(g => g.id === action.args.id)
+    if (!gate) return `Gate ${action.args.id} not found`
+    if (gate.required_review && gate.acceptance_conditions?.length) {
+      if (!action.args.acknowledged_conditions) {
+        return 'Gate requires review of acceptance conditions before approval'
+      }
+    }
+    gate.status = 'APPROVED'
+    return null
+  },
   'gate block': (seq, action) => applyGateStatus(seq, action, 'BLOCKED'),
   'run': () => null,
-  'stop': () => null,
-  'restart': () => null,
-  'group create': () => null,
-  'fusion create': () => null,
+  'stop': (seq, action) => {
+    const stepId = String(action.args.step_id || '')
+    if (!stepId) return 'stop requires step_id'
+    const step = seq.steps.find(s => s.id === stepId)
+    if (!step) return `Step ${stepId} not found`
+    step.status = 'FAILED'
+    return null
+  },
+  'restart': (seq, action) => {
+    const stepId = String(action.args.step_id)
+    const step = seq.steps.find(s => s.id === stepId)
+    if (!step) return `Step ${stepId} not found`
+    step.status = 'RUNNING'
+    return null
+  },
+  'group create': (seq, action) => {
+    const groupId = String(action.args.id || '')
+    const stepIds = action.args.step_ids as string[] | undefined
+    if (!groupId) return 'group create requires id'
+    if (!Array.isArray(stepIds) || stepIds.length < 2) return 'group create requires at least 2 step_ids'
+    // Validate ALL step_ids exist before mutating any
+    for (const sid of stepIds) {
+      if (!seq.steps.find(s => s.id === String(sid))) return `Step ${sid} not found`
+    }
+    for (const sid of stepIds) {
+      const step = seq.steps.find(s => s.id === String(sid))!
+      step.group_id = groupId
+      step.type = 'p'
+    }
+    return null
+  },
+  'fusion create': (seq, action) => {
+    const candidateIds = action.args.candidate_ids as string[] | undefined
+    const synthId = String(action.args.synth_id || '')
+    if (!Array.isArray(candidateIds) || candidateIds.length < 2) return 'fusion create requires at least 2 candidate_ids'
+    if (!synthId) return 'fusion create requires synth_id'
+    // Validate ALL candidate_ids exist before mutating any
+    for (const cid of candidateIds) {
+      if (!seq.steps.find(s => s.id === String(cid))) return `Step ${cid} not found`
+    }
+    for (const cid of candidateIds) {
+      const step = seq.steps.find(s => s.id === String(cid))!
+      step.fusion_candidates = true
+      step.type = 'f'
+    }
+    if (!seq.steps.some(s => s.id === synthId)) {
+      const synthStep = StepSchema.safeParse({
+        id: synthId, name: `Fusion synth: ${synthId}`, type: 'f',
+        model: 'claude-code', prompt_file: `.threados/prompts/${synthId}.md`,
+        depends_on: candidateIds.map(String), status: 'READY', fusion_synth: true,
+      })
+      if (!synthStep.success) return `Invalid synth step: ${synthStep.error.issues.map(i => i.message).join(', ')}`
+      seq.steps.push(synthStep.data)
+    }
+    return null
+  },
 }
 
 /**
