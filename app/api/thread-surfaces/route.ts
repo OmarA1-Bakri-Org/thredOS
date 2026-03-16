@@ -19,8 +19,12 @@ export async function GET() {
     )
 
     if (reconciled !== state) {
-      await writeThreadSurfaceState(bp, reconciled)
-      state = reconciled
+      try {
+        await writeThreadSurfaceState(bp, reconciled)
+        state = reconciled
+      } catch (err) {
+        console.error('[thread-surfaces.GET] reconciliation write failed (non-fatal):', err)
+      }
     }
 
     return NextResponse.json({ threadSurfaces: state.threadSurfaces })

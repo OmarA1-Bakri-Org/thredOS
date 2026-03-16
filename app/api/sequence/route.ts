@@ -14,7 +14,7 @@ import {
   generateLongAutonomy,
 } from '@/lib/templates'
 import type { Sequence, Step, Gate } from '@/lib/sequence/schema'
-import { updateThreadSurfaceState, writeThreadSurfaceState } from '@/lib/thread-surfaces/repository'
+import { writeThreadSurfaceState } from '@/lib/thread-surfaces/repository'
 import { materializeBulkStepSurfaces, clearAllSurfaces } from '@/lib/thread-surfaces/materializer'
 
 const ResetSchema = z.object({ action: z.literal('reset'), name: z.string().optional() })
@@ -111,9 +111,13 @@ export async function POST(request: Request) {
         })
       await Promise.all(promptWrites)
 
-      await updateThreadSurfaceState(bp, s =>
-        materializeBulkStepSurfaces(s, newSteps.map(st => ({ id: st.id, name: st.name })), body.name, new Date().toISOString())
+      const freshSurfaces = materializeBulkStepSurfaces(
+        clearAllSurfaces(),
+        newSteps.map(st => ({ id: st.id, name: st.name })),
+        body.name,
+        new Date().toISOString(),
       )
+      await writeThreadSurfaceState(bp, freshSurfaces)
 
       await auditLog('sequence.apply-template', `${body.type} → ${body.name}`)
       return NextResponse.json({ ok: true })
