@@ -158,9 +158,9 @@ describe('materializer', () => {
     expect(root?.childSurfaceIds).toEqual(['thread-a', 'thread-b'])
   })
 
-  test('materializeBulkStepSurfaces with empty array just creates root', () => {
+  test('materializeBulkStepSurfaces with empty array creates no surfaces', () => {
     const result = materializeBulkStepSurfaces(EMPTY_STATE, [], 'Seq', NOW)
-    // Since no steps, but the function iterates an empty loop,
+    // Since no steps, the function iterates an empty loop —
     // no root is created either (no call to materializeStepSurface)
     expect(result.threadSurfaces).toHaveLength(0)
   })

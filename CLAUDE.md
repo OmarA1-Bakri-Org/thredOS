@@ -105,7 +105,7 @@ handlers directly.
 ## Testing Gotchas
 
 - **`mock.module` requires ALL exports** — Bun's `mock.module('@/lib/ui/api', ...)` replaces the entire module. Every hook used by any transitive import of the component under test must be in the mock, not just direct imports. When adding a new hook to `lib/ui/api.ts`, update ALL test mocks that mock this module.
-- **Current API export count: 36** — see `lib/ui/api.ts` exports. 16 test files mock this module; run `grep -rl "mock.module('@/lib/ui/api'" components/` to find them all. When adding a new export, update every one.
+- **Current API export count: 49** — see `lib/ui/api.ts` exports (46 functions + 3 interfaces). 17 test files mock this module; run `grep -rl "mock.module('@/lib/ui/api'" components/` to find them all. When adding a new export, update every one.
 - **`@tanstack/react-query` must be mocked separately** — components importing `useQueryClient` directly need `mock.module('@tanstack/react-query', ...)` in addition to the API mock
 - **Store selectors are named exports** — `selectPathSegments`, `selectCurrentDepthSurfaceId`, `selectCurrentDepthLevel` must be included in `mock.module('@/lib/ui/store', ...)`
 

@@ -48,7 +48,9 @@ function WorkshopView() {
   const handleRegister = () => {
     const trimmed = agentName.trim()
     if (!trimmed) return
-    const agentId = trimmed.toLowerCase().replace(/[^a-z0-9-]/g, '-')
+    const slug = trimmed.toLowerCase().replace(/[^a-z0-9-]/g, '-')
+    const suffix = Math.random().toString(36).slice(2, 6)
+    const agentId = `${slug}-${suffix}`
     registerAgent.mutate({
       id: agentId,
       name: trimmed,

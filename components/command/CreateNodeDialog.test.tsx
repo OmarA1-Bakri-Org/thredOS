@@ -36,6 +36,15 @@ mock.module('@/lib/ui/store', () => ({
       getState: () => storeState,
     },
   ),
+  selectPathSegments: () => [],
+  selectCurrentDepthSurfaceId: (s: typeof storeState) => {
+    const stack = s.navigationStack
+    return stack.length > 0 ? stack[stack.length - 1].threadSurfaceId : null
+  },
+  selectCurrentDepthLevel: (s: typeof storeState) => {
+    const stack = s.navigationStack
+    return stack.length > 0 ? stack[stack.length - 1].depth : 0
+  },
 }))
 
 mock.module('@/lib/ui/api', () => ({
