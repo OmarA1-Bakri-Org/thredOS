@@ -76,17 +76,17 @@ export function LaneBoardView({
         </Button>
       </div>
 
-      <div className="min-h-0 flex flex-1 overflow-hidden">
+      <div className="flex flex-1 min-h-0 overflow-hidden">
         <aside
           data-testid="lane-board-roster"
           className="flex w-80 shrink-0 flex-col border-r border-slate-800/80 bg-[#08101d]"
         >
-          <div className="shrink-0 border-b border-slate-800/80 px-5 py-3">
+          <div className="px-5 py-3 border-b shrink-0 border-slate-800/80">
             <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">Roster</div>
           </div>
-          <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
+          <div className="flex-1 min-h-0 px-4 py-4 overflow-y-auto">
             {rows.length === 0 ? (
-              <div className="flex h-full items-center justify-center px-4 py-8">
+              <div className="flex items-center justify-center h-full px-4 py-8">
                 <p className="font-mono text-[11px] text-slate-500">
                   No lanes yet — run a sequence to see execution lanes
                 </p>
@@ -111,7 +111,7 @@ export function LaneBoardView({
                   <div
                     key={`merge-connector-${mg.mergeEventId}`}
                     data-testid={`merge-connector-${mg.mergeEventId}`}
-                    className="pointer-events-none absolute left-0 z-10"
+                    className="absolute left-0 z-10 pointer-events-none"
                     style={{ top: 0 }}
                   >
                     {/* Vertical line connecting source lanes */}
@@ -244,7 +244,7 @@ export function LaneBoardView({
                       <button
                         type="button"
                         data-thread-surface-id={row.threadSurfaceId}
-                        aria-pressed={isFocused}
+                        aria-current={isFocused ? 'true' : undefined}
                         aria-label={`Focus thread ${row.surfaceLabel}`}
                         onClick={() => onFocusThread(row.threadSurfaceId, row.runId)}
                         className={cn(
@@ -270,7 +270,7 @@ export function LaneBoardView({
                             </button>
                           )}
                           <span className={cn('h-2 w-2 shrink-0 rounded-full', statusDotColor(row.laneTerminalState))} />
-                          <span className="min-w-0 flex-1 truncate text-sm font-semibold tracking-tight">{row.surfaceLabel}</span>
+                          <span className="flex-1 min-w-0 text-sm font-semibold tracking-tight truncate">{row.surfaceLabel}</span>
                           <span className="shrink-0 font-mono text-[10px] text-slate-500">
                             #{row.executionIndex ?? '—'}
                           </span>

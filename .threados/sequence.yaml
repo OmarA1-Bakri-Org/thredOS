@@ -1,4 +1,18 @@
 version: "1.0"
 name: New Sequence
-steps: []
-gates: []
+steps:
+  - id: research-agent
+    name: Research Agent
+    type: base
+    model: claude-code
+    prompt_file: .threados/prompts/research-agent.md
+    depends_on: []
+    status: READY
+gates:
+  - id: quality-gate
+    name: Quality Gate
+    depends_on:
+      - research-agent
+    status: PENDING
+    cascade: false
+    childGateIds: []

@@ -105,7 +105,7 @@ handlers directly.
 ## Testing Gotchas
 
 - **`mock.module` requires ALL exports** — Bun's `mock.module('@/lib/ui/api', ...)` replaces the entire module. Every hook used by any transitive import of the component under test must be in the mock, not just direct imports. When adding a new hook to `lib/ui/api.ts`, update ALL test mocks that mock this module.
-- **Current API hook count: 29** — see `lib/ui/api.ts` exports. Test files that mock it: `AccordionPanel.test.tsx`, `CreateNodeDialog.test.tsx`, `sections-threadtype.test.tsx`
+- **Current API export count: 36** — see `lib/ui/api.ts` exports. 16 test files mock this module; run `grep -rl "mock.module('@/lib/ui/api'" components/` to find them all. When adding a new export, update every one.
 - **`@tanstack/react-query` must be mocked separately** — components importing `useQueryClient` directly need `mock.module('@tanstack/react-query', ...)` in addition to the API mock
 - **Store selectors are named exports** — `selectPathSegments`, `selectCurrentDepthSurfaceId`, `selectCurrentDepthLevel` must be included in `mock.module('@/lib/ui/store', ...)`
 
@@ -136,8 +136,8 @@ handlers directly.
 
 The `context-checkpoint` skill manages context window lifecycle automatically via hookify.
 
-- **Daemon**: Start with `python daemon_ctl.py start --project-dir C--Users-OmarAl-Bakri-THREAD-OS` (script: `~/.claude/skills/context-checkpoint/scripts/daemon_ctl.py`)
-- **Sentinel**: `~/.claude/.context_checkpoint_needed` — written by daemon at 75% token usage, read from WSL at `/mnt/c/Users/OmarAl-Bakri/.claude/.context_checkpoint_needed`
+- **Daemon start**: `python "%USERPROFILE%\.claude\skills\context-checkpoint\scripts\daemon_ctl.py" start --project-dir C--Users-OmarAl-Bakri-THREAD-OS`
+- **Daemon status**: `python "%USERPROFILE%\.claude\skills\context-checkpoint\scripts\daemon_ctl.py" status`
+- **Sentinel**: `%USERPROFILE%\.claude\.context_checkpoint_needed` (WSL: `/mnt/c/Users/OmarAl-Bakri/.claude/.context_checkpoint_needed`)
 - **Hookify rules** in `.claude/` fire automatically on every prompt — pre-compaction (checkpoint + /compact + delete sentinel) and post-compaction (read checkpoint + /task-router:task-router + verify daemon)
-- **Checkpoints** written to `~/.claude/projects/C--Users-OmarAl-Bakri-THREAD-OS/checkpoint-*.md`
-- **Status check**: `python daemon_ctl.py status`
+- **Checkpoints** written to `%USERPROFILE%\.claude\projects\C--Users-OmarAl-Bakri-THREAD-OS\checkpoint-*.md`
