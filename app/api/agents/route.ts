@@ -19,7 +19,7 @@ const AgentBodySchema = z.object({
   builderId: z.string().min(1),
   builderName: z.string().min(1),
   threadSurfaceIds: z.array(z.string()).optional(),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
   model: z.string().min(1).optional(),
   skills: z.array(AgentSkillSchema).optional(),
 })
@@ -38,7 +38,7 @@ interface RequiredStringField {
   label: string
 }
 
-function validateRequiredStrings(fields: RequiredStringField[]): NextResponse | null {
+function _validateRequiredStrings(fields: RequiredStringField[]): NextResponse | null {
   for (const { value, label } of fields) {
     if (!value || typeof value !== 'string') {
       return jsonError(`Missing or invalid ${label}`, 'VALIDATION_ERROR', 400)

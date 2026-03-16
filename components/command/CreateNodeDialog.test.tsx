@@ -38,11 +38,11 @@ mock.module('@/lib/ui/store', () => ({
   ),
   selectPathSegments: () => [],
   selectCurrentDepthSurfaceId: (s: typeof storeState) => {
-    const stack = s.navigationStack
+    const stack = s.navigationStack as Array<{ threadSurfaceId: string; depth: number }>
     return stack.length > 0 ? stack[stack.length - 1].threadSurfaceId : null
   },
   selectCurrentDepthLevel: (s: typeof storeState) => {
-    const stack = s.navigationStack
+    const stack = s.navigationStack as Array<{ threadSurfaceId: string; depth: number }>
     return stack.length > 0 ? stack[stack.length - 1].depth : 0
   },
 }))

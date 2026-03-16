@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState, useCallback } from 'react'
+import { useRef, useMemo, useState, useCallback } from 'react'
 import { AlertTriangle, Copy, Play, RotateCcw, ShieldCheck, Square, StopCircle, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
@@ -36,9 +36,11 @@ export function StepActions({
 
   // Reset checked state when conditions change (added/removed/reordered)
   const conditionsKey = acceptanceConditions?.join('\0') ?? ''
-  useEffect(() => {
+  const prevConditionsKeyRef = useRef(conditionsKey)
+  if (prevConditionsKeyRef.current !== conditionsKey) {
+    prevConditionsKeyRef.current = conditionsKey
     setCheckedConditions(new Set())
-  }, [conditionsKey])
+  }
 
   const errorMessage = useMemo(() => {
     const error =
