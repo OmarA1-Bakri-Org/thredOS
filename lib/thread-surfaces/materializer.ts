@@ -74,10 +74,29 @@ export function materializeStepSurface(
 }
 
 /**
- * Remove a step's thread surface and clean up the parent root's
- * childSurfaceIds. Also removes any runs and runEvents targeting the
- * removed surface. Returns state unchanged if the surface doesn't exist
- * (idempotent).
+ * Collect a surface id and all its descendant surface ids recursively.
+ */
+function collectDescendantIds(surfaces: ThreadSurface[], rootId: string): Set<string> {
+  const ids = new Set<string>()
+  const queue = [rootId]
+  while (queue.length > 0) {
+    const id = queue.pop()!
+    ids.add(id)
+    const surface = surfaces.find(s => s.id === id)
+    if (surface) {
+      for (const childId of surface.childSurfaceIds) {
+        if (!ids.has(childId)) queue.push(childId)
+      }
+    }
+  }
+  return ids
+}
+
+/**
+ * Remove a step's thread surface, all its descendant surfaces, and clean up
+ * the parent root's childSurfaceIds. Also removes any runs and runEvents
+ * targeting the removed surfaces. Returns state unchanged if the surface
+ * doesn't exist (idempotent).
  */
 export function removeStepSurface(
   state: ThreadSurfaceState,
@@ -86,17 +105,21 @@ export function removeStepSurface(
   const surfaceId = stepSurfaceId(stepId)
   if (!state.threadSurfaces.some(s => s.id === surfaceId)) return state
 
+  const idsToRemove = collectDescendantIds(state.threadSurfaces, surfaceId)
+
   return {
     ...state,
     threadSurfaces: state.threadSurfaces
-      .filter(s => s.id !== surfaceId)
-      .map(s =>
-        s.id === ROOT_ID
-          ? { ...s, childSurfaceIds: s.childSurfaceIds.filter(id => id !== surfaceId) }
-          : s,
-      ),
-    runs: state.runs.filter(r => r.threadSurfaceId !== surfaceId),
-    runEvents: state.runEvents.filter(e => e.threadSurfaceId !== surfaceId),
+      .filter(s => !idsToRemove.has(s.id))
+      .map(s => {
+        // Clean removed ids from any surviving surface's childSurfaceIds
+        const pruned = s.childSurfaceIds.filter(id => !idsToRemove.has(id))
+        return pruned.length !== s.childSurfaceIds.length
+          ? { ...s, childSurfaceIds: pruned }
+          : s
+      }),
+    runs: state.runs.filter(r => !idsToRemove.has(r.threadSurfaceId)),
+    runEvents: state.runEvents.filter(e => !idsToRemove.has(e.threadSurfaceId)),
   }
 }
 
