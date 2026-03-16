@@ -28,8 +28,8 @@ function extractJsonString(text: string): string | null {
   const fenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/)
   if (fenceMatch?.[1]?.trim()) return fenceMatch[1].trim()
 
-  // Try bare JSON array
-  const arrayMatch = text.match(/\[[\s\S]*?\{[\s\S]*?\}[\s\S]*?\]/)
+  // Try bare JSON array (greedy to capture full nested JSON)
+  const arrayMatch = text.match(/\[[\s\S]*\{[\s\S]*\}[\s\S]*\]/)
   if (arrayMatch?.[0]) return arrayMatch[0]
 
   // Try bare JSON object (greedy closing brace to capture nested objects)
@@ -76,6 +76,9 @@ function isProposedAction(obj: unknown): obj is ProposedAction {
     typeof obj === 'object' &&
     obj !== null &&
     'command' in obj &&
-    typeof (obj as ProposedAction).command === 'string'
+    typeof (obj as ProposedAction).command === 'string' &&
+    'args' in obj &&
+    typeof (obj as ProposedAction).args === 'object' &&
+    (obj as ProposedAction).args !== null
   )
 }

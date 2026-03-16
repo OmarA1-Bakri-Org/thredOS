@@ -378,7 +378,17 @@ const actionAppliers: Record<string, ActionApplier> = {
   },
   'dep add': applyDepAdd,
   'dep remove': applyDepRemove,
-  'gate approve': (seq, action) => applyGateStatus(seq, action, 'APPROVED'),
+  'gate approve': (seq, action) => {
+    const gate = seq.gates.find(g => g.id === action.args.id)
+    if (!gate) return `Gate ${action.args.id} not found`
+    if (gate.required_review && gate.acceptance_conditions?.length) {
+      if (!action.args.acknowledged_conditions) {
+        return 'Gate requires review of acceptance conditions before approval'
+      }
+    }
+    gate.status = 'APPROVED'
+    return null
+  },
   'gate block': (seq, action) => applyGateStatus(seq, action, 'BLOCKED'),
   'run': () => null,
   'stop': (seq, action) => {
@@ -401,9 +411,12 @@ const actionAppliers: Record<string, ActionApplier> = {
     const stepIds = action.args.step_ids as string[] | undefined
     if (!groupId) return 'group create requires id'
     if (!Array.isArray(stepIds) || stepIds.length < 2) return 'group create requires at least 2 step_ids'
+    // Validate ALL step_ids exist before mutating any
     for (const sid of stepIds) {
-      const step = seq.steps.find(s => s.id === String(sid))
-      if (!step) return `Step ${sid} not found`
+      if (!seq.steps.find(s => s.id === String(sid))) return `Step ${sid} not found`
+    }
+    for (const sid of stepIds) {
+      const step = seq.steps.find(s => s.id === String(sid))!
       step.group_id = groupId
       step.type = 'p'
     }
@@ -414,9 +427,12 @@ const actionAppliers: Record<string, ActionApplier> = {
     const synthId = String(action.args.synth_id || '')
     if (!Array.isArray(candidateIds) || candidateIds.length < 2) return 'fusion create requires at least 2 candidate_ids'
     if (!synthId) return 'fusion create requires synth_id'
+    // Validate ALL candidate_ids exist before mutating any
     for (const cid of candidateIds) {
-      const step = seq.steps.find(s => s.id === String(cid))
-      if (!step) return `Step ${cid} not found`
+      if (!seq.steps.find(s => s.id === String(cid))) return `Step ${cid} not found`
+    }
+    for (const cid of candidateIds) {
+      const step = seq.steps.find(s => s.id === String(cid))!
       step.fusion_candidates = true
       step.type = 'f'
     }
