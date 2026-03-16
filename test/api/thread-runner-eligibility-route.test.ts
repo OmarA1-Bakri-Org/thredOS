@@ -1,4 +1,23 @@
-import { describe, test, expect } from 'bun:test'
+import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
+import { mkdirSync, writeFileSync, rmSync } from 'fs'
+import { join } from 'path'
+
+const tmpDir = join(import.meta.dir, '..', 'tmp-eligibility-route-test')
+
+beforeEach(() => {
+  rmSync(tmpDir, { recursive: true, force: true })
+  mkdirSync(join(tmpDir, '.threados', 'state'), { recursive: true })
+  writeFileSync(
+    join(tmpDir, '.threados', 'state', 'agents.json'),
+    JSON.stringify({ version: 1, agents: [] })
+  )
+  process.env.THREADOS_BASE_PATH = tmpDir
+})
+
+afterEach(() => {
+  rmSync(tmpDir, { recursive: true, force: true })
+  delete process.env.THREADOS_BASE_PATH
+})
 
 const { GET } = await import('@/app/api/thread-runner/eligibility/route')
 
