@@ -68,9 +68,18 @@ export async function POST(request: Request) {
         const next = NEXT_STATUS[pack.highestStatus]
         if (!next) throw new Error(`Pack '${packId}' is already at maximum status (hero)`)
 
-        pack.highestStatus = next
-        pack.statusHistory.push({ status: next, achievedAt: new Date().toISOString(), context: `Promoted to ${next}` })
-        return state
+        return {
+          ...state,
+          packs: state.packs.map(p =>
+            p.id === packId
+              ? {
+                  ...p,
+                  highestStatus: next,
+                  statusHistory: [...p.statusHistory, { status: next, achievedAt: new Date().toISOString(), context: `Promoted to ${next}` }],
+                }
+              : p
+          ),
+        }
       })
 
       const promoted = updated.packs.find(p => p.id === packId)!

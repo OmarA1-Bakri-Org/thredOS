@@ -4,8 +4,33 @@ import { readSequence } from '@/lib/sequence/parser'
 import { createConfiguredProvider } from '@/lib/llm/providers'
 import { buildOptimizationPrompt } from '@/lib/autoresearch/build-optimization-prompt'
 import { OPTIMIZATION_TOOLS, parseOptimizationToolCall } from '@/lib/autoresearch/optimization-tools'
-import { ActionValidator } from '@/lib/chat/validator'
+import { ActionValidator, type ProposedAction } from '@/lib/chat/validator'
 import { extractActions } from '@/lib/chat/extract-actions'
+import type { OptimizationCategory } from '@/lib/autoresearch/types'
+
+const CATEGORY_HINTS: { pattern: RegExp; category: OptimizationCategory }[] = [
+  { pattern: /parallel|concurren/i, category: 'parallelize' },
+  { pattern: /gate|approv|block/i, category: 'add-gate' },
+  { pattern: /remove.*dep|drop.*dep|decouple/i, category: 'remove-dep' },
+  { pattern: /reorder|move.*before|move.*after|swap/i, category: 'reorder' },
+  { pattern: /reassign|agent|assign/i, category: 'reassign-agent' },
+]
+
+function inferCategoryFromActions(actions: ProposedAction[], content: string): OptimizationCategory {
+  // Check action commands first
+  for (const action of actions) {
+    const cmd = action.command.toLowerCase()
+    for (const hint of CATEGORY_HINTS) {
+      if (hint.pattern.test(cmd)) return hint.category
+    }
+  }
+  // Fall back to content-based inference
+  for (const hint of CATEGORY_HINTS) {
+    if (hint.pattern.test(content)) return hint.category
+  }
+  // Default to reorder as the most generic structural change
+  return 'reorder'
+}
 
 export async function POST() {
   try {
@@ -41,7 +66,7 @@ export async function POST() {
         analyzedAt: new Date().toISOString(),
         suggestions: actions.length > 0 ? [{
           id: 'opt-0',
-          category: 'parallelize' as const,
+          category: inferCategoryFromActions(actions, message.content),
           title: 'Suggested changes',
           description: message.content.slice(0, 200),
           confidence: 0.5,

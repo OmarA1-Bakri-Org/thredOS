@@ -52,7 +52,8 @@ export async function GET(request: Request) {
     }
 
     return Response.json({ stats: computePerformanceData(stats) })
-  } catch {
+  } catch (err) {
+    console.error('[agent-stats] Error:', err)
     return Response.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

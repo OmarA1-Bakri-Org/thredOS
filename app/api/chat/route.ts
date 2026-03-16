@@ -7,10 +7,33 @@ import { extractActions } from '@/lib/chat/extract-actions'
 import { ActionValidator } from '@/lib/chat/validator'
 import { CHAT_TOOLS, parseToolCallActions } from '@/lib/chat/chat-tools'
 import type { Sequence } from '@/lib/sequence/schema'
+import type { ProposedAction } from '@/lib/chat/extract-actions'
 
 const MAX_MESSAGE_LENGTH = 10_000
 
 type SendFn = (type: string, data: Record<string, unknown>) => void
+
+/**
+ * Validate proposed actions and emit actions/diff/validation SSE events.
+ * Shared by the tool_use, plain-text fallback, and streaming paths.
+ */
+async function emitValidatedActions(
+  send: SendFn,
+  proposedActions: ProposedAction[],
+): Promise<void> {
+  if (proposedActions.length > 0) {
+    const validator = new ActionValidator(getBasePath())
+    const dryRunResult = await validator.dryRun(proposedActions)
+    send('actions', { actions: proposedActions })
+    if (dryRunResult.valid && dryRunResult.diff) {
+      send('diff', { diff: dryRunResult.diff })
+    } else if (!dryRunResult.valid) {
+      send('message', { content: `\n\nValidation: ${dryRunResult.errors.join(', ')}` })
+    }
+  } else {
+    send('actions', { actions: [] })
+  }
+}
 
 function buildJsonErrorResponse(error: string, status: number): Response {
   return new Response(JSON.stringify({ error }), {
@@ -60,18 +83,7 @@ async function streamLlmResponse(
         }
 
         const proposedActions = parseToolCallActions(choice.message.tool_calls)
-        if (proposedActions.length > 0) {
-          const validator = new ActionValidator(getBasePath())
-          const dryRunResult = await validator.dryRun(proposedActions)
-          send('actions', { actions: proposedActions })
-          if (dryRunResult.valid && dryRunResult.diff) {
-            send('diff', { diff: dryRunResult.diff })
-          } else if (!dryRunResult.valid) {
-            send('message', { content: `\n\nValidation: ${dryRunResult.errors.join(', ')}` })
-          }
-        } else {
-          send('actions', { actions: [] })
-        }
+        await emitValidatedActions(send, proposedActions)
 
         send('done', { model: resolvedModel, structured: true })
         return true
@@ -86,18 +98,7 @@ async function streamLlmResponse(
       // Extract proposed actions from plain text (fallback)
       try {
         const proposedActions = extractActions(plainText)
-        if (proposedActions.length > 0) {
-          const validator = new ActionValidator(getBasePath())
-          const dryRunResult = await validator.dryRun(proposedActions)
-          send('actions', { actions: proposedActions })
-          if (dryRunResult.valid && dryRunResult.diff) {
-            send('diff', { diff: dryRunResult.diff })
-          } else if (!dryRunResult.valid) {
-            send('message', { content: `\n\nValidation: ${dryRunResult.errors.join(', ')}` })
-          }
-        } else {
-          send('actions', { actions: [] })
-        }
+        await emitValidatedActions(send, proposedActions)
       } catch (e) {
         console.error('[chat/route] Action extraction failed:', e)
         send('actions', { actions: [] })
@@ -132,18 +133,7 @@ async function streamLlmResponse(
     // Extract proposed actions from streamed text
     try {
       const proposedActions = extractActions(fullResponseText)
-      if (proposedActions.length > 0) {
-        const validator = new ActionValidator(getBasePath())
-        const dryRunResult = await validator.dryRun(proposedActions)
-        send('actions', { actions: proposedActions })
-        if (dryRunResult.valid && dryRunResult.diff) {
-          send('diff', { diff: dryRunResult.diff })
-        } else if (!dryRunResult.valid) {
-          send('message', { content: `\n\nValidation: ${dryRunResult.errors.join(', ')}` })
-        }
-      } else {
-        send('actions', { actions: [] })
-      }
+      await emitValidatedActions(send, proposedActions)
     } catch (e) {
       console.error('[chat/route] Action extraction failed:', e)
       send('actions', { actions: [] })

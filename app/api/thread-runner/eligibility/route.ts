@@ -7,8 +7,9 @@ export async function GET() {
     const bp = getBasePath()
     const agentState = await readAgentState(bp)
 
-    // hasVerifiedAgent: at least one agent registered with a builder identity
-    const hasVerifiedAgent = agentState.agents.some(a => a.builderId && a.builderName)
+    // hasVerifiedAgent: at least one agent registered with a real builder identity
+    // Exclude workshop placeholder agents (builderId: 'workshop') from counting as verified
+    const hasVerifiedAgent = agentState.agents.some(a => a.builderId && a.builderId !== 'workshop' && a.builderName)
 
     // hasVmAccess: currently always false (no VM runtime yet)
     const hasVmAccess = false

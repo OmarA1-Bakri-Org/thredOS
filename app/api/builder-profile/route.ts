@@ -19,15 +19,20 @@ export async function GET(request: Request) {
       readPackState(bp),
     ])
 
-    // Find the builder name from their agents
+    // Find the builder name from their agents, falling back to pack data
     const builderAgent = agentState.agents.find(a => a.builderId === builderId)
-    if (!builderAgent) {
-      return NextResponse.json({ error: `No agents found for builder '${builderId}'` }, { status: 404 })
+    const builderPack = !builderAgent
+      ? packState.packs.find(p => p.builderId === builderId)
+      : undefined
+
+    const builderName = builderAgent?.builderName ?? builderPack?.builderName
+    if (!builderName) {
+      return NextResponse.json({ error: `No agents or packs found for builder '${builderId}'` }, { status: 404 })
     }
 
     const profile = deriveBuilderProfile(
       builderId,
-      builderAgent.builderName,
+      builderName,
       agentState.agents,
       packState.packs,
     )

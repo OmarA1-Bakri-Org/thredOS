@@ -14,7 +14,8 @@ export async function GET(request: Request) {
 
     const races = await listRaces(bp)
     return Response.json({ races })
-  } catch {
+  } catch (err) {
+    console.error('[race] Error:', err)
     return Response.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
