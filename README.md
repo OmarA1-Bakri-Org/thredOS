@@ -19,7 +19,10 @@ Copy `.env.example` to `.env.local` (UI/API) or `.env` and set values as needed.
 |------|------|------|------|
 | `THREADOS_BASE_PATH` | No | `./` (or `process.cwd()` fallback) | Base directory used by API routes for ThreadOS files |
 | `THREADOS_MPROCS_PATH` | No | auto-resolved | Absolute/relative path to `mprocs` binary |
-| `ANTHROPIC_API_KEY` | Optional by workflow | unset | Required only for Anthropic-backed chat responses; CLI/thread management works without it |
+| `THREADOS_MODEL` | No | `gpt-4o` | Model ID — auto-routes to correct backend (e.g. `gpt-4o`, `claude-sonnet-4-20250514`) |
+| `OPENAI_API_KEY` | By model | unset | Required for direct OpenAI models (gpt-*, o1-*, o3-*, o4-*) |
+| `OPENROUTER_API_KEY` | By model | unset | Universal relay — supports 100+ models including Claude, Llama, Gemini |
+| `ANTHROPIC_API_KEY` | Optional | unset | Direct Anthropic access (future — currently routed via OpenRouter) |
 
 ## Quick Start
 
@@ -57,21 +60,27 @@ ThreadOS exposes two product paths from a single entrance screen:
 
 ```text
 ThreadOS
-├── lib/seqctl/           # CLI commands
-├── lib/sequence/         # Schema, parser, DAG
-├── lib/llm/providers/    # Model provider layer (OpenAI, OpenRouter)
-├── lib/thread-surfaces/  # Thread surface domain (types, projections, runtime events)
-├── lib/thread-runner/    # Verified-run, race, and eligibility contracts
-├── lib/packs/            # Pack and status records (Challenger/Champion/Hero)
 ├── lib/agents/           # Agent registration, profile builder, stats
-├── lib/mprocs/           # Process manager adapter
-├── lib/runner/           # Step execution wrapper
-├── lib/policy/           # Safety policy engine
-├── lib/audit/            # Audit logging
+├── lib/audit/            # Append-only audit logger
 ├── lib/chat/             # Chat orchestrator (system prompt, validator)
+├── lib/fs/               # Atomic file operations
+├── lib/llm/              # LLM abstraction (model registry, provider routing)
+├── lib/mprocs/           # Process manager adapter
+├── lib/packs/            # Pack and status records (Challenger/Champion/Hero)
+├── lib/policy/           # Safety policy engine
+├── lib/prompts/          # Prompt file CRUD manager
+├── lib/provenance/       # Provenance tracking for thread artifacts
 ├── lib/reconciliation/   # State reconciliation
-├── app/                  # Next.js UI + API routes
-├── components/           # React components (workbench, hierarchy, lanes, inspector, skills)
+├── lib/runner/           # Step execution wrapper
+├── lib/seqctl/           # CLI commands (12 handlers)
+├── lib/sequence/         # Schema, parser, DAG validation
+├── lib/templates/        # Thread type templates (base/p/c/f/b/l)
+├── lib/thread-runner/    # Verified-run, race, and eligibility contracts
+├── lib/thread-surfaces/  # Thread surface runtime (events, spawn, projections)
+├── lib/ui/               # UI state (React Query hooks, Zustand store)
+├── lib/workflows/        # Workflow templates and content definitions
+├── app/                  # Next.js UI + 21 API route groups
+├── components/           # React components (14 directories)
 └── docs/                 # Extended documentation
 ```
 
@@ -111,12 +120,12 @@ bun dev
 
 Opens the workbench at `http://localhost:3000`:
 
-- **Workbench Shell** — stable top bar, accordion panel, center board region
+- **Workbench Shell** — stable top bar, left-rail accordion panel, center board region
+- **Canvas** — React Flow-based sequence editor with nodes, gates, edges, and context menus
 - **Hierarchy View** — structural thread map with focused trading-card inspection
 - **Lane Board** — run-scoped execution surface with merge ordering and timeline context
+- **Left Rail** — 6-section accordion: Sequence, Phase, Node, Agent, Gate, Run
 - **Thread Inspector** — identity, run context, skills (local/inherited), and provenance
-- **Skill Inventory** — per-surface skills resolved from agent registration
-- **Step Inspector** — edit step/gate properties with dependency management
 - **Chat Panel** — floating AI-assisted sequence management
 - **Entry Screen** — ThreadOS (active) and Thread Runner (locked) product paths
 
@@ -148,7 +157,9 @@ bun run check
 ## Testing
 
 ```bash
-bun test
+bun test             # Full test suite
+bun test:ui          # Playwright E2E tests
+bun run check        # Lint + typecheck + test
 ```
 
 ## Acknowledgments

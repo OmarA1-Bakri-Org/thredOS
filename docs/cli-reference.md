@@ -209,13 +209,42 @@ thread template apply chained --name "Pipeline"
 
 Available templates: `base`, `parallel`, `chained`, `fusion`, `orchestrated`, `long-autonomy`
 
+### `thread event spawn-child <childStepId> [options]`
+
+Emit a spawn-child runtime event.
+
+```bash
+thread event spawn-child worker-1 --label "Worker" --kind orchestrator --parent-step-id main-step
+```
+
+Options:
+- `--label` — Display label for the child
+- `--kind` — Spawn kind (`orchestrator`, `watchdog`, `fanout`)
+- `--parent-step-id` — Parent step ID (optional)
+
+### `thread event merge-into <destinationStepId> [options]`
+
+Emit a merge-into runtime event.
+
+```bash
+thread event merge-into synthesizer --sources worker-1,worker-2 --kind single
+```
+
+Options:
+- `--sources` — Comma-separated source step IDs
+- `--kind` — Merge kind (`single`, `block`)
+- `--summary` — Optional merge summary
+
 ## Environment Variables
 
 See `.env.example` for local defaults and expected values:
 
-- `THREADOS_BASE_PATH`
-- `THREADOS_MPROCS_PATH`
-- `ANTHROPIC_API_KEY`
+- `THREADOS_BASE_PATH` — Base directory for `.threados/` data
+- `THREADOS_MPROCS_PATH` — Custom mprocs binary path
+- `THREADOS_MODEL` — Model ID (auto-routes to correct backend)
+- `OPENAI_API_KEY` — Direct OpenAI access
+- `OPENROUTER_API_KEY` — Universal relay for 100+ models
+- `ANTHROPIC_API_KEY` — Direct Anthropic access (future)
 
 ## Policy Modes
 
