@@ -35,40 +35,39 @@ function collectButtons(node: ReactNode, acc: ButtonElement[] = []): ButtonEleme
 }
 
 describe('ProductEntryScreen', () => {
-  test('selecting ThreadOS enters the workbench', () => {
+  test('selecting thredOS enters the workbench', () => {
     const selections: string[] = []
     const view = ProductEntryScreen({
-      onEnterThreadOS: () => {
-        selections.push('threados')
+      onEnterThredOS: () => {
+        selections.push('thredos')
       },
     })
 
-    const threadOSButton = collectButtons(view).find(
-      button => button.props['data-entry-option'] === 'threados',
+    const thredOSButton = collectButtons(view).find(
+      button => button.props['data-entry-option'] === 'thredos',
     )
 
-    expect(threadOSButton).toBeDefined()
-    expect(threadOSButton?.props.disabled).toBeUndefined()
+    expect(thredOSButton).toBeDefined()
+    expect(thredOSButton?.props.disabled).toBeUndefined()
 
-    ;(threadOSButton?.props.onClick as (() => void) | undefined)?.()
+    ;(thredOSButton?.props.onClick as (() => void) | undefined)?.()
 
-    expect(selections).toEqual(['threados'])
+    expect(selections).toEqual(['thredos'])
   })
 
-  test('Thread Runner remains visibly locked', () => {
-    const view = ProductEntryScreen({ onEnterThreadOS: () => {} })
+  test('public entry surface keeps Thread Runner out of scope', () => {
+    const view = ProductEntryScreen({ onEnterThredOS: () => {} })
 
     const threadRunnerButton = collectButtons(view).find(
       button => button.props['data-entry-option'] === 'thread-runner',
     )
 
-    expect(threadRunnerButton).toBeDefined()
-    expect(threadRunnerButton?.props.disabled).toBeTrue()
+    expect(threadRunnerButton).toBeUndefined()
   })
 
-  test('does not nest an extra interactive button inside the ThreadOS entry card', () => {
-    const view = ProductEntryScreen({ onEnterThreadOS: () => {} })
+  test('renders a single primary thredOS entry action', () => {
+    const view = ProductEntryScreen({ onEnterThredOS: () => {} })
 
-    expect(collectButtons(view)).toHaveLength(2)
+    expect(collectButtons(view)).toHaveLength(1)
   })
 })

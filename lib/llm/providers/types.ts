@@ -7,12 +7,14 @@ export interface ProviderMetadata {
   openAiAgentsTracing?: boolean
 }
 
-export interface ThreadOSTraceContext {
+export interface ThredOSTraceContext {
   threadSurfaceId?: string
   runId?: string
   stepId?: string
   providerMetadata?: ProviderMetadata
 }
+
+export type ThreadOSTraceContext = ThredOSTraceContext
 
 export interface LlmProviderConfig {
   provider: LlmProviderName

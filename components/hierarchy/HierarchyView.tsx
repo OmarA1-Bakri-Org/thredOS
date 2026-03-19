@@ -36,7 +36,7 @@ function deriveProfile(node: HierarchyViewNode): ThreadCardProfile {
   const weight = Math.min(9.4, 4.6 + childWeight * 0.55 + (node.depth === 0 ? 1.5 : node.depth === 1 ? 0.8 : 0.2))
 
   return {
-    builder: 'ThreadOS Registry',
+    builder: 'thredOS Registry',
     pack: placement === '1st' ? "Champion's Pack" : placement === 'Finalist' ? 'Hero Pack' : 'Challenger Pack',
     division,
     classification,

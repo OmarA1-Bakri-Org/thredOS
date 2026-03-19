@@ -78,7 +78,7 @@ function parseGlobalFlags(rawArgs: string[]): { options: CLIOptions; remaining: 
 
 function printHelp(): never {
   console.log(`
-thread - ThreadOS Sequence Controller
+thread - thredOS Sequence Controller
 
 Usage:
   thread <command> [subcommand] [options]

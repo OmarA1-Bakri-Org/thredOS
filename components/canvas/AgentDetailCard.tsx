@@ -223,7 +223,7 @@ export function AgentDetailCard() {
             <div><strong className="text-white">Pack:</strong> {profile.pack}</div>
             <div><strong className="text-white">Title Track:</strong> {profile.classification}</div>
             <div><strong className="text-white">Surface:</strong> {threadSurfaceId}</div>
-            <div><strong className="text-white">Source:</strong> {profile.verified ? 'Verified VM run' : 'ThreadOS local run'}</div>
+            <div><strong className="text-white">Source:</strong> {profile.verified ? 'Verified VM run' : 'thredOS local run'}</div>
           </div>
         </section>
       </article>

@@ -4,6 +4,12 @@ import { getBasePath } from './config'
 import { PolicyEngine } from './policy/engine'
 import * as audit from './audit/logger'
 
+export interface PolicyCheckResult {
+  allowed: boolean
+  reason: string | null
+  confirmationRequired: boolean
+}
+
 export function jsonError(error: string, code: string, status: number) {
   return NextResponse.json({ error, code }, { status })
 }
@@ -23,16 +29,43 @@ export async function auditLog(action: string, target: string, payload?: Record<
   }
 }
 
-export async function checkPolicy(type: 'run_command' | 'fanout' | 'concurrent', command?: string) {
+export async function checkPolicy(
+  type: 'run_command' | 'fanout' | 'concurrent',
+  options?: {
+    command?: string
+    cwd?: string
+    fanoutCount?: number
+    concurrentCount?: number
+    confirmed?: boolean
+  }
+): Promise<PolicyCheckResult> {
   const engine = await PolicyEngine.load(getBasePath())
-  const result = engine.validate({ type, command })
+  const result = engine.validate({
+    type,
+    command: options?.command,
+    cwd: options?.cwd,
+    fanout_count: options?.fanoutCount,
+    concurrent_count: options?.concurrentCount,
+  })
   if (!result.allowed) {
-    return result.reason || 'Policy denied'
+    return {
+      allowed: false,
+      reason: result.reason || 'Policy denied',
+      confirmationRequired: false,
+    }
   }
-  if (result.confirmation_required) {
-    return null // In API context, confirmation is handled by the UI
+  if (result.confirmation_required && !options?.confirmed) {
+    return {
+      allowed: false,
+      reason: 'Execution requires explicit confirmation in SAFE mode',
+      confirmationRequired: true,
+    }
   }
-  return null
+  return {
+    allowed: true,
+    reason: null,
+    confirmationRequired: false,
+  }
 }
 
 export function handleError(err: unknown) {

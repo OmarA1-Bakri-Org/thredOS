@@ -31,6 +31,10 @@ async function readThreadSurfaceState(): Promise<ThreadSurfaceState> {
   return JSON.parse(content) as ThreadSurfaceState
 }
 
+function confirmedBody(payload: Record<string, unknown>) {
+  return JSON.stringify({ ...payload, confirmPolicy: true })
+}
+
 async function emitRuntimeEventWithCommand(
   command: string | undefined,
   logPath: string | undefined,
@@ -156,7 +160,7 @@ describe.serial('thread runtime event persistence', () => {
     const response = await POST(new Request('http://localhost/api/run', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ stepId: 'step-a' }),
+      body: confirmedBody({ stepId: 'step-a' }),
     }))
 
     expect(response.status).toBe(200)
@@ -200,7 +204,7 @@ describe.serial('thread runtime event persistence', () => {
     const response = await POST(new Request('http://localhost/api/run', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ stepId: 'step-a' }),
+      body: confirmedBody({ stepId: 'step-a' }),
     }))
 
     expect(response.status).toBe(200)
@@ -358,7 +362,7 @@ describe.serial('thread runtime event persistence', () => {
     const response = await POST(new Request('http://localhost/api/run', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ stepId: 'fusion-synth' }),
+      body: confirmedBody({ stepId: 'fusion-synth' }),
     }))
 
     expect(response.status).toBe(200)
@@ -493,7 +497,7 @@ describe.serial('thread runtime event persistence', () => {
     const response = await POST(new Request('http://localhost/api/run', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ stepId: 'fusion-synth' }),
+      body: confirmedBody({ stepId: 'fusion-synth' }),
     }))
 
     expect(response.status).toBe(200)

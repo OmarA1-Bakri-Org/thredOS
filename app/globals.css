@@ -196,7 +196,7 @@
   }
 }
 
-/* ── ThreadOS dark scrollbars ───────────────────────────────────── */
+/* ── thredOS dark scrollbars ───────────────────────────────────── */
 /* Thin, near-invisible scrollbars that respect the dark atmosphere  */
 /* WebKit (Chrome, Edge, Safari) — must be outside @layer to win specificity */
 ::-webkit-scrollbar {
@@ -217,12 +217,12 @@
   background: transparent !important;
 }
 
-/* ThreadOS canvas — edge flow animation for RUNNING edges */
-.threados-edge-flow {
-  animation: threados-edge-flow 0.8s linear infinite;
+/* thredOS canvas — edge flow animation for RUNNING edges */
+.thredos-edge-flow {
+  animation: thredos-edge-flow 0.8s linear infinite;
 }
 
-@keyframes threados-edge-flow {
+@keyframes thredos-edge-flow {
   from { stroke-dashoffset: 10; }
   to { stroke-dashoffset: 0; }
 }

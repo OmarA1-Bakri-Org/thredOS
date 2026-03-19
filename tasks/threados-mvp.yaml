@@ -1,7 +1,7 @@
 harness:
   metadata:
     name: threados-mvp
-    description: "ThreadOS MVP - Thread-Based Engineering Runtime (M0-M2)"
+    description: "thredOS MVP - Thread-Based Engineering Runtime (M0-M2)"
     version: "1.0.0"
 
   global_config:

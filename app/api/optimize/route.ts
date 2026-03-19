@@ -7,6 +7,7 @@ import { OPTIMIZATION_TOOLS, parseOptimizationToolCall } from '@/lib/autoresearc
 import { ActionValidator, type ProposedAction } from '@/lib/chat/validator'
 import { extractActions } from '@/lib/chat/extract-actions'
 import type { OptimizationCategory } from '@/lib/autoresearch/types'
+import { applyRateLimit } from '@/lib/rate-limit'
 
 const CATEGORY_HINTS: { pattern: RegExp; category: OptimizationCategory }[] = [
   { pattern: /parallel|concurren/i, category: 'parallelize' },
@@ -32,8 +33,15 @@ function inferCategoryFromActions(actions: ProposedAction[], content: string): O
   return 'reorder'
 }
 
-export async function POST() {
+export async function POST(request: Request) {
   try {
+    const rateLimited = applyRateLimit(request, {
+      bucket: 'optimize',
+      limit: 10,
+      windowMs: 60 * 1000,
+    })
+    if (rateLimited) return rateLimited
+
     const bp = getBasePath()
     const sequence = await readSequence(bp)
 

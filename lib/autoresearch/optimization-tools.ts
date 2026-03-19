@@ -8,7 +8,7 @@ export const OPTIMIZATION_TOOLS: ChatCompletionTool[] = [
     type: 'function',
     function: {
       name: 'propose_optimizations',
-      description: 'Propose structural optimizations for the current ThreadOS sequence',
+      description: 'Propose structural optimizations for the current thredOS sequence',
       parameters: {
         type: 'object',
         properties: {

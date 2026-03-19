@@ -23,8 +23,8 @@ describe('OpenRouter provider', () => {
       THREADOS_LLM_PROVIDER: 'openrouter',
       OPENROUTER_API_KEY: 'openrouter-test-key',
       OPENROUTER_MODEL: 'openai/gpt-5-mini',
-      OPENROUTER_APP_URL: 'https://threados.dev',
-      OPENROUTER_APP_TITLE: 'ThreadOS',
+      OPENROUTER_APP_URL: 'https://thredos.ai',
+      OPENROUTER_APP_TITLE: 'thredOS',
     }, {
       threadSurfaceId: 'thread-master',
       runId: 'run-009',
@@ -36,8 +36,10 @@ describe('OpenRouter provider', () => {
     expect(provider.config.apiKeyEnvVar).toBe('OPENROUTER_API_KEY')
     expect(provider.config.baseURL).toBe('https://openrouter.ai/api/v1')
     expect(provider.config.defaultHeaders).toMatchObject({
-      'HTTP-Referer': 'https://threados.dev',
-      'X-Title': 'ThreadOS',
+      'HTTP-Referer': 'https://thredos.ai',
+      'X-Title': 'thredOS',
+      'X-ThredOS-Thread-Surface-Id': 'thread-master',
+      'X-ThredOS-Run-Id': 'run-009',
       'X-ThreadOS-Thread-Surface-Id': 'thread-master',
       'X-ThreadOS-Run-Id': 'run-009',
     })
@@ -57,6 +59,8 @@ describe('OpenRouter provider', () => {
     expect(provider.config.tracing.threadosProvenance).toBe('required')
     expect(provider.config.tracing.externalTracing).toBe('openai-agents')
     expect(provider.config.defaultHeaders).toMatchObject({
+      'X-ThredOS-Thread-Surface-Id': 'thread-master',
+      'X-ThredOS-Run-Id': 'run-010',
       'X-ThreadOS-Thread-Surface-Id': 'thread-master',
       'X-ThreadOS-Run-Id': 'run-010',
     })

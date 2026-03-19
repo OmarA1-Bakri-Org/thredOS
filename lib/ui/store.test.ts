@@ -10,8 +10,8 @@ describe('useUIStore', () => {
     expect(useUIStore.getState().productEntry).toBeNull()
     expect(useUIStore.getState().inspectorOpen).toBeFalse()
 
-    useUIStore.getState().setProductEntry('threados')
-    expect(useUIStore.getState().productEntry).toBe('threados')
+    useUIStore.getState().setProductEntry('thredos')
+    expect(useUIStore.getState().productEntry).toBe('thredos')
   })
 
   test('viewMode can switch between hierarchy and lanes', () => {
@@ -262,8 +262,8 @@ describe('useUIStore', () => {
   // ── setProductEntry can switch between modes ──────────────────────
 
   test('setProductEntry switches from threados to thread-runner', () => {
-    useUIStore.getState().setProductEntry('threados')
-    expect(useUIStore.getState().productEntry).toBe('threados')
+    useUIStore.getState().setProductEntry('thredos')
+    expect(useUIStore.getState().productEntry).toBe('thredos')
 
     useUIStore.getState().setProductEntry('thread-runner')
     expect(useUIStore.getState().productEntry).toBe('thread-runner')

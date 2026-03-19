@@ -29,7 +29,7 @@ export const MessageBubble = memo(function MessageBubble({ role, content, timest
         }`}
       >
         <div className="mb-3 flex items-center justify-between gap-4 font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">
-          <span>{isUser ? 'Builder prompt' : 'ThreadOS response'}</span>
+          <span>{isUser ? 'Builder prompt' : 'thredOS response'}</span>
           {timestamp ? <span>{formatRelativeTime(timestamp)}</span> : null}
         </div>
         {isUser ? (

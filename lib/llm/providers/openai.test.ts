@@ -35,6 +35,9 @@ describe('OpenAI provider', () => {
     expect(provider.config.tracing.threadosProvenance).toBe('required')
     expect(provider.config.tracing.externalTracing).toBe('none')
     expect(provider.config.defaultHeaders).toMatchObject({
+      'X-ThredOS-Thread-Surface-Id': 'thread-master',
+      'X-ThredOS-Run-Id': 'run-001',
+      'X-ThredOS-Step-Id': 'step-compile',
       'X-ThreadOS-Thread-Surface-Id': 'thread-master',
       'X-ThreadOS-Run-Id': 'run-001',
       'X-ThreadOS-Step-Id': 'step-compile',

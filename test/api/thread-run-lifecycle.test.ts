@@ -32,6 +32,10 @@ async function setupTestSequence() {
   await writeFile(join(basePath, '.threados', 'prompts', 'step-a.md'), '# Step A')
 }
 
+function confirmedBody(payload: Record<string, unknown>) {
+  return JSON.stringify({ ...payload, confirmPolicy: true })
+}
+
 async function readThreadSurfaceState() {
   const content = await readFile(join(basePath, ...THREAD_SURFACE_STATE_PATH), 'utf-8')
   return JSON.parse(content) as {
@@ -86,7 +90,7 @@ describe.serial('thread run lifecycle routes', () => {
     const response = await POST(new Request('http://localhost/api/run', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ stepId: 'step-a' }),
+      body: confirmedBody({ stepId: 'step-a' }),
     }))
 
     expect(response.status).toBe(200)
@@ -114,12 +118,12 @@ describe.serial('thread run lifecycle routes', () => {
     await POST(new Request('http://localhost/api/run', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ stepId: 'step-a' }),
+      body: confirmedBody({ stepId: 'step-a' }),
     }))
     await POST(new Request('http://localhost/api/run', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ stepId: 'step-a' }),
+      body: confirmedBody({ stepId: 'step-a' }),
     }))
 
     const state = await readThreadSurfaceState()

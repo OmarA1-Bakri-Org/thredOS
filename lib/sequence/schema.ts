@@ -19,6 +19,28 @@ export type ModelType = z.infer<typeof ModelTypeSchema>
 export const FailPolicySchema = z.enum(['stop-all', 'continue', 'retry'])
 export type FailPolicy = z.infer<typeof FailPolicySchema>
 
+export const SkillRefSchema = z.object({
+  id: z.string().min(1),
+  version: z.number().int().positive().default(1),
+  path: z.string().optional(),
+  capabilities: z.array(z.string()).default([]),
+})
+export type SkillRef = z.infer<typeof SkillRefSchema>
+
+export const PromptRefSchema = z.object({
+  id: z.string().min(1),
+  version: z.number().int().positive().default(1),
+  path: z.string().optional(),
+})
+export type PromptRef = z.infer<typeof PromptRefSchema>
+
+export const LlmSettingsSchema = z.object({
+  temperature: z.number().min(0).max(2).optional(),
+  top_p: z.number().min(0).max(1).optional(),
+  max_tokens: z.number().int().positive().optional(),
+}).optional()
+export type LlmSettings = z.infer<typeof LlmSettingsSchema>
+
 export const StepSchema = z.object({
   id: z.string()
     .regex(/^[a-z0-9-]+$/, { message: 'Step ID must contain only lowercase letters, numbers, and hyphens' })
@@ -31,6 +53,13 @@ export const StepSchema = z.object({
   cwd: z.string().optional(),
   model: ModelTypeSchema,
   prompt_file: z.string().min(1, { message: 'Prompt file path is required' }),
+  prompt_ref: PromptRefSchema.optional(),
+  skill_refs: z.array(SkillRefSchema).optional(),
+  llm_settings: LlmSettingsSchema,
+  node_description: z.string().optional(),
+  expected_outcome: z.string().optional(),
+  input_contract: z.string().optional(),
+  output_contract: z.string().optional(),
   depends_on: z.array(z.string()).default([]),
   status: StepStatusSchema.default('READY'),
   artifacts: z.array(z.string()).optional(),

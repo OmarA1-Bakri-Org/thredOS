@@ -57,7 +57,7 @@ export function RunSection() {
           <Button
             type="button"
             variant="default"
-            onClick={() => runRunnable.mutate()}
+            onClick={() => runRunnable.mutate(undefined)}
             disabled={runRunnable.isPending}
             className="gap-1.5"
           >

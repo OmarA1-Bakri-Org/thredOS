@@ -1,4 +1,5 @@
 import { readAgentState } from '@/lib/agents/repository'
+import { summarizeCloudAgentPerformance } from '@/lib/agents/cloud-registry'
 import { aggregateAgentStats, type AgentStats } from '@/lib/agents/stats'
 import { readThreadRunnerState } from '@/lib/thread-runner/repository'
 import { getBasePath } from '@/lib/config'
@@ -47,11 +48,16 @@ export async function GET(request: Request) {
 
     const stats = aggregateAgentStats(agentId, runnerState.races, runnerState.combatantRuns)
 
-    if (stats.totalRuns === 0) {
-      return Response.json({ stats: null })
+    if (stats.totalRuns > 0) {
+      return Response.json({ stats: computePerformanceData(stats) })
     }
 
-    return Response.json({ stats: computePerformanceData(stats) })
+    if (agent.registrationNumber) {
+      const cloudStats = await summarizeCloudAgentPerformance(bp, agent.registrationNumber)
+      return Response.json({ stats: cloudStats })
+    }
+
+    return Response.json({ stats: null })
   } catch (err) {
     console.error('[agent-stats] Error:', err)
     return Response.json({ error: 'Internal server error' }, { status: 500 })

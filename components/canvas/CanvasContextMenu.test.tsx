@@ -320,7 +320,7 @@ describe('CanvasContextMenu', () => {
   // Click handler tests (lines 87-111, 115-124)
   // -------------------------------------------------------------------------
 
-  test('Run button calls runStep.mutate with nodeId and invokes onClose (line 87)', () => {
+  test('Run button opens confirmation flow and invokes onClose', () => {
     const runCalls: unknown[] = []
     apiState.runMutate = (id: unknown) => runCalls.push(id)
     let closed = false
@@ -332,7 +332,7 @@ describe('CanvasContextMenu', () => {
     )
     expect(slot.onClick).toBeDefined()
     slot.onClick!()
-    expect(runCalls).toEqual(['step-run'])
+    expect(runCalls).toEqual([])
     expect(closed).toBeTrue()
   })
 

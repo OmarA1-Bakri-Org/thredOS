@@ -5,6 +5,7 @@ import { Check, Pencil, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useEditStep, useStatus, useAddDep, useRemoveDep } from '@/lib/ui/api'
 import { ModelPopout } from './ModelPopout'
+import { SkillBadgeRow } from '@/components/skills/SkillBadgeRow'
 
 const STEP_TYPES = [
   { value: 'base', label: 'Base', color: '#64748b' },
@@ -22,6 +23,16 @@ interface StepData {
   model: string
   status: string
   dependsOn: string[]
+  prompt_file?: string
+  prompt_ref?: { id: string; version: number; path?: string }
+  skill_refs?: Array<{ id: string; version: number; path?: string }>
+  node_description?: string
+  expected_outcome?: string
+  input_contract?: string
+  output_contract?: string
+  role?: string
+  cwd?: string
+  assigned_agent_id?: string | null
 }
 
 export function StepForm({ step }: { step: StepData }) {
@@ -34,6 +45,8 @@ export function StepForm({ step }: { step: StepData }) {
   const [editName, setEditName] = useState(step.name)
   const [editType, setEditType] = useState(step.type)
   const [editModel, setEditModel] = useState(step.model)
+  const [editPromptFile, setEditPromptFile] = useState(step.prompt_ref?.path ?? step.prompt_file ?? '')
+  const [editCwd, setEditCwd] = useState(step.cwd ?? '')
   const [error, setError] = useState<string | null>(null)
 
   const allNodeIds = status
@@ -44,6 +57,8 @@ export function StepForm({ step }: { step: StepData }) {
     setEditName(step.name)
     setEditType(step.type)
     setEditModel(step.model)
+    setEditPromptFile(step.prompt_ref?.path ?? step.prompt_file ?? '')
+    setEditCwd(step.cwd ?? '')
     setError(null)
     setEditing(true)
   }, [step])
@@ -59,6 +74,8 @@ export function StepForm({ step }: { step: StepData }) {
     if (editName !== step.name) changes.name = editName
     if (editType !== step.type) changes.type = editType
     if (editModel !== step.model) changes.model = editModel
+    if (editPromptFile !== (step.prompt_ref?.path ?? step.prompt_file ?? '')) changes.prompt = editPromptFile
+    if (editCwd !== (step.cwd ?? '')) changes.cwd = editCwd
     if (Object.keys(changes).length === 0) { setEditing(false); return }
 
     try {
@@ -67,7 +84,15 @@ export function StepForm({ step }: { step: StepData }) {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Save failed')
     }
-  }, [editName, editType, editModel, step, editStep])
+  }, [
+    editName,
+    editType,
+    editModel,
+    editPromptFile,
+    editCwd,
+    step,
+    editStep,
+  ])
 
   const handleAddDep = useCallback(async (depId: string) => {
     try {
@@ -105,6 +130,16 @@ export function StepForm({ step }: { step: StepData }) {
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="border border-slate-700 bg-slate-950/65 px-4 py-3">
+              <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">Prompt</div>
+              <div className="mt-2 break-all text-sm text-slate-100">{step.prompt_ref?.path ?? step.prompt_file ?? 'None'}</div>
+            </div>
+            <div className="border border-slate-700 bg-slate-950/65 px-4 py-3">
+              <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">Role</div>
+              <div className="mt-2 text-sm text-slate-100">{step.role ?? 'Unspecified'}</div>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="border border-slate-700 bg-slate-950/65 px-4 py-3">
               <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">Type</div>
               <div className="mt-2 text-sm text-slate-100">{step.type}</div>
             </div>
@@ -116,6 +151,20 @@ export function StepForm({ step }: { step: StepData }) {
           <div className="border border-slate-700 bg-slate-950/65 px-4 py-3">
             <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">Status</div>
             <div className="mt-2 text-sm font-mono uppercase tracking-[0.14em] text-sky-100">{step.status}</div>
+          </div>
+          <div className="border border-slate-700 bg-slate-950/65 px-4 py-3">
+            <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">Skills</div>
+            <div className="mt-2">
+              {step.skill_refs?.length ? (
+                <SkillBadgeRow skills={step.skill_refs.map(skill => ({
+                  id: skill.id,
+                  label: skill.id,
+                  inherited: false,
+                }))} />
+              ) : (
+                <span className="text-sm text-slate-500">None selected</span>
+              )}
+            </div>
           </div>
           <div className="border border-slate-700 bg-slate-950/65 px-4 py-3">
             <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">
@@ -197,8 +246,8 @@ export function StepForm({ step }: { step: StepData }) {
       </div>
 
       {/* Name */}
-      <div className="border border-amber-500/30 bg-amber-500/5 px-4 py-3">
-        <label htmlFor="step-edit-name" className="block font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">Name</label>
+          <div className="border border-amber-500/30 bg-amber-500/5 px-4 py-3">
+            <label htmlFor="step-edit-name" className="block font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">Name</label>
         <input
           id="step-edit-name"
           type="text"
@@ -237,6 +286,32 @@ export function StepForm({ step }: { step: StepData }) {
         <div className="mt-1.5">
           <ModelPopout value={editModel} onChange={setEditModel} />
         </div>
+      </div>
+
+      {/* Prompt path */}
+      <div className="border border-amber-500/30 bg-amber-500/5 px-4 py-3">
+        <label htmlFor="step-edit-prompt" className="block font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">Prompt path</label>
+        <input
+          id="step-edit-prompt"
+          type="text"
+          value={editPromptFile}
+          onChange={e => setEditPromptFile(e.target.value)}
+          placeholder=".threados/prompts/step.md"
+          className="mt-1.5 w-full border border-slate-700 bg-[#0a101a] px-3 py-1.5 text-sm text-slate-100 outline-none focus:border-sky-500/60"
+        />
+      </div>
+
+      {/* Working directory */}
+      <div className="border border-amber-500/30 bg-amber-500/5 px-4 py-3">
+        <label htmlFor="step-edit-cwd" className="block font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">Working directory</label>
+        <input
+          id="step-edit-cwd"
+          type="text"
+          value={editCwd}
+          onChange={e => setEditCwd(e.target.value)}
+          placeholder="Optional cwd for the node"
+          className="mt-1.5 w-full border border-slate-700 bg-[#0a101a] px-3 py-1.5 text-sm text-slate-100 outline-none focus:border-sky-500/60"
+        />
       </div>
 
       {error ? (

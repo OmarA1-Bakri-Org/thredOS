@@ -2,7 +2,7 @@ import type { ChatCompletionTool, ChatCompletionMessageToolCall } from 'openai/r
 import type { ProposedAction } from './validator'
 
 /**
- * Tool definition for the chat LLM to propose ThreadOS actions.
+ * Tool definition for the chat LLM to propose thredOS actions.
  * Used with OpenAI/OpenRouter function calling (tools parameter).
  */
 export const CHAT_TOOLS: ChatCompletionTool[] = [
@@ -11,20 +11,20 @@ export const CHAT_TOOLS: ChatCompletionTool[] = [
     function: {
       name: 'propose_actions',
       description:
-        'Propose one or more ThreadOS actions (step add, step remove, run, etc.) for user review before applying.',
+        'Propose one or more thredOS actions (step add, step remove, run, etc.) for user review before applying.',
       parameters: {
         type: 'object',
         properties: {
           actions: {
             type: 'array',
-            description: 'Array of proposed ThreadOS actions',
+            description: 'Array of proposed thredOS actions',
             items: {
               type: 'object',
               properties: {
                 command: {
                   type: 'string',
                   description:
-                    'The ThreadOS command (step add, step remove, step update, run, stop, restart, gate approve, gate block, dep add, dep remove, group create, fusion create)',
+                    'The thredOS command (step add, step remove, step update, run, stop, restart, gate approve, gate block, dep add, dep remove, group create, fusion create)',
                 },
                 args: {
                   type: 'object',

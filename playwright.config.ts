@@ -19,9 +19,14 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: 'bun run dev -- --hostname 127.0.0.1 --port 4173',
+    command: 'bun run build && bun run start -- --hostname 127.0.0.1 --port 4173',
+    cwd: __dirname,
+    env: {
+      ...process.env,
+      SystemRoot: process.env.SystemRoot ?? 'C:\\Windows',
+    },
     url: 'http://127.0.0.1:4173',
     reuseExistingServer: !process.env.CI,
-    timeout: 120_000,
+    timeout: 240_000,
   },
 })

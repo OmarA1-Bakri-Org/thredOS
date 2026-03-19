@@ -1,20 +1,22 @@
 import type { ZodError } from 'zod'
 
 /**
- * Base error class for ThreadOS
+ * Base error class for thredOS
  * All custom errors extend this class for consistent error handling
  */
-export class ThreadOSError extends Error {
+export class ThredOSError extends Error {
   constructor(message: string, public readonly code: string) {
     super(message)
-    this.name = 'ThreadOSError'
+    this.name = 'ThredOSError'
   }
 }
+
+export { ThredOSError as ThreadOSError }
 
 /**
  * Thrown when unable to connect to mprocs server
  */
-export class MprocsConnectionError extends ThreadOSError {
+export class MprocsConnectionError extends ThredOSError {
   constructor(address: string) {
     super(`Failed to connect to mprocs server at ${address}`, 'MPROCS_CONNECTION_FAILED')
     this.name = 'MprocsConnectionError'
@@ -24,7 +26,7 @@ export class MprocsConnectionError extends ThreadOSError {
 /**
  * Thrown when sequence.yaml validation fails
  */
-export class SequenceValidationError extends ThreadOSError {
+export class SequenceValidationError extends ThredOSError {
   constructor(public readonly zodErrors: ZodError) {
     super(
       `Sequence validation failed: ${zodErrors.issues.map(e => e.message).join(', ')}`,
@@ -37,7 +39,7 @@ export class SequenceValidationError extends ThreadOSError {
 /**
  * Thrown when a step cannot be found by ID
  */
-export class StepNotFoundError extends ThreadOSError {
+export class StepNotFoundError extends ThredOSError {
   constructor(stepId: string) {
     super(`Step not found: ${stepId}`, 'STEP_NOT_FOUND')
     this.name = 'StepNotFoundError'
@@ -47,7 +49,7 @@ export class StepNotFoundError extends ThreadOSError {
 /**
  * Thrown when a circular dependency is detected in the DAG
  */
-export class CircularDependencyError extends ThreadOSError {
+export class CircularDependencyError extends ThredOSError {
   constructor(cycle: string[]) {
     super(`Circular dependency detected: ${cycle.join(' -> ')}`, 'CIRCULAR_DEPENDENCY')
     this.name = 'CircularDependencyError'
@@ -57,7 +59,7 @@ export class CircularDependencyError extends ThreadOSError {
 /**
  * Thrown when a gate cannot be found by ID
  */
-export class GateNotFoundError extends ThreadOSError {
+export class GateNotFoundError extends ThredOSError {
   constructor(gateId: string) {
     super(`Gate not found: ${gateId}`, 'GATE_NOT_FOUND')
     this.name = 'GateNotFoundError'
@@ -67,7 +69,7 @@ export class GateNotFoundError extends ThreadOSError {
 /**
  * Thrown when a group cannot be found by ID
  */
-export class GroupNotFoundError extends ThreadOSError {
+export class GroupNotFoundError extends ThredOSError {
   constructor(groupId: string) {
     super(`Group not found: ${groupId}`, 'GROUP_NOT_FOUND')
     this.name = 'GroupNotFoundError'
@@ -77,7 +79,7 @@ export class GroupNotFoundError extends ThreadOSError {
 /**
  * Thrown when a dependency is not found
  */
-export class DependencyNotFoundError extends ThreadOSError {
+export class DependencyNotFoundError extends ThredOSError {
   constructor(stepId: string, depId: string) {
     super(`Dependency '${depId}' not found on step '${stepId}'`, 'DEPENDENCY_NOT_FOUND')
     this.name = 'DependencyNotFoundError'
@@ -87,14 +89,14 @@ export class DependencyNotFoundError extends ThreadOSError {
 /**
  * Thrown when a template type is invalid
  */
-export class InvalidTemplateError extends ThreadOSError {
+export class InvalidTemplateError extends ThredOSError {
   constructor(templateType: string) {
     super(`Invalid template type: ${templateType}`, 'INVALID_TEMPLATE')
     this.name = 'InvalidTemplateError'
   }
 }
 
-export class ProcessTimeoutError extends ThreadOSError {
+export class ProcessTimeoutError extends ThredOSError {
   constructor(stepId: string, timeoutMs: number) {
     super(`Step '${stepId}' timed out after ${timeoutMs}ms`, 'PROCESS_TIMEOUT')
     this.name = 'ProcessTimeoutError'
@@ -104,7 +106,7 @@ export class ProcessTimeoutError extends ThreadOSError {
 /**
  * Thrown when an agent CLI is not found on the system
  */
-export class AgentNotFoundError extends ThreadOSError {
+export class AgentNotFoundError extends ThredOSError {
   constructor(model: string, hint?: string) {
     const message = hint
       ? `Agent '${model}' not found. ${hint}`
@@ -117,70 +119,70 @@ export class AgentNotFoundError extends ThreadOSError {
 /**
  * Thrown when a step's prompt file is missing
  */
-export class PromptNotFoundError extends ThreadOSError {
+export class PromptNotFoundError extends ThredOSError {
   constructor(stepId: string, path: string) {
     super(`Prompt file not found for step '${stepId}': ${path}`, 'PROMPT_NOT_FOUND')
     this.name = 'PromptNotFoundError'
   }
 }
 
-export class ThreadSurfaceNotFoundError extends ThreadOSError {
+export class ThreadSurfaceNotFoundError extends ThredOSError {
   constructor(surfaceId: string) {
     super(`Thread surface ${surfaceId} not found`, 'THREAD_SURFACE_NOT_FOUND')
     this.name = 'ThreadSurfaceNotFoundError'
   }
 }
 
-export class ThreadSurfaceRunNotFoundError extends ThreadOSError {
+export class ThreadSurfaceRunNotFoundError extends ThredOSError {
   constructor(surfaceId: string, runId: string) {
     super(`Run ${runId} for surface ${surfaceId} not found`, 'THREAD_SURFACE_RUN_NOT_FOUND')
     this.name = 'ThreadSurfaceRunNotFoundError'
   }
 }
 
-export class ThreadSurfaceAlreadyExistsError extends ThreadOSError {
+export class ThreadSurfaceAlreadyExistsError extends ThredOSError {
   constructor(surfaceId: string) {
     super(`Thread surface already exists: ${surfaceId}`, 'THREAD_SURFACE_ALREADY_EXISTS')
     this.name = 'ThreadSurfaceAlreadyExistsError'
   }
 }
 
-export class InvalidThreadSurfaceMergeError extends ThreadOSError {
+export class InvalidThreadSurfaceMergeError extends ThredOSError {
   constructor(message: string) {
     super(message, 'INVALID_THREAD_SURFACE_MERGE')
     this.name = 'InvalidThreadSurfaceMergeError'
   }
 }
 
-export class ThreadSurfaceRunScopeNotFoundError extends ThreadOSError {
+export class ThreadSurfaceRunScopeNotFoundError extends ThredOSError {
   constructor(runId: string) {
     super(`Run not found: ${runId}`, 'THREAD_SURFACE_RUN_NOT_FOUND')
     this.name = 'ThreadSurfaceRunScopeNotFoundError'
   }
 }
 
-export class InvalidLlmProviderError extends ThreadOSError {
+export class InvalidLlmProviderError extends ThredOSError {
   constructor(provider: string) {
     super(`Unsupported LLM provider: ${provider}`, 'INVALID_LLM_PROVIDER')
     this.name = 'InvalidLlmProviderError'
   }
 }
 
-export class MissingLlmProviderConfigError extends ThreadOSError {
+export class MissingLlmProviderConfigError extends ThredOSError {
   constructor(envVar: string, provider: string) {
     super(`Missing required ${provider} configuration: ${envVar}`, 'MISSING_LLM_PROVIDER_CONFIG')
     this.name = 'MissingLlmProviderConfigError'
   }
 }
 
-export class SpawnDepthExceededError extends ThreadOSError {
+export class SpawnDepthExceededError extends ThredOSError {
   constructor(currentDepth: number, maxDepth: number) {
     super(`Spawn depth ${currentDepth} exceeds maximum allowed depth of ${maxDepth}`, 'SPAWN_DEPTH_EXCEEDED')
     this.name = 'SpawnDepthExceededError'
   }
 }
 
-export class SpawnLimitExceededError extends ThreadOSError {
+export class SpawnLimitExceededError extends ThredOSError {
   constructor(limitType: 'children' | 'total', current: number, max: number) {
     super(`Spawn limit exceeded: ${limitType} count ${current} exceeds maximum of ${max}`, 'SPAWN_LIMIT_EXCEEDED')
     this.name = 'SpawnLimitExceededError'

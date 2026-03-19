@@ -3,7 +3,7 @@
 import { create } from 'zustand'
 
 export type ThreadSurfaceViewMode = 'hierarchy' | 'lanes'
-export type ProductEntryMode = 'threados' | 'thread-runner'
+export type ProductEntryMode = 'thredos' | 'thread-runner'
 
 export interface HierarchyViewportState {
   x: number

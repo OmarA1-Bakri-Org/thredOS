@@ -25,6 +25,22 @@ mock.module('@/lib/ui/api', () => ({
     mutate: () => {},
     isPending: false,
   }),
+  useDesktopEntitlement: () => ({
+    data: {
+      effectiveStatus: 'active',
+      isUsable: true,
+      state: {
+        status: 'active',
+        plan: 'desktop-public-beta',
+        customerEmail: 'local@thredos',
+        activatedAt: null,
+        lastValidatedAt: null,
+        expiresAt: null,
+        graceUntil: null,
+        activationSource: 'development',
+      },
+    },
+  }),
   useResetSequence: () => ({
     mutate: () => {},
     isPending: false,
@@ -48,7 +64,7 @@ const { TopBar } = await import('./TopBar')
 describe('TopBar', () => {
   beforeEach(() => {
     useUIStore.setState({
-      productEntry: 'threados',
+      productEntry: 'thredos',
       viewMode: 'hierarchy',
       searchQuery: '',
       leftRailOpen: false,
@@ -60,18 +76,18 @@ describe('TopBar', () => {
   test('renders grouped workbench clusters instead of one flat control row', () => {
     const markup = renderToStaticMarkup(<TopBar />)
 
-    expect(markup).toContain('data-workbench-cluster="product-entry"')
+    expect(markup).toContain('data-workbench-cluster="navigation"')
     expect(markup).toContain('data-workbench-cluster="view-mode"')
     expect(markup).toContain('data-workbench-cluster="command-search"')
     expect(markup).toContain('data-workbench-cluster="primary-actions"')
     expect(markup).toContain('data-workbench-cluster="utility-status"')
   })
 
-  test('keeps Thread Runner visible but locked inside the product entry cluster', () => {
+  test('keeps the workbench scoped to thredOS only', () => {
     const markup = renderToStaticMarkup(<TopBar />)
 
-    expect(markup).toContain('Thread Runner')
-    expect(markup).toContain('disabled=""')
+    expect(markup).not.toContain('Thread Runner')
+    expect(markup).toContain('Home')
   })
 
   test('compresses utility status into a single status summary and smaller-screen fallback pill', () => {

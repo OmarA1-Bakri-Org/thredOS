@@ -190,8 +190,8 @@ describe('buildAgentProfile', () => {
 
     const profile = buildAgentProfile(sources)
 
-    test('builder defaults to "ThreadOS Registry"', () => {
-      expect(profile.builder).toBe('ThreadOS Registry')
+    test('builder defaults to "thredOS Registry"', () => {
+      expect(profile.builder).toBe('thredOS Registry')
     })
 
     test('skills returns default 6-item array', () => {
@@ -583,7 +583,7 @@ describe('buildAgentProfile', () => {
         node: makeNode(),
       })
 
-      expect(p.builder).toBe('ThreadOS Registry')
+      expect(p.builder).toBe('thredOS Registry')
       expect(p.verified).toBe(false)
       expect(p.rubric).toHaveLength(6)
       expect(p.skills).toHaveLength(6)

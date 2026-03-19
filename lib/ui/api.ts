@@ -7,6 +7,8 @@ import type { MergeEvent, RunScope, ThreadSurface, ThreadSkillBadge } from '@/li
 import type { ThreadCardProfile } from '@/components/hierarchy/FocusedThreadCard'
 import type { AgentRegistration } from '@/lib/agents/types'
 import type { GateMetrics } from '@/lib/gates/metrics'
+import type { ActivationSession } from '@/lib/local-first/types'
+import type { LocalWorkspace } from '@/lib/local-first/types'
 import { resolveSkillsForAgent } from '@/lib/thread-surfaces/projections'
 
 interface ThreadSurfacesResponse {
@@ -23,6 +25,11 @@ interface ThreadMergesResponse {
 
 export async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, init)
+  if (res.status === 401 && typeof window !== 'undefined') {
+    const next = `${window.location.pathname}${window.location.search}`
+    window.location.href = `/login?next=${encodeURIComponent(next)}`
+    throw new Error('Authentication required')
+  }
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: res.statusText }))
     throw new Error(body.error || res.statusText)
@@ -32,6 +39,115 @@ export async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> 
 
 export function postJson<T>(url: string, body: unknown): Promise<T> {
   return fetchJson<T>(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+}
+
+export interface DesktopEntitlementSnapshot {
+  state: {
+    status: 'inactive' | 'pending' | 'active' | 'grace' | 'expired'
+    plan: 'desktop-public-beta'
+    customerEmail: string | null
+    activatedAt: string | null
+    lastValidatedAt: string | null
+    expiresAt: string | null
+    graceUntil: string | null
+    activationSource: 'browser-return' | 'manual' | 'development'
+  }
+  effectiveStatus: 'inactive' | 'pending' | 'active' | 'grace' | 'expired'
+  isUsable: boolean
+}
+
+export interface CloudAgentRegistration {
+  registrationNumber: string
+  agentId: string
+  identityHash: string
+  version: number
+  registeredAt: string
+  supersedesRegistrationNumber: string | null
+  name: string
+  model: string
+  role: string
+  skillIds: string[]
+  tools: string[]
+}
+
+export interface AgentPerformanceRecord {
+  id: string
+  registrationNumber: string
+  recordedAt: string
+  outcome: 'pass' | 'fail' | 'needs_review'
+  durationMs: number | null
+  qualityScore: number | null
+  notes: string | null
+}
+
+export function startSignIn(): Promise<ActivationSession> {
+  return postJson<ActivationSession>('/api/desktop/auth/start', {})
+}
+
+export function startCheckout(email?: string): Promise<ActivationSession> {
+  return postJson<ActivationSession>('/api/desktop/checkout/start', {
+    plan: 'desktop-public-beta',
+    ...(email ? { email } : {}),
+  })
+}
+
+export function completeActivation(token: string): Promise<DesktopEntitlementSnapshot> {
+  return postJson<DesktopEntitlementSnapshot>('/api/desktop/activation/complete', { token })
+}
+
+export function useDesktopEntitlement() {
+  return useQuery<DesktopEntitlementSnapshot>({
+    queryKey: ['desktop-entitlement'],
+    queryFn: () => fetchJson<DesktopEntitlementSnapshot>('/api/desktop/entitlement'),
+    staleTime: 30_000,
+  })
+}
+
+export function useLocalWorkspace() {
+  return useQuery<LocalWorkspace>({
+    queryKey: ['local-workspace'],
+    queryFn: async () => {
+      const response = await fetchJson<{ workspace: LocalWorkspace }>('/api/desktop/workspace')
+      return response.workspace
+    },
+    staleTime: 30_000,
+  })
+}
+
+export function useRefreshDesktopEntitlement() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () => postJson<DesktopEntitlementSnapshot>('/api/desktop/entitlement', {}),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['desktop-entitlement'] })
+    },
+  })
+}
+
+export function fetchAgentRegistration(agentId: string): Promise<CloudAgentRegistration | null> {
+  return fetchJson<{ registration: CloudAgentRegistration | null }>(`/api/agent-cloud/registration?agentId=${encodeURIComponent(agentId)}`)
+    .then(response => response.registration)
+}
+
+export function registerAgentCloud(agentId: string): Promise<CloudAgentRegistration> {
+  return postJson<{ registration: CloudAgentRegistration }>('/api/agent-cloud/registration', { agentId })
+    .then(response => response.registration)
+}
+
+export function fetchAgentPerformance(registrationNumber: string): Promise<AgentPerformanceRecord[]> {
+  return fetchJson<{ records: AgentPerformanceRecord[] }>(`/api/agent-cloud/performance?registrationNumber=${encodeURIComponent(registrationNumber)}`)
+    .then(response => response.records)
+}
+
+export function recordAgentPerformance(input: {
+  registrationNumber: string
+  outcome: 'pass' | 'fail' | 'needs_review'
+  durationMs?: number | null
+  qualityScore?: number | null
+  notes?: string | null
+}): Promise<AgentPerformanceRecord> {
+  return postJson<{ record: AgentPerformanceRecord }>('/api/agent-cloud/performance', input)
+    .then(response => response.record)
 }
 
 function invalidateRuntimeQueries(qc: ReturnType<typeof useQueryClient>) {
@@ -91,7 +207,10 @@ export function useThreadMerges(runId?: string | null) {
 export function useRunStep() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (stepId: string) => postJson('/api/run', { stepId }),
+    mutationFn: (input: string | { stepId: string; confirmPolicy?: boolean }) => {
+      const payload = typeof input === 'string' ? { stepId: input } : input
+      return postJson('/api/run', payload)
+    },
     onSuccess: () => invalidateRuntimeQueries(qc),
     onError: (error) => { console.error('Run step failed:', error) },
   })
@@ -100,7 +219,7 @@ export function useRunStep() {
 export function useRunRunnable() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: () => postJson('/api/run', { mode: 'runnable' }),
+    mutationFn: (input?: { confirmPolicy?: boolean }) => postJson('/api/run', { mode: 'runnable', ...input }),
     onSuccess: () => invalidateRuntimeQueries(qc),
     onError: (error) => { console.error('Run runnable failed:', error) },
   })
@@ -465,7 +584,16 @@ import type { EligibilityStatus } from '@/lib/thread-runner/types'
 export function useThreadRunnerEligibility() {
   return useQuery<EligibilityStatus>({
     queryKey: ['thread-runner-eligibility'],
-    queryFn: () => fetchJson<EligibilityStatus>('/api/thread-runner/eligibility'),
+    queryFn: async () => {
+      try {
+        return await fetchJson<EligibilityStatus>('/api/thread-runner/eligibility')
+      } catch {
+        return {
+          eligible: false,
+          requirements: [],
+        }
+      }
+    },
     staleTime: 60_000,
   })
 }
@@ -488,8 +616,12 @@ export function useListRaces() {
   return useQuery<import('@/lib/thread-runner/types').Race[]>({
     queryKey: ['thread-runner-races'],
     queryFn: async () => {
-      const res = await fetchJson<{ races: import('@/lib/thread-runner/types').Race[] }>('/api/thread-runner/race')
-      return res.races
+      try {
+        const res = await fetchJson<{ races: import('@/lib/thread-runner/types').Race[] }>('/api/thread-runner/race')
+        return res.races
+      } catch {
+        return []
+      }
     },
     staleTime: 10_000,
   })
@@ -500,10 +632,14 @@ export function useRaceResults(raceId: string | null) {
     queryKey: ['thread-runner-race-results', raceId],
     queryFn: async () => {
       if (!raceId) return null
-      const res = await fetchJson<{ results: import('@/lib/thread-runner/types').RaceResult }>(
-        `/api/thread-runner/race?raceId=${encodeURIComponent(raceId)}`
-      )
-      return res.results
+      try {
+        const res = await fetchJson<{ results: import('@/lib/thread-runner/types').RaceResult }>(
+          `/api/thread-runner/race?raceId=${encodeURIComponent(raceId)}`
+        )
+        return res.results
+      } catch {
+        return null
+      }
     },
     enabled: !!raceId,
     staleTime: 5_000,

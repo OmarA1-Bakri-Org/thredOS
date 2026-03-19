@@ -1,10 +1,9 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { join } from 'path'
 import { readSequence, writeSequence } from '@/lib/sequence/parser'
 import { getBasePath } from '@/lib/config'
 import { handleError, auditLog } from '@/lib/api-helpers'
-import { writeFileAtomic } from '@/lib/fs/atomic'
+import { ensureLibraryStructure, ensurePromptAssetForStep } from '@/lib/library/repository'
 import {
   generateBase,
   generateParallel,
@@ -40,6 +39,7 @@ export async function POST(request: Request) {
   try {
     const body = BodySchema.parse(await request.json())
     const bp = getBasePath()
+    await ensureLibraryStructure(bp)
 
     if (body.action === 'reset') {
       const newSeq: Sequence = {
@@ -90,30 +90,29 @@ export async function POST(request: Request) {
       }
 
       const { steps: newSteps, gates: newGates } = generator()
+      const enrichedSteps = await Promise.all(
+        newSteps.map(async (step) => {
+          const promptRef = await ensurePromptAssetForStep(bp, step.id, step.name)
+          return {
+            ...step,
+            prompt_ref: promptRef,
+          }
+        }),
+      )
 
       const newSeq: Sequence = {
         version: '1.0',
         name: body.name,
         thread_type: body.type,
-        steps: newSteps,
+        steps: enrichedSteps,
         gates: newGates,
       }
 
       await writeSequence(bp, newSeq)
 
-      // Create placeholder prompt files for each step that references one
-      const promptWrites = newSteps
-        .filter(s => s.prompt_file)
-        .map(s => {
-          const promptPath = join(bp, s.prompt_file)
-          const content = `# ${s.name}\n\nDescribe the task for this phase.\n`
-          return writeFileAtomic(promptPath, content)
-        })
-      await Promise.all(promptWrites)
-
       const freshSurfaces = materializeBulkStepSurfaces(
         clearAllSurfaces(),
-        newSteps.map(st => ({ id: st.id, name: st.name })),
+        enrichedSteps.map(st => ({ id: st.id, name: st.name })),
         body.name,
         new Date().toISOString(),
       )

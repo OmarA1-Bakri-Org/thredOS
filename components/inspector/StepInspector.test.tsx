@@ -56,6 +56,7 @@ mock.module('@/lib/ui/api', () => ({
   useRestartStep: () => ({ mutate: () => {}, isPending: false, error: null }),
   useApproveGate: () => ({ mutate: () => {}, isPending: false, error: null }),
   useBlockGate: () => ({ mutate: () => {}, isPending: false, error: null }),
+  useRemoveGate: () => ({ mutate: () => {}, isPending: false, error: null }),
   useEditStep: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false, error: null }),
   useRemoveStep: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false, error: null }),
   useCloneStep: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false, error: null }),
@@ -71,6 +72,7 @@ mock.module('@/lib/ui/api', () => ({
   useBuilderProfile: () => ({ data: null, isLoading: false }),
   useThreadRunnerEligibility: () => ({ data: { eligible: false, requirements: [] }, isLoading: false }),
   useOptimizeWorkflow: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
+  useResetSequence: () => ({ mutate: () => {}, isPending: false }),
   useListRaces: () => ({ data: [], isLoading: false }),
   useRaceResults: () => ({ data: null, isLoading: false }),
   useEnrollRace: () => ({ mutate: () => {}, isPending: false }),
@@ -96,7 +98,7 @@ const uiState: {
     focusedRunId: string | null
   }
 } = {
-  productEntry: 'threados',
+  productEntry: 'thredos',
   selectedNodeId: 'draft_linkedin' as string | null,
   leftRailOpen: false,
   inspectorOpen: true,
@@ -171,7 +173,7 @@ afterEach(() => {
 describe('StepInspector', () => {
   beforeEach(() => {
     useUIStoreMock.setState({
-      productEntry: 'threados',
+      productEntry: 'thredos',
       selectedNodeId: 'draft_linkedin',
       leftRailOpen: false,
       selectedThreadSurfaceId: 'thread-synthesis',

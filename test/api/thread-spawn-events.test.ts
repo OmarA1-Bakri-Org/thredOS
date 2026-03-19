@@ -27,6 +27,10 @@ async function readThreadSurfaceState(): Promise<ThreadSurfaceState> {
   return JSON.parse(content) as ThreadSurfaceState
 }
 
+function confirmedBody(payload: Record<string, unknown>) {
+  return JSON.stringify({ ...payload, confirmPolicy: true })
+}
+
 describe.serial('thread spawn event persistence', () => {
   beforeEach(async () => {
     basePath = await mkdtemp(join(tmpdir(), 'threados-spawn-events-'))
@@ -139,7 +143,7 @@ describe.serial('thread spawn event persistence', () => {
     const response = await POST(new Request('http://localhost/api/run', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ stepId: 'orch-orchestrator' }),
+      body: confirmedBody({ stepId: 'orch-orchestrator' }),
     }))
 
     expect(response.status).toBe(200)
@@ -255,7 +259,7 @@ describe.serial('thread spawn event persistence', () => {
     const response = await POST(new Request('http://localhost/api/run', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ stepId: 'orch-worker-1' }),
+      body: confirmedBody({ stepId: 'orch-worker-1' }),
     }))
 
     expect(response.status).toBe(200)
@@ -373,7 +377,7 @@ describe.serial('thread spawn event persistence', () => {
     const response = await POST(new Request('http://localhost/api/run', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ stepId: 'orch-orchestrator' }),
+      body: confirmedBody({ stepId: 'orch-orchestrator' }),
     }))
 
     expect(response.status).toBe(200)
@@ -470,7 +474,7 @@ describe.serial('thread spawn event persistence', () => {
     const response = await POST(new Request('http://localhost/api/run', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ stepId: 'long-watchdog' }),
+      body: confirmedBody({ stepId: 'long-watchdog' }),
     }))
 
     expect(response.status).toBe(200)
@@ -529,7 +533,7 @@ describe.serial('thread spawn event persistence', () => {
     const response = await POST(new Request('http://localhost/api/run', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ stepId: 'delegate-step' }),
+      body: confirmedBody({ stepId: 'delegate-step' }),
     }))
 
     expect(response.status).toBe(200)

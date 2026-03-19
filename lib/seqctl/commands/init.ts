@@ -1,7 +1,7 @@
-import { mkdir, access } from 'fs/promises'
 import { join } from 'path'
 import { writeSequence } from '../../sequence/parser'
 import type { Sequence } from '../../sequence/schema'
+import { ensureLibraryStructure } from '@/lib/library/repository'
 
 interface CLIOptions {
   json: boolean
@@ -17,7 +17,6 @@ interface InitResult {
 }
 
 const THREADOS_DIR = '.threados'
-const SUBDIRS = ['prompts', 'runs', 'state']
 
 /**
  * Initialize the .threados/ directory structure
@@ -32,10 +31,11 @@ export async function initCommand(
 
   // Check if already initialized
   try {
+    const { access } = await import('fs/promises')
     await access(join(threadosPath, 'sequence.yaml'))
     const result: InitResult = {
       success: false,
-      message: 'ThreadOS already initialized',
+      message: 'thredOS already initialized',
       path: threadosPath,
     }
     if (options.json) {
@@ -48,11 +48,7 @@ export async function initCommand(
     // Not initialized, proceed
   }
 
-  // Create directory structure
-  await mkdir(threadosPath, { recursive: true })
-  for (const subdir of SUBDIRS) {
-    await mkdir(join(threadosPath, subdir), { recursive: true })
-  }
+  await ensureLibraryStructure(basePath)
 
   // Create default sequence.yaml
   const defaultSequence: Sequence = {
@@ -66,7 +62,7 @@ export async function initCommand(
 
   const result: InitResult = {
     success: true,
-    message: 'ThreadOS initialized successfully',
+    message: 'thredOS initialized successfully',
     path: threadosPath,
   }
 
@@ -75,9 +71,11 @@ export async function initCommand(
   } else {
     console.log(result.message)
     console.log(`Created: ${threadosPath}/`)
-    for (const subdir of SUBDIRS) {
-      console.log(`  ${subdir}/`)
-    }
+    console.log('  prompts/')
+    console.log('  skills/')
+    console.log('  agents/')
+    console.log('  state/')
     console.log('  sequence.yaml')
+    console.log('  library.yaml')
   }
 }

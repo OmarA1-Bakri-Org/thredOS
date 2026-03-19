@@ -72,7 +72,7 @@ export function checkEligibility(): EligibilityStatus {
       {
         key: 'verified-identity',
         label: 'Verified Identity',
-        description: 'A verified ThreadOS identity linked to your account.',
+        description: 'A verified thredOS identity linked to your account.',
         met: false,
       },
       {

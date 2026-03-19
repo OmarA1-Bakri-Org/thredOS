@@ -35,7 +35,7 @@ function DependencyEdgeComponent(props: EdgeProps) {
         strokeOpacity={isAnimated ? 0.8 : 0.45}
         strokeLinecap="round"
         strokeDasharray={isAnimated ? '6 4' : undefined}
-        className={isAnimated ? 'threados-edge-flow' : undefined}
+        className={isAnimated ? 'thredos-edge-flow' : undefined}
       />
       {/* Target endpoint dot */}
       <circle

@@ -7,7 +7,7 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { useApproveGate, useBlockGate, useRestartStep, useRunStep, useStopStep, useRemoveStep, useRemoveGate, useCloneStep } from '@/lib/ui/api'
 import { useUIStore } from '@/lib/ui/store'
 
-type PendingAction = 'block-gate' | 'stop-step' | 'delete-node' | 'delete-gate' | null
+type PendingAction = 'run-step' | 'block-gate' | 'stop-step' | 'delete-node' | 'delete-gate' | null
 
 export function StepActions({
   nodeId,
@@ -198,7 +198,7 @@ export function StepActions({
         <Button
           type="button"
           variant="default"
-          onClick={() => runStep.mutate(nodeId)}
+          onClick={() => setPendingAction('run-step')}
           disabled={runStep.isPending}
         >
           <Play className="h-4 w-4" />
@@ -255,6 +255,27 @@ export function StepActions({
           {errorMessage}
         </div>
       ) : null}
+
+      <ConfirmDialog
+        open={pendingAction === 'run-step'}
+        title={`Run step ${nodeId}?`}
+        description="This starts a fresh execution for the selected step and acknowledges SAFE mode confirmation when policy requires it."
+        confirmLabel="Run step"
+        tone="default"
+        details={
+          <div className="space-y-2 text-sm">
+            <div className="flex items-center gap-2 text-sky-100">
+              <AlertTriangle className="h-4 w-4" />
+              Review the node prompt, skills, and cwd before dispatching hosted work.
+            </div>
+          </div>
+        }
+        onCancel={() => setPendingAction(null)}
+        onConfirm={() => {
+          setPendingAction(null)
+          runStep.mutate({ stepId: nodeId, confirmPolicy: true })
+        }}
+      />
 
       <ConfirmDialog
         open={pendingAction === 'stop-step'}

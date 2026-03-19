@@ -3,7 +3,7 @@ import { resolveModelBackend, getConfiguredModel } from '../models/registry'
 import type { BackendId } from '../models/registry'
 import { createOpenAIProvider } from './openai'
 import { createOpenRouterProvider } from './openrouter'
-import type { EnvLike, LlmProvider, LlmProviderName, ThreadOSTraceContext } from './types'
+import type { EnvLike, LlmProvider, LlmProviderName, ThredOSTraceContext } from './types'
 
 export * from './types'
 export { createOpenAIProvider } from './openai'
@@ -37,7 +37,7 @@ export function getDefaultLlmProvider(env: EnvLike): LlmProviderName {
 export function createProviderFromEnv(
   provider: LlmProviderName,
   env: EnvLike = process.env,
-  traceContext?: ThreadOSTraceContext
+  traceContext?: ThredOSTraceContext
 ): LlmProvider {
   if (provider === 'openai') {
     return createOpenAIProvider(env, traceContext)
@@ -52,7 +52,7 @@ export function createProviderFromEnv(
 
 export function createDefaultProvider(
   env: EnvLike = process.env,
-  traceContext?: ThreadOSTraceContext
+  traceContext?: ThredOSTraceContext
 ): LlmProvider {
   return createProviderFromEnv(getDefaultLlmProvider(env), env, traceContext)
 }
@@ -71,7 +71,7 @@ export function createDefaultProvider(
 export function createProviderForModel(
   modelId: string,
   env: EnvLike = process.env,
-  traceContext?: ThreadOSTraceContext,
+  traceContext?: ThredOSTraceContext,
 ): LlmProvider {
   const resolved = resolveModelBackend(modelId, env)
   const provider = createProviderFromBackend(resolved.backend, env, traceContext)
@@ -94,7 +94,7 @@ export function createProviderForModel(
  */
 export function createConfiguredProvider(
   env: EnvLike = process.env,
-  traceContext?: ThreadOSTraceContext,
+  traceContext?: ThredOSTraceContext,
 ): LlmProvider {
   const modelId = getConfiguredModel(env)
   return createProviderForModel(modelId, env, traceContext)
@@ -107,7 +107,7 @@ export function createConfiguredProvider(
 function createProviderFromBackend(
   backend: BackendId,
   env: EnvLike,
-  traceContext?: ThreadOSTraceContext,
+  traceContext?: ThredOSTraceContext,
 ): LlmProvider {
   if (backend === 'openai') {
     return createOpenAIProvider(env, traceContext)

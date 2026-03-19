@@ -1,17 +1,13 @@
 'use client'
 
 import { useEffect, useRef, useCallback, useState } from 'react'
-import { FilePlus2, MessageSquare, Moon, PanelLeft, Play, Plus, Search, ShieldCheck, Sun } from 'lucide-react'
+import Link from 'next/link'
+import { FilePlus2, Home, LogOut, MessageSquare, Moon, PanelLeft, Play, Plus, Search, ShieldCheck, Sun } from 'lucide-react'
 import { useTheme } from 'next-themes'
-import { useRunRunnable, useStatus, useResetSequence } from '@/lib/ui/api'
+import { useDesktopEntitlement, useRunRunnable, useStatus, useResetSequence } from '@/lib/ui/api'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
-import { useUIStore, type ProductEntryMode, type ThreadSurfaceViewMode } from '@/lib/ui/store'
-
-const productEntries: Array<{ value: ProductEntryMode; label: string; disabled?: boolean }> = [
-  { value: 'threados', label: 'ThreadOS' },
-  { value: 'thread-runner', label: 'Thread Runner', disabled: true },
-]
+import { useUIStore, type ThreadSurfaceViewMode } from '@/lib/ui/store'
 
 const viewModes: Array<{ value: ThreadSurfaceViewMode; label: string; disabled?: boolean }> = [
   { value: 'hierarchy', label: 'Hierarchy' },
@@ -20,14 +16,15 @@ const viewModes: Array<{ value: ThreadSurfaceViewMode; label: string; disabled?:
 
 export function TopBar() {
   const { data: status } = useStatus()
+  const { data: entitlement } = useDesktopEntitlement()
   const runRunnable = useRunRunnable()
   const resetSequence = useResetSequence()
   const [confirmNew, setConfirmNew] = useState(false)
+  const [confirmRun, setConfirmRun] = useState(false)
   const [newSeqName, setNewSeqName] = useState('New Sequence')
+  const [canLogout, setCanLogout] = useState(false)
   const searchQuery = useUIStore(s => s.searchQuery)
   const setSearchQuery = useUIStore(s => s.setSearchQuery)
-  const productEntry = useUIStore(s => s.productEntry)
-  const setProductEntry = useUIStore(s => s.setProductEntry)
   const viewMode = useUIStore(s => s.viewMode)
   const setViewMode = useUIStore(s => s.setViewMode)
   const toggleLeftRail = useUIStore(s => s.toggleLeftRail)
@@ -51,6 +48,24 @@ export function TopBar() {
     }
   }, [])
 
+  useEffect(() => {
+    let active = true
+
+    void fetch('/api/auth/session')
+      .then(response => response.json())
+      .then(body => {
+        if (!active) return
+        setCanLogout(Boolean(body?.authenticated && body?.session?.email !== 'local@thredos'))
+      })
+      .catch(() => {
+        if (active) setCanLogout(false)
+      })
+
+    return () => {
+      active = false
+    }
+  }, [])
+
   const statusSummary = status
     ? `Ready ${status.summary.ready} · Active ${status.summary.running} · Completed ${status.summary.done} · Failed ${status.summary.failed}`
     : null
@@ -70,31 +85,12 @@ export function TopBar() {
         </Button>
 
         <div className="min-w-0">
-          <div className="font-mono text-[11px] uppercase tracking-[0.28em] text-sky-300/60">Agentic operating system</div>
-          <div className="text-xl font-semibold tracking-tight text-white">threadOS</div>
+          <div className="font-mono text-[11px] uppercase tracking-[0.28em] text-sky-300/60">Local-first operating system</div>
+          <div className="text-xl font-semibold tracking-tight text-white">thredOS Desktop</div>
         </div>
       </div>
 
       <div className="flex min-w-0 flex-wrap items-center gap-3 lg:flex-nowrap">
-        <div
-          data-workbench-cluster="product-entry"
-          className="hidden shrink-0 items-center gap-2 border border-slate-800 bg-[#0a101a] px-2 py-2 md:flex"
-        >
-          {productEntries.map(entry => (
-            <Button
-              key={entry.value}
-              type="button"
-              variant={productEntry === entry.value ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => !entry.disabled && setProductEntry(entry.value)}
-              disabled={entry.disabled}
-              className={`rounded-full px-3 ${entry.disabled ? 'opacity-45' : ''}`}
-            >
-              {entry.label}
-            </Button>
-          ))}
-        </div>
-
         <div
           data-workbench-cluster="view-mode"
           className="hidden shrink-0 items-center gap-2 border border-slate-800 bg-[#0a101a] px-2 py-2 xl:flex"
@@ -123,13 +119,32 @@ export function TopBar() {
             type="text"
             defaultValue={searchQuery}
             onChange={handleSearchChange}
-            placeholder="Search threads, runs, skills"
+            placeholder="Search threads, nodes, prompts, skills"
             className="w-full bg-transparent text-sm text-slate-100 outline-none placeholder:text-slate-500"
           />
         </div>
       </div>
 
       <div className="flex flex-wrap items-center justify-end gap-2 lg:flex-nowrap">
+        <div data-workbench-cluster="navigation" className="flex items-center gap-2 border border-slate-800 bg-[#0a101a] px-2 py-2">
+          <Button type="button" asChild variant="outline" size="sm">
+            <Link href="/">
+              <Home className="h-3.5 w-3.5" />
+              Home
+            </Link>
+          </Button>
+          {canLogout ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => { window.location.href = '/api/auth/logout' }}
+            >
+              <LogOut className="h-3.5 w-3.5" />
+              Sign Out
+            </Button>
+          ) : null}
+        </div>
         <div data-workbench-cluster="primary-actions" className="flex items-center gap-2 border border-slate-800 bg-[#0a101a] px-2 py-2">
           <Button
             type="button"
@@ -162,7 +177,7 @@ export function TopBar() {
           <Button
             type="button"
             variant="default"
-            onClick={() => runRunnable.mutate()}
+            onClick={() => setConfirmRun(true)}
             disabled={runRunnable.isPending}
           >
             <Play className="h-4 w-4" />
@@ -186,6 +201,11 @@ export function TopBar() {
           {status ? (
             <div className="hidden min-w-0 items-center gap-2 xl:flex">
               <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-slate-500">{status.name}</span>
+              {entitlement ? (
+                <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 font-mono text-[11px] uppercase tracking-[0.16em] text-emerald-200">
+                  {entitlement.effectiveStatus}
+                </span>
+              ) : null}
               <span
                 data-testid="topbar-status-summary"
                 className="rounded-full border border-[#16417C]/70 bg-[#16417C]/18 px-3 py-1 font-mono text-[11px] uppercase tracking-[0.16em] text-slate-100"
@@ -210,6 +230,24 @@ export function TopBar() {
           </Button>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={confirmRun}
+        title="Run runnable frontier?"
+        description="This dispatches the current runnable steps and provides the explicit SAFE mode confirmation required for hosted execution."
+        confirmLabel="Run frontier"
+        tone="default"
+        onCancel={() => setConfirmRun(false)}
+        onConfirm={() => {
+          setConfirmRun(false)
+          runRunnable.mutate({ confirmPolicy: true })
+        }}
+        details={
+          <div className="space-y-2 text-sm">
+            <div className="text-sky-100">Review the selected thread surface, prompt bindings, and active gates before dispatching.</div>
+          </div>
+        }
+      />
 
       <ConfirmDialog
         open={confirmNew}

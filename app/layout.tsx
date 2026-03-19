@@ -3,7 +3,7 @@ import { Providers } from '@/lib/ui/providers'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'ThreadOS',
+  title: 'thredOS',
   description: 'AI Agent Orchestration',
 }
 

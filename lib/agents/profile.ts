@@ -260,7 +260,7 @@ export function buildAgentProfile(sources: ProfileDataSources): ThreadCardProfil
   const placement = derivePlacement(stats, node.runStatus)
 
   return {
-    builder: agent?.builderName ?? 'ThreadOS Registry',
+    builder: agent?.builderName ?? 'thredOS Registry',
     pack: derivePackName(pack, placement),
     division: deriveDivision(pack, node.depth),
     classification: deriveClassification(pack, node.role),

@@ -81,13 +81,13 @@ describe('DependencyEdge', () => {
     const props = { ...baseProps, animated: true }
     const markup = renderToStaticMarkup(<DependencyEdge {...props} />)
     expect(markup).toContain('stroke-dasharray="6 4"')
-    expect(markup).toContain('threados-edge-flow')
+    expect(markup).toContain('thredos-edge-flow')
   })
 
   test('renders without dash pattern when not animated', () => {
     const markup = renderToStaticMarkup(<DependencyEdge {...baseProps} />)
     expect(markup).not.toContain('stroke-dasharray')
-    expect(markup).not.toContain('threados-edge-flow')
+    expect(markup).not.toContain('thredos-edge-flow')
   })
 
   test('uses default color when style.stroke is not set', () => {

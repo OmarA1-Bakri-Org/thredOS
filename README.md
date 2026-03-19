@@ -1,8 +1,8 @@
-# ThreadOS
+# thredOS
 
-**AI Agent Sequence Orchestrator** — Manage multi-agent workflows with dependency graphs, policy enforcement, and a visual UI.
+**Local-first operating system for agent work** — Manage multi-agent workflows with dependency graphs, policy enforcement, and a visual UI while keeping prompts, skills, threads, surfaces, runs, and artifacts on your machine.
 
-ThreadOS lets you define sequences of AI agent steps, wire them with dependencies, enforce safety policies, and monitor execution through a horizontal canvas UI.
+thredOS lets you define sequences of AI agent steps, wire them with dependencies, enforce safety policies, and monitor execution through a horizontal canvas UI. The cloud is reserved for activation, billing, and canonical agent registration plus performance history.
 
 ## Installation
 
@@ -51,15 +51,16 @@ thread run runnable
 
 ## Product Entry Points
 
-ThreadOS exposes two product paths from a single entrance screen:
+thredOS is launching in three product layers:
 
-- **ThreadOS** — the core engineering environment for building, orchestrating, and inspecting multi-agent thread systems
-- **Thread Runner** — a locked advanced proving mode for verified VM-based competitive runs, pack generation, and builder status (requires registration + subscription)
+- **thredOS Desktop** — the local-first engineering environment for building, orchestrating, and inspecting agent systems
+- **thredOS Node** — the follow-on stronger-machine/self-hosted runtime path for users who want their own infrastructure
+- **Thread Runner** — the separate cloud proving layer for verified competitive runs and pack progression
 
 ## Architecture
 
 ```text
-ThreadOS
+thredOS
 ├── lib/agents/           # Agent registration, profile builder, stats
 ├── lib/audit/            # Append-only audit logger
 ├── lib/chat/             # Chat orchestrator (system prompt, validator)
@@ -127,7 +128,7 @@ Opens the workbench at `http://localhost:3000`:
 - **Left Rail** — 6-section accordion: Sequence, Phase, Node, Agent, Gate, Run
 - **Thread Inspector** — identity, run context, skills (local/inherited), and provenance
 - **Chat Panel** — floating AI-assisted sequence management
-- **Entry Screen** — ThreadOS (active) and Thread Runner (locked) product paths
+  - **Entry Screen** — thredOS Desktop public beta launch surface
 
 ## Documentation
 

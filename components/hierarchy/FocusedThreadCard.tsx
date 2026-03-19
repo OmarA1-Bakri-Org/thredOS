@@ -97,8 +97,8 @@ export function FocusedThreadCard({ node, profile, onOpenLane }: FocusedThreadCa
               <h2 className="mt-1 text-2xl font-semibold tracking-tight text-white">{node.surfaceLabel}</h2>
               <div className="mt-2 space-y-0.5 text-sm text-slate-300">
                 <div>Builder: {profile.builder}</div>
-                <div>{node.surfaceDescription ?? 'Registered thread surface inside ThreadOS.'}</div>
-                <div>{node.role ? `Role: ${node.role}` : 'Highest status shown only. Pack stays inside ThreadOS.'}</div>
+                <div>{node.surfaceDescription ?? 'Registered thread surface inside thredOS.'}</div>
+                <div>{node.role ? `Role: ${node.role}` : 'Highest status shown only. Pack stays inside thredOS.'}</div>
               </div>
             </div>
 
@@ -163,8 +163,8 @@ export function FocusedThreadCard({ node, profile, onOpenLane }: FocusedThreadCa
             <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-slate-500">Provenance</div>
             <div className="mt-3 space-y-2 text-sm text-slate-300">
               <div><strong className="text-white">Registered Agent:</strong> {node.id}</div>
-              <div><strong className="text-white">Created By:</strong> {node.clickTarget.runId ?? 'draft'} / ThreadOS</div>
-              <div><strong className="text-white">Source:</strong> {profile.verified ? 'Verified VM run' : 'ThreadOS local run'}</div>
+              <div><strong className="text-white">Created By:</strong> {node.clickTarget.runId ?? 'draft'} / thredOS</div>
+              <div><strong className="text-white">Source:</strong> {profile.verified ? 'Verified VM run' : 'thredOS local run'}</div>
             </div>
           </section>
           <Button

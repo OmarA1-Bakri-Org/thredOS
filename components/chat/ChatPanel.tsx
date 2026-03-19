@@ -197,7 +197,7 @@ export function ChatPanel() {
         {messages.length === 0 && (
           <div data-testid="chat-empty-state" className="border border-[#16417C]/70 bg-[#16417C]/18 px-3 py-3 text-sm text-slate-200">
             <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Ready for bounded guidance</div>
-            <div className="mt-2 text-sm font-medium text-white">Ask ThreadOS to inspect, modify, or explain the active sequence.</div>
+            <div className="mt-2 text-sm font-medium text-white">Ask thredOS to inspect, modify, or explain the active sequence.</div>
             <div data-testid="chat-empty-example-grid" className="mt-2 grid gap-1.5 text-xs text-slate-300">
               <div className="border border-slate-800/90 bg-[#08101d] px-2.5 py-2">Summarize the selected thread and current run context.</div>
               <div className="border border-slate-800/90 bg-[#08101d] px-2.5 py-2">Propose a controlled change and review the diff before applying it.</div>
@@ -220,7 +220,7 @@ export function ChatPanel() {
         ))}
         {loading && (
           <div className="border border-slate-700 bg-[#050c17] px-4 py-4 font-mono text-[11px] uppercase tracking-[0.18em] text-slate-400 animate-pulse">
-            ThreadOS is reasoning over the active thread surface...
+            thredOS is reasoning over the active thread surface...
           </div>
         )}
       </div>

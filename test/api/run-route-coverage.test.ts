@@ -15,6 +15,10 @@ async function writePrompt(stepId: string, content = `# ${stepId}`) {
   await writeFile(join(basePath, '.threados', 'prompts', `${stepId}.md`), content)
 }
 
+function confirmedBody(payload: Record<string, unknown>) {
+  return JSON.stringify({ ...payload, confirmPolicy: true })
+}
+
 function createMockRuntime() {
   return {
     dispatch: async (_model: string, opts: {
@@ -83,7 +87,7 @@ describe.serial('run route coverage — groupId mode', () => {
     const res = await POST(new Request('http://localhost/api/run', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ groupId: 'grp-1' }),
+      body: confirmedBody({ groupId: 'grp-1' }),
     }))
 
     expect(res.status).toBe(200)
@@ -108,7 +112,7 @@ describe.serial('run route coverage — groupId mode', () => {
     const res = await POST(new Request('http://localhost/api/run', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ groupId: 'nonexistent-group' }),
+      body: confirmedBody({ groupId: 'nonexistent-group' }),
     }))
 
     expect(res.status).toBe(200)
@@ -134,7 +138,7 @@ describe.serial('run route coverage — groupId mode', () => {
     const res = await POST(new Request('http://localhost/api/run', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ groupId: 'grp-dep' }),
+      body: confirmedBody({ groupId: 'grp-dep' }),
     }))
 
     expect(res.status).toBe(200)
@@ -175,7 +179,7 @@ describe.serial('run route coverage — runnable mode', () => {
     const res = await POST(new Request('http://localhost/api/run', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mode: 'runnable' }),
+      body: confirmedBody({ mode: 'runnable' }),
     }))
 
     expect(res.status).toBe(200)
@@ -203,7 +207,7 @@ describe.serial('run route coverage — runnable mode', () => {
     const res = await POST(new Request('http://localhost/api/run', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mode: 'runnable' }),
+      body: confirmedBody({ mode: 'runnable' }),
     }))
 
     expect(res.status).toBe(200)
@@ -231,7 +235,7 @@ describe.serial('run route coverage — runnable mode', () => {
     const res = await POST(new Request('http://localhost/api/run', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mode: 'runnable' }),
+      body: confirmedBody({ mode: 'runnable' }),
     }))
 
     expect(res.status).toBe(200)
@@ -259,7 +263,7 @@ describe.serial('run route coverage — runnable mode', () => {
     const res = await POST(new Request('http://localhost/api/run', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mode: 'runnable' }),
+      body: confirmedBody({ mode: 'runnable' }),
     }))
 
     expect(res.status).toBe(200)
@@ -299,7 +303,7 @@ describe.serial('run route coverage — error handling', () => {
     expect(res.status).toBe(400)
   })
 
-  test('POST with stepId referencing nonexistent step returns failure', async () => {
+  test('POST with stepId referencing nonexistent step returns 404', async () => {
     await setupTestSequence({
       version: '1.0',
       name: 'missing-seq',
@@ -314,12 +318,11 @@ describe.serial('run route coverage — error handling', () => {
     const res = await POST(new Request('http://localhost/api/run', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ stepId: 'nonexistent-step' }),
+      body: confirmedBody({ stepId: 'nonexistent-step' }),
     }))
 
-    expect(res.status).toBe(200)
+    expect(res.status).toBe(404)
     const data = await res.json()
-    expect(data.success).toBe(false)
     expect(data.error).toContain('not found')
   })
 
@@ -338,7 +341,7 @@ describe.serial('run route coverage — error handling', () => {
     const res = await POST(new Request('http://localhost/api/run', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ stepId: 'no-prompt' }),
+      body: confirmedBody({ stepId: 'no-prompt' }),
     }))
 
     expect(res.status).toBe(200)
@@ -369,7 +372,7 @@ describe.serial('run route coverage — error handling', () => {
     const res = await POST(new Request('http://localhost/api/run', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ stepId: 'throw-step' }),
+      body: confirmedBody({ stepId: 'throw-step' }),
     }))
 
     expect(res.status).toBe(200)
@@ -409,7 +412,7 @@ describe.serial('run route coverage — error handling', () => {
     const res = await POST(new Request('http://localhost/api/run', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ stepId: 'review-step' }),
+      body: confirmedBody({ stepId: 'review-step' }),
     }))
 
     expect(res.status).toBe(200)
@@ -447,7 +450,7 @@ describe.serial('run route coverage — error handling', () => {
     const res = await POST(new Request('http://localhost/api/run', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ stepId: 'fail-step' }),
+      body: confirmedBody({ stepId: 'fail-step' }),
     }))
 
     expect(res.status).toBe(200)
@@ -471,7 +474,7 @@ describe.serial('run route coverage — error handling', () => {
     const res = await POST(new Request('http://localhost/api/run', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ stepId: 'shell-step' }),
+      body: confirmedBody({ stepId: 'shell-step' }),
     }))
 
     expect(res.status).toBe(200)

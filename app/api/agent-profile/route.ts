@@ -1,12 +1,11 @@
 import { readAgentState } from '@/lib/agents/repository'
 import { aggregateAgentStats } from '@/lib/agents/stats'
+import { getBasePath } from '@/lib/config'
 import { readPackState } from '@/lib/packs/repository'
 import { buildAgentProfile, type ProfileNodeContext } from '@/lib/agents/profile'
 import { readThreadRunnerState } from '@/lib/thread-runner/repository'
 import { readThreadSurfaceState } from '@/lib/thread-surfaces/repository'
 import type { AgentRegistration } from '@/lib/agents/types'
-
-const BASE_PATH = process.cwd()
 
 function buildProfileNodeContext(
   surfaceState: Awaited<ReturnType<typeof readThreadSurfaceState>>,
@@ -29,6 +28,7 @@ function buildProfileNodeContext(
 
 export async function GET(request: Request) {
   try {
+    const basePath = getBasePath()
     const url = new URL(request.url)
     const threadSurfaceId = url.searchParams.get('threadSurfaceId')
 
@@ -36,7 +36,7 @@ export async function GET(request: Request) {
       return Response.json({ error: 'Missing threadSurfaceId query parameter' }, { status: 400 })
     }
 
-    const agentState = await readAgentState(BASE_PATH)
+    const agentState = await readAgentState(basePath)
     const agent = agentState.agents.find(a => a.threadSurfaceIds.includes(threadSurfaceId)) ?? null
 
     if (!agent) {
@@ -44,9 +44,9 @@ export async function GET(request: Request) {
     }
 
     const [packState, runnerState, surfaceState] = await Promise.all([
-      readPackState(BASE_PATH),
-      readThreadRunnerState(BASE_PATH),
-      readThreadSurfaceState(BASE_PATH),
+      readPackState(basePath),
+      readThreadRunnerState(basePath),
+      readThreadSurfaceState(basePath),
     ])
 
     const stats = aggregateAgentStats(agent.id, runnerState.races, runnerState.combatantRuns)

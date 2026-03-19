@@ -2,7 +2,7 @@ import type { Sequence } from '../sequence/schema'
 import YAML from 'yaml'
 
 /**
- * Build a system prompt that teaches the LLM about ThreadOS capabilities
+ * Build a system prompt that teaches the LLM about thredOS capabilities
  * and the current sequence state.
  */
 export function buildSystemPrompt(sequence: Sequence): string {
@@ -26,7 +26,7 @@ export function buildSystemPrompt(sequence: Sequence): string {
     policy: sequence.policy,
   })
 
-  return `You are the ThreadOS Chat Orchestrator. You help users manage their AI agent sequences.
+  return `You are the thredOS Chat Orchestrator. You help users manage their AI agent sequences.
 
 ## Available Commands
 

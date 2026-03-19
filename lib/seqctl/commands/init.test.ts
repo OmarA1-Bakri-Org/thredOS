@@ -21,9 +21,12 @@ describe.serial('initCommand', () => {
     // Verify directory structure
     await access(join(basePath, '.threados'))
     await access(join(basePath, '.threados/prompts'))
+    await access(join(basePath, '.threados/skills'))
+    await access(join(basePath, '.threados/agents'))
     await access(join(basePath, '.threados/runs'))
     await access(join(basePath, '.threados/state'))
     await access(join(basePath, '.threados/sequence.yaml'))
+    await access(join(basePath, '.threados/library.yaml'))
   })
 
   test('creates default sequence.yaml', async () => {
@@ -42,6 +45,6 @@ describe.serial('initCommand', () => {
     // Second init should detect existing
     await initCommand(undefined, [], { json: true, help: false, watch: false, basePath })
     // If we get here without error, the test passes
-    // The command outputs "ThreadOS already initialized" via console.log
+    // The command outputs "thredOS already initialized" via console.log
   })
 })

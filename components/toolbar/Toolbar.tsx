@@ -35,10 +35,10 @@ export function Toolbar() {
 
   return (
     <div className="h-12 border-b bg-card flex items-center px-4 gap-4 shrink-0">
-      <span className="font-bold text-sm">ThreadOS</span>
+      <span className="font-bold text-sm">thredOS</span>
       {status && <span className="text-xs text-muted-foreground">{status.name}</span>}
       <button
-        onClick={() => runRunnable.mutate()}
+        onClick={() => runRunnable.mutate(undefined)}
         disabled={runRunnable.isPending}
         className="px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 disabled:opacity-50"
       >

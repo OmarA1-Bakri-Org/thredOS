@@ -8,6 +8,7 @@ import { ActionValidator } from '@/lib/chat/validator'
 import { CHAT_TOOLS, parseToolCallActions } from '@/lib/chat/chat-tools'
 import type { Sequence } from '@/lib/sequence/schema'
 import type { ProposedAction } from '@/lib/chat/extract-actions'
+import { applyRateLimit } from '@/lib/rate-limit'
 
 const MAX_MESSAGE_LENGTH = 10_000
 
@@ -163,6 +164,13 @@ function sendStubResponse(send: SendFn, sequence: Sequence | null, message: stri
  * Returns SSE events: message, actions, diff, done
  */
 export async function POST(request: NextRequest) {
+  const rateLimited = applyRateLimit(request, {
+    bucket: 'chat',
+    limit: 20,
+    windowMs: 60 * 1000,
+  })
+  if (rateLimited) return rateLimited
+
   const body = await request.json()
   const { message, model } = body
 

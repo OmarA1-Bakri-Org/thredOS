@@ -40,6 +40,7 @@ export function CanvasContextMenu({ menu, onClose }: CanvasContextMenuProps) {
   const cloneStep = useCloneStep()
   const ref = useRef<HTMLDivElement>(null)
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
+  const [confirmRun, setConfirmRun] = useState<string | null>(null)
 
   const isGateNode = useCallback((nodeId: string) => {
     if (!status) return false
@@ -83,6 +84,19 @@ export function CanvasContextMenu({ menu, onClose }: CanvasContextMenuProps) {
         setConfirmDelete(null)
       }}
     />
+  ) : confirmRun ? (
+    <ConfirmDialog
+      open
+      title={`Run ${confirmRun}?`}
+      description="This dispatches the selected node and provides the explicit SAFE mode confirmation required for hosted execution."
+      confirmLabel="Run node"
+      tone="default"
+      onCancel={() => setConfirmRun(null)}
+      onConfirm={() => {
+        runStep.mutate({ stepId: confirmRun, confirmPolicy: true })
+        setConfirmRun(null)
+      }}
+    />
   ) : null
 
   const isNodeMenu = menu.nodeId != null
@@ -99,7 +113,7 @@ export function CanvasContextMenu({ menu, onClose }: CanvasContextMenuProps) {
             <MenuItem
               icon={<Play className="h-3.5 w-3.5" />}
               label="Run"
-              onClick={() => { runStep.mutate(menu.nodeId!); onClose() }}
+              onClick={() => { setConfirmRun(menu.nodeId!); onClose() }}
             />
             <MenuItem
               icon={<Square className="h-3.5 w-3.5" />}
@@ -153,6 +167,21 @@ export function CanvasContextMenu({ menu, onClose }: CanvasContextMenuProps) {
           onConfirm={() => {
             handleDeleteNode(confirmDelete)
             setConfirmDelete(null)
+          }}
+        />
+      ) : null}
+
+      {confirmRun ? (
+        <ConfirmDialog
+          open
+          title={`Run ${confirmRun}?`}
+          description="This dispatches the selected node and provides the explicit SAFE mode confirmation required for hosted execution."
+          confirmLabel="Run node"
+          tone="default"
+          onCancel={() => setConfirmRun(null)}
+          onConfirm={() => {
+            runStep.mutate({ stepId: confirmRun, confirmPolicy: true })
+            setConfirmRun(null)
           }}
         />
       ) : null}

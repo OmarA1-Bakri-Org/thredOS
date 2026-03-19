@@ -1,8 +1,13 @@
 import { getBasePath } from '@/lib/config'
 import { enrollRace, recordRun, listRaces, getRaceResults } from '@/lib/thread-runner/race-executor'
+import { enableThreadRunner } from '@/lib/hosted'
 
 export async function GET(request: Request) {
   try {
+    if (!enableThreadRunner()) {
+      return Response.json({ error: 'Thread Runner is disabled for thredOS Desktop launch' }, { status: 403 })
+    }
+
     const url = new URL(request.url)
     const raceId = url.searchParams.get('raceId')
     const bp = getBasePath()
@@ -22,6 +27,10 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    if (!enableThreadRunner()) {
+      return Response.json({ error: 'Thread Runner is disabled for thredOS Desktop launch' }, { status: 403 })
+    }
+
     const body = await request.json()
     const { action } = body as { action: string }
     const bp = getBasePath()

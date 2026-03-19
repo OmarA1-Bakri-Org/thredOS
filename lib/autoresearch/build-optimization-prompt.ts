@@ -23,7 +23,7 @@ export function buildOptimizationPrompt(sequence: Sequence): string {
     policy: sequence.policy,
   })
 
-  return `You are the ThreadOS Workflow Optimizer. Analyze the current sequence and propose structural improvements.
+  return `You are the thredOS Workflow Optimizer. Analyze the current sequence and propose structural improvements.
 
 ## Current Sequence
 
@@ -43,7 +43,7 @@ Analyze the sequence for these optimization opportunities:
 ## Rules
 
 1. Only propose changes that improve the sequence.
-2. Each suggestion must include concrete actions using ThreadOS commands (step add, step update, dep add, dep remove, group create, etc.).
+2. Each suggestion must include concrete actions using thredOS commands (step add, step update, dep add, dep remove, group create, etc.).
 3. Rate your confidence (0-1) and expected impact (low/medium/high).
 4. Provide a clear explanation of WHY each change improves the sequence.
 5. Use the propose_optimizations tool to return your analysis.
