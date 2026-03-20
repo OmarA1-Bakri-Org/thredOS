@@ -219,6 +219,7 @@ export function AgentSection() {
               key={tab.id}
               type="button"
               onClick={() => setActiveTab(tab.id)}
+              data-testid={`agent-tab-${tab.id}`}
               className={`flex items-center gap-1 px-2 py-1.5 font-mono text-[9px] uppercase tracking-[0.12em] transition-all ${
                 isActive ? 'border-b-2 border-emerald-400 text-emerald-300' : 'text-slate-600 hover:text-slate-300'
               }`}

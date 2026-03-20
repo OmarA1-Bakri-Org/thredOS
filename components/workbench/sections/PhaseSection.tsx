@@ -77,6 +77,7 @@ export function PhaseSection() {
               key={phase.id}
               type="button"
               onClick={() => handleSelectPhase(phase.id)}
+              data-testid={`phase-option-${phase.id}`}
               className={`group flex w-full items-center gap-3 px-3 py-2.5 text-left transition-all ${
                 isSelected
                   ? 'border border-emerald-500/40 bg-emerald-500/8 shadow-[0_0_12px_rgba(52,211,153,0.08)]'

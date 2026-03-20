@@ -280,6 +280,7 @@ export function AccordionPanel() {
                 <button
                   type="button"
                   onClick={() => toggleSection(key)}
+                  data-testid={`accordion-tab-${key}`}
                   className={`group flex items-center gap-1.5 rounded-l-lg px-2 py-1.5 transition-all ${
                     isActive
                       ? `${accent.bg} border ${accent.border} border-r-0 ${accent.text}`
@@ -344,6 +345,7 @@ export function AccordionPanel() {
             .map(({ key, label, icon: Icon, description, accent }) => (
               <div
                 key={key}
+                data-testid={`accordion-open-${key}`}
                 className={`${
                   colCount > 1
                     ? `rounded border ${accent.border} bg-[#060e1a] shadow-md shadow-black/20`

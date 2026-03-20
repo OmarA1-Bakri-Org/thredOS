@@ -60,7 +60,7 @@ export function AgentTopTrumpCard({
   const selectedToolSummary = formatToolSummary(agent?.tools ?? [])
 
   return (
-    <article className="space-y-3 border border-emerald-500/20 bg-emerald-500/5 px-3 py-3">
+    <article data-testid="agent-top-trump-card" className="space-y-3 border border-emerald-500/20 bg-emerald-500/5 px-3 py-3">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-emerald-400/70">Top Trump card</div>
@@ -95,6 +95,7 @@ export function AgentTopTrumpCard({
             size="sm"
             variant={view === item ? 'default' : 'outline'}
             onClick={() => setView(item)}
+            data-testid={`agent-card-tab-${item}`}
             className="capitalize"
           >
             {item}

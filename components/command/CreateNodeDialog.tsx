@@ -118,6 +118,7 @@ export function CreateNodeDialog({ open, onClose, initialKind = 'step' }: Create
 
   return (
     <div
+      data-testid="create-node-dialog"
       className="fixed inset-0 z-50 flex items-start justify-center bg-[#02050a]/82 px-4 pt-[12vh] backdrop-blur-sm"
       role="dialog"
       aria-modal="true"
@@ -128,7 +129,7 @@ export function CreateNodeDialog({ open, onClose, initialKind = 'step' }: Create
         {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-800/80 px-5 py-4">
           <div>
-            <div className="font-mono text-[10px] uppercase tracking-[0.24em] text-slate-500">Construct</div>
+            <div className="font-mono text-[10px] uppercase tracking-[0.24em] text-slate-400">Construct</div>
             <h2 id="create-node-title" className="mt-1 text-lg font-semibold tracking-tight text-white">
               {kind === 'step' ? 'New Step' : 'New Gate'}
             </h2>
@@ -143,10 +144,11 @@ export function CreateNodeDialog({ open, onClose, initialKind = 'step' }: Create
           <button
             type="button"
             onClick={() => setKind('step')}
+            data-testid="create-node-kind-step"
             className={`flex-1 px-4 py-2.5 font-mono text-[11px] uppercase tracking-[0.2em] transition-colors ${
               kind === 'step'
                 ? 'border-b-2 border-sky-400 bg-sky-500/8 text-sky-100'
-                : 'text-slate-500 hover:text-slate-300'
+                : 'text-slate-300 hover:text-white'
             }`}
           >
             <Plus className="mr-1.5 inline h-3.5 w-3.5" />
@@ -155,10 +157,11 @@ export function CreateNodeDialog({ open, onClose, initialKind = 'step' }: Create
           <button
             type="button"
             onClick={() => setKind('gate')}
+            data-testid="create-node-kind-gate"
             className={`flex-1 px-4 py-2.5 font-mono text-[11px] uppercase tracking-[0.2em] transition-colors ${
               kind === 'gate'
                 ? 'border-b-2 border-emerald-400 bg-emerald-500/8 text-emerald-100'
-                : 'text-slate-500 hover:text-slate-300'
+                : 'text-slate-300 hover:text-white'
             }`}
           >
             <ShieldCheck className="mr-1.5 inline h-3.5 w-3.5" />
@@ -170,7 +173,7 @@ export function CreateNodeDialog({ open, onClose, initialKind = 'step' }: Create
         <div className="space-y-4 px-5 py-5">
           {/* ID field */}
           <div>
-            <label className="block font-mono text-[10px] uppercase tracking-[0.22em] text-slate-500">
+            <label className="block font-mono text-[10px] uppercase tracking-[0.22em] text-slate-400">
               ID <span className="text-rose-400">*</span>
             </label>
             <input
@@ -181,14 +184,14 @@ export function CreateNodeDialog({ open, onClose, initialKind = 'step' }: Create
               placeholder="my-step-id"
               className="mt-1.5 w-full border border-slate-700 bg-[#0a101a] px-3 py-2 font-mono text-sm text-slate-100 outline-none placeholder:text-slate-600 focus:border-sky-500/60"
             />
-            <div className="mt-1 font-mono text-[9px] tracking-wide text-slate-600">
+            <div className="mt-1 font-mono text-[9px] tracking-wide text-slate-400">
               lowercase, hyphens, max 64 chars
             </div>
           </div>
 
           {/* Name field */}
           <div>
-            <label className="block font-mono text-[10px] uppercase tracking-[0.22em] text-slate-500">Name</label>
+            <label className="block font-mono text-[10px] uppercase tracking-[0.22em] text-slate-400">Name</label>
             <input
               type="text"
               value={name}
@@ -203,7 +206,7 @@ export function CreateNodeDialog({ open, onClose, initialKind = 'step' }: Create
             <>
               {/* Type selector */}
               <div>
-                <label className="block font-mono text-[10px] uppercase tracking-[0.22em] text-slate-500">Thread type</label>
+                <label className="block font-mono text-[10px] uppercase tracking-[0.22em] text-slate-400">Thread type</label>
                 <div className="mt-1.5 flex flex-wrap gap-1.5">
                   {STEP_TYPES.map(t => (
                     <button
@@ -212,9 +215,9 @@ export function CreateNodeDialog({ open, onClose, initialKind = 'step' }: Create
                       onClick={() => setStepType(t.value)}
                       className="px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.14em] transition-all"
                       style={{
-                        background: stepType === t.value ? `${t.color}20` : 'transparent',
-                        color: stepType === t.value ? t.color : '#64748b',
-                        border: `1px solid ${stepType === t.value ? `${t.color}60` : 'rgba(51,65,85,0.4)'}`,
+                        background: stepType === t.value ? `${t.color}35` : 'transparent',
+                        color: stepType === t.value ? '#f8fafc' : '#cbd5e1',
+                        border: `1px solid ${stepType === t.value ? `${t.color}85` : 'rgba(100,116,139,0.9)'}`,
                         boxShadow: stepType === t.value ? `0 0 8px ${t.color}15` : 'none',
                       }}
                     >
@@ -226,7 +229,7 @@ export function CreateNodeDialog({ open, onClose, initialKind = 'step' }: Create
 
               {/* Model selector */}
               <div>
-                <label className="block font-mono text-[10px] uppercase tracking-[0.22em] text-slate-500">Model</label>
+                <label className="block font-mono text-[10px] uppercase tracking-[0.22em] text-slate-400">Model</label>
                 <div className="mt-1.5 flex flex-wrap gap-1.5">
                   {MODELS.map(m => (
                     <button
@@ -236,7 +239,7 @@ export function CreateNodeDialog({ open, onClose, initialKind = 'step' }: Create
                       className={`px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.14em] transition-all border ${
                         model === m.value
                           ? 'border-sky-500/50 bg-sky-500/12 text-sky-100'
-                          : 'border-slate-700/40 bg-transparent text-slate-500 hover:text-slate-300'
+                          : 'border-slate-500/80 bg-transparent text-slate-300 hover:text-white'
                       }`}
                     >
                       {m.label}
@@ -250,19 +253,19 @@ export function CreateNodeDialog({ open, onClose, initialKind = 'step' }: Create
           {/* Dependencies */}
           {existingNodes.length > 0 ? (
             <div>
-              <label className="block font-mono text-[10px] uppercase tracking-[0.22em] text-slate-500">
-                Dependencies
-              </label>
-              <div className="mt-1.5 flex max-h-32 flex-wrap gap-1 overflow-y-auto border border-slate-800/60 bg-[#060a12] p-2">
+                <label className="block font-mono text-[10px] uppercase tracking-[0.22em] text-slate-400">
+                  Dependencies
+                </label>
+                <div className="mt-1.5 flex max-h-32 flex-wrap gap-1 overflow-y-auto border border-slate-800/60 bg-[#060a12] p-2">
                 {existingNodes.map(nid => (
                   <button
                     key={nid}
                     type="button"
                     onClick={() => toggleDep(nid)}
-                    className={`px-2 py-0.5 font-mono text-[10px] tracking-wide transition-all border ${
+                      className={`px-2 py-0.5 font-mono text-[10px] tracking-wide transition-all border ${
                       selectedDeps.includes(nid)
                         ? 'border-amber-500/50 bg-amber-500/12 text-amber-200'
-                        : 'border-slate-700/30 bg-transparent text-slate-500 hover:text-slate-300'
+                        : 'border-slate-500/80 bg-transparent text-slate-300 hover:text-white'
                     }`}
                   >
                     {nid}
@@ -287,7 +290,7 @@ export function CreateNodeDialog({ open, onClose, initialKind = 'step' }: Create
 
         {/* Actions */}
         <div className="flex items-center justify-between border-t border-slate-800/80 px-5 py-4">
-          <div className="font-mono text-[9px] tracking-wide text-slate-600">
+          <div className="font-mono text-[9px] tracking-wide text-slate-400">
             Ctrl+Enter to submit
           </div>
           <div className="flex gap-2">

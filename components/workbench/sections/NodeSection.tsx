@@ -187,6 +187,7 @@ export function NodeSection() {
                 key={panel}
                 type="button"
                 onClick={() => setActiveNodePanel(panel)}
+                data-testid={`node-panel-${panel}`}
                 className={`rounded-full border px-2.5 py-1 font-mono text-[9px] uppercase tracking-[0.14em] transition-all ${
                   activeNodePanel === panel
                     ? 'border-amber-500/50 bg-amber-500/15 text-amber-100'
