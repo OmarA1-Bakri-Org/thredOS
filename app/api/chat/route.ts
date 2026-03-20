@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { readSequence } from '@/lib/sequence/parser'
 import { getBasePath } from '@/lib/config'
+import { requireRequestSession } from '@/lib/api-helpers'
 import { createConfiguredProvider, getConfiguredModel } from '@/lib/llm/providers'
 import { buildSystemPrompt } from '@/lib/chat/system-prompt'
 import { extractActions } from '@/lib/chat/extract-actions'
@@ -164,6 +165,9 @@ function sendStubResponse(send: SendFn, sequence: Sequence | null, message: stri
  * Returns SSE events: message, actions, diff, done
  */
 export async function POST(request: NextRequest) {
+  const session = requireRequestSession(request)
+  if ('status' in session) return session
+
   const rateLimited = applyRateLimit(request, {
     bucket: 'chat',
     limit: 20,

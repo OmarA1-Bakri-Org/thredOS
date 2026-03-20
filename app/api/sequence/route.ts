@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { readSequence, writeSequence } from '@/lib/sequence/parser'
 import { getBasePath } from '@/lib/config'
-import { handleError, auditLog } from '@/lib/api-helpers'
+import { handleError, auditLog, requireRequestSession } from '@/lib/api-helpers'
 import { ensureLibraryStructure, ensurePromptAssetForStep } from '@/lib/library/repository'
 import {
   generateBase,
@@ -26,8 +26,10 @@ const ApplyTemplateSchema = z.object({
 })
 const BodySchema = z.union([ResetSchema, RenameSchema, SetTypeSchema, ApplyTemplateSchema])
 
-export async function GET() {
+export async function GET(request?: Request) {
   try {
+    const session = requireRequestSession(request)
+    if (session instanceof NextResponse) return session
     const sequence = await readSequence(getBasePath())
     return NextResponse.json(sequence)
   } catch (err) {
@@ -37,6 +39,8 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const session = requireRequestSession(request)
+    if (session instanceof NextResponse) return session
     const body = BodySchema.parse(await request.json())
     const bp = getBasePath()
     await ensureLibraryStructure(bp)

@@ -41,9 +41,9 @@ export function PhaseSection() {
     return (
       <div className="space-y-3" data-testid="phase-section">
         <div className="border border-dashed border-slate-800 px-3 py-4 text-center">
-          <Workflow className="mx-auto h-5 w-5 text-slate-600" />
-          <div className="mt-2 text-sm text-slate-500">No phases detected.</div>
-          <div className="mt-1 text-[11px] text-slate-600">Add steps to your sequence to create phases.</div>
+          <Workflow className="mx-auto h-5 w-5 text-slate-400" />
+          <div className="mt-2 text-sm text-slate-400">No phases detected.</div>
+          <div className="mt-1 text-[11px] text-slate-400">Add steps to your sequence to create phases.</div>
         </div>
       </div>
     )
@@ -55,7 +55,7 @@ export function PhaseSection() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <span className="text-lg font-semibold text-white">{phaseDerivation.phases.length}</span>
-          <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">
+          <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-400">
             {phaseDerivation.phases.length === 1 ? 'phase' : 'phases'}
           </span>
         </div>
@@ -87,7 +87,7 @@ export function PhaseSection() {
               <div className={`flex h-6 w-6 shrink-0 items-center justify-center font-mono text-[11px] font-medium ${
                 isSelected
                   ? 'border border-emerald-500/50 bg-emerald-500/15 text-emerald-300'
-                  : 'border border-slate-700 bg-slate-950/60 text-slate-500 group-hover:text-slate-300'
+                  : 'border border-slate-700 bg-slate-950/60 text-slate-300 group-hover:text-white'
               }`}>
                 {i + 1}
               </div>
@@ -98,11 +98,11 @@ export function PhaseSection() {
                   {phase.label}
                 </div>
                 <div className="mt-0.5 flex items-center gap-2">
-                  <span className="font-mono text-[9px] uppercase tracking-[0.14em] text-slate-600">
+                  <span className="font-mono text-[9px] uppercase tracking-[0.14em] text-slate-400">
                     {stepCount} {stepCount === 1 ? 'node' : 'nodes'}
                   </span>
                   {gateCount > 0 && (
-                    <span className="font-mono text-[9px] uppercase tracking-[0.14em] text-slate-600">
+                    <span className="font-mono text-[9px] uppercase tracking-[0.14em] text-slate-400">
                       {gateCount} {gateCount === 1 ? 'gate' : 'gates'}
                     </span>
                   )}
@@ -112,7 +112,7 @@ export function PhaseSection() {
 
               {/* Arrow indicator */}
               <ChevronRight className={`h-3.5 w-3.5 shrink-0 transition-all ${
-                isSelected ? 'text-emerald-400' : 'text-slate-700 group-hover:text-slate-500'
+                isSelected ? 'text-emerald-400' : 'text-slate-500 group-hover:text-slate-300'
               }`} />
             </button>
           )

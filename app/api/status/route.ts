@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { readSequence } from '@/lib/sequence/parser'
 import { readMprocsMap } from '@/lib/mprocs/state'
 import { getBasePath } from '@/lib/config'
-import { handleError } from '@/lib/api-helpers'
+import { handleError, requireRequestSession } from '@/lib/api-helpers'
 import type { Sequence, Step } from '@/lib/sequence/schema'
 
 interface StatusSummary {
@@ -58,8 +58,10 @@ function buildStatus(sequence: Sequence, mprocsMap: Record<string, number>) {
 
 export type SequenceStatus = ReturnType<typeof buildStatus>
 
-export async function GET() {
+export async function GET(request?: Request) {
   try {
+    const session = requireRequestSession(request)
+    if (session instanceof NextResponse) return session
     const bp = getBasePath()
     const [sequence, mprocsMap] = await Promise.all([readSequence(bp), readMprocsMap(bp)])
     return NextResponse.json(buildStatus(sequence, mprocsMap))

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getBasePath } from '@/lib/config'
-import { auditLog, handleError, jsonError } from '@/lib/api-helpers'
+import { auditLog, handleError, jsonError, requireRequestSession } from '@/lib/api-helpers'
 import {
   deleteLibraryAsset,
   ensureLibraryStructure,
@@ -42,6 +42,8 @@ function defaultAssetContent(kind: 'prompt' | 'skill' | 'agent', id: string, tit
 
 export async function GET(request: Request) {
   try {
+    const session = requireRequestSession(request)
+    if (session instanceof NextResponse) return session
     const url = new URL(request.url)
     const query = QuerySchema.parse({
       kind: url.searchParams.get('kind') ?? undefined,
@@ -73,6 +75,8 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const session = requireRequestSession(request)
+    if (session instanceof NextResponse) return session
     const body = WriteSchema.parse(await request.json())
     const basePath = getBasePath()
     await ensureLibraryStructure(basePath)

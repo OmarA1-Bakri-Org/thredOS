@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { NextResponse } from 'next/server'
 import { getBasePath } from '@/lib/config'
-import { handleError, jsonError } from '@/lib/api-helpers'
+import { handleError, jsonError, requireRequestSession } from '@/lib/api-helpers'
 import { ThreadSurfaceNotFoundError, ThreadSurfaceRunNotFoundError } from '@/lib/errors'
 import { resolveSurfaceAnnotations } from '@/lib/thread-surfaces/annotations'
 import { readThreadSurfaceState, updateThreadSurfaceState } from '@/lib/thread-surfaces/repository'
@@ -16,6 +16,8 @@ const BodySchema = z.object({
 
 export async function GET(request: Request) {
   try {
+    const session = requireRequestSession(request)
+    if (session instanceof NextResponse) return session
     const params = new URL(request.url).searchParams
     const surfaceId = params.get('surfaceId')
     const runId = params.get('runId') ?? undefined
@@ -41,6 +43,8 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const session = requireRequestSession(request)
+    if (session instanceof NextResponse) return session
     const body = BodySchema.parse(await request.json())
     const state = await updateThreadSurfaceState(getBasePath(), (currentState) => {
       const surfaceExists = currentState.threadSurfaces.some(surface => surface.id === body.surfaceId)

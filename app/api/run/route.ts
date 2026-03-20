@@ -6,6 +6,7 @@ import {
   checkPolicy,
   handleError,
   jsonError,
+  requireRequestSession,
   type PolicyCheckResult,
 } from '@/lib/api-helpers'
 import { getBasePath } from '@/lib/config'
@@ -302,6 +303,9 @@ async function executeStep(
 
 export async function POST(request: Request) {
   try {
+    const session = requireRequestSession(request)
+    if (session instanceof NextResponse) return session
+
     const rateLimited = applyRateLimit(request, {
       bucket: 'run',
       limit: 30,

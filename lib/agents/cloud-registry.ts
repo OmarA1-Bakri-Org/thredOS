@@ -3,32 +3,18 @@ import { mkdir, readFile } from 'fs/promises'
 import { join } from 'path'
 import { writeFileAtomic } from '@/lib/fs/atomic'
 import type { AgentRegistration } from './types'
+import {
+  sanitizeAgentForCloud,
+  sanitizePerformanceForCloud,
+  type CloudAgentRegistrationPayload,
+  type CloudPerformancePayload,
+} from '@/lib/local-first/cloud-boundary'
 
 const CLOUD_AGENT_REGISTRY_PATH = '.threados/state/cloud-agent-registry.json'
 
-export interface CloudAgentRegistration {
-  registrationNumber: string
-  agentId: string
-  identityHash: string
-  version: number
-  registeredAt: string
-  supersedesRegistrationNumber: string | null
-  name: string
-  model: string
-  role: string
-  skillIds: string[]
-  tools: string[]
-}
+export interface CloudAgentRegistration extends CloudAgentRegistrationPayload {}
 
-export interface AgentPerformanceRecord {
-  id: string
-  registrationNumber: string
-  recordedAt: string
-  outcome: 'pass' | 'fail' | 'needs_review'
-  durationMs: number | null
-  qualityScore: number | null
-  notes: string | null
-}
+export interface AgentPerformanceRecord extends CloudPerformancePayload {}
 
 interface CloudAgentRegistryState {
   version: 1
@@ -86,19 +72,13 @@ function buildCloudRegistration(
   priorRegistrationNumber: string | null,
 ): CloudAgentRegistration {
   const now = new Date().toISOString()
-  return {
+  return sanitizeAgentForCloud(agent, {
     registrationNumber: existing?.registrationNumber ?? createNextRegistrationNumber(existing ? [existing] : []),
-    agentId: agent.id,
     identityHash: agent.composition?.identityHash ?? `${agent.id}:${agent.version ?? 1}`,
     version: agent.version ?? 1,
     registeredAt: existing?.registeredAt ?? now,
     supersedesRegistrationNumber: priorRegistrationNumber,
-    name: agent.name,
-    model: agent.model ?? 'unassigned',
-    role: agent.role ?? 'unspecified',
-    skillIds: (agent.skillRefs ?? []).map(skill => skill.id),
-    tools: agent.tools ?? [],
-  }
+  })
 }
 
 export async function registerCloudAgent(
@@ -151,7 +131,7 @@ export async function recordCloudAgentPerformance(
   input: Omit<AgentPerformanceRecord, 'id' | 'recordedAt'> & { id?: string; recordedAt?: string },
 ): Promise<AgentPerformanceRecord> {
   const state = await readCloudAgentRegistryState(basePath)
-  const nextRecord: AgentPerformanceRecord = {
+  const nextRecord = sanitizePerformanceForCloud({
     id: input.id ?? `perf-${Date.now()}`,
     registrationNumber: input.registrationNumber,
     recordedAt: input.recordedAt ?? new Date().toISOString(),
@@ -159,7 +139,7 @@ export async function recordCloudAgentPerformance(
     durationMs: input.durationMs ?? null,
     qualityScore: input.qualityScore ?? null,
     notes: input.notes ?? null,
-  }
+  })
 
   const nextState: CloudAgentRegistryState = {
     ...state,

@@ -150,6 +150,7 @@ function InfoButton({ description }: { description: string }) {
       <button
         type="button"
         className="rounded-full p-0.5 text-slate-600 transition-colors hover:bg-slate-800 hover:text-slate-300"
+        
         aria-label="Panel info"
         onMouseEnter={() => setShow(true)}
         onMouseLeave={() => setShow(false)}
@@ -282,7 +283,7 @@ export function AccordionPanel() {
                   className={`group flex items-center gap-1.5 rounded-l-lg px-2 py-1.5 transition-all ${
                     isActive
                       ? `${accent.bg} border ${accent.border} border-r-0 ${accent.text}`
-                      : 'border border-r-0 border-transparent text-slate-500 hover:bg-slate-800/60 hover:text-slate-300'
+                    : 'border border-r-0 border-transparent text-slate-300 hover:bg-slate-800/60 hover:text-slate-100'
                   }`}
                   aria-pressed={isActive}
                 >
@@ -312,7 +313,7 @@ export function AccordionPanel() {
       {currentDepthLevel > 0 && (
         <div className="shrink-0 border-b border-slate-800/60 px-3 py-2 bg-[#060e1a]">
           <div className="flex items-center gap-2">
-            <span className="font-mono text-[9px] uppercase tracking-[0.18em] text-slate-600">Scope</span>
+            <span className="font-mono text-[9px] uppercase tracking-[0.18em] text-slate-400">Scope</span>
             <PathBar />
           </div>
         </div>
@@ -360,7 +361,7 @@ export function AccordionPanel() {
                   <button
                     type="button"
                     onClick={() => toggleSection(key)}
-                    className="ml-auto font-mono text-[9px] uppercase tracking-[0.12em] text-slate-600 transition-colors hover:text-slate-300"
+                    className="ml-auto font-mono text-[9px] uppercase tracking-[0.12em] text-slate-400 transition-colors hover:text-slate-100"
                   >
                     close
                   </button>

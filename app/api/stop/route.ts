@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { readSequence, writeSequence } from '@/lib/sequence/parser'
 import { getBasePath } from '@/lib/config'
-import { auditLog, handleError } from '@/lib/api-helpers'
+import { auditLog, handleError, requireRequestSession } from '@/lib/api-helpers'
+import { allowHostedProcessControls } from '@/lib/hosted'
 import { readMprocsMap } from '@/lib/mprocs/state'
 import { StepNotFoundError } from '@/lib/errors'
 import { ROOT_THREAD_SURFACE_ID } from '@/lib/thread-surfaces/constants'
@@ -12,6 +13,14 @@ const BodySchema = z.object({ stepId: z.string() })
 
 export async function POST(request: Request) {
   try {
+    const session = requireRequestSession(request)
+    if (session instanceof NextResponse) return session
+    if (!allowHostedProcessControls()) {
+      return NextResponse.json({
+        error: 'Stop is disabled in hosted mode for the thredOS Desktop launch',
+        code: 'PROCESS_CONTROL_DISABLED',
+      }, { status: 403 })
+    }
     const { stepId } = BodySchema.parse(await request.json())
     const bp = getBasePath()
     const seq = await readSequence(bp)

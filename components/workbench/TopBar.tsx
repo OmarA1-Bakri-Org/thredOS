@@ -85,7 +85,7 @@ export function TopBar() {
         </Button>
 
         <div className="min-w-0">
-          <div className="font-mono text-[11px] uppercase tracking-[0.28em] text-sky-300/60">Local-first operating system</div>
+          <div className="font-mono text-[11px] uppercase tracking-[0.28em] text-sky-300/70">Local-first operating system</div>
           <div className="text-xl font-semibold tracking-tight text-white">thredOS Desktop</div>
         </div>
       </div>
@@ -114,7 +114,7 @@ export function TopBar() {
           data-workbench-cluster="command-search"
           className="flex min-w-0 flex-1 items-center gap-3 border border-slate-800 bg-[#0a101a] px-3 py-2 text-sm text-slate-300"
         >
-          <Search className="h-4 w-4 shrink-0 text-slate-400" />
+          <Search className="h-4 w-4 shrink-0 text-slate-300" />
           <input
             type="text"
             defaultValue={searchQuery}
@@ -200,7 +200,7 @@ export function TopBar() {
         <div data-workbench-cluster="utility-status" className="flex min-w-0 items-center gap-2 border border-slate-800 bg-[#0a101a] px-2 py-2">
           {status ? (
             <div className="hidden min-w-0 items-center gap-2 xl:flex">
-              <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-slate-500">{status.name}</span>
+              <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-slate-400">{status.name}</span>
               {entitlement ? (
                 <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 font-mono text-[11px] uppercase tracking-[0.16em] text-emerald-200">
                   {entitlement.effectiveStatus}

@@ -48,7 +48,7 @@ export function SequenceSection() {
       {/* Thread Type Identification */}
       {phaseDerivation && (
         <div className="border border-slate-800/90 bg-[#060e1a] px-3 py-3">
-          <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Thread type</div>
+          <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-400">Thread type</div>
           <div className="mt-2 flex flex-wrap gap-1.5">
             {THREAD_TYPES.map(t => {
               const isActive = (selectedType ?? phaseDerivation.threadType) === t.value
@@ -60,7 +60,7 @@ export function SequenceSection() {
                   className={`cursor-pointer px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.12em] transition-all ${
                     isActive
                       ? 'border border-sky-500/50 bg-sky-500/12 text-sky-200 shadow-[0_0_8px_rgba(56,189,248,0.15)]'
-                      : 'border border-slate-800 text-slate-600 hover:border-slate-600 hover:text-slate-400'
+                      : 'border border-slate-700 text-slate-300 hover:border-slate-500 hover:text-slate-100'
                   }`}
                 >
                   {t.label}
@@ -77,7 +77,7 @@ export function SequenceSection() {
       {/* Phase Overview */}
       {phaseDerivation && phaseDerivation.phases.length > 0 && (
         <div className="border border-slate-800/90 bg-[#060e1a] px-3 py-3">
-          <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Phase overview</div>
+          <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-400">Phase overview</div>
           <div className="mt-2 flex items-center gap-2">
             <span className="text-2xl font-semibold tracking-tight text-white">{phaseDerivation.phases.length}</span>
             <span className="text-sm text-slate-400">
@@ -86,12 +86,12 @@ export function SequenceSection() {
           </div>
           <div className="mt-2 flex flex-wrap gap-1">
             {phaseDerivation.phases.map((phase, i) => (
-              <span key={phase.id} className="flex items-center gap-0.5">
-                <span className="border border-slate-700/50 bg-slate-950/40 px-1.5 py-0.5 font-mono text-[9px] text-slate-400">
+                <span key={phase.id} className="flex items-center gap-0.5">
+                <span className="border border-slate-700/50 bg-slate-950/40 px-1.5 py-0.5 font-mono text-[9px] text-slate-300">
                   {phase.role === 'primary' ? `P${i + 1}` : phase.role.charAt(0).toUpperCase()}
                 </span>
                 {i < phaseDerivation.phases.length - 1 && (
-                  <ChevronRight className="h-2.5 w-2.5 text-slate-700" />
+                  <ChevronRight className="h-2.5 w-2.5 text-slate-500" />
                 )}
               </span>
             ))}
@@ -102,7 +102,7 @@ export function SequenceSection() {
       {/* Sequence Identity */}
       {status && (
         <div className="border border-[#16417C]/70 bg-[#16417C]/18 px-3 py-3">
-          <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Sequence</div>
+          <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-400">Sequence</div>
           {editingName ? (
             <div className="mt-2 flex items-center gap-1.5">
               <input
@@ -145,7 +145,7 @@ export function SequenceSection() {
                 type="button"
                 title="Edit sequence name"
                 onClick={() => { setNameValue(status.name); setEditingName(true) }}
-                className="p-0.5 text-slate-600 hover:text-slate-300"
+                className="p-0.5 text-slate-300 hover:text-white"
               >
                 <Pencil className="h-3 w-3" />
               </button>
@@ -165,8 +165,8 @@ export function SequenceSection() {
       {/* Thread Surface Browser */}
       <div>
         <div className="flex items-center gap-2 pb-2">
-          <Layers3 className="h-3 w-3 text-slate-500" />
-          <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">
+          <Layers3 className="h-3 w-3 text-slate-400" />
+          <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-400">
             {currentDepthSurfaceId ? 'Scoped surfaces' : 'Thread surfaces'}
           </div>
         </div>
@@ -195,19 +195,19 @@ export function SequenceSection() {
               >
                 <span>
                   <span className="block text-sm font-medium">{surface.surfaceLabel}</span>
-                  <span className="mt-1 block text-[11px] uppercase tracking-[0.18em] text-slate-500">
+                  <span className="mt-1 block text-[11px] uppercase tracking-[0.18em] text-slate-400">
                     depth {surface.depth} · {surface.role ?? 'thread'}
                   </span>
                 </span>
                 {surface.childSurfaceIds.length > 0 && (
-                  <span className="text-[11px] uppercase tracking-[0.18em] text-slate-500">
+                  <span className="text-[11px] uppercase tracking-[0.18em] text-slate-400">
                     {surface.childSurfaceIds.length}
                   </span>
                 )}
               </Button>
             )
           }) : (
-            <div className="border border-dashed border-slate-800 px-3 py-4 text-sm text-slate-500">
+            <div className="border border-dashed border-slate-800 px-3 py-4 text-sm text-slate-400">
               No registered thread surfaces yet.
             </div>
           )}
@@ -217,8 +217,8 @@ export function SequenceSection() {
       {/* Template Picker */}
       <div className="border-t border-slate-800/60 pt-3">
         <div className="flex items-center gap-2 pb-2">
-          <FileStack className="h-3 w-3 text-slate-500" />
-          <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Templates</div>
+          <FileStack className="h-3 w-3 text-slate-400" />
+          <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-400">Templates</div>
         </div>
         <div className="grid grid-cols-2 gap-1.5">
           {THREAD_TYPES.map(t => (
@@ -239,7 +239,7 @@ export function SequenceSection() {
               <div className="font-mono text-[10px] uppercase tracking-[0.14em] text-slate-300 group-hover:text-sky-200">
                 {t.label}
               </div>
-              <div className="mt-0.5 text-[10px] text-slate-600 group-hover:text-slate-400">
+              <div className="mt-0.5 text-[10px] text-slate-400 group-hover:text-slate-200">
                 {t.description}
               </div>
             </button>

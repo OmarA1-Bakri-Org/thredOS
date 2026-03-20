@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { readSequence, writeSequence } from '@/lib/sequence/parser'
 import { validateDAG } from '@/lib/sequence/dag'
 import { getBasePath } from '@/lib/config'
-import { jsonError, auditLog, handleError } from '@/lib/api-helpers'
+import { jsonError, auditLog, handleError, requireRequestSession } from '@/lib/api-helpers'
 import { StepNotFoundError } from '@/lib/errors'
 import { writePrompt, deletePrompt, validatePromptExists } from '@/lib/prompts/manager'
 import { StepSchema, StepTypeSchema, ModelTypeSchema, StepStatusSchema, type Step } from '@/lib/sequence/schema'
@@ -194,6 +194,8 @@ const ACTION_HANDLERS: Record<string, (body: never, seq: Sequence, bp: string) =
 
 export async function POST(request: Request) {
   try {
+    const session = requireRequestSession(request)
+    if (session instanceof NextResponse) return session
     const body = BodySchema.parse(await request.json())
     const bp = getBasePath()
     const seq = await readSequence(bp)

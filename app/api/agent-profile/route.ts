@@ -1,11 +1,13 @@
 import { readAgentState } from '@/lib/agents/repository'
 import { aggregateAgentStats } from '@/lib/agents/stats'
 import { getBasePath } from '@/lib/config'
+import { requireRequestSession } from '@/lib/api-helpers'
 import { readPackState } from '@/lib/packs/repository'
 import { buildAgentProfile, type ProfileNodeContext } from '@/lib/agents/profile'
 import { readThreadRunnerState } from '@/lib/thread-runner/repository'
 import { readThreadSurfaceState } from '@/lib/thread-surfaces/repository'
 import type { AgentRegistration } from '@/lib/agents/types'
+import { NextResponse } from 'next/server'
 
 function buildProfileNodeContext(
   surfaceState: Awaited<ReturnType<typeof readThreadSurfaceState>>,
@@ -28,19 +30,21 @@ function buildProfileNodeContext(
 
 export async function GET(request: Request) {
   try {
+    const session = requireRequestSession(request)
+    if (session instanceof NextResponse) return session
     const basePath = getBasePath()
     const url = new URL(request.url)
     const threadSurfaceId = url.searchParams.get('threadSurfaceId')
 
     if (!threadSurfaceId) {
-      return Response.json({ error: 'Missing threadSurfaceId query parameter' }, { status: 400 })
+      return NextResponse.json({ error: 'Missing threadSurfaceId query parameter' }, { status: 400 })
     }
 
     const agentState = await readAgentState(basePath)
     const agent = agentState.agents.find(a => a.threadSurfaceIds.includes(threadSurfaceId)) ?? null
 
     if (!agent) {
-      return Response.json({ profile: null })
+      return NextResponse.json({ profile: null })
     }
 
     const [packState, runnerState, surfaceState] = await Promise.all([
@@ -54,8 +58,8 @@ export async function GET(request: Request) {
     const node = buildProfileNodeContext(surfaceState, agent, threadSurfaceId)
     const profile = buildAgentProfile({ agent, stats, pack, node })
 
-    return Response.json({ profile })
+    return NextResponse.json({ profile })
   } catch {
-    return Response.json({ error: 'Internal server error' }, { status: 500 })
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

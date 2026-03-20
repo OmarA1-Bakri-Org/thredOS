@@ -3,6 +3,12 @@ import { ZodError } from 'zod'
 import { getBasePath } from './config'
 import { PolicyEngine } from './policy/engine'
 import * as audit from './audit/logger'
+import {
+  THREDOS_SESSION_COOKIE,
+  verifySessionToken,
+  type AuthSession,
+} from './auth/session'
+import { isHostedMode } from './hosted'
 
 export interface PolicyCheckResult {
   allowed: boolean
@@ -12,6 +18,30 @@ export interface PolicyCheckResult {
 
 export function jsonError(error: string, code: string, status: number) {
   return NextResponse.json({ error, code }, { status })
+}
+
+function readCookieValue(cookieHeader: string | null, name: string): string | null {
+  if (!cookieHeader) return null
+  const segments = cookieHeader.split(';')
+  for (const segment of segments) {
+    const [rawName, ...rawValue] = segment.trim().split('=')
+    if (rawName === name) {
+      return rawValue.join('=') || null
+    }
+  }
+  return null
+}
+
+export function requireRequestSession(request?: Request): AuthSession | NextResponse {
+  if (!isHostedMode()) {
+    return { email: 'local@thredos', exp: Number.MAX_SAFE_INTEGER }
+  }
+  const cookieHeader = request?.headers.get('cookie') ?? null
+  const token = readCookieValue(cookieHeader, THREDOS_SESSION_COOKIE)
+    ?? readCookieValue(cookieHeader, 'threados_session')
+  const session = verifySessionToken(token)
+  if (!session) return jsonError('Authentication required', 'UNAUTHORIZED', 401)
+  return session
 }
 
 export async function auditLog(action: string, target: string, payload?: Record<string, unknown>, result = 'ok') {

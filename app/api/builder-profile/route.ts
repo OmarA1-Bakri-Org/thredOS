@@ -3,9 +3,12 @@ import { getBasePath } from '@/lib/config'
 import { readAgentState } from '@/lib/agents/repository'
 import { readPackState } from '@/lib/packs/repository'
 import { deriveBuilderProfile } from '@/lib/builders/repository'
+import { requireRequestSession } from '@/lib/api-helpers'
 
 export async function GET(request: Request) {
   try {
+    const session = requireRequestSession(request)
+    if (session instanceof NextResponse) return session
     const url = new URL(request.url)
     const builderId = url.searchParams.get('builderId')
 

@@ -20,6 +20,11 @@ export function enableThreadRunner(): boolean {
   return readHostedEnv('ENABLE_THREAD_RUNNER') === 'true'
 }
 
+export function allowHostedProcessControls(): boolean {
+  if (!isHostedMode()) return true
+  return readHostedEnv('ALLOW_PROCESS_CONTROLS') === 'true'
+}
+
 export function requireHostedAuth(): boolean {
   return isHostedMode()
 }

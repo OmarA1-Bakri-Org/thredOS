@@ -3,6 +3,8 @@ import { summarizeCloudAgentPerformance } from '@/lib/agents/cloud-registry'
 import { aggregateAgentStats, type AgentStats } from '@/lib/agents/stats'
 import { readThreadRunnerState } from '@/lib/thread-runner/repository'
 import { getBasePath } from '@/lib/config'
+import { requireRequestSession } from '@/lib/api-helpers'
+import { NextResponse } from 'next/server'
 
 function computePerformanceData(stats: AgentStats) {
   const passRate = stats.totalRuns > 0
@@ -28,11 +30,13 @@ function computePerformanceData(stats: AgentStats) {
 
 export async function GET(request: Request) {
   try {
+    const session = requireRequestSession(request)
+    if (session instanceof NextResponse) return session
     const url = new URL(request.url)
     const agentId = url.searchParams.get('agentId')
 
     if (!agentId) {
-      return Response.json({ error: 'Missing agentId query parameter' }, { status: 400 })
+      return NextResponse.json({ error: 'Missing agentId query parameter' }, { status: 400 })
     }
 
     const bp = getBasePath()
@@ -43,23 +47,23 @@ export async function GET(request: Request) {
 
     const agent = agentState.agents.find(a => a.id === agentId)
     if (!agent) {
-      return Response.json({ stats: null })
+      return NextResponse.json({ stats: null })
     }
 
     const stats = aggregateAgentStats(agentId, runnerState.races, runnerState.combatantRuns)
 
     if (stats.totalRuns > 0) {
-      return Response.json({ stats: computePerformanceData(stats) })
+      return NextResponse.json({ stats: computePerformanceData(stats) })
     }
 
     if (agent.registrationNumber) {
       const cloudStats = await summarizeCloudAgentPerformance(bp, agent.registrationNumber)
-      return Response.json({ stats: cloudStats })
+      return NextResponse.json({ stats: cloudStats })
     }
 
-    return Response.json({ stats: null })
+    return NextResponse.json({ stats: null })
   } catch (err) {
     console.error('[agent-stats] Error:', err)
-    return Response.json({ error: 'Internal server error' }, { status: 500 })
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

@@ -1,5 +1,8 @@
 import { defineConfig, devices } from '@playwright/test'
 
+const PORT = process.env.PLAYWRIGHT_PORT ?? '4301'
+const BASE_URL = `http://127.0.0.1:${PORT}`
+
 export default defineConfig({
   testDir: './test/ui',
   testMatch: '**/*.e2e.ts',
@@ -9,7 +12,7 @@ export default defineConfig({
   workers: process.env.CI ? 2 : undefined,
   reporter: process.env.CI ? 'github' : 'list',
   use: {
-    baseURL: 'http://127.0.0.1:4173',
+    baseURL: BASE_URL,
     trace: 'retain-on-failure',
   },
   projects: [
@@ -19,13 +22,13 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: 'bun run build && bun run start -- --hostname 127.0.0.1 --port 4173',
+    command: `bun run build && bun run start -- --hostname 127.0.0.1 --port ${PORT}`,
     cwd: __dirname,
     env: {
       ...process.env,
       SystemRoot: process.env.SystemRoot ?? 'C:\\Windows',
     },
-    url: 'http://127.0.0.1:4173',
+    url: BASE_URL,
     reuseExistingServer: !process.env.CI,
     timeout: 240_000,
   },

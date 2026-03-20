@@ -1,13 +1,17 @@
 import { getBasePath } from '@/lib/config'
 import * as audit from '@/lib/audit/logger'
 import { computeGateMetrics, type GateAuditEntry } from '@/lib/gates/metrics'
+import { requireRequestSession } from '@/lib/api-helpers'
+import { NextResponse } from 'next/server'
 
 export async function GET(request: Request) {
   try {
+    const session = requireRequestSession(request)
+    if (session instanceof NextResponse) return session
     const url = new URL(request.url)
     const gateId = url.searchParams.get('gateId')
     if (!gateId) {
-      return Response.json({ error: 'Missing gateId query parameter' }, { status: 400 })
+      return NextResponse.json({ error: 'Missing gateId query parameter' }, { status: 400 })
     }
     const bp = getBasePath()
     const auditEntries = await audit.readAll(bp)
@@ -21,8 +25,8 @@ export async function GET(request: Request) {
       }))
 
     const metrics = computeGateMetrics(gateId, gateAuditEntries)
-    return Response.json({ metrics })
+    return NextResponse.json({ metrics })
   } catch {
-    return Response.json({ error: 'Internal server error' }, { status: 500 })
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { readSequence, writeSequence } from '@/lib/sequence/parser'
 import { validateDAG } from '@/lib/sequence/dag'
 import { getBasePath } from '@/lib/config'
-import { jsonError, auditLog, handleError } from '@/lib/api-helpers'
+import { jsonError, auditLog, handleError, requireRequestSession } from '@/lib/api-helpers'
 import { StepNotFoundError } from '@/lib/errors'
 import type { Sequence, Step } from '@/lib/sequence/schema'
 
@@ -31,6 +31,8 @@ function removeDependency(step: Step, depId: string): NextResponse | null {
 
 export async function POST(request: Request) {
   try {
+    const session = requireRequestSession(request)
+    if (session instanceof NextResponse) return session
     const body = BodySchema.parse(await request.json())
     const bp = getBasePath()
     const seq = await readSequence(bp)

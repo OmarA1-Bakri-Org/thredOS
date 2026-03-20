@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getBasePath } from '@/lib/config'
-import { handleError, jsonError } from '@/lib/api-helpers'
+import { handleError, jsonError, requireRequestSession } from '@/lib/api-helpers'
 import { readAgentState, updateAgentState } from '@/lib/agents/repository'
 import { registerCloudAgent } from '@/lib/agents/cloud-registry'
 import { buildAgentComposition, detectMaterialChange } from '@/lib/agents/composition'
@@ -33,8 +33,10 @@ const AgentBodySchema = z.object({
   supersedesAgentId: z.string().optional(),
 })
 
-export async function GET() {
+export async function GET(request?: Request) {
   try {
+    const session = requireRequestSession(request)
+    if (session instanceof NextResponse) return session
     const state = await readAgentState(getBasePath())
     return NextResponse.json({ agents: state.agents })
   } catch (err) {
@@ -113,6 +115,8 @@ function nextReplacementAgentId(baseId: string, agents: AgentRegistration[]): st
 
 export async function POST(request: Request) {
   try {
+    const session = requireRequestSession(request)
+    if (session instanceof NextResponse) return session
     const parsed = AgentBodySchema.safeParse(await request.json())
     if (!parsed.success) {
       return jsonError(parsed.error.issues.map(e => e.message).join(', '), 'VALIDATION_ERROR', 400)

@@ -20,6 +20,10 @@ Copy `.env.example` to `.env.local` (UI/API) or `.env` and set values as needed.
 | `THREADOS_BASE_PATH` | No | `./` (or `process.cwd()` fallback) | Base directory used by API routes for ThreadOS files |
 | `THREADOS_MPROCS_PATH` | No | auto-resolved | Absolute/relative path to `mprocs` binary |
 | `THREADOS_MODEL` | No | `gpt-4o` | Model ID — auto-routes to correct backend (e.g. `gpt-4o`, `claude-sonnet-4-20250514`) |
+| `THREDOS_CLERK_SIGN_IN_URL` | Launch | unset | Hosted Clerk sign-in URL used by thredOS Desktop browser activation |
+| `THREDOS_STRIPE_SECRET_KEY` | Launch | unset | Stripe secret key for desktop checkout and webhook processing |
+| `THREDOS_STRIPE_PRICE_ID` | Launch | unset | Stripe price id for the desktop public beta plan |
+| `THREDOS_STRIPE_WEBHOOK_SECRET` | Launch | unset | Stripe webhook verification secret |
 | `OPENAI_API_KEY` | By model | unset | Required for direct OpenAI models (gpt-*, o1-*, o3-*, o4-*) |
 | `OPENROUTER_API_KEY` | By model | unset | Universal relay — supports 100+ models including Claude, Llama, Gemini |
 | `ANTHROPIC_API_KEY` | Optional | unset | Direct Anthropic access (future — currently routed via OpenRouter) |
@@ -56,6 +60,25 @@ thredOS is launching in three product layers:
 - **thredOS Desktop** — the local-first engineering environment for building, orchestrating, and inspecting agent systems
 - **thredOS Node** — the follow-on stronger-machine/self-hosted runtime path for users who want their own infrastructure
 - **Thread Runner** — the separate cloud proving layer for verified competitive runs and pack progression
+
+## Local-First Boundary
+
+Cloud-permitted data:
+
+- account identity
+- billing state
+- activation state
+- canonical agent registration
+- canonical agent performance history
+
+Cloud-forbidden data:
+
+- prompt markdown
+- skill markdown
+- sequence state
+- thread surfaces and runtime logs
+- workspace files
+- artifacts and user workflow content
 
 ## Architecture
 
@@ -141,6 +164,8 @@ Opens the workbench at `http://localhost:3000`:
 - [CLI Reference](docs/cli-reference.md)
 - [Thread Types Guide](docs/thread-types.md)
 - [Policy Configuration](docs/policy.md)
+- [Desktop Release Checklist](docs/launch/desktop-release-checklist.md)
+- [Desktop Support Runbook](docs/launch/desktop-support-runbook.md)
 
 ## Policy Modes
 

@@ -1,12 +1,15 @@
 import { NextRequest } from 'next/server'
 import { ActionValidator, type ProposedAction } from '@/lib/chat/validator'
 import { getBasePath } from '@/lib/config'
-import { jsonError } from '@/lib/api-helpers'
+import { jsonError, requireRequestSession } from '@/lib/api-helpers'
 import { allowChatApply } from '@/lib/hosted'
 import { applyRateLimit } from '@/lib/rate-limit'
 
 export async function POST(request: NextRequest) {
   try {
+    const session = requireRequestSession(request)
+    if ('status' in session) return session
+
     const rateLimited = applyRateLimit(request, {
       bucket: 'chat-apply',
       limit: 10,

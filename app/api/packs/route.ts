@@ -2,9 +2,12 @@ import { NextResponse } from 'next/server'
 import { getBasePath } from '@/lib/config'
 import { readPackState, updatePackState } from '@/lib/packs/repository'
 import type { Pack, PackStatus } from '@/lib/packs/types'
+import { requireRequestSession } from '@/lib/api-helpers'
 
-export async function GET() {
+export async function GET(request?: Request) {
   try {
+    const session = requireRequestSession(request)
+    if (session instanceof NextResponse) return session
     const state = await readPackState(getBasePath())
     return NextResponse.json({ packs: state.packs })
   } catch {
@@ -20,6 +23,8 @@ const NEXT_STATUS: Record<PackStatus, PackStatus | null> = {
 
 export async function POST(request: Request) {
   try {
+    const session = requireRequestSession(request)
+    if (session instanceof NextResponse) return session
     const body = await request.json()
     const { action } = body as { action: string }
     const bp = getBasePath()

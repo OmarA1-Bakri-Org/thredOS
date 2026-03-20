@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getBasePath } from '@/lib/config'
+import { requireRequestSession } from '@/lib/api-helpers'
 import { readSequence } from '@/lib/sequence/parser'
 import { createConfiguredProvider } from '@/lib/llm/providers'
 import { buildOptimizationPrompt } from '@/lib/autoresearch/build-optimization-prompt'
@@ -35,6 +36,9 @@ function inferCategoryFromActions(actions: ProposedAction[], content: string): O
 
 export async function POST(request: Request) {
   try {
+    const session = requireRequestSession(request)
+    if (session instanceof NextResponse) return session
+
     const rateLimited = applyRateLimit(request, {
       bucket: 'optimize',
       limit: 10,

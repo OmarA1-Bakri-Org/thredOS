@@ -4,13 +4,15 @@ import { randomUUID } from 'crypto'
 import { readSequence, writeSequence } from '@/lib/sequence/parser'
 import { validateDAG } from '@/lib/sequence/dag'
 import { getBasePath } from '@/lib/config'
-import { auditLog, handleError } from '@/lib/api-helpers'
+import { auditLog, handleError, requireRequestSession } from '@/lib/api-helpers'
 import { StepNotFoundError } from '@/lib/errors'
 
 const BodySchema = z.object({ action: z.literal('parallelize'), stepIds: z.array(z.string()).min(2) })
 
-export async function GET() {
+export async function GET(request?: Request) {
   try {
+    const session = requireRequestSession(request)
+    if (session instanceof NextResponse) return session
     const seq = await readSequence(getBasePath())
     const groups: Record<string, string[]> = {}
     for (const s of seq.steps) {
@@ -24,6 +26,8 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const session = requireRequestSession(request)
+    if (session instanceof NextResponse) return session
     const { stepIds } = BodySchema.parse(await request.json())
     const bp = getBasePath()
     const seq = await readSequence(bp)

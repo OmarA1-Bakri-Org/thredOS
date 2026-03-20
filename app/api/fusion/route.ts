@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { readSequence, writeSequence } from '@/lib/sequence/parser'
 import { validateDAG } from '@/lib/sequence/dag'
 import { getBasePath } from '@/lib/config'
-import { auditLog, handleError } from '@/lib/api-helpers'
+import { auditLog, handleError, requireRequestSession } from '@/lib/api-helpers'
 import { StepNotFoundError } from '@/lib/errors'
 import type { Step } from '@/lib/sequence/schema'
 
@@ -15,6 +15,8 @@ const BodySchema = z.object({
 
 export async function POST(request: Request) {
   try {
+    const session = requireRequestSession(request)
+    if (session instanceof NextResponse) return session
     const { candidates, synthId } = BodySchema.parse(await request.json())
     const bp = getBasePath()
     const seq = await readSequence(bp)

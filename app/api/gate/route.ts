@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { readSequence, writeSequence } from '@/lib/sequence/parser'
 import { validateDAG } from '@/lib/sequence/dag'
 import { getBasePath } from '@/lib/config'
-import { jsonError, auditLog, handleError } from '@/lib/api-helpers'
+import { jsonError, auditLog, handleError, requireRequestSession } from '@/lib/api-helpers'
 import { GateNotFoundError } from '@/lib/errors'
 import type { Gate } from '@/lib/sequence/schema'
 
@@ -21,8 +21,10 @@ const UpdateSchema = z.object({
 })
 const BodySchema = z.union([InsertSchema, ApproveSchema, BlockSchema, RmSchema, UpdateSchema])
 
-export async function GET() {
+export async function GET(request?: Request) {
   try {
+    const session = requireRequestSession(request)
+    if (session instanceof NextResponse) return session
     const seq = await readSequence(getBasePath())
     return NextResponse.json({ gates: seq.gates })
   } catch (err) {
@@ -32,6 +34,8 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const session = requireRequestSession(request)
+    if (session instanceof NextResponse) return session
     const body = BodySchema.parse(await request.json())
     const bp = getBasePath()
     const seq = await readSequence(bp)
