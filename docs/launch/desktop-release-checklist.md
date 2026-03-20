@@ -27,6 +27,35 @@
 
 ## Visual gate
 
-- Capture Playwright screenshot baselines for entry, activation, workbench, and runtime states.
-- Run a final human Windows review at 100% and 125% display scaling.
-- Confirm Node + Agent + Run panel readability in the launch build.
+- Playwright screenshot baselines must pass for:
+  - entry surface
+  - activation return
+  - base workbench hierarchy
+  - run section
+  - responsive drawer at `1200x800`
+  - top-bar `New` confirm dialog
+  - top-bar `Run` confirm dialog
+  - create step dialog
+  - create gate dialog
+  - chat panel open state
+  - sequence section
+  - sequence rename/edit state
+  - node + agent overview state
+  - node prompt asset state
+  - node skills + agent tools state
+  - agent roster tab
+  - agent tools tab
+- Axe checks must pass for:
+  - entry surface
+  - workbench surface
+  - create node dialog
+  - chat panel
+- Run a final human Windows review at `100%`, `125%`, and `150%` display scaling.
+- Manually confirm:
+  - top bar stability during resize
+  - accordion resize handle behavior
+  - drawer open/close behavior
+  - canvas hover/selection/detail cards
+  - chat panel resize behavior
+  - confirm dialog focus and dismissal behavior
+  - Node + Agent + Run panel readability in the packaged build
