@@ -8,6 +8,7 @@ import { WorkbenchShell } from '@/components/workbench/WorkbenchShell'
 import { TopBar } from '@/components/workbench/TopBar'
 import { LeftRail } from '@/components/workbench/LeftRail'
 import { CreateNodeDialog } from '@/components/command/CreateNodeDialog'
+import { DesktopRuntimeBridge } from '@/components/desktop/DesktopRuntimeBridge'
 import { useUIStore } from '@/lib/ui/store'
 
 const SequenceCanvas = dynamic(
@@ -38,6 +39,7 @@ export function ThredOSApp() {
 
   return (
     <>
+      <DesktopRuntimeBridge />
       {createDialogOpen && <CreateNodeDialog open onClose={closeCreateDialog} initialKind={createDialogKind} />}
       <WorkbenchShell
         topBar={<TopBar />}

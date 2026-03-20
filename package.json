@@ -2,6 +2,8 @@
   "name": "threader",
   "version": "0.1.0",
   "private": true,
+  "description": "thredOS Desktop local-first control surface for agent work",
+  "main": "desktop/main.cjs",
   "bin": {
     "thread": "./lib/seqctl/index.ts"
   },
@@ -10,6 +12,7 @@
     "build": "next build",
     "start": "next start",
     "desktop:dev": "electron ./desktop/main.cjs",
+    "desktop:build": "bun run build && electron-builder --win nsis",
     "desktop:dist": "electron-builder",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
@@ -67,5 +70,39 @@
   ],
   "engines": {
     "node": ">=22.0.0"
+  },
+  "build": {
+    "appId": "ai.thredos.desktop",
+    "productName": "thredOS Desktop",
+    "directories": {
+      "output": "dist-desktop"
+    },
+    "files": [
+      ".next/**/*",
+      "app/**/*",
+      "components/**/*",
+      "desktop/**/*",
+      "lib/**/*",
+      "public/**/*",
+      "package.json",
+      "next.config.*",
+      "postcss.config.*"
+    ],
+    "extraMetadata": {
+      "main": "desktop/main.cjs"
+    },
+    "protocols": [
+      {
+        "name": "thredOS Activation",
+        "schemes": [
+          "thredos"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    }
   }
 }
