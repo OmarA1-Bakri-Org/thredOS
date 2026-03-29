@@ -17,8 +17,8 @@ export const SurfaceStatusSchema = z.enum(['active', 'sealed', 'revealed', 'arch
 export type SurfaceStatus = z.infer<typeof SurfaceStatusSchema>
 
 export const MetadataBudgetSchema = z.object({
-  max_file_count: z.number().int(),
-  max_total_bytes: z.number().int(),
+  max_file_count: z.number().int().nonnegative(),
+  max_total_bytes: z.number().int().nonnegative(),
 })
 export type MetadataBudget = z.infer<typeof MetadataBudgetSchema>
 
@@ -50,9 +50,9 @@ export const TimingSummarySchema = z.object({
 export type TimingSummary = z.infer<typeof TimingSummarySchema>
 
 export const CostSummarySchema = z.object({
-  input_tokens: z.number().optional(),
-  output_tokens: z.number().optional(),
-  total_cost_usd: z.number().optional(),
+  input_tokens: z.number().int().nonnegative().optional(),
+  output_tokens: z.number().int().nonnegative().optional(),
+  total_cost_usd: z.number().nonnegative().optional(),
 })
 export type CostSummary = z.infer<typeof CostSummarySchema>
 

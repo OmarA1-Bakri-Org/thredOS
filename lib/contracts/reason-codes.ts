@@ -13,10 +13,3 @@ export const GateReasonCode = {
 
 export type GateReasonCode = typeof GateReasonCode[keyof typeof GateReasonCode]
 
-export const GateDecisionStatus = {
-  PASS: 'PASS',
-  BLOCK: 'BLOCK',
-  NEEDS_APPROVAL: 'NEEDS_APPROVAL',
-} as const
-
-export type GateDecisionStatus = typeof GateDecisionStatus[keyof typeof GateDecisionStatus]
