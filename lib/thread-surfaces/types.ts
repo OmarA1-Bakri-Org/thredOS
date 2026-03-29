@@ -34,6 +34,13 @@ export interface ThreadSurface {
   childSurfaceIds: string[]
   sequenceRef: string | null
   spawnedByAgentId: string | null
+  // V.1 surface model
+  surfaceClass: 'shared' | 'private' | 'sealed' | 'control'
+  visibility: 'public' | 'dependency' | 'self_only'
+  isolationLabel: 'NONE' | 'THREADOS_SCOPED' | 'HOST_ENFORCED'
+  revealState: 'sealed' | 'revealed' | null
+  allowedReadScopes: string[]
+  allowedWriteScopes: string[]
 }
 
 export interface RunScope {

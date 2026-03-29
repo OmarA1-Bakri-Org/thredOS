@@ -121,6 +121,12 @@ export function createRootThreadSurfaceRun(state: ThreadSurfaceState, args: Crea
     childSurfaceIds: [],
     sequenceRef: null,
     spawnedByAgentId: null,
+    surfaceClass: 'shared' as const,
+    visibility: 'dependency' as const,
+    isolationLabel: 'NONE' as const,
+    revealState: null,
+    allowedReadScopes: [] as string[],
+    allowedWriteScopes: [] as string[],
   }
 
   const run = createRunScope({
@@ -213,6 +219,12 @@ function buildChildSurface(parent: ThreadSurface, args: CreateChildThreadSurface
     childSurfaceIds: [],
     sequenceRef: args.sequenceRef ?? null,
     spawnedByAgentId: args.spawnedByAgentId ?? null,
+    surfaceClass: 'shared' as const,
+    visibility: 'dependency' as const,
+    isolationLabel: 'NONE' as const,
+    revealState: null,
+    allowedReadScopes: [] as string[],
+    allowedWriteScopes: [] as string[],
   }
 }
 
