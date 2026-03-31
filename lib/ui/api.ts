@@ -688,3 +688,90 @@ export function useRecordRun() {
     },
   })
 }
+
+// ── V.1: Traces ─────────────────────────────────────────────────────
+
+export function useTraces(runId: string | null) {
+  return useQuery({
+    queryKey: ['traces', runId],
+    queryFn: () => fetchJson<{ events: unknown[] }>(`/api/traces?runId=${runId}`).then(r => r.events),
+    enabled: !!runId,
+  })
+}
+
+// ── V.1: Approvals ─────────────────────────────────────────────────
+
+export function useApprovals(runId: string | null) {
+  return useQuery({
+    queryKey: ['approvals', runId],
+    queryFn: () => fetchJson<{ approvals: unknown[] }>(`/api/approvals?runId=${runId}`).then(r => r.approvals),
+    enabled: !!runId,
+  })
+}
+
+export function useRequestApproval() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (params: { runId: string; action_type: string; target_ref: string }) =>
+      fetchJson('/api/approvals', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'request', ...params }),
+      }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['approvals'] }) },
+  })
+}
+
+export function useResolveApproval() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (params: Record<string, unknown>) =>
+      fetchJson('/api/approvals', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'resolve', ...params }),
+      }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['approvals'] }) },
+  })
+}
+
+// ── V.1: Surface Reveal ─────────────────────────────────────────────
+
+export function useRevealSurface() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (params: { surfaceId: string; runId?: string }) =>
+      fetchJson('/api/surfaces/reveal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['thread-surfaces'] })
+      qc.invalidateQueries({ queryKey: ['traces'] })
+    },
+  })
+}
+
+// ── V.1: Export Bundle ──────────────────────────────────────────────
+
+export function useExportBundle() {
+  return useMutation({
+    mutationFn: (params: { runId: string }) =>
+      fetchJson('/api/exports/run-bundle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params),
+      }),
+  })
+}
+
+// ── V.1: Surface Access ─────────────────────────────────────────────
+
+export function useSurfaceAccess(surfaceId: string | null, requestorSurfaceId: string | null) {
+  return useQuery({
+    queryKey: ['surface-access', surfaceId, requestorSurfaceId],
+    queryFn: () => fetchJson<{ access: unknown }>(`/api/surfaces/access?surfaceId=${surfaceId}&requestorSurfaceId=${requestorSurfaceId}`).then(r => r.access),
+    enabled: !!surfaceId && !!requestorSurfaceId,
+  })
+}

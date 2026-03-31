@@ -36,7 +36,15 @@ export async function readThreadSurfaceState(basePath: string): Promise<ThreadSu
 
   return {
     version: 1,
-    threadSurfaces: Array.isArray(raw.threadSurfaces) ? raw.threadSurfaces : [],
+    threadSurfaces: (Array.isArray(raw.threadSurfaces) ? raw.threadSurfaces : []).map(s => ({
+      surfaceClass: 'shared' as const,
+      visibility: 'dependency' as const,
+      isolationLabel: 'NONE' as const,
+      revealState: null,
+      allowedReadScopes: [] as string[],
+      allowedWriteScopes: [] as string[],
+      ...s,
+    })),
     runs: Array.isArray(raw.runs) ? raw.runs : [],
     mergeEvents: Array.isArray(raw.mergeEvents)
       ? raw.mergeEvents.map(normalizeMergeEvent)

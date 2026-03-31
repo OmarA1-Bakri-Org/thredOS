@@ -24,6 +24,12 @@ const threadSurface: ThreadSurface = {
   childSurfaceIds: ['thread-research'],
   sequenceRef: null,
   spawnedByAgentId: null,
+  surfaceClass: 'shared',
+  visibility: 'dependency',
+  isolationLabel: 'NONE',
+  revealState: null,
+  allowedReadScopes: [],
+  allowedWriteScopes: [],
 }
 
 const run: RunScope = {

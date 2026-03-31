@@ -82,6 +82,13 @@ mock.module('@/lib/ui/api', () => ({
   unwrapThreadSurfacesResponse: (r: unknown) => r,
   unwrapThreadRunsResponse: (r: unknown) => r,
   unwrapThreadMergesResponse: (r: unknown) => r,
+  useTraces: () => ({ data: [], isLoading: false }),
+  useApprovals: () => ({ data: [], isLoading: false }),
+  useRequestApproval: () => ({ mutate: () => {}, mutateAsync: async () => ({}) }),
+  useResolveApproval: () => ({ mutate: () => {}, mutateAsync: async () => ({}) }),
+  useRevealSurface: () => ({ mutate: () => {}, mutateAsync: async () => ({}) }),
+  useExportBundle: () => ({ mutate: () => {}, mutateAsync: async () => ({}) }),
+  useSurfaceAccess: () => ({ data: null, isLoading: false }),
 }))
 
 // ---------------------------------------------------------------------------

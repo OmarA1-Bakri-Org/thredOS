@@ -73,6 +73,14 @@ export const StepSchema = z.object({
   timeout_ms: z.number().optional(),
   fail_policy: FailPolicySchema.optional(),
   assigned_agent_id: z.string().optional(),
+  // V.1 extensions
+  phase: z.string().optional(),
+  surface_ref: z.string().optional(),
+  input_contract_ref: z.string().optional(),
+  output_contract_ref: z.string().optional(),
+  gate_set_ref: z.string().optional(),
+  completion_contract: z.string().optional(),
+  side_effect_class: z.enum(['none', 'read', 'write', 'execute']).optional(),
 })
 
 export const GateStatusSchema = z.enum(['PENDING', 'APPROVED', 'BLOCKED'])
@@ -118,6 +126,9 @@ export const SequenceSchema = z.object({
   gates: z.array(GateSchema).default([]),
   metadata: MetadataSchema,
   policy: PolicySchema,
+  pack_id: z.string().nullable().default(null),
+  pack_version: z.string().nullable().default(null),
+  default_policy_ref: z.string().nullable().default(null),
 })
 
 // Clean type exports (no collision with schema names)
