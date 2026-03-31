@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, rm } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { writeThreadSurfaceState } from '@/lib/thread-surfaces/repository'
-import type { MergeEvent, RunScope, ThreadSurface } from '@/lib/thread-surfaces/types'
+import { normalizeThreadSurface, type MergeEvent, type RunScope, type ThreadSurface } from '@/lib/thread-surfaces/types'
 
 let basePath: string
 
@@ -99,7 +99,7 @@ describe.serial('thread surface read routes', () => {
     const res = await GET(new Request('http://localhost/api/thread-surfaces'))
     expect(res.status).toBe(200)
     const data = await res.json()
-    expect(data.threadSurfaces).toEqual(threadSurfaces)
+    expect(data.threadSurfaces).toEqual(threadSurfaces.map(normalizeThreadSurface))
   })
 
   test('GET /api/thread-runs returns runs and filters by threadSurfaceId', async () => {

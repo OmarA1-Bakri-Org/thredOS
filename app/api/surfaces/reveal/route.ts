@@ -5,6 +5,7 @@ import { appendTraceEvent } from '@/lib/traces/writer'
 import { readThreadSurfaceState, writeThreadSurfaceState } from '@/lib/thread-surfaces/repository'
 import { getBasePath } from '@/lib/config'
 import { handleError, requireRequestSession } from '@/lib/api-helpers'
+import { normalizeThreadSurface } from '@/lib/thread-surfaces/types'
 
 export async function POST(request: Request) {
   try {
@@ -25,7 +26,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: `Surface not found: ${surfaceId}`, code: 'NOT_FOUND' }, { status: 404 })
     }
 
-    const surface = state.threadSurfaces[surfaceIndex]
+    const surface = normalizeThreadSurface(state.threadSurfaces[surfaceIndex])
     if (!canReveal(surface)) {
       return NextResponse.json(
         { error: `Cannot reveal surface ${surfaceId}: surfaceClass=${surface.surfaceClass}, revealState=${surface.revealState}`, code: 'REVEAL_NOT_ALLOWED' },

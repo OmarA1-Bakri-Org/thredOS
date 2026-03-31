@@ -1,5 +1,9 @@
 export const RunStatusValues = ['pending', 'running', 'successful', 'failed', 'cancelled'] as const
 export type RunStatus = typeof RunStatusValues[number]
+export type SurfaceClass = 'shared' | 'private' | 'sealed' | 'control'
+export type SurfaceVisibility = 'public' | 'dependency' | 'self_only'
+export type IsolationLabel = 'NONE' | 'THREADOS_SCOPED' | 'HOST_ENFORCED'
+export type RevealState = 'sealed' | 'revealed' | null
 
 export const LaneTerminalStateValues = ['completed', 'failed', 'cancelled', 'merged'] as const
 export type LaneTerminalState = typeof LaneTerminalStateValues[number]
@@ -35,12 +39,34 @@ export interface ThreadSurface {
   sequenceRef: string | null
   spawnedByAgentId: string | null
   // V.1 surface model
-  surfaceClass: 'shared' | 'private' | 'sealed' | 'control'
-  visibility: 'public' | 'dependency' | 'self_only'
-  isolationLabel: 'NONE' | 'THREADOS_SCOPED' | 'HOST_ENFORCED'
-  revealState: 'sealed' | 'revealed' | null
+  surfaceClass?: SurfaceClass
+  visibility?: SurfaceVisibility
+  isolationLabel?: IsolationLabel
+  revealState?: RevealState
+  allowedReadScopes?: string[]
+  allowedWriteScopes?: string[]
+}
+
+export interface NormalizedThreadSurface extends ThreadSurface {
+  surfaceClass: SurfaceClass
+  visibility: SurfaceVisibility
+  isolationLabel: IsolationLabel
+  revealState: RevealState
   allowedReadScopes: string[]
   allowedWriteScopes: string[]
+}
+
+export function normalizeThreadSurface(surface: ThreadSurface): NormalizedThreadSurface {
+  const surfaceClass = surface.surfaceClass ?? 'shared'
+  return {
+    ...surface,
+    surfaceClass,
+    visibility: surface.visibility ?? (surfaceClass === 'sealed' ? 'self_only' : 'dependency'),
+    isolationLabel: surface.isolationLabel ?? (surfaceClass === 'sealed' ? 'THREADOS_SCOPED' : 'NONE'),
+    revealState: surface.revealState ?? (surfaceClass === 'sealed' ? 'sealed' : null),
+    allowedReadScopes: surface.allowedReadScopes ?? [],
+    allowedWriteScopes: surface.allowedWriteScopes ?? [],
+  }
 }
 
 export interface RunScope {

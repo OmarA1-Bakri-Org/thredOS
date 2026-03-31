@@ -3,7 +3,7 @@ import { PolicyConfigSchema } from './schema'
 
 describe('PolicyConfigSchema V.1 extensions', () => {
   test('accepts side_effect_mode', () => {
-    for (const mode of ['manual_only', 'approved_only', 'free']) {
+    for (const mode of ['manual_only', 'approved_only', 'free'] as const) {
       const result = PolicyConfigSchema.safeParse({ side_effect_mode: mode })
       expect(result.success).toBe(true)
       if (result.success) expect(result.data.side_effect_mode).toBe(mode)
@@ -37,7 +37,7 @@ describe('PolicyConfigSchema V.1 extensions', () => {
   })
 
   test('accepts all network_mode values', () => {
-    for (const mode of ['off', 'allowlist', 'open']) {
+    for (const mode of ['off', 'allowlist', 'open'] as const) {
       const result = PolicyConfigSchema.safeParse({ network_mode: mode })
       expect(result.success).toBe(true)
       if (result.success) expect(result.data.network_mode).toBe(mode)
@@ -45,7 +45,7 @@ describe('PolicyConfigSchema V.1 extensions', () => {
   })
 
   test('accepts all surface_default_visibility values', () => {
-    for (const vis of ['public', 'dependency', 'self_only']) {
+    for (const vis of ['public', 'dependency', 'self_only'] as const) {
       const result = PolicyConfigSchema.safeParse({ surface_default_visibility: vis })
       expect(result.success).toBe(true)
       if (result.success) expect(result.data.surface_default_visibility).toBe(vis)
@@ -53,7 +53,7 @@ describe('PolicyConfigSchema V.1 extensions', () => {
   })
 
   test('accepts all cross_surface_reads values', () => {
-    for (const mode of ['deny', 'dependency_only']) {
+    for (const mode of ['deny', 'dependency_only'] as const) {
       const result = PolicyConfigSchema.safeParse({ cross_surface_reads: mode })
       expect(result.success).toBe(true)
       if (result.success) expect(result.data.cross_surface_reads).toBe(mode)
@@ -61,7 +61,7 @@ describe('PolicyConfigSchema V.1 extensions', () => {
   })
 
   test('accepts all sealed_surface_projection values', () => {
-    for (const mode of ['manifest_only', 'full']) {
+    for (const mode of ['manifest_only', 'full'] as const) {
       const result = PolicyConfigSchema.safeParse({ sealed_surface_projection: mode })
       expect(result.success).toBe(true)
       if (result.success) expect(result.data.sealed_surface_projection).toBe(mode)
@@ -69,7 +69,7 @@ describe('PolicyConfigSchema V.1 extensions', () => {
   })
 
   test('accepts all export_mode values', () => {
-    for (const mode of ['off', 'local_bundle']) {
+    for (const mode of ['off', 'local_bundle'] as const) {
       const result = PolicyConfigSchema.safeParse({ export_mode: mode })
       expect(result.success).toBe(true)
       if (result.success) expect(result.data.export_mode).toBe(mode)

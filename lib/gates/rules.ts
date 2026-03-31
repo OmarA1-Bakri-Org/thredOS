@@ -1,4 +1,6 @@
 import type { Step, Gate } from '@/lib/sequence/schema'
+import type { PolicyConfig } from '@/lib/policy/schema'
+import type { ThreadSurface } from '@/lib/thread-surfaces/types'
 import { GateReasonCode } from '@/lib/contracts/reason-codes'
 
 export interface RuleResult {
@@ -62,9 +64,9 @@ export function checkDepsSatisfied(
  * Checks whether the step's side-effect class is permitted under the current policy.
  */
 export function checkPolicyPass(
-  sideEffectClass: string | undefined,
-  policyMode: 'SAFE' | 'POWER',
-  sideEffectMode: 'free' | 'manual_only' | 'approved_only',
+  sideEffectClass: Step['side_effect_class'],
+  policyMode: PolicyConfig['mode'],
+  sideEffectMode: PolicyConfig['side_effect_mode'],
 ): RuleResult {
   if (!sideEffectClass || sideEffectClass === 'none') {
     return PASS
@@ -96,8 +98,8 @@ export function checkPolicyPass(
  * Checks whether a surface's access rules permit the current operation.
  */
 export function checkSurfaceAccessPass(
-  surfaceClass: string | undefined,
-  crossSurfaceReads: 'allow' | 'deny',
+  surfaceClass: ThreadSurface['surfaceClass'],
+  crossSurfaceReads: PolicyConfig['cross_surface_reads'] | 'allow',
   isDependency: boolean,
 ): RuleResult {
   if (surfaceClass === 'sealed' && !isDependency) {
@@ -126,8 +128,8 @@ export function checkSurfaceAccessPass(
  * Checks whether a sealed surface has been revealed before allowing access.
  */
 export function checkRevealAllowed(
-  surfaceClass: string | undefined,
-  revealState: 'sealed' | 'revealed' | undefined,
+  surfaceClass: ThreadSurface['surfaceClass'],
+  revealState: ThreadSurface['revealState'],
 ): RuleResult {
   if (surfaceClass !== 'sealed') {
     return PASS

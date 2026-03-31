@@ -131,7 +131,30 @@ export const SequenceSchema = z.object({
   default_policy_ref: z.string().nullable().default(null),
 })
 
+export type SequenceInput = z.input<typeof SequenceSchema>
+export type NormalizedSequence = z.output<typeof SequenceSchema>
+export type StepInput = z.input<typeof StepSchema>
+export type NormalizedStep = z.output<typeof StepSchema>
+export type GateInput = z.input<typeof GateSchema>
+export type NormalizedGate = z.output<typeof GateSchema>
+
 // Clean type exports (no collision with schema names)
 export type Step = z.infer<typeof StepSchema>
 export type Gate = z.infer<typeof GateSchema>
-export type Sequence = z.infer<typeof SequenceSchema>
+export type Sequence = Omit<NormalizedSequence, 'pack_id' | 'pack_version' | 'default_policy_ref'> & {
+  pack_id?: string | null
+  pack_version?: string | null
+  default_policy_ref?: string | null
+}
+
+export function normalizeStep(step: StepInput): Step {
+  return StepSchema.parse(step)
+}
+
+export function normalizeGate(gate: GateInput): Gate {
+  return GateSchema.parse(gate)
+}
+
+export function normalizeSequence(sequence: SequenceInput): Sequence {
+  return SequenceSchema.parse(sequence)
+}

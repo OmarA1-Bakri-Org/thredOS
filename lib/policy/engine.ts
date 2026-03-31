@@ -5,14 +5,7 @@ import { PolicyConfigSchema, type PolicyConfig, type PolicyAction, type PolicyRe
 
 const POLICY_PATH = '.threados/policy.yaml'
 
-const SAFE_DEFAULTS: PolicyConfig = {
-  mode: 'SAFE',
-  command_allowlist: [],
-  cwd_patterns: ['**'],
-  max_fanout: 10,
-  max_concurrent: 5,
-  forbidden_patterns: [],
-}
+const SAFE_DEFAULTS: PolicyConfig = PolicyConfigSchema.parse({})
 
 /**
  * Policy engine for validating actions against configured policies

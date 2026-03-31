@@ -105,7 +105,7 @@ describe('StepSchema V.1 extensions', () => {
   })
 
   test('accepts all side_effect_class values', () => {
-    for (const cls of ['none', 'read', 'write', 'execute']) {
+    for (const cls of ['none', 'read', 'write', 'execute'] as const) {
       const result = StepSchema.safeParse({ ...validStep, side_effect_class: cls })
       expect(result.success).toBe(true)
       if (result.success) expect(result.data.side_effect_class).toBe(cls)

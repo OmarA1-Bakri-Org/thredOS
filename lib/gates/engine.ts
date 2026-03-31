@@ -1,14 +1,16 @@
 import { randomUUID } from 'crypto'
 import type { Step, Gate } from '@/lib/sequence/schema'
 import type { GateDecision } from '@/lib/contracts/schemas'
+import type { PolicyConfig } from '@/lib/policy/schema'
+import type { ThreadSurface } from '@/lib/thread-surfaces/types'
 import { checkDepsSatisfied, checkPolicyPass, checkSurfaceAccessPass, checkRevealAllowed } from './rules'
 
 export interface GateContext {
-  policyMode: string
-  sideEffectMode: string
-  crossSurfaceReads: string
-  surfaceClass: string
-  revealState: string | null
+  policyMode: PolicyConfig['mode']
+  sideEffectMode: PolicyConfig['side_effect_mode']
+  crossSurfaceReads: PolicyConfig['cross_surface_reads'] | 'allow'
+  surfaceClass: ThreadSurface['surfaceClass']
+  revealState: ThreadSurface['revealState']
   isDependency: boolean
 }
 

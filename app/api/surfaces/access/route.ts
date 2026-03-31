@@ -4,6 +4,7 @@ import { readThreadSurfaceState } from '@/lib/thread-surfaces/repository'
 import { PolicyEngine } from '@/lib/policy/engine'
 import { getBasePath } from '@/lib/config'
 import { handleError, requireRequestSession } from '@/lib/api-helpers'
+import { normalizeThreadSurface } from '@/lib/thread-surfaces/types'
 
 export async function GET(request: Request) {
   try {
@@ -26,10 +27,11 @@ export async function GET(request: Request) {
       PolicyEngine.load(bp),
     ])
 
-    const surface = state.threadSurfaces.find(s => s.id === surfaceId)
-    if (!surface) {
+    const rawSurface = state.threadSurfaces.find(s => s.id === surfaceId)
+    if (!rawSurface) {
       return NextResponse.json({ error: `Surface not found: ${surfaceId}`, code: 'NOT_FOUND' }, { status: 404 })
     }
+    const surface = normalizeThreadSurface(rawSurface)
 
     const policy = policyEngine.getConfig()
     const result = resolveAccess({

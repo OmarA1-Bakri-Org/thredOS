@@ -4,7 +4,7 @@ import { join } from 'path'
 import YAML from 'yaml'
 import { createTempDir, cleanTempDir } from '../../test/helpers/setup'
 import { PolicyEngine } from './engine'
-import type { PolicyConfig } from './schema'
+import { PolicyConfigSchema } from './schema'
 
 describe('PolicyEngine', () => {
   let tmpDir: string
@@ -24,14 +24,14 @@ describe('PolicyEngine', () => {
   })
 
   test('loads policy from YAML', async () => {
-    const config: PolicyConfig = {
+    const config = PolicyConfigSchema.parse({
       mode: 'POWER',
       command_allowlist: ['echo', 'cat'],
       cwd_patterns: ['/home/**'],
       max_fanout: 5,
       max_concurrent: 3,
       forbidden_patterns: ['rm -rf'],
-    }
+    })
     await writeFile(join(tmpDir, '.threados/policy.yaml'), YAML.stringify(config))
     const engine = await PolicyEngine.load(tmpDir)
     expect(engine.getConfig().mode).toBe('POWER')
