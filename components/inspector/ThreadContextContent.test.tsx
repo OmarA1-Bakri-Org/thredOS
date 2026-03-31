@@ -49,6 +49,13 @@ mock.module('@/lib/ui/api', () => ({
   useRaceResults: () => ({ data: null, isLoading: false }),
   useEnrollRace: noopMutation,
   useRecordRun: noopMutation,
+  useTraces: () => ({ data: [], isLoading: false }),
+  useApprovals: () => ({ data: [], isLoading: false }),
+  useRequestApproval: noopMutation,
+  useResolveApproval: noopMutation,
+  useRevealSurface: noopMutation,
+  useExportBundle: noopMutation,
+  useSurfaceAccess: () => ({ data: null, isLoading: false }),
 }))
 
 const { ThreadContextContent } = await import('./ThreadContextContent')

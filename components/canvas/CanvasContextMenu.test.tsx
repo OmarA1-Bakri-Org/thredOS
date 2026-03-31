@@ -77,6 +77,13 @@ mock.module('@/lib/ui/api', () => ({
   useRaceResults: () => ({ data: null, isLoading: false }),
   useEnrollRace: () => ({ mutate: () => {}, isPending: false }),
   useRecordRun: () => ({ mutate: () => {}, isPending: false }),
+  useTraces: () => ({ data: [], isLoading: false }),
+  useApprovals: () => ({ data: [], isLoading: false }),
+  useRequestApproval: () => ({ mutate: () => {}, mutateAsync: async () => ({}) }),
+  useResolveApproval: () => ({ mutate: () => {}, mutateAsync: async () => ({}) }),
+  useRevealSurface: () => ({ mutate: () => {}, mutateAsync: async () => ({}) }),
+  useExportBundle: () => ({ mutate: () => {}, mutateAsync: async () => ({}) }),
+  useSurfaceAccess: () => ({ data: null, isLoading: false }),
 }))
 
 // ---------------------------------------------------------------------------

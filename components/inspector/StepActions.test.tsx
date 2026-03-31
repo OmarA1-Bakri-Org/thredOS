@@ -80,6 +80,13 @@ mock.module('@/lib/ui/api', () => ({
   useRaceResults: () => ({ data: null, isLoading: false }),
   useEnrollRace: () => ({ mutate: () => {}, isPending: false }),
   useRecordRun: () => ({ mutate: () => {}, isPending: false }),
+  useTraces: () => ({ data: [], isLoading: false }),
+  useApprovals: () => ({ data: [], isLoading: false }),
+  useRequestApproval: () => ({ mutate: () => {}, mutateAsync: async () => ({}) }),
+  useResolveApproval: () => ({ mutate: () => {}, mutateAsync: async () => ({}) }),
+  useRevealSurface: () => ({ mutate: () => {}, mutateAsync: async () => ({}) }),
+  useExportBundle: () => ({ mutate: () => {}, mutateAsync: async () => ({}) }),
+  useSurfaceAccess: () => ({ data: null, isLoading: false }),
 }))
 
 afterEach(() => { mock.restore() })
@@ -223,6 +230,13 @@ describe('StepActions — pending states', () => {
       useRaceResults: () => ({ data: null, isLoading: false }),
       useEnrollRace: () => ({ mutate: () => {}, isPending: false }),
       useRecordRun: () => ({ mutate: () => {}, isPending: false }),
+      useTraces: () => ({ data: [], isLoading: false }),
+      useApprovals: () => ({ data: [], isLoading: false }),
+      useRequestApproval: () => ({ mutate: () => {}, mutateAsync: async () => ({}) }),
+      useResolveApproval: () => ({ mutate: () => {}, mutateAsync: async () => ({}) }),
+      useRevealSurface: () => ({ mutate: () => {}, mutateAsync: async () => ({}) }),
+      useExportBundle: () => ({ mutate: () => {}, mutateAsync: async () => ({}) }),
+      useSurfaceAccess: () => ({ data: null, isLoading: false }),
     }))
     mock.module('@/lib/ui/store', () => ({
       useUIStore: Object.assign(
@@ -267,6 +281,13 @@ describe('StepActions — pending states', () => {
       useRaceResults: () => ({ data: null, isLoading: false }),
       useEnrollRace: () => ({ mutate: () => {}, isPending: false }),
       useRecordRun: () => ({ mutate: () => {}, isPending: false }),
+      useTraces: () => ({ data: [], isLoading: false }),
+      useApprovals: () => ({ data: [], isLoading: false }),
+      useRequestApproval: () => ({ mutate: () => {}, mutateAsync: async () => ({}) }),
+      useResolveApproval: () => ({ mutate: () => {}, mutateAsync: async () => ({}) }),
+      useRevealSurface: () => ({ mutate: () => {}, mutateAsync: async () => ({}) }),
+      useExportBundle: () => ({ mutate: () => {}, mutateAsync: async () => ({}) }),
+      useSurfaceAccess: () => ({ data: null, isLoading: false }),
     }))
     mock.module('@/lib/ui/store', () => ({
       useUIStore: Object.assign(
@@ -311,6 +332,13 @@ describe('StepActions — pending states', () => {
       useRaceResults: () => ({ data: null, isLoading: false }),
       useEnrollRace: () => ({ mutate: () => {}, isPending: false }),
       useRecordRun: () => ({ mutate: () => {}, isPending: false }),
+      useTraces: () => ({ data: [], isLoading: false }),
+      useApprovals: () => ({ data: [], isLoading: false }),
+      useRequestApproval: () => ({ mutate: () => {}, mutateAsync: async () => ({}) }),
+      useResolveApproval: () => ({ mutate: () => {}, mutateAsync: async () => ({}) }),
+      useRevealSurface: () => ({ mutate: () => {}, mutateAsync: async () => ({}) }),
+      useExportBundle: () => ({ mutate: () => {}, mutateAsync: async () => ({}) }),
+      useSurfaceAccess: () => ({ data: null, isLoading: false }),
     }))
     mock.module('@/lib/ui/store', () => ({
       useUIStore: Object.assign(
@@ -356,6 +384,13 @@ describe('StepActions — pending states', () => {
       useRaceResults: () => ({ data: null, isLoading: false }),
       useEnrollRace: () => ({ mutate: () => {}, isPending: false }),
       useRecordRun: () => ({ mutate: () => {}, isPending: false }),
+      useTraces: () => ({ data: [], isLoading: false }),
+      useApprovals: () => ({ data: [], isLoading: false }),
+      useRequestApproval: () => ({ mutate: () => {}, mutateAsync: async () => ({}) }),
+      useResolveApproval: () => ({ mutate: () => {}, mutateAsync: async () => ({}) }),
+      useRevealSurface: () => ({ mutate: () => {}, mutateAsync: async () => ({}) }),
+      useExportBundle: () => ({ mutate: () => {}, mutateAsync: async () => ({}) }),
+      useSurfaceAccess: () => ({ data: null, isLoading: false }),
     }))
     mock.module('@/lib/ui/store', () => ({
       useUIStore: Object.assign(
@@ -400,6 +435,13 @@ describe('StepActions — pending states', () => {
       useRaceResults: () => ({ data: null, isLoading: false }),
       useEnrollRace: () => ({ mutate: () => {}, isPending: false }),
       useRecordRun: () => ({ mutate: () => {}, isPending: false }),
+      useTraces: () => ({ data: [], isLoading: false }),
+      useApprovals: () => ({ data: [], isLoading: false }),
+      useRequestApproval: () => ({ mutate: () => {}, mutateAsync: async () => ({}) }),
+      useResolveApproval: () => ({ mutate: () => {}, mutateAsync: async () => ({}) }),
+      useRevealSurface: () => ({ mutate: () => {}, mutateAsync: async () => ({}) }),
+      useExportBundle: () => ({ mutate: () => {}, mutateAsync: async () => ({}) }),
+      useSurfaceAccess: () => ({ data: null, isLoading: false }),
     }))
     mock.module('@/lib/ui/store', () => ({
       useUIStore: Object.assign(
