@@ -13,7 +13,6 @@ interface RateLimitOptions {
 }
 
 declare global {
-  // eslint-disable-next-line no-var
   var __THREDOS_RATE_LIMITS__: Map<string, RateLimitEntry> | undefined
 }
 

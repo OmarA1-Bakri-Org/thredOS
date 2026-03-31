@@ -1,25 +1,22 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect } from 'react'
 import { Bot, BarChart3, Sparkles, UserCheck, Users, Wrench } from 'lucide-react'
+import { buildAgentComposition, buildRegisteredAgentComposition, detectMaterialChange } from '@/lib/agents/composition'
 import { useUIStore } from '@/lib/ui/store'
 import { useStatus, useSequence, useListAgents, useAssignAgent, useAgentPerformance, useThreadSurfaceSkills } from '@/lib/ui/api'
 import { derivePhases } from '@/lib/ui/phases'
-import type { StepStatus, StepType } from '@/lib/sequence/schema'
+import type { SkillRef, StepStatus, StepType } from '@/lib/sequence/schema'
 import type { PromptRef } from '@/lib/library/types'
-
-type StepSkillRef = {
-  id: string
-  version: number
-  capabilities: string[]
-  path?: string
-}
 import { ModelPopout } from '@/components/inspector/ModelPopout'
 import { MarkdownAssetEditor } from '@/components/workbench/MarkdownAssetEditor'
 import { AssetPicker } from '@/components/workbench/AssetPicker'
 import { AgentTopTrumpCard } from '@/components/workbench/AgentTopTrumpCard'
-import { buildPromptDrafts, buildSkillDrafts, formatSkillSummary } from '@/components/workbench/libraryAssets'
+import { AVAILABLE_TOOL_OPTIONS, buildPromptDrafts, buildSkillDrafts, formatSkillSummary, formatToolSummary } from '@/components/workbench/libraryAssets'
 import { SkillBadgeRow } from '@/components/skills/SkillBadgeRow'
+import { applyPromptSelection, buildAgentDraft } from '@/lib/agents/drafts'
+
+type StepSkillRef = SkillRef
 
 type AgentTab = 'workshop' | 'roster' | 'assign' | 'performance' | 'tools'
 
@@ -148,7 +145,13 @@ function AssignmentRow({
 }
 
 export function AgentSection() {
-  const [activeTab, setActiveTab] = useState<AgentTab>('workshop')
+  const activeTab = useUIStore(s => s.activeAgentTab)
+  const setActiveTab = useUIStore(s => s.setActiveAgentTab)
+  const activeAgentCardView = useUIStore(s => s.activeAgentCardView)
+  const setActiveAgentCardView = useUIStore(s => s.setActiveAgentCardView)
+  const agentDraft = useUIStore(s => s.agentDraft)
+  const seedAgentDraft = useUIStore(s => s.seedAgentDraft)
+  const patchAgentDraft = useUIStore(s => s.patchAgentDraft)
   const selectedPhaseId = useUIStore(s => s.selectedPhaseId)
   const selectedNodeId = useUIStore(s => s.selectedNodeId)
   const selectedThreadSurfaceId = useUIStore(s => s.selectedThreadSurfaceId)
@@ -173,32 +176,199 @@ export function AgentSection() {
   const focusedStep = mergeStepData(focusedStatusStep, focusedSequenceStep)
   const selectedAgent = agents.find(agent => agent.id === focusedStep?.assigned_agent_id) ?? null
   const currentPerformance = useAgentPerformance(selectedAgent?.id ?? null).data ?? null
+  const selectedPhaseLabel = selectedPhase?.label
 
   const promptAssets = focusedStep ? buildPromptDrafts({
       step: focusedStep,
       sequenceName: status?.name,
-      phaseLabel: selectedPhase?.label,
+      phaseLabel: selectedPhaseLabel,
       agent: selectedAgent,
       threadSkills,
     }) : []
   const skillAssets = focusedStep ? buildSkillDrafts(focusedStep, selectedAgent, threadSkills) : []
+  const canonicalPromptAssets = promptAssets.filter(asset => asset.canonical)
+  const inheritedPromptRef = selectedAgent?.promptRef ?? focusedStep?.prompt_ref ?? null
+  const defaultPromptRefId = inheritedPromptRef?.id ?? (focusedStep?.prompt_file ? focusedStep.id : null)
+  const defaultPromptRefVersion = inheritedPromptRef?.version ?? (focusedStep?.prompt_file ? 1 : null)
+  const defaultPromptRefPath = inheritedPromptRef?.path ?? focusedStep?.prompt_file ?? null
+  const defaultPromptId = defaultPromptRefId ?? canonicalPromptAssets[0]?.id ?? promptAssets[0]?.id ?? null
 
-  const [selectedPromptId, setSelectedPromptId] = useState<string | null>(null)
-  const [selectedSkillId, setSelectedSkillId] = useState<string | null>(null)
-  const [modelDrafts, setModelDrafts] = useState<Record<string, string>>({})
-  const effectivePromptId = promptAssets.some(asset => asset.id === selectedPromptId)
-    ? selectedPromptId
-    : promptAssets[0]?.id ?? null
-  const effectiveSkillId = skillAssets.some(asset => asset.id === selectedSkillId)
-    ? selectedSkillId
+  const effectivePromptId = promptAssets.some(asset => asset.id === agentDraft.selectedPromptId)
+    ? agentDraft.selectedPromptId
+    : defaultPromptId
+  const defaultSkillRefs = selectedAgent?.skillRefs?.length
+    ? selectedAgent.skillRefs.map(ref => ({ ...ref, capabilities: ref.capabilities ?? [] }))
+    : focusedStep?.skill_refs?.length
+      ? focusedStep.skill_refs
+      : threadSkills.map(skill => ({
+          id: skill.id,
+          version: 1,
+          path: `.threados/skills/${skill.id}/SKILL.md`,
+          capabilities: [],
+        }))
+  const defaultTools = selectedAgent?.tools?.length
+    ? selectedAgent.tools
+    : AVAILABLE_TOOL_OPTIONS.slice(0, 3).map(tool => tool.id)
+
+  useEffect(() => {
+    if (!focusedStep) return
+    const nextDraft = buildAgentDraft({
+      step: {
+        id: focusedStep.id,
+        name: focusedStep.name,
+        model: focusedStep.model,
+        type: focusedStep.type,
+        prompt_file: focusedStep.prompt_ref?.path ?? focusedStep.prompt_file,
+        prompt_ref: focusedStep.prompt_ref,
+        skill_refs: focusedStep.skill_refs,
+        node_description: focusedStep.node_description,
+        expected_outcome: focusedStep.expected_outcome,
+      },
+      agent: selectedAgent,
+      promptRef: defaultPromptRefId && defaultPromptRefVersion !== null && defaultPromptRefPath
+        ? {
+            id: defaultPromptRefId,
+            version: defaultPromptRefVersion,
+            path: defaultPromptRefPath,
+          }
+        : null,
+      selectedPromptId: defaultPromptId,
+      skillRefs: defaultSkillRefs,
+      toolIds: defaultTools,
+      role: selectedAgent?.role ?? focusedStep.role ?? null,
+    })
+    if (
+      agentDraft.stepId !== focusedStep.id
+      || (selectedAgent?.id && agentDraft.id !== selectedAgent.id)
+      || (!selectedAgent && agentDraft.name !== nextDraft.name)
+    ) {
+      seedAgentDraft(nextDraft)
+    }
+  }, [
+    agentDraft.id,
+    agentDraft.name,
+    agentDraft.stepId,
+    defaultPromptRefId,
+    defaultPromptRefPath,
+    defaultPromptRefVersion,
+    defaultSkillRefs,
+    defaultTools,
+    defaultPromptId,
+    focusedStep,
+    seedAgentDraft,
+    selectedAgent,
+    selectedThreadSurfaceId,
+  ])
+
+  const selectedSkillIds = agentDraft.skillRefs.map(ref => ref.id)
+  const selectedToolIds = agentDraft.tools
+  const effectiveSkillId = skillAssets.some(asset => asset.id === agentDraft.focusedSkillId)
+    ? agentDraft.focusedSkillId
     : skillAssets[0]?.id ?? null
-  const modelDraftKey = selectedAgent?.id ?? focusedStep?.id ?? 'default'
-  const modelDraft = modelDrafts[modelDraftKey] ?? selectedAgent?.model ?? focusedStep?.model ?? 'claude-code'
+  const modelDraft = agentDraft.model || selectedAgent?.model || focusedStep?.model || 'claude-code'
 
   const selectedPrompt = promptAssets.find(asset => asset.id === effectivePromptId) ?? promptAssets[0] ?? null
-  const selectedSkill = skillAssets.find(asset => asset.id === effectiveSkillId) ?? skillAssets[0] ?? null
-  const selectedSkillIds = focusedStep?.skill_refs?.map(ref => ref.id) ?? selectedAgent?.skillRefs?.map(ref => ref.id) ?? threadSkills.map(skill => skill.id)
+  const selectedSkill = skillAssets.find(asset => asset.id === effectiveSkillId) ?? skillAssets.find(asset => selectedSkillIds.includes(asset.id)) ?? skillAssets[0] ?? null
   const phaseLabel = selectedPhase?.label ?? 'No phase selected'
+  const currentComposition = selectedAgent
+    ? buildRegisteredAgentComposition({
+        model: selectedAgent.model,
+        role: selectedAgent.role,
+        promptRef: selectedAgent.promptRef,
+        skillRefs: selectedAgent.skillRefs,
+        tools: selectedAgent.tools,
+        composition: selectedAgent.composition,
+      })
+    : null
+  const draftComposition = buildAgentComposition({
+    model: modelDraft,
+    role: agentDraft.role || selectedAgent?.role || focusedStep?.role || 'worker',
+    promptRef: agentDraft.promptRef,
+    skillRefs: agentDraft.skillRefs,
+    tools: agentDraft.tools,
+  })
+  const materiality = currentComposition ? detectMaterialChange(currentComposition, draftComposition) : null
+  const metadataChanged = selectedAgent
+    ? selectedAgent.name !== agentDraft.name || (selectedAgent.description ?? '') !== agentDraft.description
+    : false
+  const changeSummary = !focusedStep
+    ? null
+    : !selectedAgent
+      ? {
+          title: 'New canonical agent',
+          detail: 'Registering this loadout will create a new agent identity.',
+        }
+      : materiality?.material
+        ? {
+            title: 'Material change',
+            detail: materiality.reasons.join(', '),
+          }
+        : metadataChanged
+          ? {
+              title: 'Non-material change',
+              detail: 'Only name or description changed. Registration should stay on the same canonical version.',
+            }
+          : {
+              title: 'No canonical change',
+              detail: 'This draft matches the currently assigned canonical loadout.',
+            }
+
+  const handleSelectPrompt = (promptId: string) => {
+    const asset = promptAssets.find(item => item.id === promptId) ?? null
+    if (!asset) return
+    patchAgentDraft({
+      ...applyPromptSelection(agentDraft, {
+        id: asset.id,
+        version: asset.version,
+        path: asset.path,
+        canonical: asset.canonical,
+      }),
+    })
+  }
+
+  const resolveSkillRef = (skillId: string): SkillRef => {
+    const existing = agentDraft.skillRefs.find(ref => ref.id === skillId)
+      ?? defaultSkillRefs.find(ref => ref.id === skillId)
+    if (existing) {
+      return {
+        ...existing,
+        capabilities: existing.capabilities ?? [],
+      }
+    }
+    const asset = skillAssets.find(item => item.id === skillId)
+    return {
+      id: skillId,
+      version: asset?.version ?? 1,
+      path: asset?.path ?? `.threados/skills/${skillId}/SKILL.md`,
+      capabilities: [],
+    }
+  }
+
+  const toggleSkillSelection = (skillId: string) => {
+    const current = agentDraft.skillRefs
+    if (current.some(ref => ref.id === skillId)) {
+      const next = current.filter(ref => ref.id !== skillId)
+      patchAgentDraft({
+        skillRefs: next,
+        focusedSkillId: agentDraft.focusedSkillId === skillId ? next[0]?.id ?? null : agentDraft.focusedSkillId,
+      })
+      return
+    }
+    if (current.length >= 5) return
+    patchAgentDraft({
+      skillRefs: [...current, resolveSkillRef(skillId)],
+      focusedSkillId: skillId,
+    })
+  }
+
+  const toggleToolSelection = (toolId: string) => {
+    const current = agentDraft.tools
+    patchAgentDraft({
+      tools: current.includes(toolId)
+        ? current.filter(id => id !== toolId)
+        : [...current, toolId],
+    })
+  }
 
   return (
     <div className="space-y-3" data-testid="agent-section">
@@ -220,6 +390,7 @@ export function AgentSection() {
               type="button"
               onClick={() => setActiveTab(tab.id)}
               data-testid={`agent-tab-${tab.id}`}
+              data-active={isActive ? 'true' : 'false'}
               className={`flex items-center gap-1 px-2 py-1.5 font-mono text-[9px] uppercase tracking-[0.12em] transition-all ${
                 isActive ? 'border-b-2 border-emerald-400 text-emerald-300' : 'text-slate-600 hover:text-slate-300'
               }`}
@@ -240,10 +411,34 @@ export function AgentSection() {
               agents={agents}
               promptAssets={promptAssets}
               skillAssets={skillAssets}
+              view={activeAgentCardView}
               selectedPromptId={selectedPrompt?.id ?? null}
-              selectedSkillId={selectedSkill?.id ?? null}
-              onSelectPrompt={setSelectedPromptId}
-              onSelectSkill={setSelectedSkillId}
+              focusedSkillId={selectedSkill?.id ?? null}
+              selectedSkillIds={selectedSkillIds}
+              selectedToolIds={selectedToolIds}
+              draftName={agentDraft.name}
+              draftDescription={agentDraft.description}
+              draftRole={agentDraft.role}
+              draftModel={modelDraft}
+              changeSummary={changeSummary}
+              onViewChange={setActiveAgentCardView}
+              onSelectPrompt={handleSelectPrompt}
+              onSelectSkill={skillId => patchAgentDraft({ focusedSkillId: skillId })}
+              onToggleSkill={toggleSkillSelection}
+              onToggleTool={toggleToolSelection}
+              onDraftNameChange={value => patchAgentDraft({
+                name: value,
+                ...(selectedAgent
+                  ? {}
+                  : {
+                      id: value.trim().length > 0
+                        ? value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+                        : agentDraft.id,
+                    }),
+              })}
+              onDraftDescriptionChange={value => patchAgentDraft({ description: value })}
+              onDraftRoleChange={value => patchAgentDraft({ role: value })}
+              onDraftModelChange={value => patchAgentDraft({ model: value })}
               onAssignAgent={(agentId) => assignAgent.mutate({ stepId: focusedStep.id, agentId })}
               performance={currentPerformance}
             />
@@ -256,7 +451,7 @@ export function AgentSection() {
       {activeTab === 'roster' ? (
         <div className="space-y-2">
           <div className="border border-slate-800 bg-[#060e1a] px-3 py-3 text-sm text-slate-300">
-            Every agent is canonical once registered. Model, role, or attached skill changes mint a new agent identity.
+            Every agent is canonical once registered. Model, role, prompt, skill, or tool changes mint a new agent identity.
           </div>
           {agents.length > 0 ? (
             <div className="space-y-2">
@@ -351,7 +546,7 @@ export function AgentSection() {
             title="Prompt library"
             items={promptAssets}
             selectedId={selectedPrompt?.id ?? null}
-            onSelect={setSelectedPromptId}
+            onSelect={handleSelectPrompt}
             emptyLabel="No prompt drafts available."
           />
           {selectedPrompt ? (
@@ -368,8 +563,11 @@ export function AgentSection() {
           <AssetPicker
             title="Skill library"
             items={skillAssets}
+            selectionMode="multiple"
             selectedId={selectedSkill?.id ?? null}
-            onSelect={setSelectedSkillId}
+            selectedIds={selectedSkillIds}
+            onSelect={skillId => patchAgentDraft({ focusedSkillId: skillId })}
+            onToggleSelect={toggleSkillSelection}
             emptyLabel="No skill drafts available."
           />
           {selectedSkill ? (
@@ -387,11 +585,34 @@ export function AgentSection() {
             Prompt and skill docs are canonical, markdown-backed assets. The model selector in the agent card keeps composition changes explicit.
           </div>
           <div className="border border-slate-800 bg-[#060e1a] px-3 py-3">
+            <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Selected tools</div>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {AVAILABLE_TOOL_OPTIONS.map(tool => {
+                const selected = selectedToolIds.includes(tool.id)
+                return (
+                  <button
+                    key={tool.id}
+                    type="button"
+                    onClick={() => toggleToolSelection(tool.id)}
+                    className={`rounded-full border px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.16em] transition-all ${
+                      selected
+                        ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-100'
+                        : 'border-slate-700 bg-slate-950/70 text-slate-400 hover:border-slate-500 hover:text-slate-200'
+                    }`}
+                  >
+                    {tool.label}
+                  </button>
+                )
+              })}
+            </div>
+            <div className="mt-2 text-sm text-slate-400">{formatToolSummary(selectedToolIds)}</div>
+          </div>
+          <div className="border border-slate-800 bg-[#060e1a] px-3 py-3">
             <label className="block font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Loadout model draft</label>
             <div className="mt-2">
               <ModelPopout
                 value={modelDraft}
-                onChange={nextModel => setModelDrafts(prev => ({ ...prev, [modelDraftKey]: nextModel }))}
+                onChange={nextModel => patchAgentDraft({ model: nextModel })}
               />
             </div>
           </div>

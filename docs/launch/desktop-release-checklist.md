@@ -6,8 +6,10 @@
 - `bun test test/api/hosted-auth-routes.test.ts`
 - `bun test lib/local-first/cloud-boundary.test.ts`
 - `bun test lib/local-first/activation-sessions.test.ts`
+- `bun test lib/commercial/stripe.test.ts`
 - `bun run build`
 - `bun run test:ui`
+- `bun run verify:ci`
 
 ## Windows launch flow
 
@@ -18,6 +20,19 @@
 - Verify the local workspace opens after activation.
 - Verify offline launch works with an active entitlement cache.
 - Verify expired or missing entitlement states are clear and non-destructive.
+
+## Verification program
+
+- `bun run verify:local` from a native Linux filesystem copy when validating the deterministic dev flow.
+- `bun run verify:ci` on the Linux production-parity runner before release promotion.
+- `bun run verify:release-live` only in the gated release environment with real auth and billing secrets.
+- Attach the verification evidence bundle from `test-results/verify/<mode>/<timestamp>/` to the release record.
+- Evidence bundle must include:
+  - Playwright JSON manifest
+  - readiness probe output
+  - server stdout/stderr logs
+  - screenshots and traces for each suite
+  - any operator notes required for live checkout completion
 
 ## Privacy boundary
 
@@ -59,3 +74,4 @@
   - chat panel resize behavior
   - confirm dialog focus and dismissal behavior
   - Node + Agent + Run panel readability in the packaged build
+  - live checkout completion and browser return back into desktop activation

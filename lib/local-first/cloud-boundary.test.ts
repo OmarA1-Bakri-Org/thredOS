@@ -18,10 +18,12 @@ describe('cloud boundary', () => {
       model: 'gpt-5.2',
       role: 'research',
       tools: ['browser'],
+      promptRef: { id: 'launch-prompt', version: 3, path: '.threados/prompts/launch.md' },
       skillRefs: [{ id: 'spawn-reviewer', version: 1, capabilities: ['spawn'] }],
       composition: {
         model: 'gpt-5.2',
         role: 'research',
+        promptRef: { id: 'launch-prompt', version: 3, path: '.threados/prompts/launch.md' },
         skillRefs: [{ id: 'spawn-reviewer', version: 1, capabilities: ['spawn'] }],
         tools: ['browser'],
         identityHash: 'hash-1',
@@ -47,6 +49,8 @@ describe('cloud boundary', () => {
       name: 'Launch Agent',
       model: 'gpt-5.2',
       role: 'research',
+      promptRef: { id: 'launch-prompt', version: 3 },
+      skillRefs: [{ id: 'spawn-reviewer', version: 1, capabilities: ['spawn'] }],
       skillIds: ['spawn-reviewer'],
       tools: ['browser'],
     })

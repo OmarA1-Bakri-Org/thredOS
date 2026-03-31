@@ -12,9 +12,9 @@ import {
 
 const CLOUD_AGENT_REGISTRY_PATH = '.threados/state/cloud-agent-registry.json'
 
-export interface CloudAgentRegistration extends CloudAgentRegistrationPayload {}
+export type CloudAgentRegistration = CloudAgentRegistrationPayload
 
-export interface AgentPerformanceRecord extends CloudPerformancePayload {}
+export type AgentPerformanceRecord = CloudPerformancePayload
 
 interface CloudAgentRegistryState {
   version: 1

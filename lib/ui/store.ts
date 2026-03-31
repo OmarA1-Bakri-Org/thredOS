@@ -1,9 +1,27 @@
 'use client'
 
 import { create } from 'zustand'
+import type { PromptRef, SkillRef } from '@/lib/library/types'
 
 export type ThreadSurfaceViewMode = 'hierarchy' | 'lanes'
 export type ProductEntryMode = 'thredos' | 'thread-runner'
+export type AgentSectionTab = 'workshop' | 'roster' | 'assign' | 'performance' | 'tools'
+export type AgentCardView = 'overview' | 'prompt' | 'skills'
+export type NodePanelView = 'overview' | 'assets' | 'config'
+
+export interface AgentDraftState {
+  stepId: string | null
+  id: string
+  name: string
+  description: string
+  role: string
+  model: string
+  promptRef: PromptRef | null
+  selectedPromptId: string | null
+  focusedSkillId: string | null
+  skillRefs: SkillRef[]
+  tools: string[]
+}
 
 export interface HierarchyViewportState {
   x: number
@@ -75,6 +93,17 @@ interface UIStore {
   setActiveAccordionSections: (sections: string[]) => void
   expandAccordionSection: (section: string) => void
   collapseAccordionSection: (section: string) => void
+  activeAgentTab: AgentSectionTab
+  setActiveAgentTab: (tab: AgentSectionTab) => void
+  activeAgentCardView: AgentCardView
+  setActiveAgentCardView: (view: AgentCardView) => void
+  activeNodePanel: NodePanelView
+  setActiveNodePanel: (panel: NodePanelView) => void
+  focusAgentPanel: (tab?: AgentSectionTab, view?: AgentCardView) => void
+  focusNodePanel: (panel?: NodePanelView) => void
+  agentDraft: AgentDraftState
+  seedAgentDraft: (draft: AgentDraftState) => void
+  patchAgentDraft: (draft: Partial<AgentDraftState>) => void
   navigationStack: NavFrame[]
   portalDirection: 'forward' | 'back' | null
   pushDepth: (frame: NavFrame) => void
@@ -99,6 +128,20 @@ const defaultLaneBoardState: LaneBoardState = {
   scrollLeft: 0,
   focusedThreadSurfaceId: null,
   focusedRunId: null,
+}
+
+const defaultAgentDraft: AgentDraftState = {
+  stepId: null,
+  id: '',
+  name: '',
+  description: '',
+  role: '',
+  model: 'claude-code',
+  promptRef: null,
+  selectedPromptId: null,
+  focusedSkillId: null,
+  skillRefs: [],
+  tools: [],
 }
 
 export const useUIStore = create<UIStore>((set) => ({
@@ -193,6 +236,28 @@ export const useUIStore = create<UIStore>((set) => ({
   collapseAccordionSection: (section) => set((s) => ({
     activeAccordionSections: s.activeAccordionSections.filter(id => id !== section),
   })),
+  activeAgentTab: 'workshop',
+  setActiveAgentTab: (tab) => set({ activeAgentTab: tab }),
+  activeAgentCardView: 'overview',
+  setActiveAgentCardView: (view) => set({ activeAgentCardView: view }),
+  activeNodePanel: 'overview',
+  setActiveNodePanel: (panel) => set({ activeNodePanel: panel }),
+  focusAgentPanel: (tab = 'workshop', view = 'overview') => set((s) => ({
+    activeAgentTab: tab,
+    activeAgentCardView: view,
+    activeAccordionSections: s.activeAccordionSections.includes('agent')
+      ? s.activeAccordionSections
+      : [...s.activeAccordionSections, 'agent'],
+  })),
+  focusNodePanel: (panel = 'overview') => set((s) => ({
+    activeNodePanel: panel,
+    activeAccordionSections: s.activeAccordionSections.includes('node')
+      ? s.activeAccordionSections
+      : [...s.activeAccordionSections, 'node'],
+  })),
+  agentDraft: defaultAgentDraft,
+  seedAgentDraft: (draft) => set({ agentDraft: draft }),
+  patchAgentDraft: (draft) => set((s) => ({ agentDraft: { ...s.agentDraft, ...draft } })),
   navigationStack: [],
   portalDirection: null,
   pushDepth: (frame) => set((s) => ({

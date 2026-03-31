@@ -43,7 +43,7 @@ describe.serial('API Routes', () => {
 
   test('GET /api/sequence returns sequence', async () => {
     const { GET } = await import('@/app/api/sequence/route')
-    const res = await GET()
+    const res = await GET(new Request('http://localhost/api/sequence'))
     expect(res.status).toBe(200)
     const data = await res.json()
     expect(data.name).toBe('test-seq')
@@ -52,7 +52,7 @@ describe.serial('API Routes', () => {
 
   test('GET /api/status returns status', async () => {
     const { GET } = await import('@/app/api/status/route')
-    const res = await GET()
+    const res = await GET(new Request('http://localhost/api/status'))
     expect(res.status).toBe(200)
     const data = await res.json()
     expect(data.summary.total).toBe(2)

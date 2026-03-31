@@ -1,0 +1,71 @@
+version: "1.0"
+name: Verification Sequence
+thread_type: b
+steps:
+  - id: orch-orchestrator
+    name: orchestrator
+    type: b
+    model: claude-code
+    role: orchestrator
+    prompt_file: .threados/prompts/orch-orchestrator.md
+    prompt_ref:
+      id: orch-orchestrator
+      version: 1
+      path: .threados/prompts/orch-orchestrator.md
+    depends_on: []
+    status: READY
+    orchestrator: orch-orchestrator
+  - id: orch-worker-1
+    name: worker 1
+    type: b
+    model: claude-code
+    role: builder
+    prompt_file: .threados/prompts/orch-worker-1.md
+    prompt_ref:
+      id: orch-worker-1
+      version: 1
+      path: .threados/prompts/orch-worker-1.md
+    depends_on:
+      - orch-orchestrator
+    status: READY
+    orchestrator: orch-orchestrator
+  - id: orch-worker-2
+    name: worker 2
+    type: b
+    model: claude-code
+    role: researcher
+    prompt_file: .threados/prompts/orch-worker-2.md
+    prompt_ref:
+      id: orch-worker-2
+      version: 1
+      path: .threados/prompts/orch-worker-2.md
+    depends_on:
+      - orch-orchestrator
+    status: READY
+    orchestrator: orch-orchestrator
+  - id: orch-worker-3
+    name: worker 3
+    type: b
+    model: claude-code
+    role: reviewer
+    prompt_file: .threados/prompts/orch-worker-3.md
+    prompt_ref:
+      id: orch-worker-3
+      version: 1
+      path: .threados/prompts/orch-worker-3.md
+    depends_on:
+      - orch-orchestrator
+    status: READY
+    orchestrator: orch-orchestrator
+gates:
+  - id: approval-gate
+    name: approval gate
+    depends_on:
+      - orch-worker-1
+      - orch-worker-2
+    status: PENDING
+    description: Review the branch outputs before merge.
+    acceptance_conditions:
+      - worker 1 output reviewed
+      - worker 2 output reviewed
+    required_review: true

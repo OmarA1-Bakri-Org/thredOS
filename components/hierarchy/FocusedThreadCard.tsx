@@ -13,12 +13,16 @@ export interface ThreadRubricMetric {
 }
 
 export interface ThreadCardProfile {
+  agentName?: string
   builder: string
   pack: string
   division: string
   classification: string
   placement: string
   verified: boolean
+  registrationNumber?: string | null
+  model?: string | null
+  role?: string | null
   threadPower: number
   weight: number
   delta: string

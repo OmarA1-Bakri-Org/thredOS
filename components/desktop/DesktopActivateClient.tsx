@@ -1,8 +1,9 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
+import { isClientVerificationMode } from '@/lib/verification/runtime'
 
 type ActivationResolution =
   | { status: 'idle' | 'processing' }
@@ -12,33 +13,35 @@ type ActivationResolution =
 
 export function DesktopActivateClient() {
   const searchParams = useSearchParams()
-  const [resolution, setResolution] = useState<ActivationResolution>({ status: 'idle' })
+  const verificationMode = isClientVerificationMode()
   const stateId = searchParams.get('state')
   const sessionId = searchParams.get('session_id')
   const cancelled = searchParams.get('status') === 'cancelled'
+  const immediateResolution = cancelled
+    ? { status: 'cancelled' } satisfies ActivationResolution
+    : !stateId || !sessionId
+      ? { status: 'error', error: 'Missing activation state or checkout session.' } satisfies ActivationResolution
+      : null
+  const [asyncResolution, setAsyncResolution] = useState<ActivationResolution | null>(null)
+  const resolution = useMemo<ActivationResolution>(
+    () => immediateResolution ?? asyncResolution ?? { status: 'processing' },
+    [asyncResolution, immediateResolution],
+  )
 
   useEffect(() => {
-    if (cancelled) {
-      setResolution({ status: 'cancelled' })
-      return
-    }
-    if (!stateId || !sessionId) {
-      setResolution({ status: 'error', error: 'Missing activation state or checkout session.' })
-      return
-    }
+    if (immediateResolution || !stateId || !sessionId) return
 
     let active = true
-    setResolution({ status: 'processing' })
 
     void fetch(`/api/desktop/checkout/resolve?state=${encodeURIComponent(stateId)}&session_id=${encodeURIComponent(sessionId)}`)
       .then(async response => {
         const body = await response.json().catch(() => ({ error: 'Unable to resolve activation' }))
         if (!active) return
         if (!response.ok) {
-          setResolution({ status: 'error', error: body.error ?? 'Unable to resolve activation' })
+          setAsyncResolution({ status: 'error', error: body.error ?? 'Unable to resolve activation' })
           return
         }
-        setResolution({
+        setAsyncResolution({
           status: 'ready',
           deepLink: body.deepLink,
           customerEmail: body.customerEmail ?? null,
@@ -47,51 +50,57 @@ export function DesktopActivateClient() {
       })
       .catch(() => {
         if (active) {
-          setResolution({ status: 'error', error: 'Unable to resolve activation right now.' })
+          setAsyncResolution({ status: 'error', error: 'Unable to resolve activation right now.' })
         }
       })
 
     return () => {
       active = false
     }
-  }, [cancelled, sessionId, stateId])
+  }, [immediateResolution, sessionId, stateId])
 
   useEffect(() => {
-    if (resolution.status === 'ready') {
+    if (resolution.status === 'ready' && !verificationMode) {
       window.location.assign(resolution.deepLink)
     }
-  }, [resolution])
+  }, [resolution, verificationMode])
 
   return (
-    <div className="flex min-h-screen bg-[#060a12] text-slate-100">
+    <div data-testid="desktop-activate-page" className="flex min-h-screen bg-[#060a12] text-slate-100">
       <div className="m-auto w-full max-w-2xl border border-slate-800/90 bg-[#08101d] px-8 py-10 shadow-[0_28px_80px_rgba(0,0,0,0.45)]">
         <div className="font-mono text-[11px] uppercase tracking-[0.28em] text-sky-300/60">Desktop activation return</div>
         <h1 className="mt-4 text-4xl font-light tracking-[-0.04em] text-white">Finish activating thredOS Desktop.</h1>
 
         {resolution.status === 'processing' || resolution.status === 'idle' ? (
-          <p className="mt-5 text-sm leading-7 text-slate-300">
+          <p data-testid="desktop-activate-processing" className="mt-5 text-sm leading-7 text-slate-300">
             Confirming your checkout and preparing the local activation token now.
           </p>
         ) : null}
 
         {resolution.status === 'cancelled' ? (
-          <p className="mt-5 text-sm leading-7 text-slate-300">
+          <p data-testid="desktop-activate-cancelled" className="mt-5 text-sm leading-7 text-slate-300">
             Checkout was cancelled. You can close this tab and start the browser activation flow again from thredOS Desktop.
           </p>
         ) : null}
 
         {resolution.status === 'error' ? (
-          <div className="mt-6 border border-rose-500/35 bg-rose-500/10 px-4 py-4 text-sm text-rose-100">
+          <div data-testid="desktop-activate-error" className="mt-6 border border-rose-500/35 bg-rose-500/10 px-4 py-4 text-sm text-rose-100">
             {resolution.error}
           </div>
         ) : null}
 
         {resolution.status === 'ready' ? (
-          <div className="mt-6 space-y-4">
+          <div data-testid="desktop-activate-ready" className="mt-6 space-y-4">
             <div className="border border-emerald-500/35 bg-emerald-500/10 px-4 py-4 text-sm text-emerald-100">
               Activation is ready{resolution.customerEmail ? ` for ${resolution.customerEmail}` : ''}. If thredOS Desktop did not reopen automatically, use the button below.
             </div>
+            {verificationMode ? (
+              <div className="border border-sky-500/35 bg-sky-500/10 px-4 py-4 text-sm text-sky-100">
+                Verification mode keeps the desktop deep-link visible instead of auto-opening it.
+              </div>
+            ) : null}
             <a
+              data-testid="desktop-activate-open-desktop"
               href={resolution.deepLink}
               className="inline-flex items-center justify-center border border-sky-500/40 bg-sky-500/10 px-5 py-3 text-sm font-medium text-sky-100 transition-colors hover:border-sky-300/60 hover:text-white"
             >

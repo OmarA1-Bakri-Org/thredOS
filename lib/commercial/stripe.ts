@@ -10,6 +10,12 @@ import {
   getStripeWebhookSecret,
 } from './config'
 import type { ActivationTokenPayload, EntitlementStatus } from '@/lib/local-first/types'
+import {
+  buildVerificationCheckoutSessionId,
+  getVerificationEmail,
+  parseVerificationCheckoutSessionId,
+  shouldUseStubStripeBoundary,
+} from '@/lib/verification/runtime'
 
 let cachedStripeClient: Stripe | null | undefined
 
@@ -56,12 +62,40 @@ export interface StripeCheckoutResolution {
   entitlementStatus: Extract<EntitlementStatus, 'pending' | 'active' | 'grace' | 'expired'>
 }
 
+interface VerificationResolutionContext {
+  stateId?: string | null
+  customerEmail?: string | null
+}
+
 export async function createDesktopCheckoutSession(input: {
   origin: string
   state: string
   customerEmail?: string | null
   plan: 'desktop-public-beta'
 }): Promise<Stripe.Checkout.Session> {
+  if (shouldUseStubStripeBoundary()) {
+    const sessionId = buildVerificationCheckoutSessionId(input.state)
+    const checkoutUrl = new URL('/desktop/checkout/mock', input.origin)
+    checkoutUrl.searchParams.set('state', input.state)
+    checkoutUrl.searchParams.set('session_id', sessionId)
+    checkoutUrl.searchParams.set('plan', input.plan)
+    if (input.customerEmail) {
+      checkoutUrl.searchParams.set('email', input.customerEmail)
+    }
+
+    return {
+      id: sessionId,
+      url: checkoutUrl.toString(),
+      client_reference_id: input.state,
+      customer: input.customerEmail ? `cus_verify_${input.state}` : null,
+      customer_email: input.customerEmail ?? undefined,
+      metadata: {
+        state: input.state,
+        plan: input.plan,
+      },
+    } as unknown as Stripe.Checkout.Session
+  }
+
   const stripe = getStripeClient()
   const priceId = getStripePriceId()
   if (!stripe || !priceId) {
@@ -106,7 +140,53 @@ export async function createDesktopCheckoutSession(input: {
 
 export async function resolveDesktopCheckoutSession(
   sessionId: string,
+  verificationContext?: VerificationResolutionContext,
 ): Promise<StripeCheckoutResolution> {
+  if (shouldUseStubStripeBoundary()) {
+    const stateId = verificationContext?.stateId ?? parseVerificationCheckoutSessionId(sessionId)
+    if (!stateId) {
+      throw new Error('Verification checkout session is missing a state id')
+    }
+
+    const customerEmail = verificationContext?.customerEmail ?? getVerificationEmail()
+    const activatedAt = new Date().toISOString()
+    const customerId = `cus_verify_${stateId}`
+    const subscriptionId = `sub_verify_${stateId}`
+    const session = {
+      id: sessionId,
+      client_reference_id: stateId,
+      customer: customerId,
+      customer_email: customerEmail,
+      customer_details: {
+        email: customerEmail,
+      },
+      subscription: subscriptionId,
+    } as unknown as Stripe.Checkout.Session
+    const subscription = {
+      id: subscriptionId,
+      status: 'active',
+      customer: customerId,
+      metadata: {
+        state: stateId,
+      },
+    } as unknown as Stripe.Subscription
+
+    return {
+      session,
+      subscription,
+      payload: {
+        customerEmail,
+        plan: 'desktop-public-beta',
+        status: 'active',
+        activatedAt,
+        lastValidatedAt: activatedAt,
+        expiresAt: null,
+        graceUntil: null,
+      },
+      entitlementStatus: 'active',
+    }
+  }
+
   const stripe = getStripeClient()
   if (!stripe) {
     throw new Error('Stripe checkout is not configured')
@@ -146,6 +226,10 @@ export async function resolveDesktopCheckoutSession(
 }
 
 export function constructStripeWebhookEvent(payload: string, signature: string): Stripe.Event {
+  if (shouldUseStubStripeBoundary()) {
+    return JSON.parse(payload) as Stripe.Event
+  }
+
   const stripe = getStripeClient()
   const webhookSecret = getStripeWebhookSecret()
   if (!stripe || !webhookSecret) {

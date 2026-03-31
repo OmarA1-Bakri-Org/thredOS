@@ -4,6 +4,7 @@ import { useEffect, useRef, useCallback, useState } from 'react'
 import Link from 'next/link'
 import { FilePlus2, Home, LogOut, MessageSquare, Moon, PanelLeft, Play, Plus, Search, ShieldCheck, Sun } from 'lucide-react'
 import { useTheme } from 'next-themes'
+import { ThredOSBrand } from '@/components/brand/ThredOSBrand'
 import { useDesktopEntitlement, useRunRunnable, useStatus, useResetSequence } from '@/lib/ui/api'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
@@ -84,10 +85,12 @@ export function TopBar() {
           <PanelLeft className="h-4 w-4" />
         </Button>
 
-        <div className="min-w-0">
-          <div className="font-mono text-[11px] uppercase tracking-[0.28em] text-sky-300/70">Local-first operating system</div>
-          <div className="text-xl font-semibold tracking-tight text-white">thredOS Desktop</div>
-        </div>
+        <ThredOSBrand
+          subtitle="Desktop operating surface"
+          className="min-w-0"
+          imageClassName="h-11 w-11"
+          labelClassName="truncate"
+        />
       </div>
 
       <div className="flex min-w-0 flex-wrap items-center gap-3 lg:flex-nowrap">

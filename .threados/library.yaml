@@ -1,0 +1,88 @@
+version: 1
+prompts:
+  orch-worker-3:
+    id: orch-worker-3
+    kind: prompt
+    title: orch worker 3
+    version: 1
+    path: .threados/prompts/orch-worker-3.md
+    updatedAt: 2026-03-24T06:35:23.175Z
+    lastEditor: null
+    description: Canonical prompt asset for orch worker 3
+    capabilities: []
+    links:
+      agentIds: []
+      nodeIds: []
+skills:
+  search:
+    id: search
+    kind: skill
+    title: Search
+    version: 1
+    path: .threados/skills/search/SKILL.md
+    updatedAt: 2026-03-24T06:35:22.990Z
+    lastEditor: null
+    description: Research and retrieve information from the web and local knowledge sources.
+    capabilities:
+      - search
+    links:
+      agentIds: []
+      nodeIds: []
+  browser:
+    id: browser
+    kind: skill
+    title: Browser
+    version: 1
+    path: .threados/skills/browser/SKILL.md
+    updatedAt: 2026-03-24T06:35:22.996Z
+    lastEditor: null
+    description: Navigate web pages and inspect interactive flows.
+    capabilities:
+      - browser
+    links:
+      agentIds: []
+      nodeIds: []
+  files:
+    id: files
+    kind: skill
+    title: Files
+    version: 1
+    path: .threados/skills/files/SKILL.md
+    updatedAt: 2026-03-24T06:35:23.001Z
+    lastEditor: null
+    description: Read and work with workspace files and referenced documents.
+    capabilities:
+      - files
+    links:
+      agentIds: []
+      nodeIds: []
+  tools:
+    id: tools
+    kind: skill
+    title: Tools
+    version: 1
+    path: .threados/skills/tools/SKILL.md
+    updatedAt: 2026-03-24T06:35:23.007Z
+    lastEditor: null
+    description: Invoke tool-capable workflows and external integrations.
+    capabilities:
+      - tools
+    links:
+      agentIds: []
+      nodeIds: []
+  spawn:
+    id: spawn
+    kind: skill
+    title: Spawn
+    version: 1
+    path: .threados/skills/spawn/SKILL.md
+    updatedAt: 2026-03-24T06:35:23.013Z
+    lastEditor: null
+    description: Authorize the agent to create lower-tier child agents and delegated
+      surfaces.
+    capabilities:
+      - spawn
+    links:
+      agentIds: []
+      nodeIds: []
+agents: {}

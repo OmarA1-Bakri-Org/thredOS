@@ -2,6 +2,7 @@
 
 # dependencies
 /node_modules
+/package-lock.json
 /.pnp
 .pnp.*
 .yarn/*
@@ -35,6 +36,8 @@ yarn-error.log*
 # env files (can opt-in for committing if needed)
 .env*
 !.env.example
+!.env.verify.local
+!.env.verify.ci
 
 # vercel
 .vercel
@@ -65,6 +68,12 @@ nul
 .hintrc
 .kombai/
 .playwright-mcp/
+.codex/
+.vscode/
+node_modules.win-old/
+output/
+scripts/codex-*.sh
+scripts/codex-*.cmd
 
 # Git worktrees
 .worktrees/

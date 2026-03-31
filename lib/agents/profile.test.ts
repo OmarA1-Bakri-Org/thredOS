@@ -130,7 +130,23 @@ describe('buildAgentProfile', () => {
       }
     })
 
-    test('skills come from agent.metadata.skills when present', () => {
+    test('skills come from agent.skillRefs when present', () => {
+      const withSkills = buildAgentProfile({
+        ...sources,
+        agent: makeAgent({
+          skillRefs: [
+            { id: 'code-review', version: 2, capabilities: ['review'] },
+            { id: 'browser', version: 1, capabilities: ['navigate'] },
+          ],
+        }),
+      })
+      expect(withSkills.skills).toEqual([
+        { id: 'code-review', label: 'code review', inherited: false },
+        { id: 'browser', label: 'browser', inherited: false },
+      ])
+    })
+
+    test('skills fall back to agent.metadata.skills when skillRefs are absent', () => {
       const customSkills = [
         { id: 'code', label: 'Code', inherited: false },
         { id: 'debug', label: 'Debug', inherited: true },

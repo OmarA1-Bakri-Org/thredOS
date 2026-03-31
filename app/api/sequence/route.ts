@@ -26,7 +26,7 @@ const ApplyTemplateSchema = z.object({
 })
 const BodySchema = z.union([ResetSchema, RenameSchema, SetTypeSchema, ApplyTemplateSchema])
 
-export async function GET(request?: Request) {
+export async function GET(request: Request) {
   try {
     const session = requireRequestSession(request)
     if (session instanceof NextResponse) return session

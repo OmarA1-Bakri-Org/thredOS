@@ -1,0 +1,126 @@
+version: 1
+prompts:
+  orch-orchestrator:
+    id: orch-orchestrator
+    kind: prompt
+    title: orchestrator prompt
+    version: 1
+    path: .threados/prompts/orch-orchestrator.md
+    updatedAt: 2026-03-31T00:00:00.000Z
+    lastEditor: null
+    description: Canonical prompt asset for the orchestrator step
+    capabilities: []
+    links:
+      agentIds: []
+      nodeIds: []
+  orch-worker-1:
+    id: orch-worker-1
+    kind: prompt
+    title: worker 1 prompt
+    version: 1
+    path: .threados/prompts/orch-worker-1.md
+    updatedAt: 2026-03-31T00:00:00.000Z
+    lastEditor: null
+    description: Canonical prompt asset for worker 1
+    capabilities: []
+    links:
+      agentIds: []
+      nodeIds: []
+  orch-worker-2:
+    id: orch-worker-2
+    kind: prompt
+    title: worker 2 prompt
+    version: 1
+    path: .threados/prompts/orch-worker-2.md
+    updatedAt: 2026-03-31T00:00:00.000Z
+    lastEditor: null
+    description: Canonical prompt asset for worker 2
+    capabilities: []
+    links:
+      agentIds: []
+      nodeIds: []
+  orch-worker-3:
+    id: orch-worker-3
+    kind: prompt
+    title: worker 3 prompt
+    version: 1
+    path: .threados/prompts/orch-worker-3.md
+    updatedAt: 2026-03-31T00:00:00.000Z
+    lastEditor: null
+    description: Canonical prompt asset for worker 3
+    capabilities: []
+    links:
+      agentIds: []
+      nodeIds: []
+skills:
+  search:
+    id: search
+    kind: skill
+    title: Search
+    version: 1
+    path: .threados/skills/search/SKILL.md
+    updatedAt: 2026-03-31T00:00:00.000Z
+    lastEditor: null
+    description: Research and retrieve information from local and remote sources.
+    capabilities:
+      - search
+    links:
+      agentIds: []
+      nodeIds: []
+  browser:
+    id: browser
+    kind: skill
+    title: Browser
+    version: 1
+    path: .threados/skills/browser/SKILL.md
+    updatedAt: 2026-03-31T00:00:00.000Z
+    lastEditor: null
+    description: Navigate web flows and validate browser behavior.
+    capabilities:
+      - browser
+    links:
+      agentIds: []
+      nodeIds: []
+  files:
+    id: files
+    kind: skill
+    title: Files
+    version: 1
+    path: .threados/skills/files/SKILL.md
+    updatedAt: 2026-03-31T00:00:00.000Z
+    lastEditor: null
+    description: Work with local workspace files.
+    capabilities:
+      - files
+    links:
+      agentIds: []
+      nodeIds: []
+  tools:
+    id: tools
+    kind: skill
+    title: Tools
+    version: 1
+    path: .threados/skills/tools/SKILL.md
+    updatedAt: 2026-03-31T00:00:00.000Z
+    lastEditor: null
+    description: Use tool-capable workflows intentionally.
+    capabilities:
+      - tools
+    links:
+      agentIds: []
+      nodeIds: []
+  spawn:
+    id: spawn
+    kind: skill
+    title: Spawn
+    version: 1
+    path: .threados/skills/spawn/SKILL.md
+    updatedAt: 2026-03-31T00:00:00.000Z
+    lastEditor: null
+    description: Grant lower-tier child-agent spawning.
+    capabilities:
+      - spawn
+    links:
+      agentIds: []
+      nodeIds: []
+agents: {}

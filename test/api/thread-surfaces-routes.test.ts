@@ -96,7 +96,7 @@ describe.serial('thread surface read routes', () => {
 
   test('GET /api/thread-surfaces returns persisted surfaces', async () => {
     const { GET } = await import('@/app/api/thread-surfaces/route')
-    const res = await GET()
+    const res = await GET(new Request('http://localhost/api/thread-surfaces'))
     expect(res.status).toBe(200)
     const data = await res.json()
     expect(data.threadSurfaces).toEqual(threadSurfaces)

@@ -1,6 +1,6 @@
 'use client'
 
-import { AnimatePresence, LazyMotion, domAnimation, m } from 'motion/react'
+import { AnimatePresence, motion } from 'framer-motion'
 
 // Variants that use the `custom` direction prop
 const variants = {
@@ -26,25 +26,23 @@ interface PortalTransitionProps {
 
 export function PortalTransition({ children, depthKey, direction }: PortalTransitionProps) {
   return (
-    <LazyMotion features={domAnimation}>
-      <AnimatePresence mode="sync" custom={direction}>
-        <m.div
-          key={depthKey}
-          custom={direction}
-          variants={variants}
-          initial="enter"
-          animate="center"
-          exit="exit"
-          transition={{
-            x: { duration: 0.25, ease: [0.32, 0.72, 0, 1] },
-            opacity: { duration: 0.2 },
-          }}
-          className="absolute inset-0"
-          style={{ willChange: 'transform' }}
-        >
-          {children}
-        </m.div>
-      </AnimatePresence>
-    </LazyMotion>
+    <AnimatePresence mode="sync" custom={direction}>
+      <motion.div
+        key={depthKey}
+        custom={direction}
+        variants={variants}
+        initial="enter"
+        animate="center"
+        exit="exit"
+        transition={{
+          x: { duration: 0.25, ease: [0.32, 0.72, 0, 1] },
+          opacity: { duration: 0.2 },
+        }}
+        className="absolute inset-0"
+        style={{ willChange: 'transform' }}
+      >
+        {children}
+      </motion.div>
+    </AnimatePresence>
   )
 }

@@ -5,7 +5,7 @@ import { readThreadSurfaceState, writeThreadSurfaceState } from '@/lib/thread-su
 import { readSequence } from '@/lib/sequence/parser'
 import { reconcileSurfacesWithSequence } from '@/lib/thread-surfaces/materializer'
 
-export async function GET(request?: Request) {
+export async function GET(request: Request) {
   try {
     const session = requireRequestSession(request)
     if (session instanceof NextResponse) return session

@@ -1,6 +1,6 @@
 'use client'
 
-import { AnimatePresence, m } from 'motion/react'
+import { AnimatePresence, motion } from 'framer-motion'
 
 interface ContextDimOverlayProps {
   depth: number
@@ -10,7 +10,7 @@ export function ContextDimOverlay({ depth }: ContextDimOverlayProps) {
   return (
     <AnimatePresence>
       {depth > 0 && (
-        <m.div
+        <motion.div
           key="context-dim"
           initial={{ opacity: 0 }}
           animate={{ opacity: 0.3 }}

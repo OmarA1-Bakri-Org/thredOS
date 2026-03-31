@@ -4,11 +4,11 @@ import { getBasePath } from '@/lib/config'
 import { handleError, jsonError, requireRequestSession } from '@/lib/api-helpers'
 import { readAgentState, updateAgentState } from '@/lib/agents/repository'
 import { registerCloudAgent } from '@/lib/agents/cloud-registry'
-import { buildAgentComposition, detectMaterialChange } from '@/lib/agents/composition'
+import { buildAgentComposition, buildRegisteredAgentComposition, detectMaterialChange } from '@/lib/agents/composition'
 import type { AgentRegistration, AgentSkill } from '@/lib/agents/types'
 import { ensureLibraryStructure, readLibraryCatalog, skillRefFromEntry, syncAgentAsset } from '@/lib/library/repository'
 import type { SkillRef } from '@/lib/library/types'
-import { SkillRefSchema } from '@/lib/sequence/schema'
+import { PromptRefSchema, SkillRefSchema } from '@/lib/sequence/schema'
 
 const AgentSkillSchema = z.object({
   id: z.string().min(1),
@@ -28,12 +28,13 @@ const AgentBodySchema = z.object({
   model: z.string().min(1).optional(),
   role: z.string().optional(),
   tools: z.array(z.string()).optional(),
+  promptRef: PromptRefSchema.nullable().optional(),
   skillRefs: z.array(SkillRefSchema).optional(),
   skills: z.array(AgentSkillSchema).optional(),
   supersedesAgentId: z.string().optional(),
 })
 
-export async function GET(request?: Request) {
+export async function GET(request: Request) {
   try {
     const session = requireRequestSession(request)
     if (session instanceof NextResponse) return session
@@ -74,6 +75,7 @@ function buildAgent(
     model: body.model ?? fallback?.model,
     role: body.role ?? fallback?.role,
     tools: Array.isArray(body.tools) ? body.tools : fallback?.tools ?? [],
+    promptRef: body.promptRef ?? fallback?.promptRef ?? null,
     skillRefs: Array.isArray(body.skillRefs) ? body.skillRefs : fallback?.skillRefs ?? [],
     skills: Array.isArray(body.skills) ? body.skills : fallback?.skills,
     composition: body.composition ?? fallback?.composition,
@@ -131,17 +133,26 @@ export async function POST(request: Request) {
       ? state.agents.find(agent => agent.id === body.supersedesAgentId) ?? currentAgent
       : currentAgent
     const skillRefs = await resolveSkillRefs(bp, body.skillRefs, body.skills)
-    const currentComposition = anchorAgent?.composition ?? (anchorAgent ? buildAgentComposition({
-      model: anchorAgent.model,
-      role: anchorAgent.role,
-      skillRefs: anchorAgent.skillRefs,
-      tools: anchorAgent.tools,
-    }) : null)
+    const promptRef = body.promptRef ?? currentAgent?.promptRef ?? anchorAgent?.promptRef ?? null
+    if (!promptRef) {
+      return jsonError('Missing promptRef for canonical agent registration', 'VALIDATION_ERROR', 400)
+    }
+    const currentComposition = anchorAgent
+      ? buildRegisteredAgentComposition({
+          model: anchorAgent.model,
+          role: anchorAgent.role,
+          promptRef: anchorAgent.promptRef,
+          skillRefs: anchorAgent.skillRefs,
+          tools: anchorAgent.tools,
+          composition: anchorAgent.composition,
+        })
+      : null
     const composition = buildAgentComposition({
-      model: body.model ?? currentAgent?.model,
-      role: body.role ?? currentAgent?.role,
+      model: body.model ?? currentAgent?.model ?? anchorAgent?.model,
+      role: body.role ?? currentAgent?.role ?? anchorAgent?.role,
+      promptRef,
       skillRefs,
-      tools: body.tools ?? currentAgent?.tools,
+      tools: body.tools ?? currentAgent?.tools ?? anchorAgent?.tools,
     })
 
     if (currentComposition) {
@@ -158,6 +169,7 @@ export async function POST(request: Request) {
           model: body.model ?? anchorAgent?.model,
           role: body.role ?? anchorAgent?.role,
           tools: body.tools ?? anchorAgent?.tools,
+          promptRef,
           skillRefs,
           skills: body.skills ?? anchorAgent?.skills,
           composition,
@@ -199,13 +211,14 @@ export async function POST(request: Request) {
 
     const agent = buildAgent({
       ...body,
-      model: body.model ?? currentAgent?.model,
-      role: body.role ?? currentAgent?.role,
-      tools: body.tools ?? currentAgent?.tools,
+      model: body.model ?? currentAgent?.model ?? anchorAgent?.model,
+      role: body.role ?? currentAgent?.role ?? anchorAgent?.role,
+      tools: body.tools ?? currentAgent?.tools ?? anchorAgent?.tools,
+      promptRef,
       skillRefs,
       skills: body.skills ?? currentAgent?.skills,
       composition,
-      version: currentAgent ? (currentAgent.version ?? 1) + 1 : 1,
+      version: currentAgent?.version ?? 1,
       supersedesAgentId: body.supersedesAgentId ?? currentAgent?.supersedesAgentId ?? null,
     }, currentAgent ?? anchorAgent)
 
@@ -213,11 +226,13 @@ export async function POST(request: Request) {
       const existingIndex = state.agents.findIndex(a => a.id === agent.id)
       if (existingIndex !== -1) {
         const existing = state.agents[existingIndex]
-        const existingComposition = existing.composition ?? buildAgentComposition({
+        const existingComposition = buildRegisteredAgentComposition({
           model: existing.model,
           role: existing.role,
+          promptRef: existing.promptRef,
           skillRefs: existing.skillRefs,
           tools: existing.tools,
+          composition: existing.composition,
         })
         const nextDecision = detectMaterialChange(existingComposition, composition)
         if (nextDecision.material) {

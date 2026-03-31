@@ -45,10 +45,11 @@ export function LoginForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-5">
+    <form data-testid="login-form" onSubmit={handleSubmit} className="space-y-5">
       <label className="block space-y-2">
         <span className="font-mono text-[11px] uppercase tracking-[0.22em] text-slate-400">Email</span>
         <input
+          data-testid="login-email"
           type="email"
           value={email}
           onChange={event => setEmail(event.target.value)}
@@ -62,6 +63,7 @@ export function LoginForm() {
       <label className="block space-y-2">
         <span className="font-mono text-[11px] uppercase tracking-[0.22em] text-slate-400">Password</span>
         <input
+          data-testid="login-password"
           type="password"
           value={password}
           onChange={event => setPassword(event.target.value)}
@@ -73,12 +75,12 @@ export function LoginForm() {
       </label>
 
       {error ? (
-        <div className="border border-rose-500/35 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+        <div data-testid="login-error" className="border border-rose-500/35 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
           {error}
         </div>
       ) : null}
 
-      <Button type="submit" variant="default" className="w-full justify-center" disabled={pending}>
+      <Button data-testid="login-submit" type="submit" variant="default" className="w-full justify-center" disabled={pending}>
         {pending ? 'Signing in' : 'Enter thredOS'}
       </Button>
     </form>

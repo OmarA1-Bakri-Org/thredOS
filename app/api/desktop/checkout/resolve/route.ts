@@ -30,7 +30,10 @@ export async function GET(request: Request) {
   }
 
   try {
-    const resolution = await resolveDesktopCheckoutSession(sessionId)
+    const resolution = await resolveDesktopCheckoutSession(sessionId, {
+      stateId,
+      customerEmail: pendingSession.customerEmail,
+    })
     if (resolution.session.client_reference_id !== stateId) {
       return NextResponse.json({ error: 'Checkout session does not match activation state' }, { status: 409 })
     }

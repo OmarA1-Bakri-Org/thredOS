@@ -58,7 +58,7 @@ function buildStatus(sequence: Sequence, mprocsMap: Record<string, number>) {
 
 export type SequenceStatus = ReturnType<typeof buildStatus>
 
-export async function GET(request?: Request) {
+export async function GET(request: Request) {
   try {
     const session = requireRequestSession(request)
     if (session instanceof NextResponse) return session
@@ -69,5 +69,3 @@ export async function GET(request?: Request) {
     return handleError(err)
   }
 }
-
-export { buildStatus }

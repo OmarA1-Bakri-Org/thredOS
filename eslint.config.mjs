@@ -14,6 +14,12 @@ const eslintConfig = defineConfig([
       }],
     },
   },
+  {
+    files: ["desktop/**/*.cjs"],
+    rules: {
+      "@typescript-eslint/no-require-imports": "off",
+    },
+  },
   // Override default ignores of eslint-config-next.
   globalIgnores([
     // Default ignores of eslint-config-next:
@@ -24,6 +30,18 @@ const eslintConfig = defineConfig([
     // Codacy auto-generated tool configs
     ".codacy/**",
     ".codacy-cli-v2/**",
+    // Local scratch worktrees should not participate in root lint runs.
+    ".worktrees/**",
+    // Runtime/generated/project-local data that should never be linted.
+    ".threados/**",
+    "dist-desktop/**",
+    "output/**",
+    "logo-brand-assets/**",
+    "node_modules.win-old/**",
+    "docs/**",
+    "public/**",
+    "*.svg",
+    "*.png",
   ]),
 ]);
 

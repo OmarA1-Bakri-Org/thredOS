@@ -209,6 +209,23 @@ function computeRubric(
 // ── Skills derivation ────────────────────────────────────────────────
 
 function deriveSkills(agent: AgentRegistration | null): ThreadSkillBadge[] {
+  if (agent?.skillRefs && agent.skillRefs.length > 0) {
+    const displaySkills = new Map((agent.skills ?? []).map(skill => [skill.id, skill.label]))
+    return agent.skillRefs.map(skill => ({
+      id: skill.id,
+      label: displaySkills.get(skill.id) ?? skill.id.replace(/[-_]+/g, ' '),
+      inherited: false,
+    }))
+  }
+
+  if (agent?.skills && agent.skills.length > 0) {
+    return agent.skills.map(skill => ({
+      id: skill.id,
+      label: skill.label,
+      inherited: skill.inherited ?? false,
+    }))
+  }
+
   // If agent has metadata.skills, use those
   if (agent?.metadata?.skills && Array.isArray(agent.metadata.skills)) {
     return (agent.metadata.skills as Array<{ id: string; label: string; inherited?: boolean }>).map(s => ({
@@ -260,12 +277,16 @@ export function buildAgentProfile(sources: ProfileDataSources): ThreadCardProfil
   const placement = derivePlacement(stats, node.runStatus)
 
   return {
+    agentName: agent?.name ?? undefined,
     builder: agent?.builderName ?? 'thredOS Registry',
     pack: derivePackName(pack, placement),
     division: deriveDivision(pack, node.depth),
     classification: deriveClassification(pack, node.role),
     placement,
     verified: isVerifiedAgent(agent, stats, node.runStatus),
+    registrationNumber: agent?.registrationNumber ?? null,
+    model: agent?.model ?? null,
+    role: agent?.role ?? node.role ?? null,
     threadPower: computeThreadPower(stats, node.runStatus, node.childCount),
     weight: computeWeight(stats, pack, node.depth, node.childCount),
     delta: computeDelta(stats, node.runStatus),

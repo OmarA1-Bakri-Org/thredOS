@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { LoginForm } from '@/components/auth/LoginForm'
+import { ThredOSBrand } from '@/components/brand/ThredOSBrand'
 import { getServerSession } from '@/lib/auth/session'
 import { isHostedMode } from '@/lib/hosted'
 
@@ -18,9 +19,12 @@ export default async function LoginPage() {
     <div className="flex min-h-screen bg-[#060a12] text-slate-100">
       <div className="m-auto grid w-full max-w-5xl gap-8 px-6 py-12 lg:grid-cols-[minmax(0,1.1fr)_minmax(22rem,0.9fr)]">
         <div className="border border-slate-800/90 bg-[#08101d] px-8 py-8 shadow-[0_28px_80px_rgba(0,0,0,0.45)]">
-          <div className="font-mono text-[11px] uppercase tracking-[0.28em] text-sky-300/60">
-            Desktop activation
-          </div>
+          <ThredOSBrand
+            priority
+            subtitle="Desktop activation"
+            className="items-end"
+            imageClassName="h-20 w-20"
+          />
           <h1 className="mt-4 text-5xl font-light tracking-[-0.05em] text-white">
             Activate thredOS Desktop.
           </h1>

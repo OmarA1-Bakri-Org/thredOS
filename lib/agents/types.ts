@@ -1,4 +1,4 @@
-import type { SkillRef } from '@/lib/library/types'
+import type { PromptRef, SkillRef } from '@/lib/library/types'
 
 export interface AgentSkill {
   id: string
@@ -9,6 +9,7 @@ export interface AgentSkill {
 export interface AgentComposition {
   model: string
   role: string
+  promptRef: PromptRef | null
   skillRefs: SkillRef[]
   tools: string[]
   identityHash: string
@@ -36,6 +37,7 @@ export interface AgentRegistration {
   skills?: AgentSkill[]
   role?: string
   tools?: string[]
+  promptRef?: PromptRef | null
   skillRefs?: SkillRef[]
   composition?: AgentComposition
   version?: number

@@ -38,10 +38,12 @@ function createAgent(overrides: Partial<AgentRegistration> = {}): AgentRegistrat
     model: 'gpt-4o',
     role: 'researcher',
     tools: ['search'],
+    promptRef: { id: 'agent-alpha-prompt', version: 1, path: '.threados/prompts/agent-alpha.md' },
     skillRefs: [],
     composition: {
       model: 'gpt-4o',
       role: 'researcher',
+      promptRef: { id: 'agent-alpha-prompt', version: 1, path: '.threados/prompts/agent-alpha.md' },
       skillRefs: [],
       tools: ['search'],
       identityHash: 'identity-alpha',
@@ -58,6 +60,7 @@ describe('cloud agent registry', () => {
 
     expect(registration.registrationNumber.startsWith('AG-')).toBe(true)
     expect(registration.agentId).toBe('agent-alpha')
+    expect(registration.promptRef).toEqual({ id: 'agent-alpha-prompt', version: 1 })
 
     await recordCloudAgentPerformance(workspace, {
       registrationNumber: registration.registrationNumber,

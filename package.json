@@ -2,6 +2,7 @@
   "name": "threader",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "bun@1.3.6",
   "description": "thredOS Desktop local-first control surface for agent work",
   "main": "desktop/main.cjs",
   "bin": {
@@ -14,11 +15,14 @@
     "desktop:dev": "electron ./desktop/main.cjs",
     "desktop:build": "bun run build && electron-builder --win nsis",
     "desktop:dist": "electron-builder",
-    "lint": "eslint",
+    "lint": "eslint --cache --cache-strategy content --cache-location .eslintcache --concurrency auto app components lib test desktop scripts/verify eslint.config.mjs next.config.ts playwright.config.ts playwright.dev-verify.config.ts playwright.release-live.config.ts playwright.verify.shared.ts proxy.ts",
     "typecheck": "tsc --noEmit",
     "test": "bun test",
     "test:ui": "playwright test test/ui/main-page.e2e.ts",
-    "check": "bun run lint && bun run typecheck && bun test"
+    "check": "bun run lint && bun run typecheck && bun test",
+    "verify:local": "node scripts/verify/run.mjs local",
+    "verify:ci": "node scripts/verify/run.mjs ci",
+    "verify:release-live": "node scripts/verify/run.mjs release-live"
   },
   "dependencies": {
     "@radix-ui/react-accordion": "^1.2.12",

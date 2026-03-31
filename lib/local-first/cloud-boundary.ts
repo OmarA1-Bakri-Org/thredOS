@@ -27,6 +27,15 @@ export const CloudAgentRegistrationPayloadSchema = z.object({
   name: z.string(),
   model: z.string(),
   role: z.string(),
+  promptRef: z.object({
+    id: z.string(),
+    version: z.number().int().positive(),
+  }).nullable(),
+  skillRefs: z.array(z.object({
+    id: z.string(),
+    version: z.number().int().positive(),
+    capabilities: z.array(z.string()),
+  })),
   skillIds: z.array(z.string()),
   tools: z.array(z.string()),
 })
@@ -47,7 +56,7 @@ export type CloudPerformancePayload = z.infer<typeof CloudPerformancePayloadSche
 
 export function sanitizeAgentForCloud(
   agent: AgentRegistration,
-  input: Omit<CloudAgentRegistrationPayload, 'agentId' | 'name' | 'model' | 'role' | 'skillIds' | 'tools'>,
+  input: Omit<CloudAgentRegistrationPayload, 'agentId' | 'name' | 'model' | 'role' | 'promptRef' | 'skillRefs' | 'skillIds' | 'tools'>,
 ): CloudAgentRegistrationPayload {
   return CloudAgentRegistrationPayloadSchema.parse({
     ...input,
@@ -55,6 +64,17 @@ export function sanitizeAgentForCloud(
     name: agent.name,
     model: agent.model ?? 'unassigned',
     role: agent.role ?? 'unspecified',
+    promptRef: agent.promptRef
+      ? {
+          id: agent.promptRef.id,
+          version: agent.promptRef.version,
+        }
+      : null,
+    skillRefs: (agent.skillRefs ?? []).map(skill => ({
+      id: skill.id,
+      version: skill.version,
+      capabilities: skill.capabilities ?? [],
+    })),
     skillIds: (agent.skillRefs ?? []).map(skill => skill.id),
     tools: agent.tools ?? [],
   })

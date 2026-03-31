@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useMemo, useState } from 'react'
-import { useReactFlow, useStore as useFlowStore } from '@xyflow/react'
+import { useReactFlow, useViewport } from '@xyflow/react'
 import { X, Play, Square, RotateCcw, Copy, Trash2, Check, Ban } from 'lucide-react'
 import { useUIStore } from '@/lib/ui/store'
 import { useStatus, useRunStep, useStopStep, useRestartStep, useApproveGate, useBlockGate, useRemoveStep, useRemoveGate, useCloneStep } from '@/lib/ui/api'
@@ -58,6 +58,7 @@ function DepCompletionBar({ done, total }: { done: number; total: number }) {
 export function NodeDetailCard() {
   const selectedNodeId = useUIStore(s => s.selectedNodeId)
   const setSelectedNodeId = useUIStore(s => s.setSelectedNodeId)
+  const focusNodePanel = useUIStore(s => s.focusNodePanel)
   const { data: status } = useStatus()
   const runStep = useRunStep()
   const stopStep = useStopStep()
@@ -70,7 +71,7 @@ export function NodeDetailCard() {
   const [confirmDelete, setConfirmDelete] = useState(false)
 
   const { getNode } = useReactFlow()
-  const transform = useFlowStore(s => s.transform) // [x, y, zoom]
+  const { x: tx, y: ty, zoom } = useViewport()
 
   const dismiss = useCallback(() => setSelectedNodeId(null), [setSelectedNodeId])
 
@@ -99,9 +100,6 @@ export function NodeDetailCard() {
   // ── Derived values ─────────────────────────────────────────────────
   const nodeWidth = flowNode.measured?.width ?? (flowNode.type === 'gateNode' ? 96 : 220)
   const nodeHeight = flowNode.measured?.height ?? (flowNode.type === 'gateNode' ? 96 : 68)
-  const zoom = transform[2]
-  const tx = transform[0]
-  const ty = transform[1]
   // Center card horizontally under the node, 16 canvas-px below
   const cardHalfW = 160 // half of 320px card width
   const cardX = (flowNode.position.x + nodeWidth / 2 - cardHalfW) * zoom + tx
@@ -134,6 +132,7 @@ export function NodeDetailCard() {
       <article
         data-testid="node-detail-card"
         className="relative w-[320px] overflow-hidden border border-slate-700/80 bg-[#0a101a] shadow-[0_28px_80px_rgba(0,0,0,0.54)]"
+        onClick={() => focusNodePanel('overview')}
       >
         {/* ── HUD corner brackets (from StepNode) ──────────────────── */}
         <div className="absolute top-0 left-0 w-3 h-3 border-t-[1.5px] border-l-[1.5px] transition-colors duration-200" style={{ borderColor: accentColor }} />
@@ -184,7 +183,10 @@ export function NodeDetailCard() {
           </div>
           <button
             type="button"
-            onClick={dismiss}
+            onClick={(e) => {
+              e.stopPropagation()
+              dismiss()
+            }}
             className="shrink-0 rounded p-1 text-slate-500 transition-colors hover:bg-slate-800 hover:text-slate-200"
             aria-label="Close agent card"
           >
@@ -232,9 +234,39 @@ export function NodeDetailCard() {
           </div>
         </div>
 
+        <section className="mx-4 mb-3 border border-slate-700 bg-slate-950/55 px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
+          <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-slate-500">Panel Links</div>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            <button
+              type="button"
+              data-testid="node-detail-link-overview"
+              onClick={() => focusNodePanel('overview')}
+              className="rounded border border-slate-700 bg-slate-950/70 px-2.5 py-1 font-mono text-[9px] uppercase tracking-[0.14em] text-slate-200 transition-colors hover:border-slate-500 hover:text-white"
+            >
+              Overview
+            </button>
+            <button
+              type="button"
+              data-testid="node-detail-link-assets"
+              onClick={() => focusNodePanel('assets')}
+              className="rounded border border-slate-700 bg-slate-950/70 px-2.5 py-1 font-mono text-[9px] uppercase tracking-[0.14em] text-slate-200 transition-colors hover:border-slate-500 hover:text-white"
+            >
+              Assets
+            </button>
+            <button
+              type="button"
+              data-testid="node-detail-link-config"
+              onClick={() => focusNodePanel('config')}
+              className="rounded border border-slate-700 bg-slate-950/70 px-2.5 py-1 font-mono text-[9px] uppercase tracking-[0.14em] text-slate-200 transition-colors hover:border-slate-500 hover:text-white"
+            >
+              Config
+            </button>
+          </div>
+        </section>
+
         {/* ── Dependencies section with stat bar ───────────────────── */}
         {depCount > 0 && (
-          <section className="mx-4 mb-3 border border-slate-700 bg-slate-950/55 px-3 py-2.5">
+          <section className="mx-4 mb-3 cursor-pointer border border-slate-700 bg-slate-950/55 px-3 py-2.5 hover:border-amber-500/35" onClick={(e) => { e.stopPropagation(); focusNodePanel('assets') }}>
             <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-slate-500">Dependencies</div>
             {depCompletion && (
               <div className="mt-2">
@@ -263,7 +295,7 @@ export function NodeDetailCard() {
         )}
 
         {/* ── Provenance section ────────────────────────────────────── */}
-        <section className="mx-4 mb-3 border border-slate-700 bg-slate-950/55 px-3 py-2.5">
+        <section className="mx-4 mb-3 cursor-pointer border border-slate-700 bg-slate-950/55 px-3 py-2.5 hover:border-sky-500/35" onClick={(e) => { e.stopPropagation(); focusNodePanel('config') }}>
           <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-slate-500">Provenance</div>
           <div className="mt-2 space-y-1 font-mono text-xs text-slate-300">
             <div><strong className="text-white">ID:</strong> {nodeData.id}</div>

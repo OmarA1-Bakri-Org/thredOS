@@ -6,12 +6,13 @@ import { readPackState } from '@/lib/packs/repository'
 import { buildAgentProfile, type ProfileNodeContext } from '@/lib/agents/profile'
 import { readThreadRunnerState } from '@/lib/thread-runner/repository'
 import { readThreadSurfaceState } from '@/lib/thread-surfaces/repository'
+import { readSequence } from '@/lib/sequence/parser'
 import type { AgentRegistration } from '@/lib/agents/types'
 import { NextResponse } from 'next/server'
 
 function buildProfileNodeContext(
   surfaceState: Awaited<ReturnType<typeof readThreadSurfaceState>>,
-  agent: AgentRegistration,
+  agent: AgentRegistration | null,
   threadSurfaceId: string,
 ): ProfileNodeContext {
   const surface = surfaceState.threadSurfaces.find(s => s.id === threadSurfaceId)
@@ -24,8 +25,20 @@ function buildProfileNodeContext(
     role: surface?.role ?? null,
     runStatus: run?.runStatus ?? null,
     runSummary: run?.runSummary ?? null,
-    linkedSurfaceCount: agent.threadSurfaceIds.length,
+    linkedSurfaceCount: agent?.threadSurfaceIds.length ?? 0,
   }
+}
+
+function resolveFallbackAgent(
+  agentState: Awaited<ReturnType<typeof readAgentState>>,
+  sequence: Awaited<ReturnType<typeof readSequence>>,
+  threadSurfaceId: string,
+): AgentRegistration | null {
+  if (!threadSurfaceId.startsWith('thread-')) return null
+  const stepId = threadSurfaceId.slice('thread-'.length)
+  const step = sequence.steps.find(s => s.id === stepId)
+  if (!step?.assigned_agent_id) return null
+  return agentState.agents.find(a => a.id === step.assigned_agent_id) ?? null
 }
 
 export async function GET(request: Request) {
@@ -40,12 +53,13 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Missing threadSurfaceId query parameter' }, { status: 400 })
     }
 
-    const agentState = await readAgentState(basePath)
-    const agent = agentState.agents.find(a => a.threadSurfaceIds.includes(threadSurfaceId)) ?? null
-
-    if (!agent) {
-      return NextResponse.json({ profile: null })
-    }
+    const [agentState, sequence] = await Promise.all([
+      readAgentState(basePath),
+      readSequence(basePath),
+    ])
+    const agent = agentState.agents.find(a => a.threadSurfaceIds.includes(threadSurfaceId))
+      ?? resolveFallbackAgent(agentState, sequence, threadSurfaceId)
+      ?? null
 
     const [packState, runnerState, surfaceState] = await Promise.all([
       readPackState(basePath),
@@ -53,8 +67,8 @@ export async function GET(request: Request) {
       readThreadSurfaceState(basePath),
     ])
 
-    const stats = aggregateAgentStats(agent.id, runnerState.races, runnerState.combatantRuns)
-    const pack = packState.packs.find(p => p.builderId === agent.builderId) ?? null
+    const stats = agent ? aggregateAgentStats(agent.id, runnerState.races, runnerState.combatantRuns) : null
+    const pack = agent ? packState.packs.find(p => p.builderId === agent.builderId) ?? null : null
     const node = buildProfileNodeContext(surfaceState, agent, threadSurfaceId)
     const profile = buildAgentProfile({ agent, stats, pack, node })
 

@@ -15,6 +15,7 @@ export interface MarkdownAssetEditorProps {
   onSave?: () => void
   saveLabel?: string
   emptyHint?: string
+  defaultMode?: 'edit' | 'preview'
 }
 
 export function MarkdownAssetEditor({
@@ -27,13 +28,18 @@ export function MarkdownAssetEditor({
   onSave,
   saveLabel = 'Save draft',
   emptyHint = 'Draft until the library API is wired.',
+  defaultMode = 'edit',
 }: MarkdownAssetEditorProps) {
-  const [mode, setMode] = useState<'edit' | 'preview'>('edit')
+  const [mode, setMode] = useState<'edit' | 'preview'>(defaultMode)
   const [draft, setDraft] = useState(value)
 
   useEffect(() => {
     setDraft(value)
   }, [value])
+
+  useEffect(() => {
+    setMode(defaultMode)
+  }, [defaultMode])
 
   return (
     <section className="space-y-3 border border-slate-800 bg-[#0a101a] px-3 py-3">
@@ -43,7 +49,7 @@ export function MarkdownAssetEditor({
           <div className="mt-1 text-sm text-slate-200">{summary}</div>
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
-          <span className="rounded-full border border-slate-700 bg-slate-950/70 px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.16em] text-slate-300">
+          <span className="max-w-full truncate rounded-full border border-slate-700 bg-slate-950/70 px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.16em] text-slate-300">
             {path}
           </span>
           <span className="rounded-full border border-slate-700 bg-slate-950/70 px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.16em] text-slate-400">

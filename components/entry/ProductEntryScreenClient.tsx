@@ -1,6 +1,7 @@
 'use client'
 
 import { ArrowRight, Library, Network, ShieldCheck, Sparkles } from 'lucide-react'
+import { ThredOSBrand } from '@/components/brand/ThredOSBrand'
 import { buttonVariants } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import type { ProductEntryScreenProps } from './ProductEntryScreen'
@@ -25,6 +26,72 @@ function handleEnter(
   }
 }
 
+function DesktopSurfaceDiagram() {
+  return (
+    <div className="relative overflow-hidden border border-sky-500/20 bg-[#06111e] px-5 py-5">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(56,189,248,0.16),transparent_38%),radial-gradient(circle_at_bottom_right,rgba(14,165,233,0.12),transparent_34%)]" />
+      <div className="relative space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-sky-300/75">Desktop topology</div>
+            <div className="mt-1 text-sm text-slate-300">Local workspace, tiered surfaces, and a narrow cloud boundary.</div>
+          </div>
+          <span className="rounded-full border border-sky-500/30 bg-sky-500/10 px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.16em] text-sky-100">
+            local-first
+          </span>
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-[1fr_auto_1fr]">
+          <div className="space-y-3 border border-slate-800/90 bg-[#08111f] px-4 py-4">
+            <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-400">On your machine</div>
+            <div className="grid gap-2">
+              <div className="border border-sky-500/25 bg-sky-500/8 px-3 py-2 text-sm text-slate-100">workspace</div>
+              <div className="border border-slate-800 bg-[#0a1524] px-3 py-2 text-sm text-slate-200">prompts + skills</div>
+              <div className="border border-slate-800 bg-[#0a1524] px-3 py-2 text-sm text-slate-200">sequence + surfaces</div>
+              <div className="border border-slate-800 bg-[#0a1524] px-3 py-2 text-sm text-slate-200">runs + artifacts</div>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-center">
+            <div className="flex flex-col items-center gap-2">
+              <div className="h-14 w-px bg-gradient-to-b from-transparent via-sky-400/70 to-transparent" />
+              <div className="rounded-full border border-emerald-500/35 bg-emerald-500/10 px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.16em] text-emerald-100">
+                activation only
+              </div>
+              <div className="h-14 w-px bg-gradient-to-b from-transparent via-sky-400/70 to-transparent" />
+            </div>
+          </div>
+
+          <div className="space-y-3 border border-slate-800/90 bg-[#08111f] px-4 py-4">
+            <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-400">Cloud boundary</div>
+            <div className="grid gap-2">
+              <div className="border border-emerald-500/25 bg-emerald-500/8 px-3 py-2 text-sm text-slate-100">billing + auth</div>
+              <div className="border border-emerald-500/25 bg-emerald-500/8 px-3 py-2 text-sm text-slate-100">activation state</div>
+              <div className="border border-emerald-500/25 bg-emerald-500/8 px-3 py-2 text-sm text-slate-100">agent registry</div>
+              <div className="border border-emerald-500/25 bg-emerald-500/8 px-3 py-2 text-sm text-slate-100">performance only</div>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-3">
+          <div className="border border-slate-800 bg-[#08111f] px-4 py-3">
+            <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-sky-300/75">surface 0</div>
+            <div className="mt-2 text-sm text-slate-100">orchestrator / parent agent</div>
+          </div>
+          <div className="border border-slate-800 bg-[#08111f] px-4 py-3">
+            <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-sky-300/75">surface 1</div>
+            <div className="mt-2 text-sm text-slate-100">spawned child agents</div>
+          </div>
+          <div className="border border-slate-800 bg-[#08111f] px-4 py-3">
+            <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-sky-300/75">surface 2</div>
+            <div className="mt-2 text-sm text-slate-100">deeper delegated work</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function ProductEntryScreenClient({
   isHostedMode = false,
   isAuthenticated = false,
@@ -38,9 +105,13 @@ export function ProductEntryScreenClient({
     <div className="flex min-h-screen bg-[#060a12] text-slate-100">
       <div className="m-auto flex w-full max-w-6xl flex-col gap-8 px-6 py-12">
         <div className="space-y-4 border border-[#16417C]/55 bg-[#08101d] px-8 py-8 shadow-[0_28px_80px_rgba(0,0,0,0.45)]">
-          <div className="font-mono text-[11px] uppercase tracking-[0.28em] text-sky-300/60">
-            thredOS Desktop public beta
-          </div>
+          <ThredOSBrand
+            priority
+            subtitle="Desktop public beta"
+            imageClassName="h-16 w-16 translate-y-[7px]"
+            labelClassName="pb-[2px]"
+            className="items-end gap-5"
+          />
           <div className="space-y-3">
             <h1 className="max-w-4xl text-5xl font-light tracking-[-0.04em] text-white">
               Local-first control for agent work, with your workspace staying yours.
@@ -96,6 +167,7 @@ export function ProductEntryScreenClient({
                   <div className="mt-2 text-sm text-slate-100">Browser activation, SAFE mode, and local custody</div>
                 </div>
               </div>
+              <DesktopSurfaceDiagram />
             </div>
 
             <div className="mt-8 flex items-center justify-between border-t border-slate-800/90 pt-6">
@@ -110,6 +182,7 @@ export function ProductEntryScreenClient({
               <button
                 type="button"
                 data-entry-option="thredos"
+                data-testid="entry-primary-thredos"
                 onClick={() => handleEnter(primaryHref, onEnterThredOS, onEnterThreadOS)}
                 className={cn(buttonVariants({ variant: 'default' }), 'group-hover:border-sky-300/70')}
               >

@@ -82,10 +82,12 @@ describe.serial('library repository', () => {
       model: 'codex',
       role: 'researcher',
       tools: ['browser'],
+      promptRef: { id: 'agent-a-prompt', version: 2, path: '.threados/prompts/agent-a.md' },
       skillRefs: [],
       composition: {
         model: 'codex',
         role: 'researcher',
+        promptRef: { id: 'agent-a-prompt', version: 2, path: '.threados/prompts/agent-a.md' },
         skillRefs: [],
         tools: ['browser'],
         identityHash: 'hash',
@@ -98,5 +100,6 @@ describe.serial('library repository', () => {
     const content = await readFile(join(basePath, '.threados/agents/agent-a/AGENT.md'), 'utf8')
     expect(content).toContain('Agent A')
     expect(content).toContain('researcher')
+    expect(content).toContain('agent-a-prompt@2')
   })
 })

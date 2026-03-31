@@ -7,6 +7,7 @@ import type { MergeEvent, RunScope, ThreadSurface, ThreadSkillBadge } from '@/li
 import type { ThreadCardProfile } from '@/components/hierarchy/FocusedThreadCard'
 import type { AgentRegistration } from '@/lib/agents/types'
 import type { GateMetrics } from '@/lib/gates/metrics'
+import type { PromptRef, SkillRef } from '@/lib/library/types'
 import type { ActivationSession } from '@/lib/local-first/types'
 import type { LocalWorkspace } from '@/lib/local-first/types'
 import { resolveSkillsForAgent } from '@/lib/thread-surfaces/projections'
@@ -66,6 +67,8 @@ export interface CloudAgentRegistration {
   name: string
   model: string
   role: string
+  promptRef: { id: string; version: number } | null
+  skillRefs: Array<{ id: string; version: number; capabilities: string[] }>
   skillIds: string[]
   tools: string[]
 }
@@ -398,10 +401,24 @@ export function useRegisterAgent() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (input: {
-      id: string; name: string; builderId: string; builderName: string;
-      model?: string; skills?: Array<{ id: string; label: string }>
-    }) => postJson('/api/agents', input),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['agents'] }) },
+      id: string
+      name: string
+      description?: string
+      builderId: string
+      builderName: string
+      model?: string
+      role?: string
+      promptRef?: PromptRef | null
+      tools?: string[]
+      threadSurfaceIds?: string[]
+      skillRefs?: SkillRef[]
+      skills?: Array<{ id: string; label: string }>
+    }) => postJson<{ agent: AgentRegistration; cloudRegistration?: CloudAgentRegistration; replacementOf?: string; materialChange?: boolean; reasons?: string[] }>('/api/agents', input),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['agents'] })
+      qc.invalidateQueries({ queryKey: ['agent-profile'] })
+      qc.invalidateQueries({ queryKey: ['thread-surface-skills'] })
+    },
     onError: (error) => { console.error('Register agent failed:', error) },
   })
 }
@@ -411,7 +428,12 @@ export function useAssignAgent() {
   return useMutation({
     mutationFn: ({ stepId, agentId }: { stepId: string; agentId: string | null }) =>
       postJson('/api/step', { action: 'edit', stepId, assignedAgentId: agentId }),
-    onSuccess: () => invalidateRuntimeQueries(qc),
+    onSuccess: () => {
+      invalidateRuntimeQueries(qc)
+      qc.invalidateQueries({ queryKey: ['agents'] })
+      qc.invalidateQueries({ queryKey: ['agent-profile'] })
+      qc.invalidateQueries({ queryKey: ['thread-surface-skills'] })
+    },
     onError: (error) => { console.error('Assign agent failed:', error) },
   })
 }

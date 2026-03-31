@@ -1,18 +1,56 @@
 version: "1.0"
 name: New Sequence
+thread_type: base
 steps:
-  - id: research-agent
-    name: Research Agent
-    type: base
+  - id: orch-orchestrator
+    name: orchestrator
+    type: b
     model: claude-code
-    prompt_file: .threados/prompts/research-agent.md
+    prompt_file: .threados/prompts/orch-orchestrator.md
+    prompt_ref:
+      id: orch-orchestrator
+      version: 1
+      path: .threados/prompts/orch-orchestrator.md
     depends_on: []
     status: READY
-gates:
-  - id: quality-gate
-    name: Quality Gate
+    orchestrator: orch-orchestrator
+  - id: orch-worker-1
+    name: worker 1
+    type: b
+    model: claude-code
+    prompt_file: .threados/prompts/orch-worker-1.md
+    prompt_ref:
+      id: orch-worker-1
+      version: 1
+      path: .threados/prompts/orch-worker-1.md
     depends_on:
-      - research-agent
-    status: PENDING
-    cascade: false
-    childGateIds: []
+      - orch-orchestrator
+    status: READY
+    orchestrator: orch-orchestrator
+  - id: orch-worker-2
+    name: worker 2
+    type: b
+    model: claude-code
+    prompt_file: .threados/prompts/orch-worker-2.md
+    prompt_ref:
+      id: orch-worker-2
+      version: 1
+      path: .threados/prompts/orch-worker-2.md
+    depends_on:
+      - orch-orchestrator
+    status: READY
+    orchestrator: orch-orchestrator
+  - id: orch-worker-3
+    name: worker 3
+    type: b
+    model: claude-code
+    prompt_file: .threados/prompts/orch-worker-3.md
+    prompt_ref:
+      id: orch-worker-3
+      version: 1
+      path: .threados/prompts/orch-worker-3.md
+    depends_on:
+      - orch-orchestrator
+    status: READY
+    orchestrator: orch-orchestrator
+gates: []

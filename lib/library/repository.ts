@@ -284,6 +284,9 @@ export async function ensurePromptAssetForStep(
 export async function syncAgentAsset(basePath: string, agent: AgentRegistration): Promise<LibraryAssetEntry> {
   const skillLines = (agent.skillRefs ?? []).map(skill => `- ${skill.id}@${skill.version}`).join('\n') || '- none'
   const toolsLines = (agent.tools ?? []).map(tool => `- ${tool}`).join('\n') || '- none'
+  const promptLine = agent.promptRef
+    ? `- ${agent.promptRef.id}@${agent.promptRef.version}${agent.promptRef.path ? ` (${agent.promptRef.path})` : ''}`
+    : '- none'
   const content = [
     '---',
     `id: ${agent.id}`,
@@ -291,6 +294,7 @@ export async function syncAgentAsset(basePath: string, agent: AgentRegistration)
     `version: ${agent.version ?? 1}`,
     `model: ${agent.model ?? 'unknown'}`,
     `role: ${agent.role ?? 'unspecified'}`,
+    `promptRef: ${agent.promptRef?.id ?? ''}`,
     `identityHash: ${agent.composition?.identityHash ?? ''}`,
     '---',
     '',
@@ -302,6 +306,10 @@ export async function syncAgentAsset(basePath: string, agent: AgentRegistration)
     '',
     `- Model: ${agent.model ?? 'unknown'}`,
     `- Role: ${agent.role ?? 'unspecified'}`,
+    '',
+    '## Prompt',
+    '',
+    promptLine,
     '',
     '## Skills',
     '',

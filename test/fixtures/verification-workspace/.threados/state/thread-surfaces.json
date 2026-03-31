@@ -1,0 +1,73 @@
+{
+  "version": 1,
+  "threadSurfaces": [
+    {
+      "id": "thread-root",
+      "parentSurfaceId": null,
+      "parentAgentNodeId": null,
+      "depth": 0,
+      "surfaceLabel": "Verification Sequence",
+      "role": "orchestrator",
+      "createdAt": "2026-03-31T00:00:00.000Z",
+      "childSurfaceIds": [
+        "thread-orch-orchestrator",
+        "thread-orch-worker-1",
+        "thread-orch-worker-2",
+        "thread-orch-worker-3"
+      ],
+      "sequenceRef": null,
+      "spawnedByAgentId": null
+    },
+    {
+      "id": "thread-orch-orchestrator",
+      "parentSurfaceId": "thread-root",
+      "parentAgentNodeId": "orch-orchestrator",
+      "depth": 1,
+      "surfaceLabel": "orch orchestrator",
+      "role": "worker",
+      "createdAt": "2026-03-31T00:00:00.000Z",
+      "childSurfaceIds": [],
+      "sequenceRef": null,
+      "spawnedByAgentId": null
+    },
+    {
+      "id": "thread-orch-worker-1",
+      "parentSurfaceId": "thread-root",
+      "parentAgentNodeId": "orch-worker-1",
+      "depth": 1,
+      "surfaceLabel": "orch worker 1",
+      "role": "worker",
+      "createdAt": "2026-03-31T00:00:00.000Z",
+      "childSurfaceIds": [],
+      "sequenceRef": null,
+      "spawnedByAgentId": null
+    },
+    {
+      "id": "thread-orch-worker-2",
+      "parentSurfaceId": "thread-root",
+      "parentAgentNodeId": "orch-worker-2",
+      "depth": 1,
+      "surfaceLabel": "orch worker 2",
+      "role": "worker",
+      "createdAt": "2026-03-31T00:00:00.000Z",
+      "childSurfaceIds": [],
+      "sequenceRef": null,
+      "spawnedByAgentId": null
+    },
+    {
+      "id": "thread-orch-worker-3",
+      "parentSurfaceId": "thread-root",
+      "parentAgentNodeId": "orch-worker-3",
+      "depth": 1,
+      "surfaceLabel": "orch worker 3",
+      "role": "worker",
+      "createdAt": "2026-03-31T00:00:00.000Z",
+      "childSurfaceIds": [],
+      "sequenceRef": null,
+      "spawnedByAgentId": null
+    }
+  ],
+  "runs": [],
+  "mergeEvents": [],
+  "runEvents": []
+}

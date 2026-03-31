@@ -174,6 +174,7 @@ export function AccordionPanel() {
   const selectedNodeId = useUIStore((s) => s.selectedNodeId)
   const setSelectedPhaseId = useUIStore((s) => s.setSelectedPhaseId)
   const expandAccordionSection = useUIStore((s) => s.expandAccordionSection)
+  const setActiveNodePanel = useUIStore((s) => s.setActiveNodePanel)
   const { data: status } = useStatus()
   const _currentDepthSurfaceId = useUIStore(selectCurrentDepthSurfaceId)
   const currentDepthLevel = useUIStore(selectCurrentDepthLevel)
@@ -195,8 +196,9 @@ export function AccordionPanel() {
       setSelectedPhaseId(phase.id)
       const isGate = status.gates.some(g => g.id === selectedNodeId)
       expandAccordionSection(isGate ? 'gate' : 'node')
+      if (!isGate) setActiveNodePanel('overview')
     }
-  }, [selectedNodeId, status, setSelectedPhaseId, expandAccordionSection])
+  }, [selectedNodeId, status, setSelectedPhaseId, expandAccordionSection, setActiveNodePanel])
 
   // ── Reset state when sequence is cleared ───────────────────────────
   // When "New" clears all steps/gates, reset stale phase selection and

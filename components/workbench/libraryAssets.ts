@@ -16,6 +16,20 @@ export interface LibraryAssetDraft {
   tags: string[]
 }
 
+export interface ToolOption {
+  id: string
+  label: string
+  summary: string
+}
+
+export const AVAILABLE_TOOL_OPTIONS: ToolOption[] = [
+  { id: 'files', label: 'Files', summary: 'Read and edit workspace files locally.' },
+  { id: 'browser', label: 'Browser', summary: 'Navigate websites, validate flows, and capture UI state.' },
+  { id: 'search', label: 'Search', summary: 'Ground work in external sources and verification.' },
+  { id: 'shell', label: 'Shell', summary: 'Run local commands when the loadout allows execution.' },
+  { id: 'git', label: 'Git', summary: 'Inspect history, branches, and diffs.' },
+]
+
 export interface NodeAssetContext {
   step: Partial<Step> & {
     id: string
@@ -118,11 +132,12 @@ export const DEFAULT_SKILL_DOCS: Record<string, Omit<LibraryAssetDraft, 'id' | '
 export function buildPromptDrafts({ step, sequenceName, phaseLabel, agent }: NodeAssetContext): LibraryAssetDraft[] {
   const promptPath = step.prompt_ref?.path ?? step.prompt_file ?? `.threados/prompts/${step.id}.md`
   const promptVersion = step.prompt_ref?.version ?? 1
+  const promptId = step.prompt_ref?.id ?? step.id
   const nodePrompt = step.node_description ?? `Describe how ${step.name} should operate inside ${sequenceName ?? 'this sequence'}.`
   const outcome = step.expected_outcome ?? `Produce a useful result for ${phaseLabel ?? 'the selected phase'}.`
 
   const primary: LibraryAssetDraft = {
-    id: `${step.id}-prompt`,
+    id: promptId,
     title: `${step.name} prompt`,
     kind: 'prompt',
     path: promptPath,

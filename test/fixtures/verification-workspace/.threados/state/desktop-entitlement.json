@@ -1,0 +1,10 @@
+{
+  "status": "inactive",
+  "plan": "desktop-public-beta",
+  "customerEmail": null,
+  "activatedAt": null,
+  "lastValidatedAt": null,
+  "expiresAt": null,
+  "graceUntil": null,
+  "activationSource": "development"
+}

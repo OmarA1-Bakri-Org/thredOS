@@ -36,8 +36,8 @@ test.describe('thredOS Desktop launch surfaces', () => {
   test('entry surface visual baseline', async ({ page }) => {
     await page.goto('/')
 
-    await expect(page).toHaveTitle('thredOS')
-    await expect(page.getByText('thredOS Desktop public beta')).toBeVisible()
+    await expect(page).toHaveTitle('thredOS Desktop')
+    await expect(page.getByText('Desktop public beta')).toBeVisible()
     await expect(page.getByText('Local-first posture')).toBeVisible()
 
     await expect(page).toHaveScreenshot('entry-surface.png', screenshotOptions)
@@ -140,13 +140,39 @@ test.describe('thredOS Desktop launch surfaces', () => {
 
     await expect(page).toHaveScreenshot('app-node-agent-overview.png', screenshotOptions)
 
-    await page.getByTestId('node-panel-prompt').click()
+    await page.getByTestId('node-panel-assets').click()
     await expect(page.getByText('Prompt drafts')).toBeVisible()
-    await expect(page).toHaveScreenshot('app-node-prompt-assets.png', screenshotOptions)
+    await expect(page).toHaveScreenshot('app-node-assets.png', screenshotOptions)
 
-    await page.getByTestId('node-panel-skills').click()
-    await page.getByTestId('agent-card-tab-tools').click()
-    await expect(page).toHaveScreenshot('app-node-skills-agent-tools.png', screenshotOptions)
+    await page.getByTestId('agent-card-tab-prompt').click()
+    await expect(page).toHaveScreenshot('app-agent-prompt-summary.png', screenshotOptions)
+
+    await page.getByRole('button', { name: 'Open editor' }).first().click()
+    await expect(page).toHaveScreenshot('app-agent-prompt-editor.png', screenshotOptions)
+
+    await page.getByTestId('agent-card-tab-skills').click()
+    await expect(page).toHaveScreenshot('app-agent-skills-summary.png', screenshotOptions)
+  })
+
+  test('surface cards deep-link into panel state', async ({ page }) => {
+    await page.goto('/app')
+
+    const surfaceNode = page.getByRole('button', { name: /Step orchestrator, status READY/i })
+    await expect(surfaceNode).toBeVisible()
+    await surfaceNode.click()
+
+    await expect(page.getByTestId('agent-detail-card')).toBeVisible()
+    await expect(page.getByTestId('node-detail-card')).toBeVisible()
+    await expect(page.getByTestId('agent-detail-register')).toBeVisible()
+
+    await page.getByTestId('agent-detail-link-skills').click()
+    await openAccordionSection(page, 'agent')
+    await expect(page.getByTestId('agent-tab-workshop')).toHaveAttribute('data-active', 'true')
+    await expect(page.getByTestId('agent-card-tab-skills')).toHaveAttribute('data-active', 'true')
+
+    await page.getByTestId('node-detail-link-assets').click()
+    await openAccordionSection(page, 'node')
+    await expect(page.getByTestId('node-panel-assets')).toHaveAttribute('data-active', 'true')
   })
 
   test('agent section tabs have visual baselines', async ({ page }) => {
