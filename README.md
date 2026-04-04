@@ -2,7 +2,7 @@
 
 **Local-first operating system for agent work** — Manage multi-agent workflows with dependency graphs, policy enforcement, and a visual UI while keeping prompts, skills, threads, surfaces, runs, and artifacts on your machine.
 
-thredOS lets you define sequences of AI agent steps, wire them with dependencies, enforce safety policies, and monitor execution through a horizontal canvas UI. The cloud is reserved for activation, billing, and canonical agent registration plus performance history.
+thredOS lets you define sequences of AI agent steps, wire them with dependencies, enforce safety policies, and monitor execution through a horizontal canvas UI. The cloud is reserved for activation, billing, and canonical agent registration.
 
 ## Installation
 
@@ -69,7 +69,6 @@ Cloud-permitted data:
 - billing state
 - activation state
 - canonical agent registration
-- canonical agent performance history
 
 Cloud-forbidden data:
 

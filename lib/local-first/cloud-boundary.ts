@@ -42,18 +42,6 @@ export const CloudAgentRegistrationPayloadSchema = z.object({
 
 export type CloudAgentRegistrationPayload = z.infer<typeof CloudAgentRegistrationPayloadSchema>
 
-export const CloudPerformancePayloadSchema = z.object({
-  id: z.string(),
-  registrationNumber: z.string(),
-  recordedAt: z.string(),
-  outcome: z.enum(['pass', 'fail', 'needs_review']),
-  durationMs: z.number().int().nonnegative().nullable(),
-  qualityScore: z.number().int().min(0).max(10).nullable(),
-  notes: z.string().nullable(),
-})
-
-export type CloudPerformancePayload = z.infer<typeof CloudPerformancePayloadSchema>
-
 export function sanitizeAgentForCloud(
   agent: AgentRegistration,
   input: Omit<CloudAgentRegistrationPayload, 'agentId' | 'name' | 'model' | 'role' | 'promptRef' | 'skillRefs' | 'skillIds' | 'tools'>,
@@ -78,12 +66,6 @@ export function sanitizeAgentForCloud(
     skillIds: (agent.skillRefs ?? []).map(skill => skill.id),
     tools: agent.tools ?? [],
   })
-}
-
-export function sanitizePerformanceForCloud(
-  input: CloudPerformancePayload,
-): CloudPerformancePayload {
-  return CloudPerformancePayloadSchema.parse(input)
 }
 
 export function collectForbiddenCloudKeys(value: unknown): string[] {

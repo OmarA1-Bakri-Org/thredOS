@@ -30,7 +30,37 @@ export function getVerificationCredentials() {
 }
 
 export function getVerificationBaseUrl() {
-  return process.env.PLAYWRIGHT_BASE_URL ?? `http://127.0.0.1:${process.env.PLAYWRIGHT_PORT ?? '4301'}`
+  return process.env.PLAYWRIGHT_BASE_URL ?? `http://localhost:${process.env.PLAYWRIGHT_PORT ?? '4301'}`
+}
+
+export async function browserFetchJson<T = unknown>(
+  page: Page,
+  pathname: string,
+  init: RequestInit = {},
+): Promise<{ ok: boolean, status: number, body: T | string | null }> {
+  return await page.evaluate(async ({ pathname: path, init: requestInit }) => {
+    const response = await fetch(new URL(path, window.location.origin).toString(), {
+      credentials: 'include',
+      ...requestInit,
+    })
+    const text = await response.text()
+    let body: unknown = null
+    if (text) {
+      try {
+        body = JSON.parse(text) as unknown
+      } catch {
+        body = text
+      }
+    }
+    return {
+      ok: response.ok,
+      status: response.status,
+      body: body as T | string | null,
+    }
+  }, {
+    pathname,
+    init,
+  })
 }
 
 export function startBrowserEvidence(page: Page, testInfo: TestInfo, suiteName: string) {
@@ -154,6 +184,26 @@ export async function expectNoFrameworkOverlay(page: Page) {
   expect(hasContent).toBe(true)
 }
 
+async function waitForWorkbenchShellOnce(page: Page) {
+  await expect(page).toHaveURL(/\/app(?:[?#].*)?$/, { timeout: 30_000 })
+  await expect(page.locator('[data-workbench-region="top-bar"]')).toBeVisible({ timeout: 30_000 })
+  await expect(page.locator('[data-workbench-region="accordion-panel"]')).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByTestId('topbar-status-summary')).toBeVisible({ timeout: 30_000 })
+  await expectNoFrameworkOverlay(page)
+}
+
+export async function waitForWorkbenchShell(page: Page) {
+  try {
+    await waitForWorkbenchShellOnce(page)
+  } catch {
+    // In dev mode Next can finish an HMR rebuild after /app resolves but before the shell mounts.
+    // One reload recovers the shell without hiding persistent failures.
+    await page.reload({ waitUntil: 'domcontentloaded' })
+    await waitForWorkbenchShellOnce(page)
+    return
+  }
+}
+
 export async function submitVerifierCredentials(page: Page): Promise<Response> {
   const { email, password } = getVerificationCredentials()
   await expect(page.getByTestId('login-form')).toBeVisible()
@@ -168,12 +218,20 @@ export async function submitVerifierCredentials(page: Page): Promise<Response> {
 
 export async function loginAsVerifier(page: Page) {
   await page.goto('/login?next=/app')
-  await expect(page.getByRole('heading', { name: 'Activate thredOS Desktop.' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Activate thredOS Desktop.' })).toBeVisible({ timeout: 15_000 })
   const response = await submitVerifierCredentials(page)
-  expect(response.ok()).toBe(true)
-  await expect(page).toHaveURL(/\/app/)
-  await expect(page.locator('[data-workbench-region="top-bar"]')).toBeVisible()
-  await expectNoFrameworkOverlay(page)
+  expect(response.ok(), `Verifier login failed with status ${response.status()}`).toBe(true)
+  await waitForWorkbenchShell(page)
+}
+
+export async function openAuthenticatedWorkbench(page: Page) {
+  await page.goto('/app')
+  if (new URL(page.url()).pathname === '/login') {
+    await expect(page.getByRole('heading', { name: 'Activate thredOS Desktop.' })).toBeVisible({ timeout: 15_000 })
+    const response = await submitVerifierCredentials(page)
+    expect(response.ok(), `Verifier login failed with status ${response.status()}`).toBe(true)
+  }
+  await waitForWorkbenchShell(page)
 }
 
 export async function openAccordionSection(page: Page, key: string) {

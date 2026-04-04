@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'fs'
 import { dirname, join, resolve } from 'path'
 import { spawnSync } from 'child_process'
 
@@ -70,9 +70,68 @@ function findBunPath() {
   return null
 }
 
+const REQUIRED_BROWSER_LIBS = ['libnspr4.so', 'libnss3.so', 'libnssutil3.so', 'libasound.so.2']
+
+function resolveVendoredBrowserLibPaths() {
+  const explicit = process.env.PLAYWRIGHT_BROWSER_LIB_DIR
+  const home = process.env.HOME
+  return [
+    explicit ?? null,
+    home ? join(home, '.cache', 'thredos', 'pwlibs', 'root', 'usr', 'lib', 'x86_64-linux-gnu') : null,
+    '/tmp/pwlibs/root/usr/lib/x86_64-linux-gnu',
+  ].filter(Boolean)
+}
+
+function hasVendoredBrowserLibs(dir) {
+  return REQUIRED_BROWSER_LIBS.every(fileName => existsSync(join(dir, fileName)))
+}
+
 function resolveBrowserLibDir() {
-  const vendorDir = '/tmp/pwlibs/root/usr/lib/x86_64-linux-gnu'
-  return existsSync(vendorDir) ? vendorDir : null
+  return resolveVendoredBrowserLibPaths().find(dir => hasVendoredBrowserLibs(dir)) ?? null
+}
+
+function resolveAlsaPackageName() {
+  const candidate = spawnSync('apt-cache', ['show', 'libasound2t64'], { encoding: 'utf8' })
+  return candidate.status === 0 ? 'libasound2t64' : 'libasound2'
+}
+
+function bootstrapVendoredBrowserLibraries() {
+  const home = process.env.HOME
+  if (!home) return null
+
+  const cacheRoot = join(home, '.cache', 'thredos', 'pwlibs')
+  const debDir = join(cacheRoot, 'debs')
+  const rootDir = join(cacheRoot, 'root')
+  const libDir = join(rootDir, 'usr', 'lib', 'x86_64-linux-gnu')
+
+  if (hasVendoredBrowserLibs(libDir)) {
+    return libDir
+  }
+
+  mkdirSync(debDir, { recursive: true })
+  mkdirSync(rootDir, { recursive: true })
+
+  const packages = ['libnss3', 'libnspr4', resolveAlsaPackageName()]
+  const download = spawnSync('apt', ['download', ...packages], {
+    cwd: debDir,
+    encoding: 'utf8',
+  })
+  if (download.status !== 0) {
+    return null
+  }
+
+  const debFiles = readdirSync(debDir)
+    .filter(fileName => fileName.endsWith('.deb'))
+    .map(fileName => join(debDir, fileName))
+
+  for (const debFile of debFiles) {
+    const extract = spawnSync('dpkg-deb', ['-x', debFile, rootDir], { encoding: 'utf8' })
+    if (extract.status !== 0) {
+      return null
+    }
+  }
+
+  return hasVendoredBrowserLibs(libDir) ? libDir : null
 }
 
 function hasSystemBrowserLibs() {
@@ -85,7 +144,7 @@ function hasSystemBrowserLibs() {
 function ensureBrowserLibraries() {
   if (process.platform !== 'linux') return { ldLibraryPath: null }
 
-  const vendorDir = resolveBrowserLibDir()
+  const vendorDir = resolveBrowserLibDir() ?? bootstrapVendoredBrowserLibraries()
   if (vendorDir) {
     return { ldLibraryPath: vendorDir }
   }
@@ -119,19 +178,34 @@ function prepareWorkspace(artifactsDir) {
   return workspacePath
 }
 
+function getSpecStatus(spec) {
+  const resultStatuses = (spec.tests ?? []).flatMap(test => (test.results ?? []).map(result => result.status ?? 'unknown'))
+
+  if (resultStatuses.some(status => status === 'failed' || status === 'timedOut' || status === 'interrupted')) {
+    return 'failed'
+  }
+
+  if (resultStatuses.some(status => status === 'flaky')) {
+    return 'flaky'
+  }
+
+  if (resultStatuses.length > 0 && resultStatuses.every(status => status === 'skipped')) {
+    return 'skipped'
+  }
+
+  if (spec.ok === false) {
+    return 'failed'
+  }
+
+  return 'passed'
+}
+
 function collectSuiteEntries(suites, file = null, entries = []) {
   for (const suite of suites ?? []) {
     const nextFile = suite.file ?? file
     for (const spec of suite.specs ?? []) {
       const tests = spec.tests ?? []
-      const outcomes = tests.map(test => test.outcome ?? 'unknown')
-      const status = outcomes.some(outcome => outcome === 'unexpected')
-        ? 'failed'
-        : outcomes.some(outcome => outcome === 'flaky')
-          ? 'flaky'
-          : outcomes.some(outcome => outcome === 'skipped')
-            ? 'skipped'
-            : 'passed'
+      const status = getSpecStatus(spec)
       entries.push({
         file: nextFile,
         title: [...(suite.title ? [suite.title] : []), spec.title].join(' › '),
@@ -150,8 +224,10 @@ function readLogTail(filePath, maxChars = 4000) {
   return content.length <= maxChars ? content : content.slice(content.length - maxChars)
 }
 
-function classifyStartupFailure(env, summary) {
-  if (summary?.unexpected === 0) return null
+function classifyStartupFailure(env, summary, rawReport, suites) {
+  if (!rawReport || suites.length > 0 || (summary?.unexpected ?? 0) === 0) {
+    return null
+  }
 
   const buildLogTail = readLogTail(env.PLAYWRIGHT_BUILD_LOG_PATH)
   const serverLogTail = readLogTail(env.PLAYWRIGHT_SERVER_LOG_PATH)
@@ -198,7 +274,7 @@ function writeManifest(env, artifactsDir, modeName, workspacePath, exitStatus) {
         flaky: 0,
         durationMs: 0,
       }
-  const startupFailure = classifyStartupFailure(env, summary)
+  const startupFailure = classifyStartupFailure(env, summary, rawReport, suites)
 
   const manifest = {
     generatedAt: new Date().toISOString(),
@@ -278,7 +354,7 @@ try {
     workspacePath = prepareWorkspace(artifactsDir)
     env.THREDOS_BASE_PATH = workspacePath
     env.THREADOS_BASE_PATH = workspacePath
-    env.PLAYWRIGHT_BASE_URL = `http://127.0.0.1:${env.PLAYWRIGHT_PORT}`
+    env.PLAYWRIGHT_BASE_URL = `http://localhost:${env.PLAYWRIGHT_PORT}`
   }
 
   writeFileSync(join(artifactsDir, 'metadata.json'), `${JSON.stringify({

@@ -1,6 +1,6 @@
 import { expect, test, type Request } from '@playwright/test'
 import {
-  loginAsVerifier,
+  openAuthenticatedWorkbench,
   openAccordionSection,
   selectFirstPhase,
   startBrowserEvidence,
@@ -103,16 +103,17 @@ test.describe('agent-canonical-loadout', () => {
 
     try {
       await evidence.withinBoundary('UI', 'open the agent detail card from the selected surface node', async () => {
-        await loginAsVerifier(page)
+        await openAuthenticatedWorkbench(page)
         await selectFirstPhase(page)
 
         const surfaceNode = page.getByRole('button', { name: /Step orchestrator, status READY/i })
         await expect(surfaceNode).toBeVisible()
         await surfaceNode.click()
 
-        await expect(page.getByTestId('agent-detail-card')).toBeVisible()
-        await expect(page.getByTestId('agent-detail-register')).toBeVisible()
-        await expect(page.getByText(/New canonical agent|No canonical change|Material change/)).toBeVisible()
+        const agentDetailCard = page.getByTestId('agent-detail-card')
+        await expect(agentDetailCard).toBeVisible()
+        await expect(agentDetailCard.getByTestId('agent-detail-register')).toBeVisible()
+        await expect(agentDetailCard.getByText(/New canonical agent|No canonical change|Material change/)).toBeVisible()
       })
 
       const { registerRequest, assignRequest } = await evidence.withinBoundary('client -> API', 'register the canonical agent and rebind the step', async () => {
@@ -157,9 +158,9 @@ test.describe('agent-canonical-loadout', () => {
       await evidence.withinBoundary('response -> UI', 'show the register success state and linked skills tab', async () => {
         await expect(page.getByText('Registered agent and assigned it to this node.')).toBeVisible()
 
-        await page.getByTestId('agent-detail-link-skills').click()
         await openAccordionSection(page, 'agent')
-        await expect(page.getByTestId('agent-card-tab-skills')).toHaveAttribute('data-active', 'true')
+        await expect(page.getByTestId('agent-tab-performance')).toHaveAttribute('data-active', 'true')
+        await expect(page.getByText(/Select a registered agent to view local performance\.|Performance is tracked per canonical agent only\./)).toBeVisible()
       })
     } finally {
       await evidence.finalize()

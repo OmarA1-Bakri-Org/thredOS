@@ -78,7 +78,7 @@ export function AgentDetailCard() {
   const wrapperRef = useRef<HTMLDivElement | null>(null)
   const [cardHeightPx, setCardHeightPx] = useState(620)
   const [cardWidthPx, setCardWidthPx] = useState(320)
-  const [containerMetrics, setContainerMetrics] = useState({ width: 1440, height: 900, topInset: 24 })
+  const [containerMetrics, setContainerMetrics] = useState({ width: 1440, height: 900, topInset: 96 })
 
   const { getNode } = useReactFlow()
   const { x: tx, y: ty, zoom } = useViewport()
@@ -226,7 +226,7 @@ export function AgentDetailCard() {
       setContainerMetrics({
         width: containerRect.width || window.innerWidth,
         height: containerRect.height || window.innerHeight,
-        topInset: Math.max(24, (topBarRect?.bottom ?? containerRect.top) - containerRect.top + 24),
+        topInset: Math.max(96, (topBarRect?.bottom ?? containerRect.top) - containerRect.top + 24),
       })
     }
 
@@ -272,7 +272,7 @@ export function AgentDetailCard() {
       style={{
         left: cardX,
         top: cardTop,
-        zIndex: 999,
+        zIndex: 1001,
         transformOrigin: '0 0',
         transform: `scale(${zoom})`,
       }}

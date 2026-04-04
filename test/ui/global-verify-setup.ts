@@ -1,8 +1,43 @@
 import { mkdir, writeFile } from 'fs/promises'
 import { dirname, join } from 'path'
+import { request as playwrightRequest } from '@playwright/test'
 
-const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? `http://127.0.0.1:${process.env.PLAYWRIGHT_PORT ?? '4301'}`
+const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? `http://localhost:${process.env.PLAYWRIGHT_PORT ?? '4301'}`
 const ARTIFACTS_DIR = process.env.PLAYWRIGHT_ARTIFACTS_DIR ?? 'test-results/verify/manual'
+const STORAGE_STATE_PATH = process.env.PLAYWRIGHT_STORAGE_STATE_PATH ?? join(ARTIFACTS_DIR, 'auth-storage-state.json')
+
+async function seedAuthenticatedStorageState() {
+  const context = await playwrightRequest.newContext({
+    baseURL: BASE_URL,
+  })
+
+  try {
+    const response = await context.post('/api/auth/login', {
+      data: {
+        email: process.env.THREDOS_VERIFY_EMAIL ?? 'verifier@thredos.local',
+        password: process.env.THREDOS_VERIFY_PASSWORD ?? 'thredos-verify-password',
+        next: '/app',
+      },
+    })
+
+    if (!response.ok()) {
+      throw new Error(`Failed to seed verification auth state: ${response.status()} ${await response.text()}`)
+    }
+
+    await Promise.allSettled([
+      context.get('/app'),
+      context.get('/api/status'),
+      context.get('/api/sequence'),
+      context.get('/api/thread-surfaces'),
+      context.get('/api/agents'),
+    ])
+
+    await mkdir(dirname(STORAGE_STATE_PATH), { recursive: true })
+    await context.storageState({ path: STORAGE_STATE_PATH })
+  } finally {
+    await context.dispose()
+  }
+}
 
 async function probe(pathname: string) {
   const url = new URL(pathname, BASE_URL).toString()
@@ -31,6 +66,7 @@ async function probe(pathname: string) {
 }
 
 export default async function globalSetup() {
+  await seedAuthenticatedStorageState()
   const readiness = {
     generatedAt: new Date().toISOString(),
     baseUrl: BASE_URL,

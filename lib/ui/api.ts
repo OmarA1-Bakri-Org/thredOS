@@ -73,16 +73,6 @@ export interface CloudAgentRegistration {
   tools: string[]
 }
 
-export interface AgentPerformanceRecord {
-  id: string
-  registrationNumber: string
-  recordedAt: string
-  outcome: 'pass' | 'fail' | 'needs_review'
-  durationMs: number | null
-  qualityScore: number | null
-  notes: string | null
-}
-
 export function startSignIn(): Promise<ActivationSession> {
   return postJson<ActivationSession>('/api/desktop/auth/start', {})
 }
@@ -135,22 +125,6 @@ export function fetchAgentRegistration(agentId: string): Promise<CloudAgentRegis
 export function registerAgentCloud(agentId: string): Promise<CloudAgentRegistration> {
   return postJson<{ registration: CloudAgentRegistration }>('/api/agent-cloud/registration', { agentId })
     .then(response => response.registration)
-}
-
-export function fetchAgentPerformance(registrationNumber: string): Promise<AgentPerformanceRecord[]> {
-  return fetchJson<{ records: AgentPerformanceRecord[] }>(`/api/agent-cloud/performance?registrationNumber=${encodeURIComponent(registrationNumber)}`)
-    .then(response => response.records)
-}
-
-export function recordAgentPerformance(input: {
-  registrationNumber: string
-  outcome: 'pass' | 'fail' | 'needs_review'
-  durationMs?: number | null
-  qualityScore?: number | null
-  notes?: string | null
-}): Promise<AgentPerformanceRecord> {
-  return postJson<{ record: AgentPerformanceRecord }>('/api/agent-cloud/performance', input)
-    .then(response => response.record)
 }
 
 function invalidateRuntimeQueries(qc: ReturnType<typeof useQueryClient>) {

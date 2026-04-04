@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 import {
   expectNoFrameworkOverlay,
-  loginAsVerifier,
+  openAuthenticatedWorkbench,
   openAccordionSection,
   selectFirstPhase,
   startBrowserEvidence,
@@ -17,7 +17,7 @@ test.describe('workbench-shell', () => {
         const sequenceResponse = page.waitForResponse(response => response.url().endsWith('/api/sequence') && response.ok())
         const surfaceResponse = page.waitForResponse(response => response.url().endsWith('/api/thread-surfaces') && response.ok())
 
-        await loginAsVerifier(page)
+        await openAuthenticatedWorkbench(page)
         await Promise.all([statusResponse, sequenceResponse, surfaceResponse])
       })
 
@@ -39,10 +39,10 @@ test.describe('sequence-authoring', () => {
 
     try {
       await evidence.withinBoundary('UI', 'open the sequence panel', async () => {
-        await loginAsVerifier(page)
+        await openAuthenticatedWorkbench(page)
         await openAccordionSection(page, 'sequence')
         await expect(page.getByTestId('sequence-section')).toBeVisible()
-        await expect(page.getByText('Verification Sequence')).toBeVisible()
+        await expect(page.getByTestId('sequence-section').getByText('Verification Sequence').first()).toBeVisible()
       })
 
       await evidence.withinBoundary('client -> API', 'rename the sequence through the real API', async () => {
@@ -58,7 +58,7 @@ test.describe('sequence-authoring', () => {
       })
 
       await evidence.withinBoundary('response -> UI', 'render the renamed sequence title', async () => {
-        await expect(page.getByText('Verification Sequence Draft')).toBeVisible()
+        await expect(page.getByTestId('sequence-section').getByText('Verification Sequence Draft').first()).toBeVisible()
       })
 
       await evidence.withinBoundary('client -> API', 'restore the original sequence title', async () => {
@@ -74,7 +74,7 @@ test.describe('sequence-authoring', () => {
       })
 
       await evidence.withinBoundary('response -> UI', 'show the restored sequence title and node creation dialog', async () => {
-        await expect(page.getByText('Verification Sequence')).toBeVisible()
+        await expect(page.getByTestId('sequence-section').getByText('Verification Sequence').first()).toBeVisible()
         await page.getByRole('button', { name: 'Step', exact: true }).click()
         await expect(page.getByTestId('create-node-dialog')).toBeVisible()
         await page.getByTestId('create-node-kind-gate').click()
@@ -93,7 +93,7 @@ test.describe('phase-node-gate', () => {
 
     try {
       await evidence.withinBoundary('UI', 'open the phase, node, and gate panels', async () => {
-        await loginAsVerifier(page)
+        await openAuthenticatedWorkbench(page)
         await selectFirstPhase(page)
 
         await openAccordionSection(page, 'node')
@@ -122,7 +122,7 @@ test.describe('assets-prompts-skills-tools', () => {
 
     try {
       await evidence.withinBoundary('UI', 'open asset and agent panels for the selected node', async () => {
-        await loginAsVerifier(page)
+        await openAuthenticatedWorkbench(page)
         await selectFirstPhase(page)
         await openAccordionSection(page, 'node')
 
@@ -134,14 +134,17 @@ test.describe('assets-prompts-skills-tools', () => {
       })
 
       await evidence.withinBoundary('response -> UI', 'render prompt and skill surfaces from the agent card', async () => {
-        await page.getByTestId('agent-card-tab-prompt').click()
-        await expect(page.getByText('Selected prompt')).toBeVisible()
-        await expect(page.getByRole('button', { name: 'Open editor' }).first()).toBeVisible()
+        const agentSection = page.getByTestId('agent-section')
+        await agentSection.getByTestId('agent-card-tab-prompt').click()
+        await expect(agentSection.getByText('Selected prompt')).toBeVisible()
+        await expect(agentSection.getByRole('button', { name: 'Open editor' }).first()).toBeVisible()
 
-        await page.getByTestId('agent-card-tab-skills').click()
-        await expect(page.getByText('Selected skills')).toBeVisible()
-        await expect(page.getByRole('button', { name: /Files/i })).toBeVisible()
-        await expect(page.getByRole('button', { name: /Browser/i })).toBeVisible()
+        await agentSection.getByTestId('agent-card-tab-skills').click()
+        await expect(agentSection.getByText('Selected skills')).toBeVisible()
+        await expect(agentSection.getByTestId('selected-skills')).toBeVisible()
+        await expect(agentSection.getByTestId('tooling-section')).toBeVisible()
+        await expect(agentSection.getByTestId('tool-option-files')).toBeVisible()
+        await expect(agentSection.getByTestId('tool-option-browser')).toBeVisible()
       })
     } finally {
       await evidence.finalize()
@@ -155,7 +158,7 @@ test.describe('run-chat-runtime', () => {
 
     try {
       await evidence.withinBoundary('UI', 'open the run section and chat panel', async () => {
-        await loginAsVerifier(page)
+        await openAuthenticatedWorkbench(page)
 
         await page.locator('[data-workbench-region="accordion-panel"]').getByRole('button', { name: 'RUN' }).first().click()
         await expect(page.getByTestId('run-section')).toBeVisible()

@@ -5,27 +5,21 @@ import { writeFileAtomic } from '@/lib/fs/atomic'
 import type { AgentRegistration } from './types'
 import {
   sanitizeAgentForCloud,
-  sanitizePerformanceForCloud,
   type CloudAgentRegistrationPayload,
-  type CloudPerformancePayload,
 } from '@/lib/local-first/cloud-boundary'
 
 const CLOUD_AGENT_REGISTRY_PATH = '.threados/state/cloud-agent-registry.json'
 
 export type CloudAgentRegistration = CloudAgentRegistrationPayload
 
-export type AgentPerformanceRecord = CloudPerformancePayload
-
 interface CloudAgentRegistryState {
   version: 1
   registrations: CloudAgentRegistration[]
-  performanceRecords: AgentPerformanceRecord[]
 }
 
 const DEFAULT_CLOUD_AGENT_REGISTRY_STATE: CloudAgentRegistryState = {
   version: 1,
   registrations: [],
-  performanceRecords: [],
 }
 
 function buildRegistrationPrefix(date = new Date()): string {
@@ -56,7 +50,6 @@ export async function readCloudAgentRegistryState(basePath: string): Promise<Clo
   return {
     version: 1,
     registrations: Array.isArray(raw.registrations) ? raw.registrations : [],
-    performanceRecords: Array.isArray(raw.performanceRecords) ? raw.performanceRecords : [],
   }
 }
 
@@ -124,64 +117,4 @@ export async function findCloudAgentRegistration(
     return state.registrations.find(item => item.agentId === query.agentId) ?? null
   }
   return null
-}
-
-export async function recordCloudAgentPerformance(
-  basePath: string,
-  input: Omit<AgentPerformanceRecord, 'id' | 'recordedAt'> & { id?: string; recordedAt?: string },
-): Promise<AgentPerformanceRecord> {
-  const state = await readCloudAgentRegistryState(basePath)
-  const nextRecord = sanitizePerformanceForCloud({
-    id: input.id ?? `perf-${Date.now()}`,
-    registrationNumber: input.registrationNumber,
-    recordedAt: input.recordedAt ?? new Date().toISOString(),
-    outcome: input.outcome,
-    durationMs: input.durationMs ?? null,
-    qualityScore: input.qualityScore ?? null,
-    notes: input.notes ?? null,
-  })
-
-  const nextState: CloudAgentRegistryState = {
-    ...state,
-    performanceRecords: [...state.performanceRecords, nextRecord],
-  }
-  await writeCloudAgentRegistryState(basePath, nextState)
-  return nextRecord
-}
-
-export async function listCloudAgentPerformance(
-  basePath: string,
-  registrationNumber: string,
-): Promise<AgentPerformanceRecord[]> {
-  const state = await readCloudAgentRegistryState(basePath)
-  return state.performanceRecords
-    .filter(record => record.registrationNumber === registrationNumber)
-    .sort((left, right) => right.recordedAt.localeCompare(left.recordedAt))
-}
-
-export async function summarizeCloudAgentPerformance(
-  basePath: string,
-  registrationNumber: string,
-): Promise<{ totalRuns: number; passRate: number; avgTimeMs: number; quality: number } | null> {
-  const records = await listCloudAgentPerformance(basePath, registrationNumber)
-  if (records.length === 0) return null
-
-  const totalRuns = records.length
-  const passingRuns = records.filter(record => record.outcome === 'pass').length
-  const durationRuns = records.filter(record => typeof record.durationMs === 'number')
-  const qualityRuns = records.filter(record => typeof record.qualityScore === 'number')
-
-  const avgTimeMs = durationRuns.length > 0
-    ? Math.round(durationRuns.reduce((sum, record) => sum + (record.durationMs ?? 0), 0) / durationRuns.length)
-    : 0
-  const quality = qualityRuns.length > 0
-    ? Math.round(qualityRuns.reduce((sum, record) => sum + (record.qualityScore ?? 0), 0) / qualityRuns.length)
-    : 0
-
-  return {
-    totalRuns,
-    passRate: Math.round((passingRuns / totalRuns) * 100),
-    avgTimeMs,
-    quality,
-  }
 }

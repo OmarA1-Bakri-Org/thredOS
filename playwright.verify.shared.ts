@@ -9,9 +9,10 @@ interface VerifyConfigOptions {
 }
 
 const PORT = process.env.PLAYWRIGHT_PORT ?? '4301'
-const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? `http://127.0.0.1:${PORT}`
+const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? `http://localhost:${PORT}`
 const ARTIFACTS_DIR = process.env.PLAYWRIGHT_ARTIFACTS_DIR ?? 'test-results/verify/manual'
 const REPORT_PATH = process.env.PLAYWRIGHT_JSON_REPORT_PATH ?? `${ARTIFACTS_DIR}/playwright-report.json`
+const STORAGE_STATE_PATH = process.env.PLAYWRIGHT_STORAGE_STATE_PATH ?? `${ARTIFACTS_DIR}/auth-storage-state.json`
 
 export function createVerifyConfig({
   mode,
@@ -21,6 +22,7 @@ export function createVerifyConfig({
   return defineConfig({
     testDir: './test/ui',
     testMatch,
+    timeout: 120_000,
     fullyParallel: false,
     forbidOnly: !!process.env.CI,
     retries: process.env.CI ? 1 : 0,
@@ -33,6 +35,7 @@ export function createVerifyConfig({
     globalSetup: './test/ui/global-verify-setup.ts',
     use: {
       baseURL: BASE_URL,
+      storageState: STORAGE_STATE_PATH,
       trace: 'retain-on-failure',
       video: 'retain-on-failure',
       screenshot: 'only-on-failure',
@@ -50,7 +53,7 @@ export function createVerifyConfig({
     ...(webServerCommand ? {
       webServer: {
         command: webServerCommand,
-        cwd: __dirname,
+        cwd: process.cwd(),
         env: {
           ...process.env,
           PATH: [`${process.env.HOME}/.bun/bin`, process.env.PATH]

@@ -31,7 +31,7 @@ export default async function LoginPage() {
           <p className="mt-5 max-w-2xl text-sm leading-7 text-slate-300">
             Sign in here to unlock the paid local-first desktop product. Your workspace, prompts,
             skills, thread state, and artifacts stay on your machine. The cloud is used only for
-            activation, billing, and canonical agent registration plus performance history.
+            activation, billing, and canonical agent registration.
           </p>
 
           <div className="mt-8 grid gap-4 md:grid-cols-3">

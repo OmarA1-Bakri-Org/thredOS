@@ -367,6 +367,7 @@ export function NodeSection() {
             agents={agents}
             promptAssets={promptAssets}
             skillAssets={skillAssets}
+            testIdPrefix="node"
             view={activeAgentCardView}
             selectedPromptId={selectedPrompt?.id ?? null}
             focusedSkillId={selectedSkill?.id ?? null}

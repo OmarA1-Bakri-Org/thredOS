@@ -119,7 +119,7 @@ export function ProductEntryScreenClient({
             <p className="max-w-3xl text-sm leading-7 text-slate-300">
               thredOS Desktop keeps prompts, skills, threads, surfaces, runs, and artifacts on
               your machine. The cloud is used only for activation, billing, and canonical agent
-              registration plus performance history.
+              registration.
             </p>
           </div>
         </div>
