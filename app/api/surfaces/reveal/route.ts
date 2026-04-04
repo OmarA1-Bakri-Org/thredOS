@@ -17,6 +17,9 @@ export async function POST(request: Request) {
     if (!surfaceId) {
       return NextResponse.json({ error: 'surfaceId required', code: 'MISSING_PARAM' }, { status: 400 })
     }
+    if (!runId) {
+      return NextResponse.json({ error: 'runId required', code: 'MISSING_PARAM' }, { status: 400 })
+    }
 
     const bp = getBasePath()
     const state = await readThreadSurfaceState(bp)
@@ -42,22 +45,30 @@ export async function POST(request: Request) {
 
     const attestation = createBarrierAttestation({
       surfaceId,
-      runId: runId ?? '',
+      runId,
       isolationLabel: revealed.isolationLabel,
       revealState: revealed.revealState ?? 'revealed',
     })
 
-    if (runId) {
-      await appendTraceEvent(bp, runId, {
-        ts: new Date().toISOString(),
-        run_id: runId,
-        surface_id: surfaceId,
-        actor: 'api:surfaces/reveal',
-        event_type: 'surface-revealed',
-        payload_ref: null,
-        policy_ref: null,
-      })
-    }
+    const ts = new Date().toISOString()
+    await appendTraceEvent(bp, runId, {
+      ts,
+      run_id: runId,
+      surface_id: surfaceId,
+      actor: 'api:surfaces/reveal',
+      event_type: 'surface-revealed',
+      payload_ref: null,
+      policy_ref: null,
+    })
+    await appendTraceEvent(bp, runId, {
+      ts,
+      run_id: runId,
+      surface_id: surfaceId,
+      actor: 'api:surfaces/reveal',
+      event_type: 'barrier-attested',
+      payload_ref: null,
+      policy_ref: null,
+    })
 
     return NextResponse.json({ surface: revealed, attestation })
   } catch (err) {

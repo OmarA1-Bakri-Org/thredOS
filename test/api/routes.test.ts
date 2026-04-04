@@ -188,6 +188,30 @@ describe.serial('API Routes', () => {
     expect(data.gates).toHaveLength(1)
   })
 
+  test('GET /api/gate-metrics counts dotted audit actions written by /api/gate', async () => {
+    const gateRoute = await import('@/app/api/gate/route')
+    await gateRoute.POST(new Request('http://localhost/api/gate', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'block', gateId: 'gate-1' }),
+    }))
+    await gateRoute.POST(new Request('http://localhost/api/gate', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'approve', gateId: 'gate-1' }),
+    }))
+
+    const { GET } = await import('@/app/api/gate-metrics/route')
+    const res = await GET(new Request('http://localhost/api/gate-metrics?gateId=gate-1'))
+    expect(res.status).toBe(200)
+    const data = await res.json()
+    expect(data.metrics).toEqual(expect.objectContaining({
+      totalAttempts: 2,
+      approvals: 1,
+      blocks: 1,
+      approvalRate: 50,
+      avgTimeToApprovalMs: expect.any(Number),
+    }))
+  })
+
   test('GET /api/group returns groups', async () => {
     const { GET } = await import('@/app/api/group/route')
     const res = await GET()

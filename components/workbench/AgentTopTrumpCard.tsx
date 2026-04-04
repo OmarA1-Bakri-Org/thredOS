@@ -169,6 +169,7 @@ export function AgentTopTrumpCard({
                   <input
                     value={draftName}
                     onChange={e => onDraftNameChange(e.target.value)}
+                    data-testid={testId('draft-name')}
                     className="mt-1.5 w-full border border-slate-700 bg-[#08101d] px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-500/50"
                   />
                 </div>
@@ -177,6 +178,7 @@ export function AgentTopTrumpCard({
                   <input
                     value={draftRole}
                     onChange={e => onDraftRoleChange(e.target.value)}
+                    data-testid={testId('draft-role')}
                     className="mt-1.5 w-full border border-slate-700 bg-[#08101d] px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-500/50"
                   />
                 </div>
@@ -186,6 +188,7 @@ export function AgentTopTrumpCard({
                 <textarea
                   value={draftDescription}
                   onChange={e => onDraftDescriptionChange(e.target.value)}
+                  data-testid={testId('draft-description')}
                   rows={3}
                   className="mt-1.5 w-full resize-none border border-slate-700 bg-[#08101d] px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-500/50"
                 />
@@ -201,6 +204,7 @@ export function AgentTopTrumpCard({
                 <select
                   value={agent?.id ?? ''}
                   onChange={e => onAssignAgent(e.target.value || null)}
+                  data-testid={testId('assign-existing-agent')}
                   className="mt-1.5 w-full border border-slate-700 bg-[#08101d] px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-500/50"
                 >
                   <option value="">Unassigned</option>

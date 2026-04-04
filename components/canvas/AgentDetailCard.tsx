@@ -64,6 +64,7 @@ function StatBar({ value }: { value: number }) {
 export function AgentDetailCard() {
   const selectedNodeId = useUIStore(s => s.selectedNodeId)
   const setSelectedNodeId = useUIStore(s => s.setSelectedNodeId)
+  const sharedAgentDraft = useUIStore(s => s.agentDraft)
   const focusAgentPanel = useUIStore(s => s.focusAgentPanel)
   const seedAgentDraft = useUIStore(s => s.seedAgentDraft)
 
@@ -99,7 +100,7 @@ export function AgentDetailCard() {
   const promptId = sequenceStep?.prompt_ref?.id ?? step?.id ?? null
   const nodeDescription = sequenceStep?.node_description
   const expectedOutcome = sequenceStep?.expected_outcome
-  const draft = (() => {
+  const derivedDraft = (() => {
     if (!step || !threadSurfaceId || !profile) return null
     const skillRefs = selectedAgent?.skillRefs?.length
       ? selectedAgent.skillRefs
@@ -133,6 +134,14 @@ export function AgentDetailCard() {
       role: selectedAgent?.role ?? profile.role,
     })
   })()
+  const sharedDraftIsUnhydrated = sharedAgentDraft.stepId === step?.id
+    && sharedAgentDraft.promptRef == null
+    && sharedAgentDraft.selectedPromptId == null
+    && sharedAgentDraft.skillRefs.length === 0
+    && sharedAgentDraft.tools.length === 0
+  const draft = derivedDraft && sharedAgentDraft.stepId === step?.id && !sharedDraftIsUnhydrated
+    ? sharedAgentDraft
+    : derivedDraft
   const currentComposition = selectedAgent
     ? buildRegisteredAgentComposition({
         model: selectedAgent.model,

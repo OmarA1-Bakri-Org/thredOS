@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import { mkdir, writeFile } from 'fs/promises'
 import { join } from 'path'
 import { generateExportBundle } from '@/lib/exports/bundler'
+import { ExportBundleSchema } from '@/lib/exports/schema'
+import { PolicyEngine } from '@/lib/policy/engine'
 import { getBasePath } from '@/lib/config'
 import { handleError, requireRequestSession } from '@/lib/api-helpers'
 
@@ -17,12 +19,21 @@ export async function POST(request: Request) {
     }
 
     const bp = getBasePath()
+    const policy = await PolicyEngine.load(bp)
+    if (policy.getConfig().export_mode === 'off') {
+      return NextResponse.json(
+        { error: 'Exports are disabled by policy', code: 'POLICY_DENIED' },
+        { status: 403 },
+      )
+    }
+
     const bundle = await generateExportBundle(bp, runId)
+    const validatedBundle = ExportBundleSchema.parse(bundle)
     const exportDir = join(bp, '.threados/exports', runId)
     await mkdir(exportDir, { recursive: true })
-    await writeFile(join(exportDir, 'bundle.json'), JSON.stringify(bundle, null, 2), 'utf-8')
+    await writeFile(join(exportDir, 'bundle.json'), JSON.stringify(validatedBundle, null, 2), 'utf-8')
 
-    return NextResponse.json({ bundle, exportPath: `.threados/exports/${runId}/bundle.json` })
+    return NextResponse.json({ bundle: validatedBundle, exportPath: `.threados/exports/${runId}/bundle.json` })
   } catch (err) {
     return handleError(err)
   }

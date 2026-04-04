@@ -1,4 +1,5 @@
 export interface AccessQuery {
+  surfaceId: string
   surfaceClass: string
   visibility: string
   revealState: string | null
@@ -15,7 +16,16 @@ export interface AccessResult {
 }
 
 export function resolveAccess(query: AccessQuery): AccessResult {
-  const { surfaceClass, visibility, revealState, requestorSurfaceId, allowedReadScopes, crossSurfaceReads } = query
+  const {
+    surfaceId,
+    surfaceClass,
+    visibility,
+    revealState,
+    requestorSurfaceId,
+    allowedReadScopes,
+    crossSurfaceReads,
+  } = query
+  const isSelfRequest = requestorSurfaceId === surfaceId
 
   // Sealed + not revealed: manifest only
   if (surfaceClass === 'sealed' && revealState !== 'revealed') {
@@ -24,7 +34,7 @@ export function resolveAccess(query: AccessQuery): AccessResult {
 
   // Cross-surface deny
   if (crossSurfaceReads === 'deny') {
-    const inScope = allowedReadScopes.includes(requestorSurfaceId)
+    const inScope = isSelfRequest || allowedReadScopes.includes(requestorSurfaceId)
     if (!inScope) {
       return { canRead: false, canReadSemantics: false, canReadManifest: false, reason: 'cross_surface_reads=deny and requestor not in scope' }
     }
@@ -32,13 +42,13 @@ export function resolveAccess(query: AccessQuery): AccessResult {
 
   // Private: self only
   if (surfaceClass === 'private' && visibility === 'self_only') {
-    const inScope = allowedReadScopes.includes(requestorSurfaceId)
+    const inScope = isSelfRequest || allowedReadScopes.includes(requestorSurfaceId)
     return { canRead: inScope, canReadSemantics: inScope, canReadManifest: true, reason: inScope ? 'private surface: requestor in scope' : 'private surface: requestor not in scope' }
   }
 
   // Dependency-scoped
   if (crossSurfaceReads === 'dependency_only') {
-    const inScope = allowedReadScopes.length === 0 || allowedReadScopes.includes(requestorSurfaceId)
+    const inScope = isSelfRequest || allowedReadScopes.includes(requestorSurfaceId)
     return { canRead: inScope, canReadSemantics: inScope, canReadManifest: true, reason: inScope ? 'dependency access granted' : 'requestor not in dependency scope' }
   }
 

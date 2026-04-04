@@ -3,6 +3,7 @@ import { randomUUID } from 'crypto'
 import { readApprovals, appendApproval } from '@/lib/approvals/repository'
 import { getBasePath } from '@/lib/config'
 import { handleError, requireRequestSession } from '@/lib/api-helpers'
+import { appendTraceEvent } from '@/lib/traces/writer'
 
 export async function GET(request: Request) {
   try {
@@ -47,6 +48,15 @@ export async function POST(request: Request) {
         notes: body.notes ?? null,
       }
       await appendApproval(bp, runId, approval)
+      await appendTraceEvent(bp, runId, {
+        ts: new Date().toISOString(),
+        run_id: runId,
+        surface_id: body.target_ref ?? runId,
+        actor: 'api:approvals',
+        event_type: 'approval-requested',
+        payload_ref: null,
+        policy_ref: null,
+      })
       return NextResponse.json({ approval })
     }
 
@@ -62,6 +72,15 @@ export async function POST(request: Request) {
         notes: body.notes ?? null,
       }
       await appendApproval(bp, runId, approval)
+      await appendTraceEvent(bp, runId, {
+        ts: new Date().toISOString(),
+        run_id: runId,
+        surface_id: body.target_ref ?? runId,
+        actor: 'api:approvals',
+        event_type: 'approval-resolved',
+        payload_ref: null,
+        policy_ref: null,
+      })
       return NextResponse.json({ approval })
     }
 

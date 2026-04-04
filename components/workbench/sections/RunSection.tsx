@@ -138,26 +138,29 @@ export function RunSection() {
         <div className="space-y-2">
           <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Run history</div>
           <div className="space-y-1">
-            {runs.slice(0, 5).map((run: { id: string; status?: string; startedAt?: string }) => (
-              <div key={run.id} className="flex items-center justify-between border border-slate-800 bg-[#0a101a] px-3 py-2">
-                <div className="flex items-center gap-2">
-                  {run.status === 'completed' ? (
-                    <CheckCircle2 className="h-3 w-3 text-emerald-400" />
-                  ) : run.status === 'failed' ? (
-                    <XCircle className="h-3 w-3 text-rose-400" />
-                  ) : (
-                    <Activity className="h-3 w-3 text-sky-400" />
+            {runs.slice(0, 5).map((run: { id: string; status?: string; runStatus?: string; startedAt?: string }) => {
+              const runStatus = run.runStatus ?? run.status ?? 'pending'
+              return (
+                <div key={run.id} className="flex items-center justify-between border border-slate-800 bg-[#0a101a] px-3 py-2">
+                  <div className="flex items-center gap-2">
+                    {runStatus === 'successful' ? (
+                      <CheckCircle2 className="h-3 w-3 text-emerald-400" />
+                    ) : runStatus === 'failed' || runStatus === 'cancelled' ? (
+                      <XCircle className="h-3 w-3 text-rose-400" />
+                    ) : (
+                      <Activity className="h-3 w-3 text-sky-400" />
+                    )}
+                    <span className="font-mono text-[10px] text-slate-300">{run.id}</span>
+                  </div>
+                  {run.startedAt && (
+                    <span className="flex items-center gap-1 font-mono text-[9px] text-slate-600">
+                      <Clock className="h-2.5 w-2.5" />
+                      {new Date(run.startedAt).toLocaleDateString()}
+                    </span>
                   )}
-                  <span className="font-mono text-[10px] text-slate-300">{run.id}</span>
                 </div>
-                {run.startedAt && (
-                  <span className="flex items-center gap-1 font-mono text-[9px] text-slate-600">
-                    <Clock className="h-2.5 w-2.5" />
-                    {new Date(run.startedAt).toLocaleDateString()}
-                  </span>
-                )}
-              </div>
-            ))}
+              )
+            })}
           </div>
         </div>
       )}

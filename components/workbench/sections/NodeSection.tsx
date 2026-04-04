@@ -165,17 +165,34 @@ export function NodeSection() {
       toolIds: defaultTools,
       role: selectedAgent?.role ?? focusedStep.role ?? null,
     })
+    const draftNeedsHydration =
+      agentDraft.stepId === focusedStep.id
+      && agentDraft.promptRef == null
+      && agentDraft.selectedPromptId == null
+      && agentDraft.skillRefs.length === 0
+      && agentDraft.tools.length === 0
+      && (
+        nextDraft.promptRef != null
+        || nextDraft.selectedPromptId != null
+        || nextDraft.skillRefs.length > 0
+        || nextDraft.tools.length > 0
+      )
     if (
       agentDraft.stepId !== focusedStep.id
       || (selectedAgent?.id && agentDraft.id !== selectedAgent.id)
       || (!selectedAgent && agentDraft.name !== nextDraft.name)
+      || draftNeedsHydration
     ) {
       seedAgentDraft(nextDraft)
     }
   }, [
     agentDraft.id,
     agentDraft.name,
+    agentDraft.promptRef,
+    agentDraft.selectedPromptId,
+    agentDraft.skillRefs.length,
     agentDraft.stepId,
+    agentDraft.tools.length,
     defaultPromptId,
     defaultPromptRefId,
     defaultPromptRefPath,

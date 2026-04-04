@@ -12,13 +12,19 @@ export interface GateMetrics {
   blocks: number
 }
 
+function normalizeGateAction(action: string): 'approve' | 'block' | null {
+  if (action === 'gate approve' || action === 'gate.approve') return 'approve'
+  if (action === 'gate block' || action === 'gate.block') return 'block'
+  return null
+}
+
 export function computeGateMetrics(gateId: string, entries: GateAuditEntry[]): GateMetrics {
   const gateEntries = entries.filter(e => e.gateId === gateId)
   if (gateEntries.length === 0) {
     return { totalAttempts: 0, approvalRate: 0, avgTimeToApprovalMs: 0, approvals: 0, blocks: 0 }
   }
-  const approvals = gateEntries.filter(e => e.action === 'gate approve').length
-  const blocks = gateEntries.filter(e => e.action === 'gate block').length
+  const approvals = gateEntries.filter(e => normalizeGateAction(e.action) === 'approve').length
+  const blocks = gateEntries.filter(e => normalizeGateAction(e.action) === 'block').length
   const totalAttempts = approvals + blocks
   const approvalRate = totalAttempts > 0 ? Math.round((approvals / totalAttempts) * 100) : 0
 
@@ -27,9 +33,10 @@ export function computeGateMetrics(gateId: string, entries: GateAuditEntry[]): G
   let cycleCount = 0
   let lastBlockTime: number | null = null
   for (const entry of sorted) {
-    if (entry.action === 'gate block') {
+    const normalizedAction = normalizeGateAction(entry.action)
+    if (normalizedAction === 'block') {
       lastBlockTime = new Date(entry.timestamp).getTime()
-    } else if (entry.action === 'gate approve' && lastBlockTime !== null) {
+    } else if (normalizedAction === 'approve' && lastBlockTime !== null) {
       totalTimeMs += new Date(entry.timestamp).getTime() - lastBlockTime
       cycleCount++
       lastBlockTime = null

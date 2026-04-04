@@ -35,6 +35,7 @@ export async function GET(request: Request) {
 
     const policy = policyEngine.getConfig()
     const result = resolveAccess({
+      surfaceId: surface.id,
       surfaceClass: surface.surfaceClass,
       visibility: surface.visibility,
       revealState: surface.revealState,

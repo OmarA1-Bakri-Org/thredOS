@@ -387,7 +387,14 @@ export function useRegisterAgent() {
       threadSurfaceIds?: string[]
       skillRefs?: SkillRef[]
       skills?: Array<{ id: string; label: string }>
-    }) => postJson<{ agent: AgentRegistration; cloudRegistration?: CloudAgentRegistration; replacementOf?: string; materialChange?: boolean; reasons?: string[] }>('/api/agents', input),
+    }) => postJson<{
+      agent: AgentRegistration
+      cloudRegistration?: CloudAgentRegistration | null
+      cloudSyncError?: string | null
+      replacementOf?: string
+      materialChange?: boolean
+      reasons?: string[]
+    }>('/api/agents', input),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['agents'] })
       qc.invalidateQueries({ queryKey: ['agent-profile'] })
