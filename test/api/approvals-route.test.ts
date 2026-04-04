@@ -14,7 +14,7 @@ describe.serial('approvals API route', () => {
     await cleanTempDir(tmpDir)
   })
 
-  test('POST request and resolve persist approvals, then GET lists them in order', async () => {
+  test('POST request and resolve persist approvals, then GET returns the folded current approval state', async () => {
     const { GET, POST } = await import('@/app/api/approvals/route')
     const runId = 'run-approvals-route'
 
@@ -75,11 +75,15 @@ describe.serial('approvals API route', () => {
     const listRes = await GET(new Request(`http://localhost/api/approvals?runId=${runId}`))
     expect(listRes.status).toBe(200)
     const listBody = await listRes.json()
-    expect(listBody.approvals).toHaveLength(2)
-    expect(listBody.approvals.map((approval: { status: string }) => approval.status)).toEqual(['pending', 'approved'])
-    expect(listBody.approvals[1]).toMatchObject({
+    expect(listBody.approvals).toHaveLength(1)
+    expect(listBody.approvals[0]).toMatchObject({
       id: requestBody.approval.id,
+      action_type: 'reveal',
+      target_ref: 'surface/shared',
+      requested_by: 'agent-alpha',
+      status: 'approved',
       approved_by: 'human-reviewer',
+      notes: 'Approved',
     })
 
     const traceRes = await (await import('@/app/api/traces/route')).GET(

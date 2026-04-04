@@ -6,6 +6,7 @@ import {
   PackRepository,
   getPackStatePath,
   readPackState,
+  selectBestPackForBuilder,
   updatePackState,
   writePackState,
 } from './repository'
@@ -64,6 +65,18 @@ describe('PackRepository', () => {
     repo.addPack(makePack({ id: 'pack-2', builderId: 'b1', highestStatus: 'hero' }))
     repo.addPack(makePack({ id: 'pack-3', builderId: 'b1', highestStatus: 'champion' }))
     expect(repo.getHighestStatus('b1')).toBe('hero')
+  })
+
+  test('selectBestPackForBuilder returns the highest-status pack for a builder', () => {
+    const bestPack = selectBestPackForBuilder([
+      makePack({ id: 'pack-1', builderId: 'b1', highestStatus: 'challenger' }),
+      makePack({ id: 'pack-2', builderId: 'b1', highestStatus: 'hero' }),
+      makePack({ id: 'pack-3', builderId: 'b1', highestStatus: 'champion' }),
+      makePack({ id: 'pack-4', builderId: 'b2', highestStatus: 'hero' }),
+    ], 'b1')
+
+    expect(bestPack?.id).toBe('pack-2')
+    expect(bestPack?.highestStatus).toBe('hero')
   })
 
   test('promoteStatus upgrades when new status is higher', () => {

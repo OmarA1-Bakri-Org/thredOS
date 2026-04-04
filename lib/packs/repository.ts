@@ -55,6 +55,15 @@ export async function updatePackState(
   return nextState
 }
 
+export function selectBestPackForBuilder(packs: Pack[], builderId: string): Pack | null {
+  const builderPacks = packs.filter(pack => pack.builderId === builderId)
+  if (builderPacks.length === 0) return null
+
+  return builderPacks.reduce((best, pack) =>
+    PACK_STATUS_PRIORITY[pack.highestStatus] > PACK_STATUS_PRIORITY[best.highestStatus] ? pack : best
+  )
+}
+
 // ---------------------------------------------------------------------------
 // In-memory repository (unchanged)
 // ---------------------------------------------------------------------------

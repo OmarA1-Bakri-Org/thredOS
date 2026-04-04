@@ -4,6 +4,27 @@ import { readApprovals, appendApproval } from '@/lib/approvals/repository'
 import { getBasePath } from '@/lib/config'
 import { handleError, requireRequestSession } from '@/lib/api-helpers'
 import { appendTraceEvent } from '@/lib/traces/writer'
+import type { Approval } from '@/lib/contracts/schemas'
+
+function foldApprovals(entries: Approval[]): Approval[] {
+  const indexById = new Map<string, number>()
+  const folded: Approval[] = []
+
+  for (const entry of entries) {
+    const existingIndex = indexById.get(entry.id)
+    if (existingIndex == null) {
+      indexById.set(entry.id, folded.length)
+      folded.push(entry)
+      continue
+    }
+    folded[existingIndex] = {
+      ...folded[existingIndex],
+      ...entry,
+    }
+  }
+
+  return folded
+}
 
 export async function GET(request: Request) {
   try {
@@ -16,7 +37,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'runId required', code: 'MISSING_PARAM' }, { status: 400 })
     }
 
-    const approvals = await readApprovals(getBasePath(), runId)
+    const approvals = foldApprovals(await readApprovals(getBasePath(), runId))
     return NextResponse.json({ approvals })
   } catch (err) {
     return handleError(err)

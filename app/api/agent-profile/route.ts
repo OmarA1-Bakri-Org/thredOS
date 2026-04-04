@@ -2,7 +2,7 @@ import { readAgentState } from '@/lib/agents/repository'
 import { aggregateAgentStats } from '@/lib/agents/stats'
 import { getBasePath } from '@/lib/config'
 import { requireRequestSession } from '@/lib/api-helpers'
-import { readPackState } from '@/lib/packs/repository'
+import { readPackState, selectBestPackForBuilder } from '@/lib/packs/repository'
 import { buildAgentProfile, type ProfileNodeContext } from '@/lib/agents/profile'
 import { readThreadRunnerState } from '@/lib/thread-runner/repository'
 import { readThreadSurfaceState } from '@/lib/thread-surfaces/repository'
@@ -68,7 +68,7 @@ export async function GET(request: Request) {
     ])
 
     const stats = agent ? aggregateAgentStats(agent.id, runnerState.races, runnerState.combatantRuns) : null
-    const pack = agent ? packState.packs.find(p => p.builderId === agent.builderId) ?? null : null
+    const pack = agent ? selectBestPackForBuilder(packState.packs, agent.builderId) : null
     const node = buildProfileNodeContext(surfaceState, agent, threadSurfaceId)
     const profile = buildAgentProfile({ agent, stats, pack, node })
 
