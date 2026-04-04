@@ -68,6 +68,7 @@ export function NodeDetailCard() {
   const removeStep = useRemoveStep()
   const removeGate = useRemoveGate()
   const cloneStep = useCloneStep()
+  const [confirmRun, setConfirmRun] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
 
   const { getNode } = useReactFlow()
@@ -312,7 +313,7 @@ export function NodeDetailCard() {
             <>
               <button
                 type="button"
-                onClick={() => runStep.mutate(selectedNodeId)}
+                onClick={() => setConfirmRun(true)}
                 disabled={runStep.isPending}
                 className="flex items-center gap-1 rounded px-2 py-1 font-mono text-[9px] uppercase tracking-[0.12em] text-emerald-300 transition-all hover:bg-emerald-500/15"
                 title="Run step"
@@ -391,6 +392,21 @@ export function NodeDetailCard() {
             </button>
           </div>
         </div>
+
+        {confirmRun && isStep && (
+          <ConfirmDialog
+            open
+            title={`Run step ${selectedNodeId}?`}
+            description="This starts a fresh execution for the selected step and acknowledges SAFE mode confirmation before hosted execution."
+            confirmLabel="Run step"
+            tone="default"
+            onCancel={() => setConfirmRun(false)}
+            onConfirm={() => {
+              setConfirmRun(false)
+              runStep.mutate({ stepId: selectedNodeId, confirmPolicy: true })
+            }}
+          />
+        )}
 
         {confirmDelete && (
           <ConfirmDialog

@@ -47,6 +47,7 @@ async function writeSequence() {
 async function writeRunArtifacts(runId: string) {
   const runDir = join(basePath, '.threados/runs', runId)
   await mkdir(runDir, { recursive: true })
+  await mkdir(join(runDir, 'step-alpha'), { recursive: true })
   await writeFile(
     join(runDir, 'trace.ndjson'),
     [
@@ -60,6 +61,19 @@ async function writeRunArtifacts(runId: string) {
         policy_ref: null,
       }),
     ].join('\n') + '\n',
+    'utf-8',
+  )
+  await writeFile(
+    join(runDir, 'step-alpha', 'status.json'),
+    JSON.stringify({
+      stepId: 'step-alpha',
+      runId,
+      startTime: timestamp,
+      endTime: '2026-04-04T00:00:05.000Z',
+      duration: 5000,
+      exitCode: 0,
+      status: 'SUCCESS',
+    }, null, 2),
     'utf-8',
   )
 }
@@ -189,6 +203,19 @@ describe.serial('surface proof routes', () => {
     await writePolicy('export_mode: local_bundle\n')
     await writeSequence()
     await writeRunArtifacts('run-export-1')
+    await writeThreadSurfaceState(basePath, {
+      version: 1,
+      threadSurfaces: [
+        makeSurface({
+          id: 'surface-a',
+          surfaceLabel: 'Surface A',
+          revealState: 'revealed',
+        }),
+      ],
+      runs: [],
+      mergeEvents: [],
+      runEvents: [],
+    })
 
     const { POST } = await import('@/app/api/exports/run-bundle/route')
     const res = await POST(new Request('http://localhost/api/exports/run-bundle', {
@@ -201,6 +228,13 @@ describe.serial('surface proof routes', () => {
     expect(data.exportPath).toBe('.threados/exports/run-export-1/bundle.json')
     const parsedBundle = ExportBundleSchema.parse(data.bundle)
     expect(parsedBundle.run_id).toBe('run-export-1')
+    expect(parsedBundle.surfaces).toHaveLength(1)
+    expect(parsedBundle.artifact_manifests).toContain('.threados/runs/run-export-1/step-alpha/status.json')
+    expect(parsedBundle.timing_summary).toMatchObject({
+      stepCount: 1,
+      totalDurationMs: 5000,
+      successfulSteps: 1,
+    })
 
     const writtenBundle = JSON.parse(await readFile(join(basePath, '.threados/exports/run-export-1/bundle.json'), 'utf-8'))
     expect(writtenBundle.run_id).toBe('run-export-1')

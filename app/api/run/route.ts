@@ -25,6 +25,8 @@ import { provisionAllChildSequences } from '@/lib/thread-surfaces/provision-chil
 import { readThreadSurfaceState, writeThreadSurfaceState } from '@/lib/thread-surfaces/repository'
 import { readRuntimeEventLog, type RuntimeDelegationEvent } from '@/lib/thread-surfaces/runtime-event-log'
 import { applyRateLimit } from '@/lib/rate-limit'
+import { PolicyEngine } from '@/lib/policy/engine'
+import { recordApprovedApprovalLifecycle } from '@/lib/approvals/runtime'
 import {
   beginStepRunIfSurfaceExists,
   finalizeStepRunWithRuntimeEvents,
@@ -89,6 +91,12 @@ function policyStatusToHttp(result: PolicyCheckResult): { code: string; status: 
   return result.confirmationRequired
     ? { code: 'POLICY_CONFIRMATION_REQUIRED', status: 409 }
     : { code: 'POLICY_DENIED', status: 403 }
+}
+
+function targetRefFromRunBody(body: RunRequestBody): string {
+  if ('stepId' in body) return `step:${body.stepId}`
+  if ('groupId' in body) return `group:${body.groupId}`
+  return 'mode:runnable'
 }
 
 function commandLineFromRunnerConfig(runnerConfig: RunnerConfig): string {
@@ -335,6 +343,21 @@ export async function POST(request: Request) {
     const runId = randomUUID()
     const startedAt = new Date().toISOString()
     await createRunScopeForRequest(basePath, sequence.name, runId, startedAt)
+
+    const policyEngine = await PolicyEngine.load(basePath)
+    if (body.confirmPolicy === true && policyEngine.getConfig().mode === 'SAFE') {
+      await recordApprovedApprovalLifecycle({
+        basePath,
+        runId,
+        actionType: 'run',
+        targetRef: targetRefFromRunBody(body),
+        requestedBy: session.email,
+        resolvedBy: session.email,
+        actor: 'api:run',
+        notes: 'SAFE mode confirmation acknowledged before dispatch.',
+        policyRef: 'SAFE',
+      })
+    }
 
     if ('stepId' in body) {
       const result = await executeStep(basePath, sequence, body.stepId, runId, body.confirmPolicy === true)

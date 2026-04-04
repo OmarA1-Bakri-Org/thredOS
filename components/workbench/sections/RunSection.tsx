@@ -1,11 +1,14 @@
 'use client'
 
+import { useState } from 'react'
 import { Play, Square, RotateCcw, Activity, Clock, CheckCircle2, XCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { useUIStore } from '@/lib/ui/store'
-import { useStatus, useRunRunnable, useThreadRuns, useThreadSurfaces, useThreadMerges } from '@/lib/ui/api'
+import { useStatus, useRunRunnable, useThreadRuns, useThreadSurfaces, useThreadMerges, useTraces, useApprovals } from '@/lib/ui/api'
 import { createLaneBoardModel } from '@/components/lanes/useLaneBoard'
 import { resolveThreadSurfaceFocusedDetail } from '@/components/canvas/threadSurfaceFocus'
+import { resolveDefaultDisplayRun } from '@/lib/thread-surfaces/projections'
 
 function StatusBadge({ label, count, color }: { label: string; count: number; color: string }) {
   if (count === 0) return null
@@ -19,6 +22,7 @@ function StatusBadge({ label, count, color }: { label: string; count: number; co
 
 export function RunSection() {
   const runRunnable = useRunRunnable()
+  const [confirmRun, setConfirmRun] = useState(false)
   const { data: status } = useStatus()
   const selectedThreadSurfaceId = useUIStore(s => s.selectedThreadSurfaceId)
   const selectedRunId = useUIStore(s => s.selectedRunId)
@@ -48,6 +52,13 @@ export function RunSection() {
       })
     : null
 
+  const activeRunId = selectedRunId
+    ?? focusedDetail?.runId
+    ?? (runs ? resolveDefaultDisplayRun(runs)?.id ?? null : null)
+  const { data: traceEvents } = useTraces(activeRunId)
+  const { data: approvals } = useApprovals(activeRunId)
+  const recentRuns = runs ? [...runs].reverse().slice(0, 5) : []
+
   return (
     <div className="space-y-4" data-testid="run-section">
       {/* Run Controls */}
@@ -57,7 +68,7 @@ export function RunSection() {
           <Button
             type="button"
             variant="default"
-            onClick={() => runRunnable.mutate(undefined)}
+            onClick={() => setConfirmRun(true)}
             disabled={runRunnable.isPending}
             className="gap-1.5"
           >
@@ -84,6 +95,36 @@ export function RunSection() {
             <StatusBadge label="Active" count={status.summary.running} color="border-sky-500/30 text-sky-300" />
             <StatusBadge label="Done" count={status.summary.done} color="border-emerald-500/30 text-emerald-300" />
             <StatusBadge label="Failed" count={status.summary.failed} color="border-rose-500/30 text-rose-300" />
+          </div>
+        </div>
+      )}
+
+      {activeRunId && (
+        <div data-testid="run-control-plane" className="space-y-2">
+          <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Control plane</div>
+          <div className="grid grid-cols-2 gap-2">
+            <div data-testid="run-trace-summary" className="border border-slate-800/90 bg-[#060e1a] px-3 py-3">
+              <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Trace events</div>
+              <div data-testid="run-trace-count" className="mt-2 text-lg font-semibold text-white">
+                {traceEvents?.length ?? 0}
+              </div>
+              <div className="mt-2 text-xs text-slate-400">
+                Latest: {traceEvents && traceEvents.length > 0
+                  ? String((traceEvents[traceEvents.length - 1] as { event_type?: string }).event_type ?? 'unknown')
+                  : 'No events recorded'}
+              </div>
+            </div>
+            <div data-testid="run-approval-summary" className="border border-slate-800/90 bg-[#060e1a] px-3 py-3">
+              <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Approvals</div>
+              <div data-testid="run-approval-count" className="mt-2 text-lg font-semibold text-white">
+                {approvals?.length ?? 0}
+              </div>
+              <div className="mt-2 text-xs text-slate-400">
+                Latest: {approvals && approvals.length > 0
+                  ? String((approvals[approvals.length - 1] as { status?: string }).status ?? 'unknown')
+                  : 'No approvals recorded'}
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -134,11 +175,11 @@ export function RunSection() {
       )}
 
       {/* Run History */}
-      {runs && runs.length > 0 && (
+      {recentRuns.length > 0 && (
         <div className="space-y-2">
           <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Run history</div>
           <div className="space-y-1">
-            {runs.slice(0, 5).map((run: { id: string; status?: string; runStatus?: string; startedAt?: string }) => {
+            {recentRuns.map((run: { id: string; status?: string; runStatus?: string; startedAt?: string }) => {
               const runStatus = run.runStatus ?? run.status ?? 'pending'
               return (
                 <div key={run.id} className="flex items-center justify-between border border-slate-800 bg-[#0a101a] px-3 py-2">
@@ -164,6 +205,19 @@ export function RunSection() {
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={confirmRun}
+        title="Run runnable frontier?"
+        description="This dispatches the current runnable steps and acknowledges SAFE mode confirmation before hosted execution."
+        confirmLabel="Run all"
+        tone="default"
+        onCancel={() => setConfirmRun(false)}
+        onConfirm={() => {
+          setConfirmRun(false)
+          runRunnable.mutate({ confirmPolicy: true })
+        }}
+      />
     </div>
   )
 }

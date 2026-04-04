@@ -24,6 +24,7 @@ export function ChatPanel() {
   const [applyingMessageId, setApplyingMessageId] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const selectedRunId = useUIStore(s => s.selectedRunId)
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
@@ -116,7 +117,7 @@ export function ChatPanel() {
       const res = await fetch('/api/apply', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ actions }),
+        body: JSON.stringify({ actions, ...(selectedRunId ? { runId: selectedRunId } : {}) }),
       })
       const result = await res.json()
       if (!result.success) {
@@ -146,7 +147,7 @@ export function ChatPanel() {
     } finally {
       setApplyingMessageId(null)
     }
-  }, [])
+  }, [selectedRunId])
 
   const handleDiscard = useCallback((messageId: string) => {
     setMessages(prev => prev.map(m =>

@@ -1,11 +1,21 @@
-import { NextRequest } from 'next/server'
+import { randomUUID } from 'crypto'
+import { z } from 'zod'
 import { ActionValidator, type ProposedAction } from '@/lib/chat/validator'
 import { getBasePath } from '@/lib/config'
 import { jsonError, requireRequestSession } from '@/lib/api-helpers'
 import { allowChatApply } from '@/lib/hosted'
 import { applyRateLimit } from '@/lib/rate-limit'
+import { recordApprovedApprovalLifecycle } from '@/lib/approvals/runtime'
 
-export async function POST(request: NextRequest) {
+const ApplyBodySchema = z.object({
+  actions: z.array(z.object({
+    command: z.string(),
+    args: z.record(z.string(), z.union([z.string(), z.array(z.string()), z.boolean(), z.number()]).optional()),
+  })).min(1),
+  runId: z.string().min(1).optional(),
+})
+
+export async function POST(request: Request) {
   try {
     const session = requireRequestSession(request)
     if ('status' in session) return session
@@ -25,21 +35,32 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const body = await request.json()
+    const body = ApplyBodySchema.parse(await request.json())
     const { actions } = body as { actions: ProposedAction[] }
-
-    if (!actions || !Array.isArray(actions) || actions.length === 0) {
-      return Response.json({ success: false, errors: ['No actions provided'] }, { status: 400 })
-    }
+    const runId = body.runId ?? `chat-apply-${randomUUID()}`
 
     // Cap the number of actions to prevent abuse
     if (actions.length > 50) {
       return Response.json({ success: false, errors: ['Too many actions (max 50)'] }, { status: 400 })
     }
 
-    const validator = new ActionValidator(getBasePath())
+    const basePath = getBasePath()
+    const validator = new ActionValidator(basePath)
     const result = await validator.apply(actions)
-    return Response.json(result)
+    await recordApprovedApprovalLifecycle({
+      basePath,
+      runId,
+      actionType: 'side_effect',
+      targetRef: `chat-apply:${actions.length}`,
+      requestedBy: session.email,
+      resolvedBy: session.email,
+      actor: 'api:apply',
+      notes: result.success
+        ? `Applied ${actions.length} reviewed chat action(s).`
+        : `Chat apply was approved but returned errors: ${result.results.map(entry => entry.error).filter(Boolean).join(', ') || 'unknown error'}`,
+    })
+
+    return Response.json({ ...result, runId })
   } catch {
     return Response.json(
       { success: false, errors: ['Internal server error'] },

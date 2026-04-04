@@ -133,6 +133,8 @@ function invalidateRuntimeQueries(qc: ReturnType<typeof useQueryClient>) {
   qc.invalidateQueries({ queryKey: ['thread-surfaces'] })
   qc.invalidateQueries({ queryKey: ['thread-runs'] })
   qc.invalidateQueries({ queryKey: ['thread-merges'] })
+  qc.invalidateQueries({ queryKey: ['traces'] })
+  qc.invalidateQueries({ queryKey: ['approvals'] })
 }
 
 export function unwrapThreadSurfacesResponse(response: ThreadSurfacesResponse): ThreadSurface[] {

@@ -4,6 +4,7 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import { generateExportBundle } from './bundler'
 import type { TraceEvent, GateDecision } from '@/lib/contracts/schemas'
+import { writeThreadSurfaceState } from '@/lib/thread-surfaces/repository'
 
 const makeTraceEvent = (overrides: Partial<TraceEvent> = {}): TraceEvent => ({
   ts: '2026-03-29T00:00:00.000Z',
@@ -51,12 +52,47 @@ describe('generateExportBundle', () => {
     // Set up run directory with trace and gate-decision NDJSON files
     const runDir = join(basePath, '.threados/runs', runId)
     await mkdir(runDir, { recursive: true })
+    await mkdir(join(runDir, 'step-abc'), { recursive: true })
 
     const traceEvent = makeTraceEvent({ run_id: runId })
     await writeFile(join(runDir, 'trace.ndjson'), JSON.stringify(traceEvent) + '\n', 'utf-8')
 
     const gateDecision = makeGateDecision()
     await writeFile(join(runDir, 'gate-decisions.ndjson'), JSON.stringify(gateDecision) + '\n', 'utf-8')
+    await writeFile(join(runDir, 'step-abc', 'status.json'), JSON.stringify({
+      stepId: 'step-abc',
+      runId,
+      startTime: '2026-03-29T00:00:00.000Z',
+      endTime: '2026-03-29T00:00:10.000Z',
+      duration: 10_000,
+      exitCode: 0,
+      status: 'SUCCESS',
+    }, null, 2), 'utf-8')
+    await writeThreadSurfaceState(basePath, {
+      version: 1,
+      threadSurfaces: [
+        {
+          id: 'surface-001',
+          parentSurfaceId: null,
+          parentAgentNodeId: null,
+          depth: 0,
+          surfaceLabel: 'Surface 001',
+          createdAt: '2026-03-29T00:00:00.000Z',
+          childSurfaceIds: [],
+          sequenceRef: null,
+          spawnedByAgentId: null,
+          surfaceClass: 'shared',
+          visibility: 'dependency',
+          isolationLabel: 'NONE',
+          revealState: null,
+          allowedReadScopes: [],
+          allowedWriteScopes: [],
+        },
+      ],
+      runs: [],
+      mergeEvents: [],
+      runEvents: [],
+    })
 
     const bundle = await generateExportBundle(basePath, runId)
 
@@ -65,9 +101,21 @@ describe('generateExportBundle', () => {
     expect(bundle.pack).toEqual({ id: null, version: null })
     expect(bundle.sequence_snapshot).toContain('test-sequence')
     expect(bundle.policy_snapshot).toBeNull()
-    expect(bundle.surfaces).toEqual([])
-    expect(bundle.artifact_manifests).toEqual([])
-    expect(bundle.timing_summary).toBeNull()
+    expect(bundle.surfaces).toHaveLength(1)
+    expect(bundle.artifact_manifests).toEqual([
+      `.threados/runs/${runId}/gate-decisions.ndjson`,
+      `.threados/runs/${runId}/step-abc/status.json`,
+      `.threados/runs/${runId}/trace.ndjson`,
+    ])
+    expect(bundle.timing_summary).toEqual({
+      stepCount: 1,
+      totalDurationMs: 10_000,
+      longestStepMs: 10_000,
+      failedSteps: 0,
+      successfulSteps: 1,
+      startedAt: '2026-03-29T00:00:00.000Z',
+      endedAt: '2026-03-29T00:00:10.000Z',
+    })
     expect(bundle.cost_summary).toBeNull()
     expect(typeof bundle.exported_at).toBe('string')
 
@@ -97,8 +145,11 @@ describe('generateExportBundle', () => {
     expect(bundle.bundle_version).toBe('1.0')
     expect(bundle.run_id).toBe(runId)
     expect(bundle.sequence_snapshot).toContain('minimal-sequence')
+    expect(bundle.surfaces).toEqual([])
     expect(bundle.trace_events).toEqual([])
     expect(bundle.gate_decisions).toEqual([])
     expect(bundle.approvals).toEqual([])
+    expect(bundle.artifact_manifests).toEqual([])
+    expect(bundle.timing_summary).toBeNull()
   })
 })

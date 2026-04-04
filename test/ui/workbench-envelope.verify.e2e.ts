@@ -153,25 +153,36 @@ test.describe('assets-prompts-skills-tools', () => {
 })
 
 test.describe('run-chat-runtime', () => {
-  test('opens the run section, confirm dialog, and chat panel without framework errors', async ({ page }, testInfo) => {
+  test('records SAFE runtime approvals and trace events, then keeps chat interactive without framework errors', async ({ page }, testInfo) => {
     const evidence = startBrowserEvidence(page, testInfo, 'run-chat-runtime')
 
     try {
-      await evidence.withinBoundary('UI', 'open the run section and chat panel', async () => {
+      await evidence.withinBoundary('UI', 'open the run section and confirm a runnable dispatch', async () => {
         await openAuthenticatedWorkbench(page)
 
         await page.locator('[data-workbench-region="accordion-panel"]').getByRole('button', { name: 'RUN' }).first().click()
         await expect(page.getByTestId('run-section')).toBeVisible()
 
-        await page.getByRole('button', { name: 'Run', exact: true }).click()
+        await page.getByRole('button', { name: 'Run all', exact: true }).click()
         await expect(page.getByTestId('confirm-dialog')).toBeVisible()
-        await page.getByTestId('confirm-dialog').getByRole('button', { name: 'Cancel' }).click()
-
-        await page.getByRole('button', { name: 'Chat', exact: true }).click()
-        await expect(page.getByTestId('chat-panel')).toBeVisible()
       })
 
-      await evidence.withinBoundary('response -> UI', 'keep the runtime surfaces interactive without framework overlays', async () => {
+      await evidence.withinBoundary('client -> API', 'dispatch the runnable frontier through the real run route', async () => {
+        const runResponse = page.waitForResponse(response =>
+          response.url().endsWith('/api/run')
+          && response.request().method() === 'POST'
+          && response.ok(),
+        )
+        await page.getByTestId('confirm-dialog').getByRole('button', { name: 'Run all' }).click()
+        await runResponse
+      })
+
+      await evidence.withinBoundary('response -> UI', 'surface the recorded control-plane state and keep chat interactive', async () => {
+        await expect(page.getByTestId('run-control-plane')).toBeVisible()
+        await expect(page.getByTestId('run-approval-count')).not.toHaveText('0')
+        await expect(page.getByTestId('run-trace-count')).not.toHaveText('0')
+        await page.getByRole('button', { name: 'Chat', exact: true }).click()
+        await expect(page.getByTestId('chat-panel')).toBeVisible()
         await expectNoFrameworkOverlay(page)
       })
     } finally {
