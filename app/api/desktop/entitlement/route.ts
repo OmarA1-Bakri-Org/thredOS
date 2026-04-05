@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getBasePath } from '@/lib/config'
 import { requireRequestSession } from '@/lib/api-helpers'
+import { applyRateLimit } from '@/lib/rate-limit'
 import {
   getEffectiveEntitlementState,
   readLocalEntitlement,
@@ -18,6 +19,12 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const session = requireRequestSession(request)
   if (session instanceof NextResponse) return session
+  const rateLimited = applyRateLimit(request, {
+    bucket: 'desktop-entitlement-refresh',
+    limit: 30,
+    windowMs: 5 * 60 * 1000,
+  })
+  if (rateLimited) return rateLimited
 
   const state = await refreshLocalEntitlement(getBasePath())
   return NextResponse.json(getEffectiveEntitlementState(state))

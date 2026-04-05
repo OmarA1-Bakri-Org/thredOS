@@ -6,6 +6,7 @@ import { validateDAG } from '@/lib/sequence/dag'
 import { getBasePath } from '@/lib/config'
 import { auditLog, handleError, requireRequestSession } from '@/lib/api-helpers'
 import { StepNotFoundError } from '@/lib/errors'
+import { applyRateLimit } from '@/lib/rate-limit'
 
 const BodySchema = z.object({ action: z.literal('parallelize'), stepIds: z.array(z.string()).min(2) })
 
@@ -28,6 +29,12 @@ export async function POST(request: Request) {
   try {
     const session = requireRequestSession(request)
     if (session instanceof NextResponse) return session
+    const rateLimited = applyRateLimit(request, {
+      bucket: 'group-write',
+      limit: 30,
+      windowMs: 5 * 60 * 1000,
+    })
+    if (rateLimited) return rateLimited
     const { stepIds } = BodySchema.parse(await request.json())
     const bp = getBasePath()
     const seq = await readSequence(bp)

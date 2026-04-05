@@ -5,12 +5,19 @@ import { appendTraceEvent } from '@/lib/traces/writer'
 import { readThreadSurfaceState, writeThreadSurfaceState } from '@/lib/thread-surfaces/repository'
 import { getBasePath } from '@/lib/config'
 import { handleError, requireRequestSession } from '@/lib/api-helpers'
+import { applyRateLimit } from '@/lib/rate-limit'
 import { normalizeThreadSurface } from '@/lib/thread-surfaces/types'
 
 export async function POST(request: Request) {
   try {
     const session = requireRequestSession(request)
     if (session instanceof NextResponse) return session
+    const rateLimited = applyRateLimit(request, {
+      bucket: 'surface-reveal',
+      limit: 30,
+      windowMs: 5 * 60 * 1000,
+    })
+    if (rateLimited) return rateLimited
 
     const body = await request.json()
     const { surfaceId, runId } = body

@@ -1,5 +1,4 @@
 import { describe, it, expect, afterEach } from 'bun:test'
-import { join } from 'path'
 import { createTempDir, cleanTempDir } from '../../test/helpers/setup'
 import { appendTraceEvent } from './writer'
 import { readTraceEvents } from './reader'

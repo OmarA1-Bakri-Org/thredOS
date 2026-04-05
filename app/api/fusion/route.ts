@@ -5,6 +5,7 @@ import { validateDAG } from '@/lib/sequence/dag'
 import { getBasePath } from '@/lib/config'
 import { auditLog, handleError, requireRequestSession } from '@/lib/api-helpers'
 import { StepNotFoundError } from '@/lib/errors'
+import { applyRateLimit } from '@/lib/rate-limit'
 import type { Step } from '@/lib/sequence/schema'
 
 const BodySchema = z.object({
@@ -17,6 +18,12 @@ export async function POST(request: Request) {
   try {
     const session = requireRequestSession(request)
     if (session instanceof NextResponse) return session
+    const rateLimited = applyRateLimit(request, {
+      bucket: 'fusion-write',
+      limit: 30,
+      windowMs: 5 * 60 * 1000,
+    })
+    if (rateLimited) return rateLimited
     const { candidates, synthId } = BodySchema.parse(await request.json())
     const bp = getBasePath()
     const seq = await readSequence(bp)

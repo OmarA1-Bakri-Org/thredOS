@@ -3,6 +3,7 @@ import { getBasePath } from '@/lib/config'
 import { readPackState, updatePackState } from '@/lib/packs/repository'
 import type { Pack, PackStatus } from '@/lib/packs/types'
 import { requireRequestSession } from '@/lib/api-helpers'
+import { applyRateLimit } from '@/lib/rate-limit'
 
 export async function GET(request?: Request) {
   try {
@@ -25,6 +26,12 @@ export async function POST(request: Request) {
   try {
     const session = requireRequestSession(request)
     if (session instanceof NextResponse) return session
+    const rateLimited = applyRateLimit(request, {
+      bucket: 'packs-write',
+      limit: 30,
+      windowMs: 5 * 60 * 1000,
+    })
+    if (rateLimited) return rateLimited
     const body = await request.json()
     const { action } = body as { action: string }
     const bp = getBasePath()

@@ -175,11 +175,19 @@ export async function POST(request: NextRequest) {
   })
   if (rateLimited) return rateLimited
 
-  const body = await request.json()
+  const body = await request.json().catch(() => null)
+  if (body == null || typeof body !== 'object') {
+    return buildJsonErrorResponse('invalid JSON body', 400)
+  }
+
   const { message, model } = body
 
   if (!message || typeof message !== 'string') {
     return buildJsonErrorResponse('message is required', 400)
+  }
+
+  if (model !== undefined && typeof model !== 'string') {
+    return buildJsonErrorResponse('model must be a string', 400)
   }
 
   if (message.length > MAX_MESSAGE_LENGTH) {

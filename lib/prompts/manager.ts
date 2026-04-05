@@ -1,5 +1,6 @@
-import { readFile, writeFile, readdir, access } from 'fs/promises'
+import { readFile, readdir, access } from 'fs/promises'
 import { join, basename, extname } from 'path'
+import { writeFileAtomic } from '../fs/atomic'
 
 const PROMPTS_PATH = '.threados/prompts'
 
@@ -31,7 +32,7 @@ export async function writePrompt(
   content: string
 ): Promise<void> {
   const filePath = join(basePath, PROMPTS_PATH, `${stepId}.md`)
-  await writeFile(filePath, content, 'utf-8')
+  await writeFileAtomic(filePath, content)
 }
 
 /**

@@ -12,11 +12,13 @@ beforeEach(() => {
     JSON.stringify({ version: 1, agents: [] })
   )
   process.env.THREADOS_BASE_PATH = tmpDir
+  process.env.THREADOS_ENABLE_THREAD_RUNNER = 'true'
 })
 
 afterEach(() => {
   rmSync(tmpDir, { recursive: true, force: true })
   delete process.env.THREADOS_BASE_PATH
+  delete process.env.THREADOS_ENABLE_THREAD_RUNNER
 })
 
 const { GET } = await import('@/app/api/thread-runner/eligibility/route')

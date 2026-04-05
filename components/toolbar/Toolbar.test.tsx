@@ -1,64 +1,36 @@
-import { describe, test, expect, mock } from 'bun:test'
+import { afterAll, describe, expect, mock, spyOn, test } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
+import * as uiApi from '@/lib/ui/api'
 
-mock.module('@/lib/ui/api', () => ({
-  useStatus: () => ({
-    data: {
-      name: 'Test Sequence',
-      steps: [],
-      gates: [],
-      summary: { ready: 2, running: 1, done: 3, failed: 0 },
-    },
-    isLoading: false,
-  }),
-  useSequence: () => ({ data: null }),
-  useThreadSurfaces: () => ({ data: [] }),
-  useThreadRuns: () => ({ data: [] }),
-  useThreadMerges: () => ({ data: [] }),
-  useRunStep: () => ({ mutate: () => {}, isPending: false, error: null }),
-  useRunRunnable: () => ({ mutate: () => {}, isPending: false }),
-  useStopStep: () => ({ mutate: () => {}, isPending: false, error: null }),
-  useRestartStep: () => ({ mutate: () => {}, isPending: false, error: null }),
-  useApproveGate: () => ({ mutate: () => {}, isPending: false, error: null }),
-  useBlockGate: () => ({ mutate: () => {}, isPending: false, error: null }),
-  useEditStep: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false, error: null }),
-  useRemoveStep: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false, error: null }),
-  useCloneStep: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false, error: null }),
-  useAddStep: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
-  useInsertGate: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
-  useAddDep: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
-  useRemoveDep: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
-  useAgentPerformance: () => ({ data: null, isLoading: false }),
-  useGateMetrics: () => ({ data: null, isLoading: false }),
-  useListPacks: () => ({ data: [], isLoading: false }),
-  useCreatePack: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
-  usePromotePack: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
-  useBuilderProfile: () => ({ data: null, isLoading: false }),
-  useThreadRunnerEligibility: () => ({ data: { eligible: false, requirements: [] }, isLoading: false }),
-  useOptimizeWorkflow: () => ({ mutate: () => {}, mutateAsync: async () => ({}), isPending: false }),
-  useListRaces: () => ({ data: [], isLoading: false }),
-  useRaceResults: () => ({ data: null, isLoading: false }),
-  useEnrollRace: () => ({ mutate: () => {}, isPending: false }),
-  useRecordRun: () => ({ mutate: () => {}, isPending: false }),
-  useTraces: () => ({ data: [], isLoading: false }),
-  useApprovals: () => ({ data: [], isLoading: false }),
-  useRequestApproval: () => ({ mutate: () => {}, mutateAsync: async () => ({}) }),
-  useResolveApproval: () => ({ mutate: () => {}, mutateAsync: async () => ({}) }),
-  useRevealSurface: () => ({ mutate: () => {}, mutateAsync: async () => ({}) }),
-  useExportBundle: () => ({ mutate: () => {}, mutateAsync: async () => ({}) }),
-  useSurfaceAccess: () => ({ data: null, isLoading: false }),
-}))
+spyOn(uiApi, 'useStatus').mockImplementation(() => ({
+  data: {
+    name: 'Test Sequence',
+    steps: [],
+    gates: [],
+    summary: { ready: 2, running: 1, done: 3, failed: 0 },
+  },
+  isLoading: false,
+}) as never)
+
+spyOn(uiApi, 'useRunRunnable').mockImplementation(() => ({
+  mutate: () => {},
+  isPending: false,
+}) as never)
 
 mock.module('next-themes', () => ({
   useTheme: () => ({ theme: 'dark', setTheme: () => {} }),
 }))
 
+afterAll(() => {
+  mock.restore()
+})
+
 const { Toolbar } = await import('./Toolbar')
 
 describe('Toolbar', () => {
-  test('renders ThreadOS brand', () => {
+  test('renders thredOS brand', () => {
     const markup = renderToStaticMarkup(<Toolbar />)
-    expect(markup).toContain('ThreadOS')
+    expect(markup).toContain('thredOS')
   })
 
   test('renders sequence name', () => {
@@ -122,8 +94,7 @@ describe('Toolbar', () => {
 
   test('renders MessageSquare icon alongside Chat text', () => {
     const markup = renderToStaticMarkup(<Toolbar />)
-    // The Chat button has flex items-center gap-1 for icon alignment
-    expect(markup).toContain('gap-1')
+    expect(markup).toContain('lucide-message-square')
     expect(markup).toContain('Chat')
   })
 

@@ -2,9 +2,24 @@ import type { Metadata } from 'next'
 import { Providers } from '@/lib/ui/providers'
 import './globals.css'
 
+function resolveMetadataBase(): URL {
+  const rawOrigin = process.env.THREDOS_METADATA_BASE
+    ?? process.env.NEXT_PUBLIC_THREDOS_APP_URL
+    ?? process.env.VERCEL_PROJECT_PRODUCTION_URL
+    ?? process.env.VERCEL_URL
+    ?? 'http://localhost:3000'
+
+  const normalizedOrigin = rawOrigin.startsWith('http')
+    ? rawOrigin
+    : `https://${rawOrigin}`
+
+  return new URL(normalizedOrigin)
+}
+
 export const metadata: Metadata = {
   title: 'thredOS Desktop',
   description: 'Local-first control surface for agent work.',
+  metadataBase: resolveMetadataBase(),
   icons: {
     icon: '/thredOS.png',
     shortcut: '/thredOS.png',

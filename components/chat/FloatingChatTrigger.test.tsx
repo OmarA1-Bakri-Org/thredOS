@@ -1,5 +1,6 @@
-import { describe, expect, test, mock } from 'bun:test'
+import { afterEach, describe, expect, mock, spyOn, test } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
+import * as uiStore from '@/lib/ui/store'
 
 // Mock the store
 const triggerUiState = {
@@ -7,16 +8,20 @@ const triggerUiState = {
   toggleChat: () => {},
 }
 
-mock.module('@/lib/ui/store', () => ({
-  useUIStore: (selector: (s: typeof triggerUiState) => unknown) => selector(triggerUiState),
-}))
+spyOn(uiStore, 'useUIStore').mockImplementation(((selector?: (s: typeof triggerUiState) => unknown) => (
+  selector ? selector(triggerUiState) : triggerUiState
+)) as typeof uiStore.useUIStore)
+
+afterEach(() => {
+  mock.restore()
+})
 
 const { FloatingChatTrigger } = await import('./FloatingChatTrigger')
 
 describe('FloatingChatTrigger', () => {
   test('renders trigger pill with chat label', () => {
     const markup = renderToStaticMarkup(<FloatingChatTrigger />)
-    expect(markup).toContain('Chat with ThreadOS')
+    expect(markup).toContain('Chat with thredOS')
   })
 
   test('renders with fixed positioning', () => {

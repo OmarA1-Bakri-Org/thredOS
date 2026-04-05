@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from 'bun:test'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
@@ -60,16 +60,16 @@ describe.serial('POST /api/agents degraded cloud', () => {
   })
 
   afterEach(async () => {
+    mock.restore()
     delete process.env.THREADOS_BASE_PATH
     await rm(basePath, { recursive: true, force: true })
   })
 
   test('persists the canonical agent locally even when cloud registration fails', async () => {
-    mock.module('@/lib/agents/cloud-registry', () => ({
-      registerCloudAgent: mock(async () => {
-        throw new Error('cloud unavailable')
-      }),
-    }))
+    const cloudRegistry = await import('@/lib/agents/cloud-registry')
+    spyOn(cloudRegistry, 'registerCloudAgent').mockImplementation(async () => {
+      throw new Error('cloud unavailable')
+    })
 
     const { POST } = await import('@/app/api/agents/route')
 

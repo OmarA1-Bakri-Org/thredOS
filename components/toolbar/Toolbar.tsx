@@ -4,12 +4,12 @@ import { useEffect, useRef, useCallback, useState } from 'react'
 import { useTheme } from 'next-themes'
 import { Sun, Moon, MessageSquare } from 'lucide-react'
 import { useUIStore } from '@/lib/ui/store'
-import { useStatus, useRunRunnable } from '@/lib/ui/api'
+import * as uiApi from '@/lib/ui/api'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 
 export function Toolbar() {
-  const { data: status } = useStatus()
-  const runRunnable = useRunRunnable()
+  const { data: status } = uiApi.useStatus()
+  const runRunnable = uiApi.useRunRunnable()
   const [confirmRun, setConfirmRun] = useState(false)
   const searchQuery = useUIStore(s => s.searchQuery)
   const setSearchQuery = useUIStore(s => s.setSearchQuery)

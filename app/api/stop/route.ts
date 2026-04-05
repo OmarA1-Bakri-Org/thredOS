@@ -6,6 +6,7 @@ import { auditLog, handleError, requireRequestSession } from '@/lib/api-helpers'
 import { allowHostedProcessControls } from '@/lib/hosted'
 import { readMprocsMap } from '@/lib/mprocs/state'
 import { StepNotFoundError } from '@/lib/errors'
+import { applyRateLimit } from '@/lib/rate-limit'
 import { ROOT_THREAD_SURFACE_ID } from '@/lib/thread-surfaces/constants'
 import { readThreadSurfaceState, writeThreadSurfaceState } from '@/lib/thread-surfaces/repository'
 import { cancelRun, findLatestActiveRunForSurface } from '@/lib/thread-surfaces/mutations'
@@ -15,6 +16,12 @@ export async function POST(request: Request) {
   try {
     const session = requireRequestSession(request)
     if (session instanceof NextResponse) return session
+    const rateLimited = applyRateLimit(request, {
+      bucket: 'stop',
+      limit: 30,
+      windowMs: 5 * 60 * 1000,
+    })
+    if (rateLimited) return rateLimited
     if (!allowHostedProcessControls()) {
       return NextResponse.json({
         error: 'Stop is disabled in hosted mode for the thredOS Desktop launch',

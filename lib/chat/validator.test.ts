@@ -8,6 +8,9 @@ import type { Sequence } from '../sequence/schema'
 
 let testDir: string
 
+const freshBaseSequence = (): Sequence => structuredClone(baseSequence)
+const freshTwoStepSequence = (): Sequence => structuredClone(twoStepSequence)
+
 const baseSequence: Sequence = {
   version: '1.0',
   name: 'test-seq',
@@ -56,7 +59,7 @@ const twoStepSequence: Sequence = {
 beforeEach(async () => {
   testDir = join(tmpdir(), `validator-test-${Date.now()}`)
   await mkdir(join(testDir, '.threados'), { recursive: true })
-  await writeSequence(testDir, baseSequence)
+  await writeSequence(testDir, freshBaseSequence())
 })
 
 afterEach(async () => {
@@ -152,9 +155,9 @@ describe('ActionValidator.apply', () => {
   test('applies step remove and cleans deps', async () => {
     // First add step-2 that depends on step-1
     await writeSequence(testDir, {
-      ...baseSequence,
+      ...freshBaseSequence(),
       steps: [
-        ...baseSequence.steps,
+        ...freshBaseSequence().steps,
         { id: 'step-2', name: 'Two', type: 'base', model: 'claude-code', prompt_file: 'p.md', depends_on: ['step-1'], status: 'READY' },
       ],
     })
@@ -172,7 +175,7 @@ describe('ActionValidator.apply', () => {
 
 describe('ActionValidator stop/restart/group/fusion commands', () => {
   test('stop sets step status to FAILED', async () => {
-    await writeSequence(testDir, twoStepSequence)
+    await writeSequence(testDir, freshTwoStepSequence())
     const v = new ActionValidator(testDir)
     const result = await v.dryRun([{ command: 'stop', args: { step_id: 'step-b' } }])
     expect(result.valid).toBe(true)
@@ -208,7 +211,7 @@ describe('ActionValidator stop/restart/group/fusion commands', () => {
   })
 
   test('group create sets group_id and type on steps', async () => {
-    await writeSequence(testDir, twoStepSequence)
+    await writeSequence(testDir, freshTwoStepSequence())
     const v = new ActionValidator(testDir)
     const result = await v.dryRun([{
       command: 'group create',
@@ -220,7 +223,7 @@ describe('ActionValidator stop/restart/group/fusion commands', () => {
   })
 
   test('group create requires at least 2 step_ids', async () => {
-    await writeSequence(testDir, twoStepSequence)
+    await writeSequence(testDir, freshTwoStepSequence())
     const v = new ActionValidator(testDir)
     const result = await v.dryRun([{
       command: 'group create',
@@ -239,7 +242,7 @@ describe('ActionValidator stop/restart/group/fusion commands', () => {
   })
 
   test('group create with nonexistent step returns error', async () => {
-    await writeSequence(testDir, twoStepSequence)
+    await writeSequence(testDir, freshTwoStepSequence())
     const v = new ActionValidator(testDir)
     const result = await v.dryRun([{
       command: 'group create',
@@ -250,7 +253,7 @@ describe('ActionValidator stop/restart/group/fusion commands', () => {
   })
 
   test('fusion create marks candidates and creates synth step', async () => {
-    await writeSequence(testDir, twoStepSequence)
+    await writeSequence(testDir, freshTwoStepSequence())
     const v = new ActionValidator(testDir)
     const result = await v.dryRun([{
       command: 'fusion create',
@@ -262,7 +265,7 @@ describe('ActionValidator stop/restart/group/fusion commands', () => {
   })
 
   test('fusion create requires at least 2 candidate_ids', async () => {
-    await writeSequence(testDir, twoStepSequence)
+    await writeSequence(testDir, freshTwoStepSequence())
     const v = new ActionValidator(testDir)
     const result = await v.dryRun([{
       command: 'fusion create',
@@ -281,7 +284,7 @@ describe('ActionValidator stop/restart/group/fusion commands', () => {
   })
 
   test('fusion create with nonexistent candidate returns error', async () => {
-    await writeSequence(testDir, twoStepSequence)
+    await writeSequence(testDir, freshTwoStepSequence())
     const v = new ActionValidator(testDir)
     const result = await v.dryRun([{
       command: 'fusion create',

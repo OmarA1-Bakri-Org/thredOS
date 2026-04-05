@@ -22,6 +22,15 @@ describe('prompts manager', () => {
     expect(content).toBe('# Hello\nDo stuff')
   })
 
+  test('writePrompt creates the prompts directory when it is missing', async () => {
+    await cleanTempDir(tmpDir)
+    tmpDir = await createTempDir()
+
+    await writePrompt(tmpDir, 'step-atomic', '# Atomic\nStill works')
+
+    await expect(readPrompt(tmpDir, 'step-atomic')).resolves.toBe('# Atomic\nStill works')
+  })
+
   test('list prompts', async () => {
     await writePrompt(tmpDir, 'a', 'content a')
     await writePrompt(tmpDir, 'b', 'content b')

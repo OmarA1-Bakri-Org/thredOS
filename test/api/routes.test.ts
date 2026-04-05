@@ -3,6 +3,7 @@ import { mkdtemp, rm, mkdir, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import YAML from 'yaml'
+import { writeMprocsMap } from '@/lib/mprocs/state'
 
 // Set THREADOS_BASE_PATH before importing routes
 let basePath: string
@@ -58,6 +59,57 @@ describe.serial('API Routes', () => {
     expect(data.summary.total).toBe(2)
     expect(data.summary.ready).toBe(2)
     expect(data.gates).toHaveLength(1)
+  })
+
+  test('GET /api/status leaves non-mprocs RUNNING steps alone', async () => {
+    await setupTestSequence({
+      version: '1.0',
+      name: 'reconcile-seq',
+      steps: [
+        { id: 'step-a', name: 'Step A', type: 'base', model: 'claude-code', prompt_file: '.threados/prompts/step-a.md', depends_on: [], status: 'RUNNING' },
+      ],
+      gates: [],
+    })
+
+    const { GET } = await import('@/app/api/status/route')
+    const res = await GET(new Request('http://localhost/api/status'))
+    expect(res.status).toBe(200)
+
+    const data = await res.json()
+    expect(data.summary.running).toBe(1)
+    expect(data.summary.failed).toBe(0)
+    expect(data.steps).toHaveLength(1)
+    expect(data.steps[0]).toMatchObject({
+      id: 'step-a',
+      status: 'RUNNING',
+    })
+    expect(data.steps[0].processIndex).toBeUndefined()
+  })
+
+  test('GET /api/status reconciles orphaned mprocs-tracked RUNNING steps before returning status', async () => {
+    await setupTestSequence({
+      version: '1.0',
+      name: 'reconcile-seq',
+      steps: [
+        { id: 'step-a', name: 'Step A', type: 'base', model: 'claude-code', prompt_file: '.threados/prompts/step-a.md', depends_on: [], status: 'RUNNING' },
+      ],
+      gates: [],
+    })
+    await writeMprocsMap(basePath, { 'step-a': 0 })
+
+    const { GET } = await import('@/app/api/status/route')
+    const res = await GET(new Request('http://localhost/api/status'))
+    expect(res.status).toBe(200)
+
+    const data = await res.json()
+    expect(data.summary.running).toBe(0)
+    expect(data.summary.failed).toBe(1)
+    expect(data.steps).toHaveLength(1)
+    expect(data.steps[0]).toMatchObject({
+      id: 'step-a',
+      status: 'FAILED',
+    })
+    expect(data.steps[0].processIndex).toBeUndefined()
   })
 
   test('POST /api/step add creates step', async () => {

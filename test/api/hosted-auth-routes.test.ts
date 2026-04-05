@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
 import { mkdtemp, mkdir, rm, writeFile } from 'fs/promises'
 import { join } from 'path'
 import { tmpdir } from 'os'
@@ -23,15 +23,19 @@ beforeAll(async () => {
     THREADOS_BASE_PATH: process.env.THREADOS_BASE_PATH,
     THREDOS_HOSTED_MODE: process.env.THREDOS_HOSTED_MODE,
     THREADOS_HOSTED_MODE: process.env.THREADOS_HOSTED_MODE,
+    THREDOS_ENABLE_THREAD_RUNNER: process.env.THREDOS_ENABLE_THREAD_RUNNER,
+    THREADOS_ENABLE_THREAD_RUNNER: process.env.THREADOS_ENABLE_THREAD_RUNNER,
     THREDOS_SESSION_SECRET: process.env.THREDOS_SESSION_SECRET,
     THREADOS_SESSION_SECRET: process.env.THREADOS_SESSION_SECRET,
   }
 
   process.env.THREDOS_BASE_PATH = tempDir
   process.env.THREDOS_HOSTED_MODE = 'true'
+  process.env.THREDOS_ENABLE_THREAD_RUNNER = 'true'
   process.env.THREDOS_SESSION_SECRET = 'test-session-secret'
   delete process.env.THREADOS_BASE_PATH
   delete process.env.THREADOS_HOSTED_MODE
+  delete process.env.THREADOS_ENABLE_THREAD_RUNNER
   delete process.env.THREADOS_SESSION_SECRET
 })
 
@@ -43,8 +47,19 @@ afterAll(async () => {
   await rm(tempDir, { recursive: true, force: true })
 })
 
+beforeEach(() => {
+  delete globalThis.__THREDOS_RATE_LIMITS__
+})
+
 const { GET: getSequence, POST: postSequence } = await import('../../app/api/sequence/route')
 const { GET: getAudit } = await import('../../app/api/audit/route')
+const { POST: postChat } = await import('../../app/api/chat/route')
+const { POST: postActivationComplete } = await import('../../app/api/desktop/activation/complete/route')
+const { POST: postWorkspace } = await import('../../app/api/desktop/workspace/route')
+const { GET: getThreadSurfaces } = await import('../../app/api/thread-surfaces/route')
+const { GET: getThreadRuns } = await import('../../app/api/thread-runs/route')
+const { GET: getThreadRunnerRace } = await import('../../app/api/thread-runner/race/route')
+const { GET: getTraces } = await import('../../app/api/traces/route')
 const { POST: postRun } = await import('../../app/api/run/route')
 const { GET: getAgentCloudRegistration } = await import('../../app/api/agent-cloud/registration/route')
 const { GET: getAgentCloudPerformance } = await import('../../app/api/agent-cloud/performance/route')
@@ -98,6 +113,34 @@ describe('hosted route-local auth', () => {
     expect(response.status).toBe(401)
   })
 
+  test('chat POST rejects unauthenticated access in hosted mode', async () => {
+    const response = await postChat(makeRequest('http://localhost:3000/api/chat', {
+      method: 'POST',
+      body: { message: 'Hello from hosted mode' },
+    }))
+    expect(response.status).toBe(401)
+  })
+
+  test('thread surfaces GET rejects unauthenticated access in hosted mode', async () => {
+    const response = await getThreadSurfaces(makeRequest('http://localhost:3000/api/thread-surfaces'))
+    expect(response.status).toBe(401)
+  })
+
+  test('thread runs GET rejects unauthenticated access in hosted mode', async () => {
+    const response = await getThreadRuns(makeRequest('http://localhost:3000/api/thread-runs'))
+    expect(response.status).toBe(401)
+  })
+
+  test('traces GET rejects unauthenticated access in hosted mode', async () => {
+    const response = await getTraces(makeRequest('http://localhost:3000/api/traces?runId=run-1'))
+    expect(response.status).toBe(401)
+  })
+
+  test('thread runner race GET rejects unauthenticated access in hosted mode when enabled', async () => {
+    const response = await getThreadRunnerRace(makeRequest('http://localhost:3000/api/thread-runner/race'))
+    expect(response.status).toBe(401)
+  })
+
   test('run POST rejects unauthenticated execution in hosted mode', async () => {
     const response = await postRun(makeRequest('http://localhost:3000/api/run', {
       method: 'POST',
@@ -126,6 +169,72 @@ describe('hosted route-local auth', () => {
     expect(response.status).toBe(403)
     await expect(response.json()).resolves.toMatchObject({
       code: 'PROCESS_CONTROL_DISABLED',
+    })
+  })
+
+  test('sequence POST is rate limited in hosted mode', async () => {
+    const token = createSessionToken('founder@example.com')
+
+    for (let i = 0; i < 30; i += 1) {
+      const response = await postSequence(makeRequest('http://localhost:3000/api/sequence', {
+        method: 'POST',
+        body: { action: 'rename', name: `Renamed ${i}` },
+        token,
+      }))
+      expect(response.status).toBe(200)
+    }
+
+    const rateLimited = await postSequence(makeRequest('http://localhost:3000/api/sequence', {
+      method: 'POST',
+      body: { action: 'rename', name: 'Rate limited' },
+      token,
+    }))
+    expect(rateLimited.status).toBe(429)
+    expect(rateLimited.headers.get('Retry-After')).toBeTruthy()
+    await expect(rateLimited.json()).resolves.toMatchObject({
+      code: 'RATE_LIMITED',
+    })
+  })
+
+  test('desktop workspace POST is rate limited in hosted mode', async () => {
+    const token = createSessionToken('founder@example.com')
+
+    for (let i = 0; i < 30; i += 1) {
+      const response = await postWorkspace(makeRequest('http://localhost:3000/api/desktop/workspace', {
+        method: 'POST',
+        body: { label: `Workspace ${i}` },
+        token,
+      }))
+      expect(response.status).toBe(200)
+    }
+
+    const rateLimited = await postWorkspace(makeRequest('http://localhost:3000/api/desktop/workspace', {
+      method: 'POST',
+      body: { label: 'Rate limited workspace' },
+      token,
+    }))
+    expect(rateLimited.status).toBe(429)
+    await expect(rateLimited.json()).resolves.toMatchObject({
+      code: 'RATE_LIMITED',
+    })
+  })
+
+  test('desktop activation complete POST is rate limited in hosted mode', async () => {
+    for (let i = 0; i < 30; i += 1) {
+      const response = await postActivationComplete(makeRequest('http://localhost:3000/api/desktop/activation/complete', {
+        method: 'POST',
+        body: { token: `invalid-${i}` },
+      }))
+      expect(response.status).toBe(400)
+    }
+
+    const rateLimited = await postActivationComplete(makeRequest('http://localhost:3000/api/desktop/activation/complete', {
+      method: 'POST',
+      body: { token: 'invalid-rate-limited' },
+    }))
+    expect(rateLimited.status).toBe(429)
+    await expect(rateLimited.json()).resolves.toMatchObject({
+      code: 'RATE_LIMITED',
     })
   })
 })

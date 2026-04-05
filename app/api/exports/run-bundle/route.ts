@@ -6,11 +6,18 @@ import { ExportBundleSchema } from '@/lib/exports/schema'
 import { PolicyEngine } from '@/lib/policy/engine'
 import { getBasePath } from '@/lib/config'
 import { handleError, requireRequestSession } from '@/lib/api-helpers'
+import { applyRateLimit } from '@/lib/rate-limit'
 
 export async function POST(request: Request) {
   try {
     const session = requireRequestSession(request)
     if (session instanceof NextResponse) return session
+    const rateLimited = applyRateLimit(request, {
+      bucket: 'exports-run-bundle',
+      limit: 30,
+      windowMs: 5 * 60 * 1000,
+    })
+    if (rateLimited) return rateLimited
 
     const body = await request.json()
     const { runId } = body

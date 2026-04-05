@@ -17,7 +17,19 @@ export function ensureRootSurface(
   sequenceLabel: string,
   now: string,
 ): ThreadSurfaceState {
-  if (state.threadSurfaces.some(s => s.id === ROOT_ID)) return state
+  const existingRoot = state.threadSurfaces.find(s => s.id === ROOT_ID)
+  if (existingRoot) {
+    if (existingRoot.surfaceLabel === sequenceLabel) return state
+
+    return {
+      ...state,
+      threadSurfaces: state.threadSurfaces.map(surface =>
+        surface.id === ROOT_ID
+          ? { ...surface, surfaceLabel: sequenceLabel }
+          : surface,
+      ),
+    }
+  }
 
   const root: ThreadSurface = {
     id: ROOT_ID,
@@ -49,7 +61,19 @@ export function materializeStepSurface(
   state = ensureRootSurface(state, sequenceLabel, now)
 
   const surfaceId = stepSurfaceId(stepId)
-  if (state.threadSurfaces.some(s => s.id === surfaceId)) return state
+  const existingSurface = state.threadSurfaces.find(s => s.id === surfaceId)
+  if (existingSurface) {
+    if (existingSurface.surfaceLabel === stepName) return state
+
+    return {
+      ...state,
+      threadSurfaces: state.threadSurfaces.map(surface =>
+        surface.id === surfaceId
+          ? { ...surface, surfaceLabel: stepName }
+          : surface,
+      ),
+    }
+  }
 
   const surface: ThreadSurface = {
     id: surfaceId,
@@ -159,11 +183,15 @@ export function reconcileSurfacesWithSequence(
   sequenceLabel: string,
   now: string,
 ): ThreadSurfaceState {
-  if (steps.length === 0) return state
-
   let result = state
 
-  // Create missing surfaces
+  if (result.threadSurfaces.some(surface => surface.id === ROOT_ID)) {
+    result = ensureRootSurface(result, sequenceLabel, now)
+  }
+
+  if (steps.length === 0) return result
+
+  // Create missing surfaces and refresh step labels from the sequence source of truth.
   for (const step of steps) {
     result = materializeStepSurface(result, step.id, step.name, sequenceLabel, now)
   }

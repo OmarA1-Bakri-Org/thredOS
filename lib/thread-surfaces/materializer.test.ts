@@ -35,6 +35,15 @@ describe('materializer', () => {
     expect(second).toBe(first)
   })
 
+  test('ensureRootSurface refreshes the root label when the sequence name changes', () => {
+    const first = ensureRootSurface(EMPTY_STATE, 'Old Seq', NOW)
+    const second = ensureRootSurface(first, 'New Seq', NOW)
+
+    expect(second).not.toBe(first)
+    expect(second.threadSurfaces[0].surfaceLabel).toBe('New Seq')
+    expect(second.threadSurfaces[0].createdAt).toBe(NOW)
+  })
+
   test('ensureRootSurface does not modify other state fields', () => {
     const result = ensureRootSurface(EMPTY_STATE, 'Seq', NOW)
     expect(result.runs).toEqual([])
@@ -78,6 +87,15 @@ describe('materializer', () => {
     expect(second.threadSurfaces).toHaveLength(2)
     // Should return the same reference when no change
     expect(second).toBe(first)
+  })
+
+  test('materializeStepSurface refreshes existing surface labels and root label', () => {
+    const first = materializeStepSurface(EMPTY_STATE, 'step-a', 'Old Step', 'Old Seq', NOW)
+    const second = materializeStepSurface(first, 'step-a', 'New Step', 'New Seq', NOW)
+
+    expect(second).not.toBe(first)
+    expect(second.threadSurfaces.find(s => s.id === 'thread-root')?.surfaceLabel).toBe('New Seq')
+    expect(second.threadSurfaces.find(s => s.id === 'thread-step-a')?.surfaceLabel).toBe('New Step')
   })
 
   test('materializeStepSurface can add multiple steps', () => {
@@ -208,8 +226,24 @@ describe('materializer', () => {
     expect(result.threadSurfaces).toHaveLength(2) // root + step-a
   })
 
+  test('reconcileSurfacesWithSequence refreshes root and step labels from the sequence source of truth', () => {
+    const state = materializeBulkStepSurfaces(EMPTY_STATE, [{ id: 'a', name: 'Old A' }], 'Old Seq', NOW)
+    const result = reconcileSurfacesWithSequence(state, [{ id: 'a', name: 'New A' }], 'New Seq', NOW)
+
+    expect(result.threadSurfaces.find(s => s.id === 'thread-root')?.surfaceLabel).toBe('New Seq')
+    expect(result.threadSurfaces.find(s => s.id === 'thread-a')?.surfaceLabel).toBe('New A')
+  })
+
   test('reconcileSurfacesWithSequence returns state unchanged for empty steps', () => {
     const result = reconcileSurfacesWithSequence(EMPTY_STATE, [], 'Seq', NOW)
     expect(result).toBe(EMPTY_STATE)
+  })
+
+  test('reconcileSurfacesWithSequence keeps empty-step state but refreshes an existing root label', () => {
+    const state = ensureRootSurface(EMPTY_STATE, 'Old Seq', NOW)
+    const result = reconcileSurfacesWithSequence(state, [], 'New Seq', NOW)
+
+    expect(result.threadSurfaces).toHaveLength(1)
+    expect(result.threadSurfaces[0].surfaceLabel).toBe('New Seq')
   })
 })

@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { readSequence, writeSequence } from '@/lib/sequence/parser'
 import { getBasePath } from '@/lib/config'
 import { handleError, auditLog, requireRequestSession } from '@/lib/api-helpers'
+import { applyRateLimit } from '@/lib/rate-limit'
 import { ensureLibraryStructure, ensurePromptAssetForStep } from '@/lib/library/repository'
 import {
   generateBase,
@@ -41,6 +42,12 @@ export async function POST(request: Request) {
   try {
     const session = requireRequestSession(request)
     if (session instanceof NextResponse) return session
+    const rateLimited = applyRateLimit(request, {
+      bucket: 'sequence-write',
+      limit: 30,
+      windowMs: 5 * 60 * 1000,
+    })
+    if (rateLimited) return rateLimited
     const body = BodySchema.parse(await request.json())
     const bp = getBasePath()
     await ensureLibraryStructure(bp)

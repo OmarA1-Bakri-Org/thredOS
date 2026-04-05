@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test'
-import type { Step, Gate } from '@/lib/sequence/schema'
+import type { Step } from '@/lib/sequence/schema'
 import type { GateContext } from './engine'
 import { evaluateStepGates, isStepRunnable, getBlockReasons } from './engine'
 
@@ -14,13 +14,6 @@ function makeStep(overrides: Partial<{ id: string; depends_on: string[]; status:
     status: overrides.status ?? 'READY',
     side_effect_class: overrides.side_effect_class,
   } as unknown as Step
-}
-
-function makeGate(overrides: Partial<{ id: string; status: string }>): Gate {
-  return {
-    id: overrides.id ?? 'g1',
-    status: overrides.status ?? 'PENDING',
-  } as unknown as Gate
 }
 
 function makeCtx(overrides: Partial<GateContext> = {}): GateContext {

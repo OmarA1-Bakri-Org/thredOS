@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server'
 import { getBasePath } from '@/lib/config'
 import { handleError, jsonError, requireRequestSession } from '@/lib/api-helpers'
 import { ThreadSurfaceNotFoundError, ThreadSurfaceRunNotFoundError } from '@/lib/errors'
+import { applyRateLimit } from '@/lib/rate-limit'
 import { resolveSurfaceAnnotations } from '@/lib/thread-surfaces/annotations'
 import { readThreadSurfaceState, updateThreadSurfaceState } from '@/lib/thread-surfaces/repository'
 
@@ -45,6 +46,12 @@ export async function POST(request: Request) {
   try {
     const session = requireRequestSession(request)
     if (session instanceof NextResponse) return session
+    const rateLimited = applyRateLimit(request, {
+      bucket: 'thread-annotations-write',
+      limit: 30,
+      windowMs: 5 * 60 * 1000,
+    })
+    if (rateLimited) return rateLimited
     const body = BodySchema.parse(await request.json())
     const state = await updateThreadSurfaceState(getBasePath(), (currentState) => {
       const surfaceExists = currentState.threadSurfaces.some(surface => surface.id === body.surfaceId)

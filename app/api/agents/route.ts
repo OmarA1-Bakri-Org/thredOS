@@ -3,7 +3,8 @@ import { z } from 'zod'
 import { getBasePath } from '@/lib/config'
 import { handleError, jsonError, requireRequestSession } from '@/lib/api-helpers'
 import { readAgentState, updateAgentState } from '@/lib/agents/repository'
-import { registerCloudAgent } from '@/lib/agents/cloud-registry'
+import { applyRateLimit } from '@/lib/rate-limit'
+import * as cloudRegistry from '@/lib/agents/cloud-registry'
 import { buildAgentComposition, buildRegisteredAgentComposition, detectMaterialChange } from '@/lib/agents/composition'
 import type { AgentRegistration, AgentSkill } from '@/lib/agents/types'
 import { ensureLibraryStructure, readLibraryCatalog, skillRefFromEntry, syncAgentAsset } from '@/lib/library/repository'
@@ -119,6 +120,12 @@ export async function POST(request: Request) {
   try {
     const session = requireRequestSession(request)
     if (session instanceof NextResponse) return session
+    const rateLimited = applyRateLimit(request, {
+      bucket: 'agents-write',
+      limit: 30,
+      windowMs: 5 * 60 * 1000,
+    })
+    if (rateLimited) return rateLimited
     const parsed = AgentBodySchema.safeParse(await request.json())
     if (!parsed.success) {
       return jsonError(parsed.error.issues.map(e => e.message).join(', '), 'VALIDATION_ERROR', 400)
@@ -186,12 +193,12 @@ export async function POST(request: Request) {
         })
 
         const registered = updated.agents.find(agent => agent.id === replacement.id)!
-        let cloudRegistration: Awaited<ReturnType<typeof registerCloudAgent>> | null = null
+        let cloudRegistration: Awaited<ReturnType<typeof cloudRegistry.registerCloudAgent>> | null = null
         let cloudSyncError: string | null = null
         let persisted = registered
 
         try {
-          const syncedRegistration = await registerCloudAgent(bp, registered)
+          const syncedRegistration = await cloudRegistry.registerCloudAgent(bp, registered)
           cloudRegistration = syncedRegistration
           const synced = await updateAgentState(bp, (current) => ({
             ...current,
@@ -267,12 +274,12 @@ export async function POST(request: Request) {
     })
 
     const registered = updated.agents.find(a => a.id === agent.id)!
-    let cloudRegistration: Awaited<ReturnType<typeof registerCloudAgent>> | null = null
+    let cloudRegistration: Awaited<ReturnType<typeof cloudRegistry.registerCloudAgent>> | null = null
     let cloudSyncError: string | null = null
     let persisted = registered
 
     try {
-      const syncedRegistration = await registerCloudAgent(bp, registered)
+      const syncedRegistration = await cloudRegistry.registerCloudAgent(bp, registered)
       cloudRegistration = syncedRegistration
       const synced = await updateAgentState(bp, (current) => ({
         ...current,
