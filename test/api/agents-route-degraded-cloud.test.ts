@@ -82,7 +82,7 @@ describe.serial('POST /api/agents degraded cloud', () => {
     expect(response.status).toBe(201)
     const payload = await response.json()
     expect(payload.cloudRegistration).toBeNull()
-    expect(payload.cloudSyncError).toBe('cloud unavailable')
+    expect(payload.cloudSyncError).toBe('Cloud registration unavailable')
     expect(payload.agent.id).toBe('agent-a')
     expect(payload.agent.registrationNumber).toBeUndefined()
 

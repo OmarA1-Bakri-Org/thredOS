@@ -84,4 +84,20 @@ describe.serial('apply route proof', () => {
     const sequence = await readSequence(basePath)
     expect(sequence.steps.some(step => step.id === 'build')).toBe(true)
   })
+
+  test('POST returns 400 for invalid chat-apply payloads', async () => {
+    const { POST } = await import('@/app/api/apply/route')
+    const response = await POST(new Request('http://localhost/api/apply', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ actions: [] }),
+    }))
+
+    expect(response.status).toBe(400)
+    const body = await response.json()
+    expect(body.success).toBe(false)
+    expect(body.errors).toEqual(expect.arrayContaining([
+      'Too small: expected array to have >=1 items',
+    ]))
+  })
 })

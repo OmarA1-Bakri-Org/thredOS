@@ -35,9 +35,16 @@ export async function POST(request: Request) {
       )
     }
 
-    const body = ApplyBodySchema.parse(await request.json())
-    const { actions } = body as { actions: ProposedAction[] }
-    const runId = body.runId ?? `chat-apply-${randomUUID()}`
+    const parsed = ApplyBodySchema.safeParse(await request.json().catch(() => null))
+    if (!parsed.success) {
+      return Response.json(
+        { success: false, errors: parsed.error.issues.map(issue => issue.message) },
+        { status: 400 },
+      )
+    }
+
+    const { actions } = parsed.data as { actions: ProposedAction[] }
+    const runId = parsed.data.runId ?? `chat-apply-${randomUUID()}`
 
     // Cap the number of actions to prevent abuse
     if (actions.length > 50) {

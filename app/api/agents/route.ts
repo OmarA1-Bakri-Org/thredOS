@@ -35,6 +35,8 @@ const AgentBodySchema = z.object({
   supersedesAgentId: z.string().optional(),
 })
 
+const PUBLIC_CLOUD_SYNC_ERROR = 'Cloud registration unavailable'
+
 export async function GET(request: Request) {
   try {
     const session = requireRequestSession(request)
@@ -212,7 +214,8 @@ export async function POST(request: Request) {
           }))
           persisted = synced.agents.find(agent => agent.id === replacement.id) ?? registered
         } catch (error) {
-          cloudSyncError = error instanceof Error ? error.message : 'Cloud registration failed'
+          console.error('[agents.POST] cloud registration failed for replacement agent', error)
+          cloudSyncError = PUBLIC_CLOUD_SYNC_ERROR
         }
 
         await syncAgentAsset(bp, persisted)
@@ -293,7 +296,8 @@ export async function POST(request: Request) {
       }))
       persisted = synced.agents.find(a => a.id === agent.id) ?? registered
     } catch (error) {
-      cloudSyncError = error instanceof Error ? error.message : 'Cloud registration failed'
+      console.error('[agents.POST] cloud registration failed', error)
+      cloudSyncError = PUBLIC_CLOUD_SYNC_ERROR
     }
 
     await syncAgentAsset(bp, persisted)
