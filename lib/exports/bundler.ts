@@ -7,6 +7,14 @@ import { readThreadSurfaceState } from '@/lib/thread-surfaces/repository'
 import type { StatusJson } from '@/lib/runner/artifacts'
 import type { ExportBundle } from './schema'
 
+const FILE_SAFE_RUN_ID = /^[A-Za-z0-9._-]+$/
+
+function assertSafeRunId(runId: string) {
+  if (!FILE_SAFE_RUN_ID.test(runId)) {
+    throw new Error('runId must be a file-safe identifier')
+  }
+}
+
 async function collectArtifactManifests(runDir: string): Promise<string[]> {
   try {
     const entries = await readdir(runDir, { withFileTypes: true })
@@ -55,6 +63,8 @@ function summarizeTiming(statuses: StatusJson[]) {
 }
 
 export async function generateExportBundle(basePath: string, runId: string): Promise<ExportBundle> {
+  assertSafeRunId(runId)
+
   // Read sequence snapshot
   let sequenceSnapshot = ''
   try { sequenceSnapshot = await readFile(join(basePath, '.threados/sequence.yaml'), 'utf-8') } catch { /* empty */ }

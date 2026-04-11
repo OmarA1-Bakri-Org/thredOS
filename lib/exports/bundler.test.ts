@@ -152,4 +152,8 @@ describe('generateExportBundle', () => {
     expect(bundle.artifact_manifests).toEqual([])
     expect(bundle.timing_summary).toBeNull()
   })
+
+  test('rejects run ids that are not file-safe identifiers', async () => {
+    await expect(generateExportBundle(basePath, '../escape')).rejects.toThrow('runId must be a file-safe identifier')
+  })
 })
