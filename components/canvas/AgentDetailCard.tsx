@@ -186,11 +186,24 @@ export function AgentDetailCard() {
     if (!draft || !threadSurfaceId || !selectedNodeId) return
     setActionState('Registering canonical agent...')
     try {
-      const response = await registerAgent.mutateAsync(buildAgentRegistrationInput({
+      const registrationInput = buildAgentRegistrationInput({
         draft,
         agent: selectedAgent,
         threadSurfaceId,
-      }))
+      })
+
+      if (!registrationInput.promptRef) {
+        registrationInput.promptRef = sequenceStep?.prompt_ref
+          ?? (promptPath
+            ? {
+                id: draft.selectedPromptId ?? step!.id,
+                version: 1,
+                path: promptPath,
+              }
+            : null)
+      }
+
+      const response = await registerAgent.mutateAsync(registrationInput)
       await assignAgent.mutateAsync({ stepId: selectedNodeId, agentId: response.agent.id })
       seedAgentDraft(buildAgentDraft({
         step: {

@@ -76,23 +76,19 @@ function attachSignalForwarding(child) {
 async function main() {
   writeLine(serverLog, `[verify-web-server] mode=${mode} cwd=${root} port=${port}`)
 
-  if (mode === 'ci') {
-    if (!existsSync(join(root, 'node_modules', 'next', 'dist', 'bin', 'next'))) {
-      throw new Error('Next.js binary not found in node_modules')
-    }
-
-    writeLine(buildLog, '[verify-web-server] starting next build')
-    const build = spawnNext(['node_modules/next/dist/bin/next', 'build'], buildLog, 'next-build')
-    await waitForExit(build, 'next build')
-    writeLine(buildLog, '[verify-web-server] next build completed')
+  if (!existsSync(join(root, 'node_modules', 'next', 'dist', 'bin', 'next'))) {
+    throw new Error('Next.js binary not found in node_modules')
   }
 
-  const serverArgs = mode === 'local'
-    ? ['node_modules/next/dist/bin/next', 'dev', '--hostname', '127.0.0.1', '--port', port]
-    : ['node_modules/next/dist/bin/next', 'start', '--hostname', '127.0.0.1', '--port', port]
+  writeLine(buildLog, `[verify-web-server] starting next build for ${mode}`)
+  const build = spawnNext(['node_modules/next/dist/bin/next', 'build'], buildLog, 'next-build')
+  await waitForExit(build, 'next build')
+  writeLine(buildLog, '[verify-web-server] next build completed')
+
+  const serverArgs = ['node_modules/next/dist/bin/next', 'start', '--hostname', '127.0.0.1', '--port', port]
 
   writeLine(serverLog, `[verify-web-server] starting ${serverArgs.join(' ')}`)
-  const child = spawnNext(serverArgs, serverLog, mode === 'local' ? 'next-dev' : 'next-start')
+  const child = spawnNext(serverArgs, serverLog, 'next-start')
   attachSignalForwarding(child)
 
   child.once('exit', (code, signal) => {
