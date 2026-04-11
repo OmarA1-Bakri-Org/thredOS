@@ -1,12 +1,17 @@
 import { NextResponse } from 'next/server'
 import { mkdir, writeFile } from 'fs/promises'
 import { join } from 'path'
+import { z } from 'zod'
 import { generateExportBundle } from '@/lib/exports/bundler'
 import { ExportBundleSchema } from '@/lib/exports/schema'
 import { PolicyEngine } from '@/lib/policy/engine'
 import { getBasePath } from '@/lib/config'
 import { handleError, requireRequestSession } from '@/lib/api-helpers'
 import { applyRateLimit } from '@/lib/rate-limit'
+
+const BodySchema = z.object({
+  runId: z.string().regex(/^[A-Za-z0-9._-]+$/, 'runId must be a file-safe identifier'),
+})
 
 export async function POST(request: Request) {
   try {
@@ -19,11 +24,14 @@ export async function POST(request: Request) {
     })
     if (rateLimited) return rateLimited
 
-    const body = await request.json()
-    const { runId } = body
-    if (!runId) {
-      return NextResponse.json({ error: 'runId required', code: 'MISSING_PARAM' }, { status: 400 })
+    const parsed = BodySchema.safeParse(await request.json().catch(() => null))
+    if (!parsed.success) {
+      return NextResponse.json({
+        error: parsed.error.issues.map(issue => issue.message).join(', '),
+        code: 'VALIDATION_ERROR',
+      }, { status: 400 })
     }
+    const { runId } = parsed.data
 
     const bp = getBasePath()
     const policy = await PolicyEngine.load(bp)

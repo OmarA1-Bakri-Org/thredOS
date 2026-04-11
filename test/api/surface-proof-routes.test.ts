@@ -256,4 +256,21 @@ describe.serial('surface proof routes', () => {
     expect(data.code).toBe('POLICY_DENIED')
     expect(data.error).toBe('Exports are disabled by policy')
   })
+
+  test('POST /api/exports/run-bundle rejects path-traversal run ids', async () => {
+    await writePolicy('export_mode: local_bundle\n')
+    await writeSequence()
+
+    const { POST } = await import('@/app/api/exports/run-bundle/route')
+    const res = await POST(new Request('http://localhost/api/exports/run-bundle', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ runId: '../escape-attempt' }),
+    }))
+
+    expect(res.status).toBe(400)
+    const data = await res.json()
+    expect(data.code).toBe('VALIDATION_ERROR')
+    expect(data.error).toContain('file-safe identifier')
+  })
 })
