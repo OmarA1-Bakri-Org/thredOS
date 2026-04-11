@@ -4,8 +4,8 @@ This page is intentionally blunt. It describes the repo as it exists now, not th
 
 ## Implemented
 
-- ThreadOS is the active product path. `app/page.tsx` routes into `components/entry/ProductEntryScreen.tsx` and then into the workbench shell for the `threados` entry mode.
-- The core ThreadOS workbench exists. `components/workbench/`, `components/canvas/`, `components/hierarchy/`, `components/inspector/`, and `components/chat/` are all live UI modules, backed by `lib/ui/api.ts` and `lib/ui/store.ts`.
+- thredOS is the active product path. `app/page.tsx` routes into `components/entry/ProductEntryScreen.tsx` and then into the workbench shell for the `threados` entry mode.
+- The core thredOS workbench exists. `components/workbench/`, `components/canvas/`, `components/hierarchy/`, `components/inspector/`, and `components/chat/` are all live UI modules, backed by `lib/ui/api.ts` and `lib/ui/store.ts`.
 - Sequence authoring in the workbench is materially implemented, not just stubbed. `components/workbench/TopBar.tsx`, `components/workbench/sections/SequenceSection.tsx`, and `components/command/CreateNodeDialog.tsx` support named new threads, inline sequence rename, persisted thread-type selection, template application, and step/gate creation that re-focuses the left rail on the new node's phase.
 - Sequence construction and execution flows exist through both CLI and API. `lib/seqctl/index.ts` exposes `init`, `step`, `dep`, `group`, `fusion`, `gate`, `run`, `stop`, `restart`, `mprocs`, `template`, and `event`. Matching route groups exist under `app/api/`.
 - Sequence-level API persistence is implemented beyond reset. `app/api/sequence/route.ts` supports `reset`, `rename`, `set-type`, and `apply-template`, and `apply-template` also creates placeholder prompt files for generated steps.
@@ -40,3 +40,11 @@ This page is intentionally blunt. It describes the repo as it exists now, not th
 - Thread Runner eligibility is data-driven but all requirements are still hardcoded as unmet. `app/api/thread-runner/eligibility/route.ts` and `components/thread-runner/ThreadRunnerGate.tsx` are wired to live API data, but no registration or subscription system exists to flip requirements to met.
 - Verified VM execution is not live. The race executor manages race/run state but actual sandboxed VM-backed execution with verification does not exist.
 - End-to-end pack progression loop (acquisition from Thread Runner proving, leaderboard ranking, builder reputation) is not productized — individual pieces exist but the loop connecting them is not wired.
+
+## Interview-safe summary
+
+If you need a concise, defensible summary of the repo state:
+
+- **real today:** thredOS workbench, local API, CLI, sequence authoring, runtime surfaces, approvals, audit/policy foundations, and basic agent registration/assignment
+- **partially real:** chat orchestration, lane/hierarchy completeness, builder/pack integration, and proving-layer hooks
+- **not product-ready yet:** full Thread Runner proving loop, verified VM execution, and end-to-end competitive progression

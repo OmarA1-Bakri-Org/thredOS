@@ -2,11 +2,11 @@
 
 ## What You Are Joining
 
-This repo is building ThreadOS first.
+This repo is building thredOS first.
 
 When you run the app today:
 
-- ThreadOS is the active workbench
+- thredOS is the active workbench
 - Thread Runner is visible, but locked
 
 Do not assume the repo is centered on Thread Runner just because the domain types exist.
@@ -22,7 +22,7 @@ thread init
 bun dev
 ```
 
-Then open `http://localhost:3000`, enter `ThreadOS`, and run:
+Then open `http://localhost:3000`, enter `thredOS`, and run:
 
 ```bash
 bun run check
@@ -76,7 +76,7 @@ bun dev
 
 Open `http://localhost:3000`.
 
-You will land on the product entry screen. Enter `ThreadOS` to reach the workbench. `Thread Runner` is intentionally locked.
+You will land on the product entry screen. Enter `thredOS` to reach the workbench. `Thread Runner` is intentionally locked.
 
 Useful current UI behavior:
 
@@ -90,7 +90,7 @@ Useful current UI behavior:
 
 ## Use The CLI
 
-Initialize local ThreadOS state:
+Initialize local thredOS state:
 
 ```bash
 thread init
@@ -118,7 +118,7 @@ Keep these mental models straight while developing:
 - `.threados/state/` stores runtime-facing state like thread surfaces, runs, and related projections
 - the UI and CLI are two faces on the same local model, not separate systems
 - template application is destructive to the current sequence by design
-- Thread Runner code exists in the repo, but normal product work still centers on ThreadOS
+- Thread Runner code exists in the repo, but normal product work still centers on thredOS
 
 ## Test And Verify
 
@@ -147,7 +147,7 @@ Use this map when orienting yourself:
 - `app/page.tsx`: top-level product entry
 - `components/entry/`: entry screen
 - `components/workbench/`: shell and left rail
-- `components/canvas/`, `components/hierarchy/`, `components/lanes/`, `components/inspector/`, `components/chat/`: main ThreadOS UI surfaces
+- `components/canvas/`, `components/hierarchy/`, `components/lanes/`, `components/inspector/`, `components/chat/`: main thredOS UI surfaces
 - `lib/ui/api.ts`: React Query bridge to the API routes
 - `lib/ui/store.ts`: client UI state
 - `app/api/`: local API routes used by the UI
@@ -172,7 +172,7 @@ If you are tracing the main product loop, follow this path:
 
 - Chat can fall back to a stub response if no provider client is configured. See `app/api/chat/route.ts`.
 - The chat apply loop is real, but it still depends on extracting JSON actions from free-form model output and on the limited command coverage in `lib/chat/validator.ts`. See `lib/chat/extract-actions.ts`, `app/api/apply/route.ts`, and `lib/chat/validator.ts`.
-- Some ThreadOS sub-panels still contain placeholder-only data, especially gate quality metrics and agent performance cards. See `components/workbench/sections/GateSection.tsx` and `components/workbench/sections/AgentSection.tsx`.
+- Some thredOS sub-panels still contain placeholder-only data, especially gate quality metrics and agent performance cards. See `components/workbench/sections/GateSection.tsx` and `components/workbench/sections/AgentSection.tsx`.
 - The canvas can still fall back to a status-derived scaffold instead of full thread-surface runtime data. See `components/canvas/threadSurfaceScaffold.ts`.
 - Thread Runner is not ready for normal development work beyond its early domain contracts and locked gate.
 

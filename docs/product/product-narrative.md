@@ -2,13 +2,13 @@
 
 ## The Short Version
 
-ThreadOS is the product that exists today.
+thredOS is the product that exists today.
 
 Thread Runner is the proving layer planned beside it, but not yet active as a usable product surface. In the current app it is intentionally visible and intentionally locked.
 
-## The Relationship Between ThreadOS And Thread Runner
+## The Relationship Between thredOS And Thread Runner
 
-ThreadOS is the operating workbench:
+thredOS is the operating workbench:
 
 - define work as a structured sequence
 - execute work locally
@@ -31,11 +31,11 @@ Today, Thread Runner is mostly domain scaffolding plus a locked UI gate. It is n
 
 In product language, a thread is a unit of agent work.
 
-In the current data model, that usually starts as a `Step` inside `.threados/sequence.yaml`. The word "thread" is broader than "step" in the product narrative, but the step is the concrete object that ThreadOS edits, validates, and executes.
+In the current data model, that usually starts as a `Step` inside `.threados/sequence.yaml`. The word "thread" is broader than "step" in the product narrative, but the step is the concrete object that thredOS edits, validates, and executes.
 
 ### Surface
 
-A surface is the runtime and inspection container for a thread after ThreadOS materializes it into the thread-surface model.
+A surface is the runtime and inspection container for a thread after thredOS materializes it into the thread-surface model.
 
 Surfaces are stored in `.threados/state/thread-surfaces.json` and managed by `lib/thread-surfaces/`.
 
@@ -67,16 +67,16 @@ In the current repo, packs exist as early domain records under `lib/packs/`. The
 The relationship should be read in this order:
 
 1. A builder creates or registers an agent.
-2. An engineer uses ThreadOS to assemble a sequence of threads.
+2. An engineer uses thredOS to assemble a sequence of threads.
 3. In code, those threads begin as steps in the sequence model.
-4. When work executes, ThreadOS materializes runtime surfaces and runs for those steps.
+4. When work executes, thredOS materializes runtime surfaces and runs for those steps.
 5. Runtime events can spawn child surfaces or merge results back into another surface.
 6. In the future, some of those builders and agents will also enter Thread Runner proving flows.
 7. Thread Runner is where pack outcomes and competitive records are meant to live.
 
-## What ThreadOS Means Today
+## What thredOS Means Today
 
-Today, ThreadOS is about structured agentic engineering:
+Today, thredOS is about structured agentic engineering:
 
 - sequence editing
 - runtime execution
@@ -100,7 +100,7 @@ It does not yet mean a complete user journey.
 
 ## What Belongs To Which Product
 
-ThreadOS owns:
+thredOS owns:
 
 - authoring the sequence
 - executing the work
@@ -121,7 +121,7 @@ Thread Runner is intended to own:
 - A surface is not the same thing as a run.
 - A run belongs to a surface.
 - A builder is not the same thing as an agent.
-- A pack belongs to the proving layer, not the core ThreadOS workbench.
+- A pack belongs to the proving layer, not the core thredOS workbench.
 - Thread Runner is not the main app today.
 
-That vocabulary split matters because the repo already contains parts of the future proving model, but the currently shipped product is the ThreadOS workbench.
+That vocabulary split matters because the repo already contains parts of the future proving model, but the currently shipped product is the thredOS workbench.

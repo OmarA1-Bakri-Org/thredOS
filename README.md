@@ -1,8 +1,24 @@
 # thredOS
 
-**Local-first operating system for agent work** — Manage multi-agent workflows with dependency graphs, policy enforcement, and a visual UI while keeping prompts, skills, threads, surfaces, runs, and artifacts on your machine.
+**Local-first operating system for agent work.** Build, inspect, and govern multi-agent workflows with a shared UI + CLI control plane while keeping prompts, skills, threads, surfaces, runs, and artifacts on your machine.
 
-thredOS lets you define sequences of AI agent steps, wire them with dependencies, enforce safety policies, and monitor execution through a horizontal canvas UI. The cloud is reserved for activation, billing, and canonical agent registration.
+thredOS turns agent work from ad hoc terminal sessions into an explicit operating model:
+
+- define steps, dependencies, gates, and approvals
+- execute through the same local-first sequence model from either the UI or CLI
+- inspect runtime surfaces, runs, merges, and provenance visually
+- keep policy, audit history, and workflow state inside `.threados/`
+
+The cloud is intentionally narrow: activation, billing, and canonical agent registration only.
+
+## Why this project stands out
+
+Most agent workflows still look like prompt fragments, shell history, and tribal knowledge. thredOS is opinionated about making the work:
+
+- **structured** — sequences, dependencies, gates, and thread types are first-class
+- **inspectable** — hierarchy, lanes, surfaces, and runs are visible in the workbench
+- **governed** — policy, approvals, audit history, and local boundaries are built in
+- **local-first** — workflow content stays in the repo/workspace instead of being pushed to a hosted control plane
 
 ## Installation
 
@@ -17,7 +33,7 @@ Copy `.env.example` to `.env.local` (UI/API) or `.env` and set values as needed.
 
 | Variable | Required | Default | Purpose |
 |------|------|------|------|
-| `THREADOS_BASE_PATH` | No | `./` (or `process.cwd()` fallback) | Base directory used by API routes for ThreadOS files |
+| `THREADOS_BASE_PATH` | No | `./` (or `process.cwd()` fallback) | Base directory used by API routes for thredOS files |
 | `THREADOS_MPROCS_PATH` | No | auto-resolved | Absolute/relative path to `mprocs` binary |
 | `THREADOS_MODEL` | No | `gpt-4o` | Model ID — auto-routes to correct backend (e.g. `gpt-4o`, `claude-sonnet-4-20250514`) |
 | `THREDOS_CLERK_SIGN_IN_URL` | Launch | unset | Hosted Clerk sign-in URL used by thredOS Desktop browser activation |
@@ -55,7 +71,7 @@ thread run runnable
 
 ## Product Entry Points
 
-thredOS is launching in three product layers:
+thredOS is presented in three product layers:
 
 - **thredOS Desktop** — the local-first engineering environment for building, orchestrating, and inspecting agent systems
 - **thredOS Node** — the follow-on stronger-machine/self-hosted runtime path for users who want their own infrastructure
@@ -141,16 +157,25 @@ Key commands:
 bun dev
 ```
 
-Opens the workbench at `http://localhost:3000`:
+Open the workbench at `http://localhost:3000`:
 
-- **Workbench Shell** — stable top bar, left-rail accordion panel, center board region
+- **Workbench Shell** — stable top bar, left-rail accordion, center board region
 - **Canvas** — React Flow-based sequence editor with nodes, gates, edges, and context menus
-- **Hierarchy View** — structural thread map with focused trading-card inspection
+- **Hierarchy View** — structural thread map with focused card-based inspection
 - **Lane Board** — run-scoped execution surface with merge ordering and timeline context
-- **Left Rail** — 6-section accordion: Sequence, Phase, Node, Agent, Gate, Run
-- **Thread Inspector** — identity, run context, skills (local/inherited), and provenance
+- **Left Rail** — six sections: Sequence, Phase, Node, Agent, Gate, Run
+- **Thread Inspector** — identity, run context, skills, and provenance
 - **Chat Panel** — floating AI-assisted sequence management
-  - **Entry Screen** — thredOS Desktop public beta launch surface
+- **Entry Screen** — thredOS Desktop public beta launch surface
+
+## Interview / review reading path
+
+If you are reviewing the project quickly, start here:
+
+1. [Founder Overview](docs/product/founder-overview.md)
+2. [Current State of the Product](docs/product/current-state.md)
+3. [Architecture Map](docs/product/architecture-map.md)
+4. [Developer Onboarding](docs/product/developer-onboarding.md)
 
 ## Documentation
 
@@ -189,7 +214,7 @@ bun run check        # Lint + typecheck + test
 
 ## Acknowledgments
 
-Special thanks to [IndyDevDan](https://youtube.com/@IndyDevDan) (Dan, [@disler](https://github.com/disler)) for the inspiration. His work on agentic engineering patterns, Claude Code skills, and the [Agentic Engineer](https://agenticengineer.com) course helped shape the thinking behind ThreadOS. If you're building with AI agents, his content is essential viewing.
+Special thanks to [IndyDevDan](https://youtube.com/@IndyDevDan) (Dan, [@disler](https://github.com/disler)) for the inspiration. His work on agentic engineering patterns, Claude Code skills, and the [Agentic Engineer](https://agenticengineer.com) course helped shape the thinking behind thredOS. If you're building with AI agents, his content is essential viewing.
 
 ## License
 
