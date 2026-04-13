@@ -27,14 +27,14 @@ export const metadata: Metadata = {
   description: 'Local-first control surface for agent work.',
   metadataBase: resolveMetadataBase(),
   icons: {
-    icon: '/thredOS.png',
-    shortcut: '/thredOS.png',
-    apple: '/thredOS.png',
+    icon: '/thredos_mark_sym_flat.svg',
+    shortcut: '/thredos_mark_sym_flat.svg',
+    apple: '/thredos_mark_sym_flat.svg',
   },
   openGraph: {
     title: 'thredOS Desktop',
     description: 'Local-first control surface for agent work.',
-    images: ['/thredOS.png'],
+    images: ['/thredos_mark_sym_flat.svg'],
   },
 }
 
