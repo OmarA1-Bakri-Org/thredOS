@@ -44,6 +44,7 @@ export async function POST(request: Request) {
     }
 
     const { actions } = parsed.data as { actions: ProposedAction[] }
+    const surfaceId = randomUUID()
     const runId = parsed.data.runId ?? `chat-apply-${randomUUID()}`
 
     // Cap the number of actions to prevent abuse
@@ -54,18 +55,23 @@ export async function POST(request: Request) {
     const basePath = getBasePath()
     const validator = new ActionValidator(basePath)
     const result = await validator.apply(actions)
-    await recordApprovedApprovalLifecycle({
-      basePath,
-      runId,
-      actionType: 'side_effect',
-      targetRef: `chat-apply:${actions.length}`,
-      requestedBy: session.email,
-      resolvedBy: session.email,
-      actor: 'api:apply',
-      notes: result.success
-        ? `Applied ${actions.length} reviewed chat action(s).`
-        : `Chat apply was approved but returned errors: ${result.results.map(entry => entry.error).filter(Boolean).join(', ') || 'unknown error'}`,
-    })
+
+    try {
+      await recordApprovedApprovalLifecycle({
+        basePath,
+        runId,
+        actionType: 'side_effect',
+        targetRef: `chat-apply:${surfaceId}:${actions.length}`,
+        requestedBy: session.email,
+        resolvedBy: session.email,
+        actor: 'api:apply',
+        notes: result.success
+          ? `Applied ${actions.length} reviewed chat action(s).`
+          : `Chat apply was approved but returned errors: ${result.results.map(entry => entry.error).filter(Boolean).join(', ') || 'unknown error'}`,
+      })
+    } catch (lifecycleError) {
+      console.error('[apply.POST] lifecycle persistence failed after apply commit', lifecycleError)
+    }
 
     return Response.json({ ...result, runId })
   } catch {

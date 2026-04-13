@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { existsSync, mkdirSync, rmSync } from 'fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'fs'
 import { cpSync } from 'fs'
 import { tmpdir } from 'os'
 import { dirname, join, resolve } from 'path'
@@ -34,11 +34,18 @@ function run(command, args, options = {}) {
 
 function makeTempBuildDir() {
   const prefix = join(tmpdir(), 'threados-build-')
-  return spawnSync('mktemp', ['-d', `${prefix}XXXXXX`], { encoding: 'utf8' }).stdout.trim()
+  const result = spawnSync('mktemp', ['-d', `${prefix}XXXXXX`], { encoding: 'utf8' })
+
+  if (result.error || result.signal || (typeof result.status === 'number' && result.status !== 0)) {
+    console.warn('[next-build] mktemp not available or failed, falling back to fs.mkdtempSync')
+    return mkdtempSync(prefix)
+  }
+
+  return result.stdout.trim()
 }
 
 function syncWorkspaceToTemp(tempDir) {
-  run('rsync', [
+  const rsyncResult = spawnSync('rsync', [
     '-a',
     '--delete',
     '--exclude=.git',
@@ -48,7 +55,18 @@ function syncWorkspaceToTemp(tempDir) {
     '--exclude=node_modules',
     `${root}/`,
     `${tempDir}/`,
-  ])
+  ], { stdio: 'inherit' })
+
+  if (rsyncResult.error || (typeof rsyncResult.status === 'number' && rsyncResult.status !== 0)) {
+    console.warn('[next-build] rsync not available or failed, falling back to fs.cpSync')
+    cpSync(root, tempDir, {
+      recursive: true,
+      filter: (src) => {
+        const base = src.replace(root, '')
+        return !base.startsWith('/.git') && !base.startsWith('/.omx') && !base.startsWith('/.next') && !base.startsWith('/dist-desktop') && !base.startsWith('/node_modules')
+      }
+    })
+  }
 }
 
 function installDependencies(tempDir) {

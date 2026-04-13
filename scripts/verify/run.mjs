@@ -191,27 +191,27 @@ async function claimPort(port) {
     server.listen({ host: '127.0.0.1', port }, () => {
       const address = server.address()
       const claimed = typeof address === 'object' && address ? address.port : null
-      server.close(() => resolve(claimed))
+      resolve({ server, port: claimed })
     })
   })
 }
 
 async function resolvePlaywrightPort(modeName, explicitPort) {
-  if (explicitPort) return explicitPort
+  if (explicitPort) return { server: null, port: explicitPort }
 
   const preferredPort = modeName === 'local' ? 4301 : modeName === 'ci' ? 4302 : 4303
   const preferredClaim = await claimPort(preferredPort)
-  if (preferredClaim) {
-    return String(preferredClaim)
+  if (preferredClaim && preferredClaim.port) {
+    return { server: preferredClaim.server, port: String(preferredClaim.port) }
   }
 
   const fallbackClaim = await claimPort(0)
-  if (!fallbackClaim) {
+  if (!fallbackClaim || !fallbackClaim.port) {
     throw new Error('Failed to allocate a verification port')
   }
 
-  console.warn(`[verify:${modeName}] port ${preferredPort} is busy; using ephemeral port ${fallbackClaim} instead`)
-  return String(fallbackClaim)
+  console.warn(`[verify:${modeName}] port ${preferredPort} is busy; using ephemeral port ${fallbackClaim.port} instead`)
+  return { server: fallbackClaim.server, port: String(fallbackClaim.port) }
 }
 
 function findBunPath() {
@@ -500,7 +500,9 @@ try {
   env.PLAYWRIGHT_RUN_MANIFEST_PATH = join(artifactsDir, 'run-manifest.json')
   env.PLAYWRIGHT_SERVER_LOG_PATH = join(artifactsDir, 'server.log')
   env.PLAYWRIGHT_BUILD_LOG_PATH = join(artifactsDir, 'build.log')
-  env.PLAYWRIGHT_PORT = await resolvePlaywrightPort(mode, env.PLAYWRIGHT_PORT)
+  const portAllocation = await resolvePlaywrightPort(mode, env.PLAYWRIGHT_PORT)
+  env.PLAYWRIGHT_PORT = portAllocation.port
+  const claimedServer = portAllocation.server
 
   let workspacePath = null
   if (mode === 'release-live') {
@@ -548,6 +550,10 @@ try {
   })
 
   writeManifest(env, artifactsDir, mode, workspacePath, result.status ?? 1)
+
+  if (claimedServer) {
+    claimedServer.close()
+  }
 
   if (result.error) {
     throw result.error

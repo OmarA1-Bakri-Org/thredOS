@@ -202,20 +202,24 @@ export async function POST(request: Request) {
         try {
           const syncedRegistration = await cloudRegistry.registerCloudAgent(bp, registered)
           cloudRegistration = syncedRegistration
+          cloudSyncError = null
+        } catch (error) {
+          console.error('[agents.POST] cloud registration failed for replacement agent', error)
+          cloudSyncError = PUBLIC_CLOUD_SYNC_ERROR
+        }
+
+        if (cloudRegistration) {
           const synced = await updateAgentState(bp, (current) => ({
             ...current,
             agents: current.agents.map(agent => agent.id === registered.id
               ? {
                   ...agent,
-                  registrationNumber: syncedRegistration.registrationNumber,
+                  registrationNumber: cloudRegistration!.registrationNumber,
                   cloudSyncedAt: new Date().toISOString(),
                 }
               : agent),
           }))
           persisted = synced.agents.find(agent => agent.id === replacement.id) ?? registered
-        } catch (error) {
-          console.error('[agents.POST] cloud registration failed for replacement agent', error)
-          cloudSyncError = PUBLIC_CLOUD_SYNC_ERROR
         }
 
         await syncAgentAsset(bp, persisted)
@@ -284,20 +288,24 @@ export async function POST(request: Request) {
     try {
       const syncedRegistration = await cloudRegistry.registerCloudAgent(bp, registered)
       cloudRegistration = syncedRegistration
+      cloudSyncError = null
+    } catch (error) {
+      console.error('[agents.POST] cloud registration failed', error)
+      cloudSyncError = PUBLIC_CLOUD_SYNC_ERROR
+    }
+
+    if (cloudRegistration) {
       const synced = await updateAgentState(bp, (current) => ({
         ...current,
         agents: current.agents.map(item => item.id === registered.id
           ? {
               ...item,
-              registrationNumber: syncedRegistration.registrationNumber,
+              registrationNumber: cloudRegistration!.registrationNumber,
               cloudSyncedAt: new Date().toISOString(),
             }
           : item),
       }))
       persisted = synced.agents.find(a => a.id === agent.id) ?? registered
-    } catch (error) {
-      console.error('[agents.POST] cloud registration failed', error)
-      cloudSyncError = PUBLIC_CLOUD_SYNC_ERROR
     }
 
     await syncAgentAsset(bp, persisted)

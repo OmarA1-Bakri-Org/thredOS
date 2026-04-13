@@ -31,7 +31,7 @@ function createDefaultSequence(): Sequence {
 function attachRevision<T extends Sequence>(sequence: T, revision: string | null): T {
   Object.defineProperty(sequence, SEQUENCE_REVISION, {
     value: revision,
-    enumerable: false,
+    enumerable: true,
     configurable: true,
     writable: true,
   })

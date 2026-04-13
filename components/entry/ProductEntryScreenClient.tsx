@@ -56,7 +56,7 @@ function DesktopSurfaceDiagram() {
             <div className="flex flex-col items-center gap-2">
               <div className="h-14 w-px bg-gradient-to-b from-transparent via-sky-400/70 to-transparent" />
               <div className="rounded-full border border-emerald-500/35 bg-emerald-500/10 px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.16em] text-emerald-100">
-                activation only
+                account/entitlement & canonical registration only
               </div>
               <div className="h-14 w-px bg-gradient-to-b from-transparent via-sky-400/70 to-transparent" />
             </div>
@@ -67,8 +67,8 @@ function DesktopSurfaceDiagram() {
             <div className="grid gap-2">
               <div className="border border-emerald-500/25 bg-emerald-500/8 px-3 py-2 text-sm text-slate-100">billing + auth</div>
               <div className="border border-emerald-500/25 bg-emerald-500/8 px-3 py-2 text-sm text-slate-100">activation state</div>
-              <div className="border border-emerald-500/25 bg-emerald-500/8 px-3 py-2 text-sm text-slate-100">agent registry</div>
-              <div className="border border-emerald-500/25 bg-emerald-500/8 px-3 py-2 text-sm text-slate-100">performance only</div>
+              <div className="border border-emerald-500/25 bg-emerald-500/8 px-3 py-2 text-sm text-slate-100">canonical agent registry</div>
+              <div className="border border-emerald-500/25 bg-emerald-500/8 px-3 py-2 text-sm text-slate-100">account/entitlement only</div>
             </div>
           </div>
         </div>

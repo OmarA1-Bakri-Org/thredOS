@@ -1,21 +1,24 @@
-import { afterAll, describe, expect, mock, spyOn, test } from 'bun:test'
+import { afterAll, describe, expect, mock, test } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
-import * as uiApi from '@/lib/ui/api'
 
-spyOn(uiApi, 'useStatus').mockImplementation(() => ({
-  data: {
-    name: 'Test Sequence',
-    steps: [],
-    gates: [],
-    summary: { ready: 2, running: 1, done: 3, failed: 0 },
-  },
-  isLoading: false,
-}) as never)
+const realApi = await import('@/lib/ui/api')
 
-spyOn(uiApi, 'useRunRunnable').mockImplementation(() => ({
-  mutate: () => {},
-  isPending: false,
-}) as never)
+mock.module('@/lib/ui/api', () => ({
+  ...realApi,
+  useStatus: () => ({
+    data: {
+      name: 'Test Sequence',
+      steps: [],
+      gates: [],
+      summary: { ready: 2, running: 1, done: 3, failed: 0 },
+    },
+    isLoading: false,
+  }),
+  useRunRunnable: () => ({
+    mutate: () => {},
+    isPending: false,
+  }),
+}))
 
 mock.module('next-themes', () => ({
   useTheme: () => ({ theme: 'dark', setTheme: () => {} }),

@@ -79,6 +79,15 @@ describe('PackRepository', () => {
     expect(bestPack?.highestStatus).toBe('hero')
   })
 
+  test('selectBestPackForBuilder returns null when no pack matches the builderId', () => {
+    const bestPack = selectBestPackForBuilder([
+      makePack({ id: 'pack-1', builderId: 'b1', highestStatus: 'challenger' }),
+      makePack({ id: 'pack-2', builderId: 'b2', highestStatus: 'hero' }),
+    ], 'b3')
+
+    expect(bestPack).toBeNull()
+  })
+
   test('promoteStatus upgrades when new status is higher', () => {
     repo.addPack(makePack({ highestStatus: 'challenger' }))
     const result = repo.promoteStatus('pack-1', 'champion', 'Won qualifier')

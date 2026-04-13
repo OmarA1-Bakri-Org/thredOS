@@ -40,7 +40,7 @@ export function Toolbar() {
       <span className="font-bold text-sm">thredOS</span>
       {status && <span className="text-xs text-muted-foreground">{status.name}</span>}
       <button
-        onClick={() => setConfirmRun(true)}
+        onClick={() => { setConfirmRun(true); }}
         disabled={runRunnable.isPending}
         className="px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 disabled:opacity-50"
       >
@@ -79,10 +79,10 @@ export function Toolbar() {
         description="This dispatches the current runnable steps and acknowledges SAFE mode confirmation before hosted execution."
         confirmLabel="Run runnable"
         tone="default"
-        onCancel={() => setConfirmRun(false)}
+        onCancel={() => { setConfirmRun(false); }}
         onConfirm={() => {
-          setConfirmRun(false)
-          runRunnable.mutate({ confirmPolicy: true })
+          setConfirmRun(false);
+          runRunnable.mutate({ confirmPolicy: true });
         }}
       />
     </div>

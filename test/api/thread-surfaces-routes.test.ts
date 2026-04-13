@@ -157,18 +157,20 @@ describe.serial('thread surface read routes', () => {
     expect(res.status).toBe(200)
 
     const data = await res.json()
-    expect(data.threadSurfaces).toEqual([
+    expect(data.threadSurfaces).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: 'thread-root', surfaceLabel: 'Canonical Sequence' }),
       expect.objectContaining({ id: 'thread-step-a', surfaceLabel: 'Canonical Step A' }),
-    ])
+    ]))
+    expect(data.threadSurfaces).toHaveLength(2)
 
     const persisted = JSON.parse(await readFile(join(basePath, '.threados', 'state', 'thread-surfaces.json'), 'utf-8')) as {
       threadSurfaces: Array<{ id: string; surfaceLabel: string }>
     }
-    expect(persisted.threadSurfaces).toEqual([
+    expect(persisted.threadSurfaces).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: 'thread-root', surfaceLabel: 'Canonical Sequence' }),
       expect.objectContaining({ id: 'thread-step-a', surfaceLabel: 'Canonical Step A' }),
-    ])
+    ]))
+    expect(persisted.threadSurfaces).toHaveLength(2)
   })
 
   test('GET /api/thread-runs returns runs and filters by threadSurfaceId', async () => {

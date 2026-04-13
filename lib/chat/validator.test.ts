@@ -154,10 +154,11 @@ describe('ActionValidator.apply', () => {
 
   test('applies step remove and cleans deps', async () => {
     // First add step-2 that depends on step-1
+    const base = freshBaseSequence()
     await writeSequence(testDir, {
-      ...freshBaseSequence(),
+      ...base,
       steps: [
-        ...freshBaseSequence().steps,
+        ...base.steps,
         { id: 'step-2', name: 'Two', type: 'base', model: 'claude-code', prompt_file: 'p.md', depends_on: ['step-1'], status: 'READY' },
       ],
     })

@@ -346,7 +346,7 @@ export function NodeDetailCard() {
               <button
                 type="button"
                 onClick={() => approveGate.mutate({ gateId: selectedNodeId })}
-                disabled={approveGate.isPending || gate!.status === 'APPROVED' || gateNeedsReview}
+                disabled={approveGate.isPending || gate?.status === 'APPROVED' || gateNeedsReview}
                 className="flex items-center gap-1 rounded px-2 py-1 font-mono text-[9px] uppercase tracking-[0.12em] text-emerald-300 transition-all hover:bg-emerald-500/15 disabled:opacity-40"
                 title={gateNeedsReview ? 'Open the gate panel to review acceptance conditions before approving' : 'Approve gate'}
               >
@@ -356,7 +356,7 @@ export function NodeDetailCard() {
               <button
                 type="button"
                 onClick={() => blockGate.mutate(selectedNodeId)}
-                disabled={blockGate.isPending || gate!.status === 'BLOCKED'}
+                disabled={blockGate.isPending || gate?.status === 'BLOCKED'}
                 className="flex items-center gap-1 rounded px-2 py-1 font-mono text-[9px] uppercase tracking-[0.12em] text-rose-300 transition-all hover:bg-rose-500/15 disabled:opacity-40"
                 title="Block gate"
               >

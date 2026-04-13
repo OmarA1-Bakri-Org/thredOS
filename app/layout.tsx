@@ -3,17 +3,23 @@ import { Providers } from '@/lib/ui/providers'
 import './globals.css'
 
 function resolveMetadataBase(): URL {
-  const rawOrigin = process.env.THREDOS_METADATA_BASE
-    ?? process.env.NEXT_PUBLIC_THREDOS_APP_URL
-    ?? process.env.VERCEL_PROJECT_PRODUCTION_URL
-    ?? process.env.VERCEL_URL
-    ?? 'http://localhost:3000'
+  const candidates = [
+    process.env.THREDOS_METADATA_BASE,
+    process.env.NEXT_PUBLIC_THREDOS_APP_URL,
+    process.env.VERCEL_PROJECT_PRODUCTION_URL,
+    process.env.VERCEL_URL,
+  ]
 
+  const rawOrigin = candidates.find(c => c && c.trim() !== '') ?? 'http://localhost:3000'
   const normalizedOrigin = rawOrigin.startsWith('http')
     ? rawOrigin
     : `https://${rawOrigin}`
 
-  return new URL(normalizedOrigin)
+  try {
+    return new URL(normalizedOrigin)
+  } catch {
+    return new URL('http://localhost:3000')
+  }
 }
 
 export const metadata: Metadata = {

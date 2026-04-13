@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { Box, GitBranch, ShieldCheck } from 'lucide-react'
 import { buildAgentComposition, buildRegisteredAgentComposition, detectMaterialChange } from '@/lib/agents/composition'
 import { useUIStore, selectCurrentDepthLevel } from '@/lib/ui/store'
@@ -68,6 +68,7 @@ export function NodeSection() {
   const assignAgent = useAssignAgent()
   const selectedThreadSurfaceId = useUIStore(s => s.selectedThreadSurfaceId)
   const { data: threadSkills = [] } = useThreadSurfaceSkills(selectedThreadSurfaceId)
+  const hydrationRunRef = useRef<Record<string, boolean>>({})
 
   const phaseDerivation = status ? derivePhases(status.steps, status.gates) : null
   const selectedPhase = phaseDerivation?.phases.find(p => p.id === selectedPhaseId)
@@ -166,7 +167,8 @@ export function NodeSection() {
       role: selectedAgent?.role ?? focusedStep.role ?? null,
     })
     const draftNeedsHydration =
-      agentDraft.stepId === focusedStep.id
+      !hydrationRunRef.current[focusedStep.id]
+      && agentDraft.stepId === focusedStep.id
       && agentDraft.promptRef == null
       && agentDraft.selectedPromptId == null
       && agentDraft.skillRefs.length === 0
@@ -184,6 +186,7 @@ export function NodeSection() {
       || draftNeedsHydration
     ) {
       seedAgentDraft(nextDraft)
+      hydrationRunRef.current[focusedStep.id] = true
     }
   }, [
     agentDraft.id,

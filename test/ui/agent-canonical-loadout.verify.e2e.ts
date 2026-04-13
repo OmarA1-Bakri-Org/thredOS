@@ -68,7 +68,12 @@ type RegisterResponsePayload = {
 }
 
 function parseJsonBody(request: Request): JsonRecord {
-  return JSON.parse(request.postData() ?? '{}') as JsonRecord
+  try {
+    return JSON.parse(request.postData() ?? '{}') as JsonRecord
+  } catch (error) {
+    const rawData = request.postData() ?? ''
+    throw new Error(`Failed to parse JSON body: ${error instanceof Error ? error.message : String(error)}. Raw data: ${rawData.substring(0, 200)}`)
+  }
 }
 
 function buildMockAgent(overrides: Partial<MockAgent> = {}): MockAgent {

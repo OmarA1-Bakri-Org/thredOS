@@ -193,10 +193,11 @@ export function AgentDetailCard() {
       })
 
       if (!registrationInput.promptRef) {
+        const fallbackPromptId = draft.selectedPromptId ?? step?.id ?? undefined
         registrationInput.promptRef = sequenceStep?.prompt_ref
-          ?? (promptPath
+          ?? (promptPath && fallbackPromptId
             ? {
-                id: draft.selectedPromptId ?? step!.id,
+                id: fallbackPromptId,
                 version: 1,
                 path: promptPath,
               }

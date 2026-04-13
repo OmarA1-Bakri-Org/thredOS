@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, mock, spyOn, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
 import * as uiStore from '@/lib/ui/store'
 
@@ -12,9 +12,11 @@ const chatUiState = {
   setChatSize: () => {},
 }
 
-spyOn(uiStore, 'useUIStore').mockImplementation(((selector?: (s: typeof chatUiState) => unknown) => (
-  selector ? selector(chatUiState) : chatUiState
-)) as typeof uiStore.useUIStore)
+beforeEach(() => {
+  spyOn(uiStore, 'useUIStore').mockImplementation(((selector?: (s: typeof chatUiState) => unknown) => (
+    selector ? selector(chatUiState) : chatUiState
+  )) as typeof uiStore.useUIStore)
+})
 
 afterEach(() => {
   mock.restore()

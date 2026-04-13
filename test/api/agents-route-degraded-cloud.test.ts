@@ -36,18 +36,23 @@ function registrationBody() {
   return {
     id: 'agent-a',
     name: 'Agent A',
-    description: 'Canonical agent',
+    description: 'Canonical reviewer agent',
     builderId: 'builder-1',
     builderName: 'Builder',
-    model: 'codex',
+    model: 'claude-code',
     role: 'reviewer',
     promptRef: {
       id: 'review-prompt',
       version: 1,
       path: '.threados/prompts/review.md',
     },
-    tools: ['browser'],
-    skillRefs: [{ id: 'browser', version: 2, path: '.threados/skills/browser/SKILL.md', capabilities: ['navigate'] }],
+    tools: ['test', 'lint', 'screenshot', 'inspection'],
+    skillRefs: [
+      { id: 'search', version: 1, path: '.threados/skills/search/SKILL.md', capabilities: ['search'] },
+      { id: 'browser', version: 1, path: '.threados/skills/browser/SKILL.md', capabilities: ['navigate'] },
+      { id: 'files', version: 1, path: '.threados/skills/files/SKILL.md', capabilities: ['read', 'write'] },
+      { id: 'tools', version: 1, path: '.threados/skills/tools/SKILL.md', capabilities: ['execute'] },
+    ],
     threadSurfaceIds: ['thread-step-a'],
   }
 }

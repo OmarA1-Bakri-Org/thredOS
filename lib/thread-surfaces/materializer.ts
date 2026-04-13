@@ -172,10 +172,19 @@ export function clearAllSurfaces(): ThreadSurfaceState {
 
 /**
  * Reconcile thread surfaces with the current sequence steps.
+ * - Ensures the root surface exists and has the current sequence label
  * - Creates missing surfaces for steps that exist in the sequence
  * - Removes orphaned surfaces for steps no longer in the sequence
+ * - Refreshes step surface labels from the sequence source of truth
  *
- * Returns state unchanged if steps is empty (nothing to reconcile against).
+ * May return an updated state even when `steps` is empty (e.g., after a root-label
+ * refresh or other side-effect-driven updates).
+ *
+ * @param state - The current thread surface state
+ * @param steps - Array of step objects from the sequence
+ * @param sequenceLabel - The current sequence name/label
+ * @param now - ISO timestamp for new surface creation
+ * @returns Updated ThreadSurfaceState (may be the same reference if unchanged)
  */
 export function reconcileSurfacesWithSequence(
   state: ThreadSurfaceState,

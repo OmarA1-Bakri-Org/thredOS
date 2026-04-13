@@ -200,7 +200,6 @@ export async function waitForWorkbenchShell(page: Page) {
     // One reload recovers the shell without hiding persistent failures.
     await page.reload({ waitUntil: 'domcontentloaded' })
     await waitForWorkbenchShellOnce(page)
-    return
   }
 }
 

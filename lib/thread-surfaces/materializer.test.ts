@@ -37,7 +37,8 @@ describe('materializer', () => {
 
   test('ensureRootSurface refreshes the root label when the sequence name changes', () => {
     const first = ensureRootSurface(EMPTY_STATE, 'Old Seq', NOW)
-    const second = ensureRootSurface(first, 'New Seq', NOW)
+    const LATER = new Date(Date.parse(NOW) + 1000).toISOString()
+    const second = ensureRootSurface(first, 'New Seq', LATER)
 
     expect(second).not.toBe(first)
     expect(second.threadSurfaces[0].surfaceLabel).toBe('New Seq')

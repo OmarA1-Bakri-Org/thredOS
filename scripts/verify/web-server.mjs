@@ -81,7 +81,7 @@ async function main() {
   }
 
   writeLine(buildLog, `[verify-web-server] starting next build for ${mode}`)
-  const build = spawnNext(['node_modules/next/dist/bin/next', 'build'], buildLog, 'next-build')
+  const build = spawnNext(['scripts/build/next-build.mjs'], buildLog, 'next-build')
   await waitForExit(build, 'next build')
   writeLine(buildLog, '[verify-web-server] next build completed')
 
