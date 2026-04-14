@@ -191,4 +191,25 @@ describe('thread surface repository', () => {
     expect(nextState.runEvents).toEqual([runEvent])
     expect(getThreadSurfaceStatePath(basePath)).toBe(join(basePath, '.threados/state/thread-surfaces.json'))
   })
+
+  test('writeThreadSurfaceState rejects stale writes', async () => {
+    await writeThreadSurfaceState(basePath, {
+      version: 1,
+      threadSurfaces: [threadSurface],
+      runs: [],
+      mergeEvents: [],
+      runEvents: [],
+    })
+
+    const stale = await readThreadSurfaceState(basePath)
+    const fresh = await readThreadSurfaceState(basePath)
+
+    fresh.runs = [run]
+    await writeThreadSurfaceState(basePath, fresh)
+
+    stale.runEvents = [runEvent]
+    await expect(writeThreadSurfaceState(basePath, stale)).rejects.toMatchObject({
+      code: 'THREAD_SURFACE_STATE_CONFLICT',
+    })
+  })
 })

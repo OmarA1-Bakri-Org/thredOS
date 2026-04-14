@@ -11,7 +11,7 @@ import { readPrompt, validatePromptExists } from '../../prompts/manager'
 import { StepNotFoundError } from '../../errors'
 import type { Step, Sequence, StepStatus } from '../../sequence/schema'
 import { ROOT_THREAD_SURFACE_ID } from '../../thread-surfaces/constants'
-import { readThreadSurfaceState, writeThreadSurfaceState } from '../../thread-surfaces/repository'
+import { readThreadSurfaceState, withThreadSurfaceStateRevision, writeThreadSurfaceState } from '../../thread-surfaces/repository'
 import { completeRun, createReplacementRun, createRootThreadSurfaceRun } from '../../thread-surfaces/mutations'
 import { beginStepRunIfSurfaceExists, finalizeStepRunWithRuntimeEvents, type StepRunScope } from '../../thread-surfaces/step-run-runtime'
 import { readRuntimeEventLog, type RuntimeDelegationEvent } from '../../thread-surfaces/runtime-event-log'
@@ -227,7 +227,7 @@ async function createRootRunScopeForCommand(basePath: string, sequenceName: stri
         executionIndex,
       }).state
 
-  await writeThreadSurfaceState(basePath, nextState)
+  await writeThreadSurfaceState(basePath, withThreadSurfaceStateRevision(currentState, nextState))
 }
 
 async function finalizeRootRunScopeForCommand(basePath: string, runId: string, success: boolean, runSummary: string) {
@@ -238,7 +238,7 @@ async function finalizeRootRunScopeForCommand(basePath: string, runId: string, s
     endedAt: new Date().toISOString(),
     runSummary,
   }).state
-  await writeThreadSurfaceState(basePath, nextState)
+  await writeThreadSurfaceState(basePath, withThreadSurfaceStateRevision(currentState, nextState))
 }
 
 async function createStepRunScope(basePath: string, _sequence: Sequence, step: Step): Promise<{ stepRun: StepRunScope | null }> {
@@ -251,7 +251,7 @@ async function createStepRunScope(basePath: string, _sequence: Sequence, step: S
   })
 
   if (result.state !== currentState) {
-    await writeThreadSurfaceState(basePath, result.state)
+    await writeThreadSurfaceState(basePath, withThreadSurfaceStateRevision(currentState, result.state))
   }
 
   return { stepRun: result.stepRun }
@@ -277,7 +277,7 @@ async function finalizeStepRunScope(
   })
 
   if (finalized.stepRun != null) {
-    await writeThreadSurfaceState(basePath, finalized.state)
+    await writeThreadSurfaceState(basePath, withThreadSurfaceStateRevision(currentState, finalized.state))
   }
 
   if (finalized.pendingChildSequences.length > 0) {

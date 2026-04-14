@@ -9,7 +9,36 @@ import { spawnSync } from 'child_process'
 const root = process.cwd()
 
 function isUnsupportedMountPath(pathname) {
-  return resolve(pathname).startsWith('/mnt/')
+  return process.platform === 'linux' && resolve(pathname).startsWith('/mnt/')
+}
+
+function resolveNativeLinuxTmpRoot() {
+  const resolvedTmp = resolve(tmpdir())
+  if (process.platform === 'linux' && resolvedTmp.startsWith('/mnt/')) {
+    return '/tmp'
+  }
+  return resolvedTmp
+}
+
+function findBunPath() {
+  const explicit = process.env.BUN_BIN
+  if (explicit && existsSync(explicit)) {
+    return explicit
+  }
+
+  const home = process.env.HOME
+  const bundled = home ? join(home, '.bun', 'bin', 'bun') : null
+  if (bundled && existsSync(bundled)) {
+    return bundled
+  }
+
+  const fromPath = spawnSync('bash', ['-lc', 'command -v bun'], { encoding: 'utf8' })
+  if (fromPath.status === 0) {
+    const resolvedPath = fromPath.stdout.trim()
+    if (resolvedPath) return resolvedPath
+  }
+
+  return null
 }
 
 function run(command, args, options = {}) {
@@ -33,7 +62,7 @@ function run(command, args, options = {}) {
 }
 
 function makeTempBuildDir() {
-  const prefix = join(tmpdir(), 'threados-build-')
+  const prefix = join(resolveNativeLinuxTmpRoot(), 'threados-build-')
   const result = spawnSync('mktemp', ['-d', `${prefix}XXXXXX`], { encoding: 'utf8' })
 
   if (result.error || result.signal || (typeof result.status === 'number' && result.status !== 0)) {
@@ -63,14 +92,22 @@ function syncWorkspaceToTemp(tempDir) {
       recursive: true,
       filter: (src) => {
         const base = src.replace(root, '')
-        return !base.startsWith('/.git') && !base.startsWith('/.omx') && !base.startsWith('/.next') && !base.startsWith('/dist-desktop') && !base.startsWith('/node_modules')
-      }
+        return !base.startsWith('/.git')
+          && !base.startsWith('/.omx')
+          && !base.startsWith('/.next')
+          && !base.startsWith('/dist-desktop')
+          && !base.startsWith('/node_modules')
+      },
     })
   }
 }
 
 function installDependencies(tempDir) {
-  run('bun', ['install', '--frozen-lockfile'], { cwd: tempDir })
+  const bunPath = findBunPath()
+  if (!bunPath) {
+    throw new Error('Bun is required for temp-copy builds but was not found on PATH or at ~/.bun/bin/bun')
+  }
+  run(bunPath, ['install', '--frozen-lockfile'], { cwd: tempDir })
 }
 
 function buildInTemp(tempDir) {

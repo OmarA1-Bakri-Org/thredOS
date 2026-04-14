@@ -161,6 +161,16 @@ export class ThreadSurfaceRunScopeNotFoundError extends ThredOSError {
   }
 }
 
+export class ThreadSurfaceStateConflictError extends ThredOSError {
+  constructor() {
+    super(
+      'Thread surface state was modified concurrently. Reload the latest runtime state and retry your change.',
+      'THREAD_SURFACE_STATE_CONFLICT',
+    )
+    this.name = 'ThreadSurfaceStateConflictError'
+  }
+}
+
 export class InvalidLlmProviderError extends ThredOSError {
   constructor(provider: string) {
     super(`Unsupported LLM provider: ${provider}`, 'INVALID_LLM_PROVIDER')

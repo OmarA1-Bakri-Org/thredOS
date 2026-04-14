@@ -22,7 +22,7 @@ import type { Sequence, Step } from '@/lib/sequence/schema'
 import { ROOT_THREAD_SURFACE_ID } from '@/lib/thread-surfaces/constants'
 import { completeRun, createReplacementRun, createRootThreadSurfaceRun } from '@/lib/thread-surfaces/mutations'
 import { provisionAllChildSequences } from '@/lib/thread-surfaces/provision-child-sequence'
-import { readThreadSurfaceState, writeThreadSurfaceState } from '@/lib/thread-surfaces/repository'
+import { readThreadSurfaceState, withThreadSurfaceStateRevision, writeThreadSurfaceState } from '@/lib/thread-surfaces/repository'
 import { readRuntimeEventLog, type RuntimeDelegationEvent } from '@/lib/thread-surfaces/runtime-event-log'
 import { applyRateLimit } from '@/lib/rate-limit'
 import { PolicyEngine } from '@/lib/policy/engine'
@@ -136,7 +136,7 @@ async function createRunScopeForRequest(basePath: string, sequenceName: string, 
         executionIndex,
       }).state
 
-  await writeThreadSurfaceState(basePath, nextState)
+  await writeThreadSurfaceState(basePath, withThreadSurfaceStateRevision(currentState, nextState))
 }
 
 async function createStepRunScope(basePath: string, step: Step): Promise<{ stepRun: StepRunScope | null }> {
@@ -149,7 +149,7 @@ async function createStepRunScope(basePath: string, step: Step): Promise<{ stepR
   })
 
   if (result.state !== currentState) {
-    await writeThreadSurfaceState(basePath, result.state)
+    await writeThreadSurfaceState(basePath, withThreadSurfaceStateRevision(currentState, result.state))
   }
 
   return { stepRun: result.stepRun }
@@ -175,7 +175,7 @@ async function finalizeStepRunScope(
   })
 
   if (finalized.stepRun != null) {
-    await writeThreadSurfaceState(basePath, finalized.state)
+    await writeThreadSurfaceState(basePath, withThreadSurfaceStateRevision(currentState, finalized.state))
   }
 
   if (finalized.pendingChildSequences.length > 0) {
@@ -191,7 +191,7 @@ async function finalizeRunScope(basePath: string, runId: string, success: boolea
     endedAt: new Date().toISOString(),
     runSummary,
   }).state
-  await writeThreadSurfaceState(basePath, nextState)
+  await writeThreadSurfaceState(basePath, withThreadSurfaceStateRevision(currentState, nextState))
 }
 
 async function executeStep(

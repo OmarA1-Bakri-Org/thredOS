@@ -155,7 +155,10 @@ Key commands:
 
 ```bash
 bun dev
+# WSL mounted repo: bun run dev:wsl
 ```
+
+If you are running from WSL on a repo mounted under `/mnt/*`, use `bun run dev:wsl` instead. It relays through a native Linux temp copy so Next.js and Turbopack start reliably.
 
 Open the workbench at `http://localhost:3000`:
 
@@ -200,7 +203,9 @@ Safety policy is loaded from `.threados/policy.yaml` (see [docs/policy.md](docs/
 
 ## Local Verification
 
-```bash
+
+
+For WSL-mounted repos, prefer  for the interactive app and  for the launch checklist flow. Both now relay through a native Linux temp copy when the repo lives under .```bash
 bun run check
 ```
 

@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { canReveal, revealSurface } from '@/lib/barriers/reveal'
 import { createBarrierAttestation } from '@/lib/barriers/barrier-attestation'
 import { appendTraceEvent } from '@/lib/traces/writer'
-import { readThreadSurfaceState, writeThreadSurfaceState } from '@/lib/thread-surfaces/repository'
+import { readThreadSurfaceState, withThreadSurfaceStateRevision, writeThreadSurfaceState } from '@/lib/thread-surfaces/repository'
 import { getBasePath } from '@/lib/config'
 import { handleError, requireRequestSession } from '@/lib/api-helpers'
 import { applyRateLimit } from '@/lib/rate-limit'
@@ -48,7 +48,7 @@ export async function POST(request: Request) {
 
     const updatedSurfaces = state.threadSurfaces.map((s, i) => (i === surfaceIndex ? revealed : s))
     const updatedState = { ...state, threadSurfaces: updatedSurfaces }
-    await writeThreadSurfaceState(bp, updatedState)
+    await writeThreadSurfaceState(bp, withThreadSurfaceStateRevision(state, updatedState))
 
     const attestation = createBarrierAttestation({
       surfaceId,

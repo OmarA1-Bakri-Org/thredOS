@@ -2,14 +2,15 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { readSequence, writeSequence } from '@/lib/sequence/parser'
 import { getBasePath } from '@/lib/config'
-import { auditLog, handleError, requireRequestSession } from '@/lib/api-helpers'
+import { auditLog, handleError, jsonError, requireRequestSession } from '@/lib/api-helpers'
 import { allowHostedProcessControls } from '@/lib/hosted'
 import { readMprocsMap } from '@/lib/mprocs/state'
 import { StepNotFoundError } from '@/lib/errors'
 import { applyRateLimit } from '@/lib/rate-limit'
 import { ROOT_THREAD_SURFACE_ID } from '@/lib/thread-surfaces/constants'
-import { readThreadSurfaceState, writeThreadSurfaceState } from '@/lib/thread-surfaces/repository'
+import { readThreadSurfaceState, withThreadSurfaceStateRevision, writeThreadSurfaceState } from '@/lib/thread-surfaces/repository'
 import { cancelRun, findLatestActiveRunForSurface } from '@/lib/thread-surfaces/mutations'
+
 const BodySchema = z.object({ stepId: z.string() })
 
 export async function POST(request: Request) {
@@ -36,24 +37,30 @@ export async function POST(request: Request) {
 
     const mprocsMap = await readMprocsMap(bp)
     const idx = mprocsMap[stepId]
-    if (idx !== undefined) {
-      try {
-        const { MprocsClient } = await import('@/lib/mprocs/client')
-        await new MprocsClient().stopProcess(idx)
-      } catch (error) {
-        console.error(`[stop] Failed to stop mprocs process for step '${stepId}':`, error)
-      }
+    if (idx === undefined) {
+      return jsonError(`Step '${stepId}' does not have a tracked process to stop`, 'PROCESS_NOT_TRACKED', 409)
     }
+
+    const { MprocsClient } = await import('@/lib/mprocs/client')
+    const controlResult = await new MprocsClient().stopProcess(idx)
+    if (!controlResult.success) {
+      return jsonError(
+        controlResult.stderr || `Failed to stop step '${stepId}' via mprocs`,
+        'PROCESS_CONTROL_FAILED',
+        502,
+      )
+    }
+
     step.status = 'FAILED'
     await writeSequence(bp, seq)
 
     const currentState = await readThreadSurfaceState(bp)
     const activeRun = findLatestActiveRunForSurface(currentState.runs, ROOT_THREAD_SURFACE_ID)
     if (activeRun) {
-      const nextState = cancelRun(currentState, {
+      const nextState = withThreadSurfaceStateRevision(currentState, cancelRun(currentState, {
         runId: activeRun.id,
         endedAt: new Date().toISOString(),
-      }).state
+      }).state)
       await writeThreadSurfaceState(bp, nextState)
     }
 

@@ -20,6 +20,7 @@ bun install
 bun link
 thread init
 bun dev
+# WSL mounted repo: bun run dev:wsl
 ```
 
 Then open `http://localhost:3000`, enter `thredOS`, and run:
@@ -73,6 +74,8 @@ Start the UI:
 ```bash
 bun dev
 ```
+
+If the repo is opened from WSL on `/mnt/*`, use `bun run dev:wsl` instead. That command copies the repo to `/tmp`, installs dependencies there, and starts Next.js from the native Linux filesystem.
 
 Open `http://localhost:3000`.
 

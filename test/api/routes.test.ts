@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
+import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test'
 import { mkdtemp, rm, mkdir, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
@@ -38,6 +38,7 @@ describe.serial('API Routes', () => {
   })
 
   afterEach(async () => {
+    mock.restore()
     delete process.env.THREADOS_BASE_PATH
     await rm(basePath, { recursive: true, force: true })
   })
@@ -344,7 +345,16 @@ describe.serial('API Routes', () => {
     expect(res.status).toBe(400)
   })
 
-  test('POST /api/stop valid step works', async () => {
+  test('POST /api/stop valid step works when process control succeeds', async () => {
+    mock.module('@/lib/mprocs/client', () => ({
+      MprocsClient: class {
+        async stopProcess() {
+          return { success: true, exitCode: 0 }
+        }
+      },
+    }))
+    await writeMprocsMap(basePath, { 'step-a': 0 })
+
     const { POST } = await import('@/app/api/stop/route')
     const req = new Request('http://localhost/api/stop', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -355,7 +365,16 @@ describe.serial('API Routes', () => {
     expect((await res.json()).success).toBe(true)
   })
 
-  test('POST /api/restart valid step works', async () => {
+  test('POST /api/restart valid step works when process control succeeds', async () => {
+    mock.module('@/lib/mprocs/client', () => ({
+      MprocsClient: class {
+        async restartProcess() {
+          return { success: true, exitCode: 0 }
+        }
+      },
+    }))
+    await writeMprocsMap(basePath, { 'step-a': 0 })
+
     const { POST } = await import('@/app/api/restart/route')
     const req = new Request('http://localhost/api/restart', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },

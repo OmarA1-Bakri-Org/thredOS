@@ -9,6 +9,7 @@ import {
   type AuthSession,
 } from './auth/session'
 import { isHostedMode } from './hosted'
+import { ThredOSError } from './errors'
 
 export interface PolicyCheckResult {
   allowed: boolean
@@ -101,6 +102,14 @@ export async function checkPolicy(
 export function handleError(err: unknown) {
   if (err instanceof ZodError) {
     return jsonError(err.issues.map(i => i.message).join(', '), 'VALIDATION_ERROR', 400)
+  }
+  if (err instanceof ThredOSError) {
+    if (err.code === 'SEQUENCE_CONFLICT' || err.code === 'THREAD_SURFACE_STATE_CONFLICT') {
+      return jsonError(err.message, err.code, 409)
+    }
+    if (err.code.endsWith('_NOT_FOUND')) {
+      return jsonError(err.message, err.code, 404)
+    }
   }
   const message = err instanceof Error ? err.message : String(err)
   if (message.includes('not found') || message.includes('ENOENT')) {

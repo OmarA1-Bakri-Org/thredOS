@@ -42,7 +42,15 @@ function timestamp() {
 }
 
 function isUnsupportedMountPath(pathname) {
-  return resolve(pathname).startsWith('/mnt/')
+  return process.platform === 'linux' && resolve(pathname).startsWith('/mnt/')
+}
+
+function resolveNativeLinuxTmpRoot() {
+  const resolvedTmp = resolve(tmpdir())
+  if (process.platform === 'linux' && resolvedTmp.startsWith('/mnt/')) {
+    return '/tmp'
+  }
+  return resolvedTmp
 }
 
 function getFailureMessage(result, label) {
@@ -62,7 +70,7 @@ function getFailureMessage(result, label) {
 }
 
 function makeTempVerifyDir() {
-  const prefix = join(tmpdir(), 'threados-verify-')
+  const prefix = join(resolveNativeLinuxTmpRoot(), 'threados-verify-')
   const result = spawnSync('mktemp', ['-d', `${prefix}XXXXXX`], { encoding: 'utf8' })
   const failure = getFailureMessage(result, 'mktemp')
   if (failure) {

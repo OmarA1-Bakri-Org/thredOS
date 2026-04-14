@@ -2,9 +2,11 @@ import { existsSync } from 'fs'
 import { mkdir, readFile } from 'fs/promises'
 import { join } from 'path'
 import { writeFileAtomic } from '@/lib/fs/atomic'
+import { ThreadSurfaceStateConflictError } from '@/lib/errors'
 import { normalizeThreadSurface, type MergeEvent, type RunEvent, type RunScope, type ThreadSurface } from './types'
 
 const THREAD_SURFACE_STATE_PATH = '.threados/state/thread-surfaces.json'
+const THREAD_SURFACE_STATE_REVISION = Symbol('thredos.threadSurfaceStateRevision')
 
 export interface ThreadSurfaceState {
   version: 1
@@ -12,6 +14,10 @@ export interface ThreadSurfaceState {
   runs: RunScope[]
   mergeEvents: MergeEvent[]
   runEvents: RunEvent[]
+}
+
+type ThreadSurfaceStateWithRevision = ThreadSurfaceState & {
+  [THREAD_SURFACE_STATE_REVISION]?: string | null
 }
 
 const DEFAULT_THREAD_SURFACE_STATE: ThreadSurfaceState = {
@@ -22,6 +28,34 @@ const DEFAULT_THREAD_SURFACE_STATE: ThreadSurfaceState = {
   runEvents: [],
 }
 
+function attachRevision<T extends ThreadSurfaceState>(state: T, revision: string | null): T {
+  Object.defineProperty(state, THREAD_SURFACE_STATE_REVISION, {
+    value: revision,
+    enumerable: false,
+    configurable: true,
+    writable: true,
+  })
+  return state
+}
+
+function getRevision(state: ThreadSurfaceState): string | null | undefined {
+  return (state as ThreadSurfaceStateWithRevision)[THREAD_SURFACE_STATE_REVISION]
+}
+
+async function readCurrentRevision(fullPath: string): Promise<string | null> {
+  if (!existsSync(fullPath)) {
+    return null
+  }
+  return await readFile(fullPath, 'utf-8')
+}
+
+export function withThreadSurfaceStateRevision<T extends ThreadSurfaceState>(
+  currentState: ThreadSurfaceState,
+  nextState: T,
+): T {
+  return attachRevision(nextState, getRevision(currentState) ?? null)
+}
+
 export function getThreadSurfaceStatePath(basePath: string): string {
   return join(basePath, THREAD_SURFACE_STATE_PATH)
 }
@@ -29,12 +63,13 @@ export function getThreadSurfaceStatePath(basePath: string): string {
 export async function readThreadSurfaceState(basePath: string): Promise<ThreadSurfaceState> {
   const fullPath = getThreadSurfaceStatePath(basePath)
   if (!existsSync(fullPath)) {
-    return structuredClone(DEFAULT_THREAD_SURFACE_STATE)
+    return attachRevision(structuredClone(DEFAULT_THREAD_SURFACE_STATE), null)
   }
 
-  const raw = JSON.parse(await readFile(fullPath, 'utf-8')) as Partial<ThreadSurfaceState>
+  const content = await readFile(fullPath, 'utf-8')
+  const raw = JSON.parse(content) as Partial<ThreadSurfaceState>
 
-  return {
+  return attachRevision({
     version: 1,
     threadSurfaces: (Array.isArray(raw.threadSurfaces) ? raw.threadSurfaces : []).map(surface =>
       normalizeThreadSurface(surface as ThreadSurface),
@@ -44,13 +79,22 @@ export async function readThreadSurfaceState(basePath: string): Promise<ThreadSu
       ? raw.mergeEvents.map(normalizeMergeEvent)
       : [],
     runEvents: Array.isArray(raw.runEvents) ? raw.runEvents : [],
-  }
+  }, content)
 }
 
 export async function writeThreadSurfaceState(basePath: string, state: ThreadSurfaceState): Promise<void> {
   const fullPath = getThreadSurfaceStatePath(basePath)
+  const currentRevision = await readCurrentRevision(fullPath)
+  const expectedRevision = getRevision(state)
+
+  if (expectedRevision !== undefined && expectedRevision !== currentRevision) {
+    throw new ThreadSurfaceStateConflictError()
+  }
+
   await mkdir(join(basePath, '.threados/state'), { recursive: true })
-  await writeFileAtomic(fullPath, `${JSON.stringify({ ...state, version: 1 }, null, 2)}\n`)
+  const content = `${JSON.stringify({ ...state, version: 1 }, null, 2)}\n`
+  await writeFileAtomic(fullPath, content)
+  attachRevision(state, content)
 }
 
 const MERGE_EVENT_DEFAULTS: Omit<MergeEvent, 'summary'> = {
@@ -87,7 +131,7 @@ export async function updateThreadSurfaceState(
   updater: (currentState: ThreadSurfaceState) => ThreadSurfaceState | Promise<ThreadSurfaceState>,
 ): Promise<ThreadSurfaceState> {
   const currentState = await readThreadSurfaceState(basePath)
-  const nextState = await updater(currentState)
+  const nextState = withThreadSurfaceStateRevision(currentState, await updater(currentState))
   await writeThreadSurfaceState(basePath, nextState)
   return nextState
 }

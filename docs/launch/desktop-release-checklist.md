@@ -23,6 +23,7 @@
 
 ## Verification program
 
+- `bun run dev:wsl` when operating from WSL on a repo mounted under `/mnt/*`; this is the supported desktop beta dev command.
 - `bun run verify:local` from a native Linux filesystem copy when validating the deterministic dev flow.
 - `bun run verify:ci` on the Linux production-parity runner before release promotion.
 - `bun run verify:release-live` only in the gated release environment with real auth and billing secrets.
