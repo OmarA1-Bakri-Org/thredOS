@@ -1,7 +1,6 @@
 import { describe, expect, test, mock } from 'bun:test'
 import type { ReactElement, ReactNode } from 'react'
 
-// Mock the store before importing WorkbenchShell
 const shellUiState = {
   chatOpen: false,
   toggleChat: () => {},
@@ -15,17 +14,14 @@ mock.module('@/lib/ui/store', () => ({
   useUIStore: (selector: (s: typeof shellUiState) => unknown) => selector(shellUiState),
 }))
 
-// Mock next/dynamic to just render nothing (ChatPanel is dynamically imported)
 mock.module('next/dynamic', () => ({
   default: () => () => null,
 }))
 
-// Mock FloatingChatTrigger
 mock.module('@/components/chat/FloatingChatTrigger', () => ({
   FloatingChatTrigger: () => null,
 }))
 
-// Mock AccordionPanel so we don't need to mock all child hooks
 mock.module('./AccordionPanel', () => ({
   AccordionPanel: () => <div data-testid="accordion-panel-mock">Accordion</div>,
 }))
@@ -131,5 +127,18 @@ describe('WorkbenchShell', () => {
 
     const accordionPanel = collectByDataRegion(shell, 'accordion-panel')[0]
     expect(accordionPanel).toBeDefined()
+  })
+
+  test('applies preview variant metadata to the shell root', () => {
+    const shell = WorkbenchShell({
+      topBar: <div>top</div>,
+      leftRail: <div>left</div>,
+      board: <div>board</div>,
+      uiVariant: 'premium-control',
+      previewMode: true,
+    })
+
+    expect(JSON.stringify(shell)).toContain('premium-control')
+    expect(JSON.stringify(shell)).toContain('true')
   })
 })

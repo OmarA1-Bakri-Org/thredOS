@@ -10,13 +10,20 @@ import { LeftRail } from '@/components/workbench/LeftRail'
 import { CreateNodeDialog } from '@/components/command/CreateNodeDialog'
 import { DesktopRuntimeBridge } from '@/components/desktop/DesktopRuntimeBridge'
 import { useUIStore } from '@/lib/ui/store'
+import type { UiVariant } from '@/lib/ui/design-variants'
 
 const SequenceCanvas = dynamic(
   () => import('@/components/canvas/SequenceCanvas').then(m => m.SequenceCanvas),
   { ssr: false, loading: () => <LoadingSpinner message="Loading canvas..." /> }
 )
 
-export function ThredOSApp() {
+export function ThredOSApp({
+  uiVariant = 'operator-minimalism',
+  previewMode = false,
+}: {
+  uiVariant?: UiVariant
+  previewMode?: boolean
+}) {
   const mounted = useSyncExternalStore(
     () => () => {},
     () => true,
@@ -42,7 +49,9 @@ export function ThredOSApp() {
       <DesktopRuntimeBridge />
       {createDialogOpen && <CreateNodeDialog open onClose={closeCreateDialog} initialKind={createDialogKind} />}
       <WorkbenchShell
-        topBar={<TopBar />}
+        uiVariant={uiVariant}
+        previewMode={previewMode}
+        topBar={<TopBar uiVariant={uiVariant} previewMode={previewMode} />}
         leftRail={<LeftRail />}
         leftRailOpen={leftRailOpen}
         onDismissLeftRail={closeLeftRail}
