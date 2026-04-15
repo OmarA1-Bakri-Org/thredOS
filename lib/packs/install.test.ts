@@ -7,7 +7,8 @@ import { readLibraryCatalog } from '../library/repository'
 import { writePrompt, validatePromptExists, readPrompt } from '../prompts/manager'
 import { readSequence, writeSequence } from '../sequence/parser'
 import { readThreadSurfaceState } from '../thread-surfaces/repository'
-const { installPack } = await import('./install.ts?pack-install-suite')
+// @ts-expect-error Bun query import used to isolate module cache in tests
+const { installPack } = await import('./install.ts?pack-install-suite') as { installPack: typeof import('./install').installPack }
 
 let basePath: string
 

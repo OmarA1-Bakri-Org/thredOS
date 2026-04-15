@@ -7,12 +7,12 @@ export interface ThreadSurfaceFocusedDetail {
   surfaceLabel: string
   surfaceDescription: string | null
   role: string | null
-  surfaceClass: string | null
-  visibility: string | null
-  isolationLabel: string | null
-  revealState: string | null
-  allowedReadScopes: string[]
-  allowedWriteScopes: string[]
+  surfaceClass?: string | null
+  visibility?: string | null
+  isolationLabel?: string | null
+  revealState?: string | null
+  allowedReadScopes?: string[]
+  allowedWriteScopes?: string[]
   runId: string | null
   runStatus: RunScope['runStatus'] | null
   executionIndex: number | null

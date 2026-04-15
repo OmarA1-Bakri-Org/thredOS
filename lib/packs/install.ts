@@ -1,11 +1,11 @@
 import { deletePrompt, readPrompt, validatePromptExists, writePrompt } from '@/lib/prompts/manager'
+import type { LibraryCatalog } from '@/lib/library/types'
 import {
   deleteLibraryAsset,
   ensureLibraryStructure,
   ensurePromptAssetForStep,
   readLibraryCatalog,
   writeLibraryCatalog,
-  type LibraryCatalog,
 } from '@/lib/library/repository'
 import { readSequence, writeSequence } from '@/lib/sequence/parser'
 import type { Sequence, Step } from '@/lib/sequence/schema'
@@ -179,7 +179,7 @@ export async function installPack(basePath: string, input: PackInstallInput): Pr
       await writePrompt(basePath, step.id, promptTemplate)
       const promptRef = await ensurePromptAssetForStep(basePath, step.id, step.name, promptTemplate)
       step.prompt_ref = promptRef
-      step.prompt_file = promptRef.path
+      step.prompt_file = promptRef.path ?? step.prompt_file
     }
 
     await writeSequence(basePath, nextSequence)

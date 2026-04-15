@@ -240,10 +240,36 @@ export type NormalizedGate = z.output<typeof GateSchema>
 export type CanonicalStep = NormalizedStep
 export type CanonicalSequence = NormalizedSequence
 
-export type Step = Omit<CanonicalStep, 'kind' | 'agent_ref' | 'prompt_ref' | 'phase' | 'surface_ref' | 'input_contract_ref' | 'output_contract_ref' | 'gate_set_ref' | 'completion_contract' | 'side_effect_class'> & {
+export interface Step {
+  id: string
+  name: string
+  type: StepType
+  model: string
+  prompt_file: string
+  depends_on: string[]
+  status: StepStatus
   kind?: StepKind
+  lane?: string
+  role?: string
+  cwd?: string
   agent_ref?: string | null
   prompt_ref?: PromptRef
+  skill_refs?: SkillRef[]
+  llm_settings?: LlmSettings
+  node_description?: string
+  expected_outcome?: string
+  input_contract?: string
+  output_contract?: string
+  artifacts?: string[]
+  group_id?: string
+  fanout?: number
+  fusion_candidates?: boolean
+  fusion_synth?: boolean
+  watchdog_for?: string
+  orchestrator?: string
+  timeout_ms?: number
+  fail_policy?: FailPolicy
+  assigned_agent_id?: string
   phase?: string
   surface_ref?: string
   input_contract_ref?: string | null
@@ -254,15 +280,21 @@ export type Step = Omit<CanonicalStep, 'kind' | 'agent_ref' | 'prompt_ref' | 'ph
 }
 
 export type Gate = z.infer<typeof GateSchema>
-export type Sequence = Omit<CanonicalSequence, 'id' | 'created_at' | 'updated_at' | 'deps' | 'pack_id' | 'pack_version' | 'default_policy_ref'> & {
+export interface Sequence {
+  version: string
+  name: string
+  steps: Step[]
+  gates: Gate[]
   id?: string
+  thread_type?: StepType
+  deps?: DependencyEdge[]
+  metadata?: z.infer<typeof MetadataSchema>
   created_at?: string
   updated_at?: string
-  deps?: DependencyEdge[]
+  policy?: z.infer<typeof PolicySchema>
   pack_id?: string | null
   pack_version?: string | null
   default_policy_ref?: string | null
-  steps: Step[]
 }
 
 export function normalizeStep(step: StepInput): CanonicalStep {

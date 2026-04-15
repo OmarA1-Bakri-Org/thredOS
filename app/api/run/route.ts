@@ -155,9 +155,9 @@ function makeInputManifest(step: Step, runId: string, surfaceId: string, created
     stepId: step.id,
     runId,
     surfaceId,
-    promptRef: step.prompt_ref.path ?? step.prompt_file ?? null,
+    promptRef: step.prompt_ref?.path ?? step.prompt_file ?? null,
     dependsOn: step.depends_on,
-    inputContractRef: step.input_contract_ref,
+    inputContractRef: step.input_contract_ref ?? null,
     createdAt,
   }
 }
@@ -214,7 +214,7 @@ async function buildRunRecord(basePath: string, params: {
 
   await writeRunRecord(basePath, {
     id: runId,
-    sequence_id: sequence.id,
+    sequence_id: sequence.id ?? sequence.name,
     step_id: step.id,
     surface_id: surfaceId,
     attempt,
