@@ -64,6 +64,39 @@ async function writeRunArtifacts(runId: string) {
     'utf-8',
   )
   await writeFile(
+    join(runDir, 'gate-decisions.ndjson'),
+    [
+      JSON.stringify({
+        id: 'decision-run-export-1',
+        subject_type: 'step',
+        subject_ref: 'step-alpha',
+        gate_type: 'policy_pass',
+        status: 'PASS',
+        reason_codes: [],
+        evidence_refs: [],
+        decided_by: 'threados',
+        decided_at: timestamp,
+      }),
+    ].join('\n') + '\n',
+    'utf-8',
+  )
+  await writeFile(
+    join(runDir, 'approvals.ndjson'),
+    [
+      JSON.stringify({
+        id: 'approval-run-export-1',
+        action_type: 'reveal',
+        target_ref: 'surface-a',
+        requested_by: 'threados',
+        status: 'approved',
+        approved_by: 'user',
+        approved_at: timestamp,
+        notes: null,
+      }),
+    ].join('\n') + '\n',
+    'utf-8',
+  )
+  await writeFile(
     join(runDir, 'step-alpha', 'status.json'),
     JSON.stringify({
       stepId: 'step-alpha',
@@ -195,11 +228,21 @@ describe.serial('surface proof routes', () => {
     expect(persisted.threadSurfaces[0].revealState).toBe('revealed')
     expect(persisted.threadSurfaces[0].visibility).toBe('dependency')
 
+    const surfaceDir = join(basePath, '.threados/surfaces', 'surface-a')
+    const surfaceRecord = JSON.parse(await readFile(join(surfaceDir, 'surface.json'), 'utf-8'))
+    const accessRecord = JSON.parse(await readFile(join(surfaceDir, 'access.json'), 'utf-8'))
+    const barrierRecord = JSON.parse(await readFile(join(surfaceDir, 'barrier.json'), 'utf-8'))
+    const stateRecord = JSON.parse(await readFile(join(surfaceDir, 'state.json'), 'utf-8'))
+    expect(surfaceRecord.surface.revealState).toBe('revealed')
+    expect(accessRecord.visibility).toBe('dependency')
+    expect(barrierRecord.revealState).toBe('revealed')
+    expect(stateRecord.surfaceId).toBe('surface-a')
+
     const traceEvents = await readTraceEvents(basePath, 'run-reveal-1')
     expect(traceEvents.map(event => event.event_type)).toEqual(['surface-revealed', 'barrier-attested'])
   })
 
-  test('POST /api/exports/run-bundle writes a schema-valid bundle when export_mode allows it', async () => {
+  test('POST /api/exports/run-bundle writes a schema-valid bundle and copied runtime records when export_mode allows it', async () => {
     await writePolicy('export_mode: local_bundle\n')
     await writeSequence()
     await writeRunArtifacts('run-export-1')
@@ -239,6 +282,9 @@ describe.serial('surface proof routes', () => {
     const writtenBundle = JSON.parse(await readFile(join(basePath, '.threados/exports/run-export-1/bundle.json'), 'utf-8'))
     expect(writtenBundle.run_id).toBe('run-export-1')
     expect(writtenBundle.bundle_version).toBe('1.0')
+    expect(await readFile(join(basePath, '.threados/exports/run-export-1/trace.ndjson'), 'utf-8')).toContain('step-started')
+    expect(await readFile(join(basePath, '.threados/exports/run-export-1/gate-decisions.ndjson'), 'utf-8')).toContain('decision-run-export-1')
+    expect(await readFile(join(basePath, '.threados/exports/run-export-1/approvals.ndjson'), 'utf-8')).toContain('approval-run-export-1')
   })
 
   test('POST /api/exports/run-bundle is blocked when export_mode is off', async () => {

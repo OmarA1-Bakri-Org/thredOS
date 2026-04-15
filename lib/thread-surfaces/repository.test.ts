@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { mkdtemp, readFile, rm } from 'fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import type { MergeEvent, RunEvent, RunScope, ThreadSurface } from './types'
@@ -123,6 +123,62 @@ describe('thread surface repository', () => {
     expect(raw.runs).toHaveLength(1)
     expect(raw.mergeEvents).toHaveLength(0)
     expect(raw.runEvents).toHaveLength(0)
+  })
+
+  test('writeThreadSurfaceState materializes canonical per-surface runtime records', async () => {
+    await writeThreadSurfaceState(basePath, {
+      version: 1,
+      threadSurfaces: [threadSurface],
+      runs: [run],
+      mergeEvents: [mergeEvent],
+      runEvents: [runEvent],
+    })
+
+    const surfaceDir = join(basePath, '.threados/surfaces/thread-master')
+    const surfaceRecord = JSON.parse(await readFile(join(surfaceDir, 'surface.json'), 'utf-8'))
+    const accessRecord = JSON.parse(await readFile(join(surfaceDir, 'access.json'), 'utf-8'))
+    const barrierRecord = JSON.parse(await readFile(join(surfaceDir, 'barrier.json'), 'utf-8'))
+    const stateRecord = JSON.parse(await readFile(join(surfaceDir, 'state.json'), 'utf-8'))
+
+    expect(surfaceRecord.surface.surfaceLabel).toBe('Master')
+    expect(accessRecord.visibility).toBe('dependency')
+    expect(barrierRecord.manifestOnlyProjection).toBe(false)
+    expect(stateRecord.runCount).toBe(1)
+    expect(stateRecord.latestRunId).toBe('run-master-1')
+    expect(stateRecord.latestRunStatus).toBe('running')
+  })
+
+  test('readThreadSurfaceState prefers canonical surface records when present', async () => {
+    await writeThreadSurfaceState(basePath, {
+      version: 1,
+      threadSurfaces: [threadSurface],
+      runs: [],
+      mergeEvents: [],
+      runEvents: [],
+    })
+
+    const surfaceDir = join(basePath, '.threados/surfaces/thread-master')
+    await writeFile(join(surfaceDir, 'surface.json'), JSON.stringify({
+      version: 1,
+      surface: {
+        ...threadSurface,
+        surfaceLabel: 'Canonical Master',
+        surfaceClass: 'sealed',
+        visibility: 'self_only',
+        isolationLabel: 'THREADOS_SCOPED',
+        revealState: 'sealed',
+        allowedReadScopes: ['thread-master'],
+        allowedWriteScopes: ['thread-master'],
+      },
+    }, null, 2), 'utf-8')
+
+    const persisted = await readThreadSurfaceState(basePath)
+    expect(persisted.threadSurfaces[0]).toMatchObject({
+      surfaceLabel: 'Canonical Master',
+      surfaceClass: 'sealed',
+      visibility: 'self_only',
+      isolationLabel: 'THREADOS_SCOPED',
+    })
   })
 
   test('readThreadSurfaceState defaults runEvents to an empty array when missing on disk', async () => {

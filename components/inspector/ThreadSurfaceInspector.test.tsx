@@ -43,6 +43,12 @@ const detail: ThreadSurfaceFocusedDetail = {
   surfaceLabel: 'Synthesis',
   surfaceDescription: 'Consolidates research and outreach into a single publishable thread.',
   role: 'synthesizer',
+  surfaceClass: 'sealed',
+  visibility: 'self_only',
+  isolationLabel: 'THREADOS_SCOPED',
+  revealState: 'sealed',
+  allowedReadScopes: ['thread-synthesis'],
+  allowedWriteScopes: ['thread-synthesis'],
   runId: 'run-synthesis',
   runStatus: 'successful',
   executionIndex: 20,
@@ -70,6 +76,7 @@ describe('ThreadSurfaceInspector', () => {
 
     expect(collectByTestId(panel, 'thread-surface-inspector')).toHaveLength(1)
     expect(collectByTestId(panel, 'thread-surface-summary')).toHaveLength(1)
+    expect(collectByTestId(panel, 'thread-surface-surface-policy')).toHaveLength(1)
     expect(collectByTestId(panel, 'thread-surface-thread-context')).toHaveLength(1)
     expect(collectByTestId(panel, 'thread-surface-provenance')).toHaveLength(1)
     expect(collectByTestId(panel, 'thread-surface-run-context')).toHaveLength(1)
@@ -90,6 +97,15 @@ describe('ThreadSurfaceInspector', () => {
   test('renders surfaceDescription when present', () => {
     const markup = renderToStaticMarkup(ThreadSurfaceInspector({ detail }))
     expect(markup).toContain('Consolidates research and outreach')
+  })
+
+  test('renders the surface policy card values', () => {
+    const markup = renderToStaticMarkup(ThreadSurfaceInspector({ detail }))
+    expect(markup).toContain('Surface policy')
+    expect(markup).toContain('sealed')
+    expect(markup).toContain('self_only')
+    expect(markup).toContain('THREADOS_SCOPED')
+    expect(markup).toContain('thread-synthesis')
   })
 
   test('renders laneTerminalState when present', () => {
