@@ -47,7 +47,7 @@ describe('compilePack', () => {
     expect(result.sequence.version).toBe('1.0')
     expect(result.sequence.thread_type).toBe('base')
     expect(result.sequence.gates).toEqual([])
-    expect(result.sequence.default_policy_ref).toBeNull()
+    expect(result.sequence.default_policy_ref).toBe('policy:SAFE')
   })
 
   test('produces surfaces for each step (root + N step surfaces)', () => {

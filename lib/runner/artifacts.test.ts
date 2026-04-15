@@ -23,7 +23,6 @@ describe('artifacts', () => {
     const { createRunDirectory } = await importActualArtifacts()
     const dir = await createRunDirectory(tmpDir, 'run-1', 'step-1')
     expect(dir).toBe(join(tmpDir, '.threados', 'runs', 'run-1', 'step-1'))
-    // Should not throw on access
     const { access } = await import('fs/promises')
     await access(dir)
   })
@@ -77,6 +76,47 @@ describe('artifacts', () => {
 
     const statusJson = JSON.parse(await readFile(join(artifactPath, 'status.json'), 'utf-8'))
     expect(statusJson.status).toBe('SUCCESS')
+  })
+
+  test('saveRunArtifacts writes canonical surface manifests when surface metadata is supplied', async () => {
+    const { saveRunArtifacts } = await importActualArtifacts()
+    const now = new Date('2026-04-10T12:00:00.000Z')
+    const result: RunResult = {
+      stepId: 'step-1',
+      runId: 'run-2',
+      exitCode: 0,
+      status: 'SUCCESS',
+      duration: 250,
+      stdout: 'surface-output',
+      stderr: '',
+      startTime: now,
+      endTime: now,
+    }
+
+    await saveRunArtifacts(tmpDir, result, {
+      surfaceId: 'thread-step-1',
+      compiledPrompt: '# compiled',
+      inputManifest: {
+        stepId: 'step-1',
+        runId: 'run-2',
+        surfaceId: 'thread-step-1',
+        promptRef: '.threados/prompts/step-1.md',
+        dependsOn: [],
+        inputContractRef: 'contracts/input.json',
+        createdAt: now.toISOString(),
+      },
+      outputContractRef: 'contracts/output.json',
+      completionContract: 'contracts/completion.json',
+    })
+
+    const surfaceDir = join(tmpDir, '.threados', 'runs', 'run-2', 'surfaces', 'thread-step-1')
+    expect(await readFile(join(surfaceDir, 'compiled-prompt.md'), 'utf-8')).toBe('# compiled')
+    const inputManifest = JSON.parse(await readFile(join(surfaceDir, 'input.manifest.json'), 'utf-8'))
+    expect(inputManifest.inputContractRef).toBe('contracts/input.json')
+    const artifactManifest = JSON.parse(await readFile(join(surfaceDir, 'artifact.manifest.json'), 'utf-8'))
+    expect(artifactManifest.outputContractRef).toBe('contracts/output.json')
+    expect(artifactManifest.completionContract).toBe('contracts/completion.json')
+    expect(await readFile(join(surfaceDir, 'logs', 'stdout.log'), 'utf-8')).toBe('surface-output')
   })
 
   test('getRuntimeEventLogPath resolves under the run artifact directory', async () => {

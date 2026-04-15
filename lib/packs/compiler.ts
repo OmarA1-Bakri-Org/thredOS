@@ -1,62 +1,127 @@
+import { createHash } from 'crypto'
 import type { PackManifest } from './pack-schema'
 import type { ThreadSurface } from '@/lib/thread-surfaces/types'
 
+export interface CompilePackOptions {
+  installName?: string
+  policyMode?: 'SAFE' | 'POWER'
+  parallelTracks?: number
+  sourceAssetRef?: string
+  modelOverrides?: Record<string, string>
+}
+
 export interface CompileResult {
   sequence: {
+    id: string
     version: string
     name: string
     thread_type: string
     steps: Array<{
       id: string
       name: string
+      kind: string
       type: string
+      phase: string
+      agent_ref: string | null
       model: string
       prompt_file: string
+      prompt_ref: { id: string; version: number; path: string }
+      surface_ref: string
       depends_on: string[]
       status: string
-      phase?: string
-      surface_ref?: string
+      input_contract_ref: string | null
+      output_contract_ref: string | null
+      gate_set_ref: string | null
+      completion_contract: string | null
+      side_effect_class: 'none' | 'read' | 'write' | 'execute'
       orchestrator?: string
       fusion_candidates?: boolean
       fusion_synth?: boolean
       watchdog_for?: string
+      fanout?: number
     }>
+    deps: Array<{ step_id: string; dep_id: string }>
     gates: unknown[]
     pack_id: string
     pack_version: string
     default_policy_ref: string | null
+    created_at: string
+    updated_at: string
+    metadata: {
+      created_at: string
+      updated_at: string
+      description?: string
+      source_asset_ref?: string
+    }
   }
   surfaces: ThreadSurface[]
 }
 
-export function compilePack(manifest: PackManifest): CompileResult {
-  const now = new Date().toISOString()
+function buildSequenceId(manifest: PackManifest, installName: string): string {
+  const digest = createHash('sha1')
+    .update(`${manifest.id}:${manifest.version}:${installName}`)
+    .digest('hex')
+    .slice(0, 12)
+  return `seq-${digest}`
+}
 
-  const steps = manifest.steps.map(ps => ({
-    id: ps.id,
-    name: ps.name,
-    type: ps.type,
-    model: ps.model,
-    prompt_file: ps.prompt_file ?? `.threados/prompts/${ps.id}.md`,
-    depends_on: ps.depends_on,
-    status: 'READY' as const,
-    phase: ps.phase,
-    surface_ref: `thread-${ps.id}`,
-    orchestrator: ps.orchestrator,
-    fusion_candidates: ps.fusion_candidates,
-    fusion_synth: ps.fusion_synth,
-    watchdog_for: ps.watchdog_for,
-  }))
+export function compilePack(manifest: PackManifest, options: CompilePackOptions = {}): CompileResult {
+  const now = new Date().toISOString()
+  const installName = options.installName ?? manifest.name
+  const modelOverrides = options.modelOverrides ?? {}
+
+  const steps = manifest.steps.map(ps => {
+    const promptFile = ps.prompt_file ?? `.threados/prompts/${ps.id}.md`
+    return {
+      id: ps.id,
+      name: ps.name,
+      kind: ps.type,
+      type: ps.type,
+      phase: ps.phase,
+      agent_ref: null,
+      model: modelOverrides[ps.id] ?? ps.model,
+      prompt_file: promptFile,
+      prompt_ref: {
+        id: ps.id,
+        version: 1,
+        path: promptFile,
+      },
+      surface_ref: `thread-${ps.id}`,
+      depends_on: ps.depends_on,
+      status: 'READY' as const,
+      input_contract_ref: null,
+      output_contract_ref: null,
+      gate_set_ref: manifest.gate_sets[0] ?? null,
+      completion_contract: null,
+      side_effect_class: 'none' as const,
+      orchestrator: ps.orchestrator,
+      fusion_candidates: ps.fusion_candidates,
+      fusion_synth: ps.fusion_synth,
+      watchdog_for: ps.watchdog_for,
+      ...(options.parallelTracks && ps.type === 'p' ? { fanout: options.parallelTracks } : {}),
+    }
+  })
+
+  const deps = steps.flatMap(step => step.depends_on.map(dep_id => ({ step_id: step.id, dep_id })))
 
   const sequence = {
+    id: buildSequenceId(manifest, installName),
     version: '1.0',
-    name: manifest.name,
+    name: installName,
     thread_type: manifest.thread_types[0],
     steps,
+    deps,
     gates: [] as unknown[],
     pack_id: manifest.id,
     pack_version: manifest.version,
-    default_policy_ref: null,
+    default_policy_ref: options.policyMode ? `policy:${options.policyMode}` : manifest.default_policy ? `policy:${manifest.default_policy}` : null,
+    created_at: now,
+    updated_at: now,
+    metadata: {
+      created_at: now,
+      updated_at: now,
+      ...(options.sourceAssetRef ? { source_asset_ref: options.sourceAssetRef } : {}),
+    },
   }
 
   const rootSurface: ThreadSurface = {
@@ -64,11 +129,11 @@ export function compilePack(manifest: PackManifest): CompileResult {
     parentSurfaceId: null,
     parentAgentNodeId: null,
     depth: 0,
-    surfaceLabel: manifest.name,
+    surfaceLabel: installName,
     role: 'orchestrator',
     createdAt: now,
     childSurfaceIds: manifest.steps.map(s => `thread-${s.id}`),
-    sequenceRef: null,
+    sequenceRef: sequence.id,
     spawnedByAgentId: null,
     surfaceClass: 'control',
     visibility: 'dependency',
@@ -87,7 +152,7 @@ export function compilePack(manifest: PackManifest): CompileResult {
     role: 'worker' as const,
     createdAt: now,
     childSurfaceIds: [],
-    sequenceRef: null,
+    sequenceRef: sequence.id,
     spawnedByAgentId: null,
     surfaceClass: ps.surface_class,
     visibility: ps.surface_class === 'sealed' ? 'self_only' as const : 'dependency' as const,

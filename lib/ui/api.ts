@@ -534,6 +534,7 @@ export function useGateMetrics(gateId: string | null) {
 
 // ── Packs hooks ─────────────────────────────────────────────────────
 import type { Pack } from '@/lib/packs/types'
+import type { PackInstallInput, PackInstallResult } from '@/lib/packs/install'
 
 export function useListPacks() {
   return useQuery<Pack[]>({
@@ -564,6 +565,19 @@ export function usePromotePack() {
     mutationFn: (packId: string) => postJson('/api/packs', { action: 'promote', packId }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['packs'] }) },
     onError: (error) => { console.error('Promote pack failed:', error) },
+  })
+}
+
+
+export function useInstallPack() {
+  const qc = useQueryClient()
+  return useMutation<PackInstallResult, Error, PackInstallInput>({
+    mutationFn: (input) => postJson<PackInstallResult>('/api/packs/install', input),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['packs'] })
+      invalidateRuntimeQueries(qc)
+    },
+    onError: (error) => { console.error('Install pack failed:', error) },
   })
 }
 
@@ -673,6 +687,15 @@ export function useRecordRun() {
 }
 
 // ── V.1: Traces ─────────────────────────────────────────────────────
+
+export function useGateDecisions(runId: string | null, subjectRef?: string | null) {
+  const query = runId ? "/api/gate-decisions?runId=" + encodeURIComponent(runId) + (subjectRef ? "&subjectRef=" + encodeURIComponent(subjectRef) : "") : null
+  return useQuery({
+    queryKey: ["gate-decisions", runId, subjectRef ?? null],
+    queryFn: () => fetchJson<{ decisions: unknown[] }>(query!).then(r => r.decisions),
+    enabled: !!query,
+  })
+}
 
 export function useTraces(runId: string | null) {
   return useQuery({

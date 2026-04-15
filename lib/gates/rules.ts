@@ -11,10 +11,6 @@ export interface RuleResult {
 
 const PASS: RuleResult = { status: 'PASS', reason_codes: [], evidence_refs: [] }
 
-/**
- * Checks whether all dependencies of a step are satisfied.
- * A dep can refer to either another step or a gate.
- */
 export function checkDepsSatisfied(
   step: Step,
   allSteps: Step[],
@@ -48,21 +44,33 @@ export function checkDepsSatisfied(
       continue
     }
 
-    // Not found in either steps or gates
     reason_codes.push(GateReasonCode.DEP_MISSING)
     evidence_refs.push(`step:${depId}:status=NOT_FOUND`)
   }
 
-  if (reason_codes.length === 0) {
-    return PASS
-  }
-
-  return { status: 'BLOCK', reason_codes, evidence_refs }
+  return reason_codes.length === 0 ? PASS : { status: 'BLOCK', reason_codes, evidence_refs }
 }
 
-/**
- * Checks whether the step's side-effect class is permitted under the current policy.
- */
+export function checkRequiredInputsPresent(
+  step: Step,
+  inputManifestPresent: boolean,
+): RuleResult {
+  if (!step.input_contract_ref) return PASS
+  if (inputManifestPresent) {
+    return {
+      status: 'PASS',
+      reason_codes: [],
+      evidence_refs: [`input_contract:${step.input_contract_ref}`],
+    }
+  }
+
+  return {
+    status: 'BLOCK',
+    reason_codes: [GateReasonCode.INPUT_MISSING],
+    evidence_refs: [`input_contract:${step.input_contract_ref}`],
+  }
+}
+
 export function checkPolicyPass(
   sideEffectClass: Step['side_effect_class'],
   policyMode: PolicyConfig['mode'],
@@ -94,9 +102,38 @@ export function checkPolicyPass(
   return PASS
 }
 
-/**
- * Checks whether a surface's access rules permit the current operation.
- */
+export function checkApprovalPresent(
+  step: Step,
+  sideEffectMode: PolicyConfig['side_effect_mode'],
+  approvalPresent: boolean,
+): RuleResult {
+  if (!step.side_effect_class || step.side_effect_class === 'none') {
+    return PASS
+  }
+
+  if (sideEffectMode === 'free') {
+    return PASS
+  }
+
+  if (step.side_effect_class !== 'write' && step.side_effect_class !== 'execute') {
+    return PASS
+  }
+
+  if (approvalPresent) {
+    return {
+      status: 'PASS',
+      reason_codes: [],
+      evidence_refs: ['approval:present'],
+    }
+  }
+
+  return {
+    status: 'NEEDS_APPROVAL',
+    reason_codes: [GateReasonCode.APPROVAL_MISSING],
+    evidence_refs: ['approval:missing'],
+  }
+}
+
 export function checkSurfaceAccessPass(
   surfaceClass: ThreadSurface['surfaceClass'],
   crossSurfaceReads: PolicyConfig['cross_surface_reads'] | 'allow',
@@ -124,9 +161,6 @@ export function checkSurfaceAccessPass(
   return PASS
 }
 
-/**
- * Checks whether a sealed surface has been revealed before allowing access.
- */
 export function checkRevealAllowed(
   surfaceClass: ThreadSurface['surfaceClass'],
   revealState: ThreadSurface['revealState'],
@@ -146,5 +180,66 @@ export function checkRevealAllowed(
       `surface:class=${surfaceClass}`,
       `surface:reveal_state=${revealState ?? 'sealed'}`,
     ],
+  }
+}
+
+export function checkArtifactManifestPass(
+  step: Step,
+  artifactManifestPresent: boolean,
+): RuleResult {
+  const manifestRequired = Boolean(step.output_contract_ref || step.completion_contract || (step.side_effect_class && step.side_effect_class !== 'none'))
+  if (!manifestRequired) return PASS
+  if (artifactManifestPresent) {
+    return {
+      status: 'PASS',
+      reason_codes: [],
+      evidence_refs: ['artifact_manifest:present'],
+    }
+  }
+
+  return {
+    status: 'BLOCK',
+    reason_codes: [GateReasonCode.ARTIFACT_MISSING],
+    evidence_refs: ['artifact_manifest:missing'],
+  }
+}
+
+export function checkOutputSchemaPass(
+  step: Step,
+  outputSchemaValid: boolean,
+): RuleResult {
+  if (!step.output_contract_ref) return PASS
+  if (outputSchemaValid) {
+    return {
+      status: 'PASS',
+      reason_codes: [],
+      evidence_refs: [`output_contract:${step.output_contract_ref}`],
+    }
+  }
+
+  return {
+    status: 'BLOCK',
+    reason_codes: [GateReasonCode.SCHEMA_INVALID],
+    evidence_refs: [`output_contract:${step.output_contract_ref}`],
+  }
+}
+
+export function checkCompletionContractPass(
+  step: Step,
+  completionContractSatisfied: boolean,
+): RuleResult {
+  if (!step.completion_contract) return PASS
+  if (completionContractSatisfied) {
+    return {
+      status: 'PASS',
+      reason_codes: [],
+      evidence_refs: [`completion_contract:${step.completion_contract}`],
+    }
+  }
+
+  return {
+    status: 'BLOCK',
+    reason_codes: [GateReasonCode.CONTRACT_INCOMPLETE],
+    evidence_refs: [`completion_contract:${step.completion_contract}`],
   }
 }

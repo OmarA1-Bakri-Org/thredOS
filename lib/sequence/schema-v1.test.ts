@@ -23,13 +23,17 @@ describe('SequenceSchema V.1 extensions', () => {
     }
   })
 
-  test('pack_id defaults to null when omitted', () => {
+  test('fills canonical sequence identifiers and timestamps when omitted', () => {
     const result = SequenceSchema.safeParse({ name: 'test-sequence' })
     expect(result.success).toBe(true)
     if (result.success) {
+      expect(result.data.id).toMatch(/^seq-/)
+      expect(result.data.created_at).toBeTruthy()
+      expect(result.data.updated_at).toBeTruthy()
       expect(result.data.pack_id).toBeNull()
       expect(result.data.pack_version).toBeNull()
       expect(result.data.default_policy_ref).toBeNull()
+      expect(result.data.deps).toEqual([])
     }
   })
 
@@ -63,6 +67,8 @@ describe('SequenceSchema V.1 extensions', () => {
       expect(result.data.pack_id).toBeNull()
       expect(result.data.pack_version).toBeNull()
       expect(result.data.default_policy_ref).toBeNull()
+      expect(result.data.id).toMatch(/^seq-/)
+      expect(result.data.deps).toEqual([])
     }
   })
 })
@@ -112,23 +118,32 @@ describe('StepSchema V.1 extensions', () => {
     }
   })
 
-  test('rejects invalid side_effect_class', () => {
-    const result = StepSchema.safeParse({ ...validStep, side_effect_class: 'invalid' })
-    expect(result.success).toBe(false)
-  })
-
-  test('V.1 fields default to undefined when omitted', () => {
+  test('canonicalizes kind, prompt_ref, phase, surface_ref, and agent_ref defaults', () => {
     const result = StepSchema.safeParse(validStep)
     expect(result.success).toBe(true)
     if (result.success) {
-      expect(result.data.phase).toBeUndefined()
-      expect(result.data.surface_ref).toBeUndefined()
-      expect(result.data.input_contract_ref).toBeUndefined()
-      expect(result.data.output_contract_ref).toBeUndefined()
-      expect(result.data.gate_set_ref).toBeUndefined()
-      expect(result.data.completion_contract).toBeUndefined()
-      expect(result.data.side_effect_class).toBeUndefined()
+      expect(result.data.kind).toBe('base')
+      expect(result.data.type).toBe('base')
+      expect(result.data.prompt_ref).toEqual({ id: 'my-step-1', version: 1, path: '.threados/prompts/test.md' })
+      expect(result.data.phase).toBe('default')
+      expect(result.data.surface_ref).toBe('thread-my-step-1')
+      expect(result.data.agent_ref).toBeNull()
+      expect(result.data.side_effect_class).toBe('none')
     }
+  })
+
+  test('uses assigned_agent_id as agent_ref compatibility alias', () => {
+    const result = StepSchema.safeParse({ ...validStep, assigned_agent_id: 'agent-1' })
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect(result.data.agent_ref).toBe('agent-1')
+      expect(result.data.assigned_agent_id).toBe('agent-1')
+    }
+  })
+
+  test('rejects invalid side_effect_class', () => {
+    const result = StepSchema.safeParse({ ...validStep, side_effect_class: 'invalid' })
+    expect(result.success).toBe(false)
   })
 
   test('existing steps without V.1 fields still parse', () => {

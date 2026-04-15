@@ -7,6 +7,7 @@ import { MessageBubble } from './MessageBubble'
 import { ActionCard } from './ActionCard'
 import { DiffPreview } from './DiffPreview'
 import { useUIStore } from '@/lib/ui/store'
+import { createClientId } from '@/lib/utils'
 import type { ProposedAction } from '@/lib/chat/validator'
 
 interface ChatMessage {
@@ -33,7 +34,7 @@ export function ChatPanel() {
   const sendMessage = useCallback(async (text: string) => {
     setErrorMessage(null)
     const userMsg: ChatMessage = {
-      id: crypto.randomUUID(),
+      id: createClientId(),
       role: 'user',
       content: text,
       timestamp: Date.now(),
@@ -96,7 +97,7 @@ export function ChatPanel() {
       }
 
       const assistantMsg: ChatMessage = {
-        id: crypto.randomUUID(),
+        id: createClientId(),
         role: 'assistant',
         content: assistantContent,
         timestamp: Date.now(),
@@ -126,7 +127,7 @@ export function ChatPanel() {
       setMessages((prev) => prev.map(m =>
         m.id === messageId ? { ...m, actions: undefined, diff: undefined } : m
       ).concat({
-        id: crypto.randomUUID(),
+        id: createClientId(),
         role: 'assistant',
         content: result.success
           ? `Applied ${actions.length} action(s) successfully.`
@@ -138,7 +139,7 @@ export function ChatPanel() {
       setMessages((prev) => [
         ...prev,
         {
-          id: crypto.randomUUID(),
+          id: createClientId(),
           role: 'assistant',
           content: `Apply error: ${(error as Error).message}`,
           timestamp: Date.now(),

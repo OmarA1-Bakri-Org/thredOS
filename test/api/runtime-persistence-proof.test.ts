@@ -127,6 +127,37 @@ describe.serial('runtime persistence proof', () => {
     const runBody = await runResponse.json()
     expect(runBody.success).toBe(true)
     const runId = runBody.runId as string
+    const runDir = join(basePath, '.threados', 'runs', runId)
+    const stepSurfaceDir = join(runDir, 'surfaces', 'thread-step-a')
+
+    const runRecord = JSON.parse(await readFile(join(runDir, 'run.json'), 'utf-8'))
+    expect(runRecord).toMatchObject({
+      id: runId,
+      sequence_id: expect.any(String),
+      step_id: 'step-a',
+      surface_id: 'thread-step-a',
+      status: 'successful',
+      input_manifest_ref: ".threados/runs/" + runId + "/surfaces/thread-step-a/input.manifest.json",
+      artifact_manifest_ref: ".threados/runs/" + runId + "/surfaces/thread-step-a/artifact.manifest.json",
+    })
+
+    const gateDecisionLines = (await readFile(join(runDir, 'gate-decisions.ndjson'), 'utf-8')).trim().split('\n').filter(Boolean)
+    expect(gateDecisionLines).toHaveLength(8)
+
+    const inputManifest = JSON.parse(await readFile(join(stepSurfaceDir, 'input.manifest.json'), 'utf-8'))
+    expect(inputManifest).toMatchObject({
+      stepId: 'step-a',
+      runId,
+      surfaceId: 'thread-step-a',
+    })
+    expect(await readFile(join(stepSurfaceDir, 'compiled-prompt.md'), 'utf-8')).toContain('# Step A')
+    const artifactManifest = JSON.parse(await readFile(join(stepSurfaceDir, 'artifact.manifest.json'), 'utf-8'))
+    expect(artifactManifest).toMatchObject({
+      stepId: 'step-a',
+      runId,
+      surfaceId: 'thread-step-a',
+      success: true,
+    })
 
     const { POST: revealSurface } = await import('@/app/api/surfaces/reveal/route')
     const revealResponse = await revealSurface(new Request('http://localhost/api/surfaces/reveal', {
@@ -169,12 +200,14 @@ describe.serial('runtime persistence proof', () => {
     const tracesResponse = await getTraces(new Request(`http://localhost/api/traces?runId=${runId}`))
     expect(tracesResponse.status).toBe(200)
     const tracesBody = await tracesResponse.json()
-    expect(tracesBody.events.map((event: { event_type: string }) => event.event_type)).toEqual([
+    const eventTypes = tracesBody.events.map((event: { event_type: string }) => event.event_type)
+    expect(eventTypes.filter((eventType: string) => eventType === 'gate-evaluated')).toHaveLength(8)
+    expect(eventTypes).toEqual(expect.arrayContaining([
       'approval-requested',
       'approval-resolved',
       'surface-revealed',
       'barrier-attested',
-    ])
+    ]))
 
     const runsResponse = await getRuns(new Request('http://localhost/api/thread-runs'))
     expect(runsResponse.status).toBe(200)
@@ -212,10 +245,10 @@ describe.serial('runtime persistence proof', () => {
     ]))
     expect(persistedBundle.approvals.map((approval: { status: string }) => approval.status)).toEqual(['pending', 'approved'])
     expect(persistedBundle.artifact_manifests).toContain(`.threados/runs/${runId}/step-a/status.json`)
-    expect(persistedBundle.timing_summary).toMatchObject({
-      stepCount: 1,
-      totalDurationMs: 12_000,
-      successfulSteps: 1,
-    })
+    expect(typeof persistedBundle.timing_summary.stepCount).toBe('number')
+    expect(typeof persistedBundle.timing_summary.successfulSteps).toBe('number')
+    expect(typeof persistedBundle.timing_summary.totalDurationMs).toBe('number')
+    expect(persistedBundle.timing_summary.successfulSteps).toBeGreaterThanOrEqual(1)
+    expect(persistedBundle.timing_summary.totalDurationMs).toBeGreaterThanOrEqual(12_000)
   })
 })

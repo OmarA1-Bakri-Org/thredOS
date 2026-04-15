@@ -7,6 +7,12 @@ export interface ThreadSurfaceFocusedDetail {
   surfaceLabel: string
   surfaceDescription: string | null
   role: string | null
+  surfaceClass: string | null
+  visibility: string | null
+  isolationLabel: string | null
+  revealState: string | null
+  allowedReadScopes: string[]
+  allowedWriteScopes: string[]
   runId: string | null
   runStatus: RunScope['runStatus'] | null
   executionIndex: number | null
@@ -82,6 +88,12 @@ function buildSurfaceFields(threadSurface: ThreadSurface) {
     surfaceLabel: threadSurface.surfaceLabel,
     surfaceDescription: threadSurface.surfaceDescription ?? null,
     role: threadSurface.role ?? null,
+    surfaceClass: threadSurface.surfaceClass ?? null,
+    visibility: threadSurface.visibility ?? null,
+    isolationLabel: threadSurface.isolationLabel ?? null,
+    revealState: threadSurface.revealState ?? null,
+    allowedReadScopes: threadSurface.allowedReadScopes ?? [],
+    allowedWriteScopes: threadSurface.allowedWriteScopes ?? [],
   }
 }
 

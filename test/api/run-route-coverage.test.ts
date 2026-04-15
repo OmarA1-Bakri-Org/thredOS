@@ -326,6 +326,33 @@ describe.serial('run route coverage — error handling', () => {
     expect(data.error).toContain('not found')
   })
 
+  test('POST with stepId blocked by unresolved dependency gate returns failure before dispatch', async () => {
+    await setupTestSequence({
+      version: '1.0',
+      name: 'blocked-by-gate-seq',
+      steps: [
+        { id: 'gated-step', name: 'Blocked', type: 'base', model: 'codex', prompt_file: '.threados/prompts/gated-step.md', depends_on: ['quality-gate'], status: 'READY' },
+      ],
+      gates: [
+        { id: 'quality-gate', name: 'Quality Gate', depends_on: [], status: 'PENDING' },
+      ],
+    })
+    await writePrompt('gated-step')
+
+    const { POST } = await import('@/app/api/run/route')
+    const res = await POST(new Request('http://localhost/api/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: confirmedBody({ stepId: 'gated-step' }),
+    }))
+
+    expect(res.status).toBe(200)
+    const data = await res.json()
+    expect(data.success).toBe(false)
+    expect(data.status).toBe('READY')
+    expect(data.gateReasons).toContain('DEP_MISSING')
+  })
+
   test('POST with stepId for step without prompt file returns failure', async () => {
     await setupTestSequence({
       version: '1.0',
