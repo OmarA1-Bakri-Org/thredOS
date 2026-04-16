@@ -17,7 +17,8 @@ function buildPrimaryHref({
   previewMode: boolean
 }) {
   const hasVariantQuery = previewMode || uiVariant !== 'operator-minimalism'
-  const variantSuffix = hasVariantQuery ? `uiVariant=${uiVariant}${previewMode ? '&preview=1' : ''}` : ''
+  const isDefaultVariant = uiVariant === 'premium-control'
+  const variantSuffix = previewMode || !isDefaultVariant ? `uiVariant=${uiVariant}${previewMode ? '&preview=1' : ''}` : ''
   const appHref = variantSuffix ? `/app?${variantSuffix}` : '/app'
   if (isAuthenticated) return appHref
   if (hostedMode) return variantSuffix ? `/login?next=${encodeURIComponent(appHref)}&${variantSuffix}` : '/login?next=/app'

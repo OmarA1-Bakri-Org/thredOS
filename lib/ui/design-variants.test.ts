@@ -8,10 +8,10 @@ import {
 } from './design-variants'
 
 describe('design variants', () => {
-  test('defaults unknown variants to operator minimalism', () => {
-    expect(resolveUiVariant(undefined)).toBe('operator-minimalism')
-    expect(resolveUiVariant(null)).toBe('operator-minimalism')
-    expect(resolveUiVariant('something-else')).toBe('operator-minimalism')
+  test('defaults unknown variants to premium control once B is selected', () => {
+    expect(resolveUiVariant(undefined)).toBe('premium-control')
+    expect(resolveUiVariant(null)).toBe('premium-control')
+    expect(resolveUiVariant('something-else')).toBe('premium-control')
     expect(resolveUiVariant('premium-control')).toBe('premium-control')
   })
 

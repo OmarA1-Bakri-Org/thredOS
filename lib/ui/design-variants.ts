@@ -96,32 +96,32 @@ const UI_VARIANT_THEMES: Record<UiVariant, UiVariantTheme> = {
   'premium-control': {
     ...UI_VARIANT_OPTIONS[1],
     entry: {
-      root: 'bg-[radial-gradient(circle_at_top,rgba(168,85,247,0.16),transparent_34%),#050812]',
-      hero: 'border border-fuchsia-500/25 bg-[#0b1020]',
-      primaryPanel: 'border border-fuchsia-500/25 bg-[linear-gradient(180deg,rgba(16,24,40,0.98),rgba(8,12,24,0.98))]',
-      secondaryPanel: 'border border-sky-500/15 bg-[#09111f]',
-      diagramFrame: 'border border-fuchsia-500/20 bg-[#08101e]',
-      diagramPanel: 'border border-fuchsia-500/15 bg-[#0b1324]',
-      diagramAccentText: 'text-fuchsia-200/80',
-      diagramBadge: 'border border-fuchsia-400/35 bg-fuchsia-500/10 text-fuchsia-100',
-      previewBadge: 'border border-fuchsia-400/35 bg-fuchsia-500/10 text-fuchsia-100',
+      root: 'bg-[radial-gradient(circle_at_top,rgba(34,211,238,0.18),transparent_28%),radial-gradient(circle_at_18%_24%,rgba(59,130,246,0.18),transparent_24%),linear-gradient(180deg,#020611_0%,#07111f_38%,#03060d_100%)]',
+      hero: 'border border-cyan-300/30 bg-[radial-gradient(circle_at_top,rgba(34,211,238,0.16),transparent_44%),linear-gradient(180deg,#081326_0%,#050b17_100%)]',
+      primaryPanel: 'border border-cyan-300/40 bg-[radial-gradient(circle_at_top,rgba(34,211,238,0.16),transparent_42%),linear-gradient(180deg,#081326_0%,#050d1a_100%)]',
+      secondaryPanel: 'border border-cyan-300/18 bg-[linear-gradient(180deg,#09111f_0%,#07101b_100%)]',
+      diagramFrame: 'border border-cyan-300/35 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.18),transparent_35%),radial-gradient(circle_at_bottom_right,rgba(14,165,233,0.18),transparent_38%),linear-gradient(180deg,#081426_0%,#050b17_100%)]',
+      diagramPanel: 'border border-cyan-300/16 bg-[#07101d]/95',
+      diagramAccentText: 'text-cyan-100/72',
+      diagramBadge: 'border border-cyan-300/60 bg-cyan-300/12 text-cyan-50',
+      previewBadge: 'border border-cyan-300/60 bg-cyan-300/12 text-cyan-50',
     },
     auth: {
-      root: 'bg-[radial-gradient(circle_at_top,rgba(168,85,247,0.16),transparent_30%),#050812]',
-      primaryPanel: 'border border-fuchsia-500/20 bg-[#0b1020]',
-      secondaryPanel: 'border border-sky-500/15 bg-[#09111f]',
-      previewBadge: 'border border-fuchsia-400/35 bg-fuchsia-500/10 text-fuchsia-100',
+      root: 'bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.18),transparent_34%),linear-gradient(180deg,#040913_0%,#07111f_38%,#040811_100%)]',
+      primaryPanel: 'border border-cyan-300/25 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.18),transparent_42%),linear-gradient(180deg,rgba(8,19,38,0.96)_0%,rgba(5,12,25,0.98)_100%)]',
+      secondaryPanel: 'border border-cyan-300/25 bg-[radial-gradient(circle_at_top,rgba(34,211,238,0.12),transparent_38%),linear-gradient(180deg,rgba(8,19,38,0.96)_0%,rgba(5,12,25,0.98)_100%)]',
+      previewBadge: 'border border-cyan-300/40 bg-cyan-300/10 text-cyan-50',
     },
     workbench: {
-      shell: 'bg-[radial-gradient(circle_at_top,rgba(168,85,247,0.12),transparent_28%),#060812] text-slate-100',
-      topBarRegion: 'border-fuchsia-500/15 bg-[#0b1020]',
-      board: 'bg-[#050814]',
-      drawerBackdrop: 'bg-[#02040b]/60',
-      drawerPanel: 'border-r border-fuchsia-500/15 bg-[#0b1122]',
-      clusterSurface: 'border-fuchsia-500/15 bg-[#0b1120]',
-      searchSurface: 'border-fuchsia-500/15 bg-[#09101d] text-slate-200',
-      statusPill: 'border-fuchsia-500/30 bg-fuchsia-500/10 text-fuchsia-50',
-      previewBadge: 'border border-fuchsia-400/35 bg-fuchsia-500/10 text-fuchsia-100',
+      shell: 'bg-[radial-gradient(circle_at_top,rgba(34,211,238,0.08),transparent_35%),linear-gradient(180deg,#040912_0%,#050b16_100%)] text-slate-100',
+      topBarRegion: 'border-cyan-300/14 bg-[linear-gradient(180deg,rgba(8,19,38,0.98),rgba(5,12,25,0.98))]',
+      board: 'bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.06),transparent_28%),linear-gradient(180deg,#040810_0%,#050913_100%)]',
+      drawerBackdrop: 'bg-[#02050a]/72',
+      drawerPanel: 'border-r border-cyan-300/18 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.18),transparent_36%),linear-gradient(180deg,rgba(8,19,38,0.98),rgba(5,12,25,0.99))]',
+      clusterSurface: 'border-cyan-300/18 bg-[linear-gradient(180deg,rgba(8,19,38,0.96),rgba(5,12,25,0.98))]',
+      searchSurface: 'border-cyan-300/22 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.18),transparent_48%),linear-gradient(180deg,rgba(8,19,38,0.98),rgba(5,12,25,0.98))] text-cyan-50/86',
+      statusPill: 'border-cyan-300/35 bg-cyan-300/12 text-cyan-50',
+      previewBadge: 'border border-cyan-300/60 bg-cyan-300/12 text-cyan-50',
     },
   },
   'industrial-systems': {
@@ -167,7 +167,7 @@ export function resolveUiVariant(value: QueryValue): UiVariant {
   if (normalized === 'premium-control' || normalized === 'industrial-systems' || normalized === 'operator-minimalism') {
     return normalized
   }
-  return 'operator-minimalism'
+  return 'premium-control'
 }
 
 export function resolvePreviewMode(value: QueryValue): boolean {
