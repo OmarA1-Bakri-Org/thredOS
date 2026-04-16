@@ -1,4 +1,4 @@
-import { randomUUID } from 'crypto'
+import { createHash, randomUUID } from 'crypto'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import {
@@ -9,11 +9,26 @@ import {
   requireRequestSession,
   type PolicyCheckResult,
 } from '@/lib/api-helpers'
+import { readApprovals } from '@/lib/approvals/repository'
+import { recordApprovedApprovalLifecycle } from '@/lib/approvals/runtime'
 import { getBasePath } from '@/lib/config'
+import { appendGateDecision } from '@/lib/gates/repository'
+import { evaluateStepCompletionGates, evaluateStepGates, getBlockReasons, isStepRunnable } from '@/lib/gates/engine'
 import { allowShellModel } from '@/lib/hosted'
+import { PolicyEngine } from '@/lib/policy/engine'
+import type { PolicyConfig } from '@/lib/policy/schema'
 import { readPrompt, validatePromptExists } from '@/lib/prompts/manager'
+import { applyRateLimit } from '@/lib/rate-limit'
+import {
+  getRuntimeEventLogPath,
+  saveRunArtifacts,
+  writeCompiledPrompt,
+  writeInputManifest,
+  writeRunRecord,
+  type InputManifestJson,
+  type RunRecordJson,
+} from '@/lib/runner/artifacts'
 import { dispatch, exitCodeToStatus } from '@/lib/runner/dispatch'
-import { getRuntimeEventLogPath, saveRunArtifacts } from '@/lib/runner/artifacts'
 import { compilePrompt } from '@/lib/runner/prompt-compiler'
 import { runStep, type RunnerConfig } from '@/lib/runner/wrapper'
 import { topologicalSort, validateDAG } from '@/lib/sequence/dag'
@@ -22,16 +37,16 @@ import type { Sequence, Step } from '@/lib/sequence/schema'
 import { ROOT_THREAD_SURFACE_ID } from '@/lib/thread-surfaces/constants'
 import { completeRun, createReplacementRun, createRootThreadSurfaceRun } from '@/lib/thread-surfaces/mutations'
 import { provisionAllChildSequences } from '@/lib/thread-surfaces/provision-child-sequence'
-import { readThreadSurfaceState, writeThreadSurfaceState } from '@/lib/thread-surfaces/repository'
+import { readThreadSurfaceState, withThreadSurfaceStateRevision, writeThreadSurfaceState } from '@/lib/thread-surfaces/repository'
 import { readRuntimeEventLog, type RuntimeDelegationEvent } from '@/lib/thread-surfaces/runtime-event-log'
-import { applyRateLimit } from '@/lib/rate-limit'
 import {
   beginStepRunIfSurfaceExists,
   finalizeStepRunWithRuntimeEvents,
   type StepRunScope,
 } from '@/lib/thread-surfaces/step-run-runtime'
+import { appendTraceEvent } from '@/lib/traces/writer'
 
-const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000 // 30 minutes
+const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000
 const THREADOS_EVENT_EMITTER_COMMAND = 'thread event'
 
 const BodySchema = z.union([
@@ -46,6 +61,24 @@ interface RunRouteRuntime {
   dispatch: typeof dispatch
   runStep: typeof runStep
   saveRunArtifacts: typeof saveRunArtifacts
+}
+
+interface ExecuteStepOptions {
+  confirmPolicy: boolean
+  policyConfig: PolicyConfig
+  approvalTargetRef: string
+}
+
+type ExecuteStepResult = {
+  success: boolean
+  stepId: string
+  runId: string
+  status: 'DONE' | 'FAILED' | 'NEEDS_REVIEW' | 'READY' | 'RUNNING' | 'BLOCKED'
+  error?: string
+  duration?: number
+  artifactPath?: string
+  confirmationRequired?: boolean
+  gateReasons?: string[]
 }
 
 declare global {
@@ -91,8 +124,112 @@ function policyStatusToHttp(result: PolicyCheckResult): { code: string; status: 
     : { code: 'POLICY_DENIED', status: 403 }
 }
 
+function targetRefFromRunBody(body: RunRequestBody): string {
+  if ('stepId' in body) return `step:${body.stepId}`
+  if ('groupId' in body) return `group:${body.groupId}`
+  return 'mode:runnable'
+}
+
 function commandLineFromRunnerConfig(runnerConfig: RunnerConfig): string {
   return [runnerConfig.command, ...(runnerConfig.args ?? [])].join(' ').trim()
+}
+
+function sha256(value: string): string {
+  return `sha256:${createHash('sha256').update(value).digest('hex')}`
+}
+
+function getSurfaceId(step: Step): string {
+  return step.surface_ref || `thread-${step.id}`
+}
+
+function getInputManifestRef(runId: string, surfaceId: string): string {
+  return `.threados/runs/${runId}/surfaces/${surfaceId}/input.manifest.json`
+}
+
+function getArtifactManifestRef(runId: string, surfaceId: string): string {
+  return `.threados/runs/${runId}/surfaces/${surfaceId}/artifact.manifest.json`
+}
+
+function makeInputManifest(step: Step, runId: string, surfaceId: string, createdAt: string): InputManifestJson {
+  return {
+    stepId: step.id,
+    runId,
+    surfaceId,
+    promptRef: step.prompt_ref?.path ?? step.prompt_file ?? null,
+    dependsOn: step.depends_on,
+    inputContractRef: step.input_contract_ref ?? null,
+    createdAt,
+  }
+}
+
+async function persistGateDecisions(
+  basePath: string,
+  runId: string,
+  surfaceId: string,
+  decisions: ReturnType<typeof evaluateStepGates> | ReturnType<typeof evaluateStepCompletionGates>,
+  policyRef: string,
+) {
+  for (const decision of decisions) {
+    await appendGateDecision(basePath, runId, decision)
+    await appendTraceEvent(basePath, runId, {
+      ts: decision.decided_at,
+      run_id: runId,
+      surface_id: surfaceId,
+      actor: 'api:run',
+      event_type: decision.status === 'PASS' ? 'gate-evaluated' : 'gate-blocked',
+      payload_ref: decision.id,
+      policy_ref: policyRef,
+    })
+  }
+}
+
+async function buildRunRecord(basePath: string, params: {
+  sequence: Sequence
+  step: Step
+  runId: string
+  surfaceId: string
+  policyConfig: PolicyConfig
+  compiledPrompt: string
+  startedAt: string
+  status: RunRecordJson['status']
+  attempt: number
+  inputManifestRef: string | null
+  artifactManifestRef: string | null
+  durationMs?: number
+}) {
+  const {
+    sequence,
+    step,
+    runId,
+    surfaceId,
+    policyConfig,
+    compiledPrompt,
+    startedAt,
+    status,
+    attempt,
+    inputManifestRef,
+    artifactManifestRef,
+    durationMs,
+  } = params
+
+  await writeRunRecord(basePath, {
+    id: runId,
+    sequence_id: sequence.id ?? sequence.name,
+    step_id: step.id,
+    surface_id: surfaceId,
+    attempt,
+    status,
+    executor: 'threados',
+    model: step.model,
+    policy_snapshot_hash: sha256(JSON.stringify(policyConfig)),
+    compiled_prompt_hash: sha256(compiledPrompt),
+    input_manifest_ref: inputManifestRef,
+    artifact_manifest_ref: artifactManifestRef,
+    started_at: startedAt,
+    ended_at: status === 'running' ? null : new Date().toISOString(),
+    timing_summary: durationMs == null ? null : { duration_ms: durationMs },
+    cost_summary: null,
+  })
 }
 
 async function enforceBatchPolicy(basePath: string, stepCount: number, confirmed: boolean) {
@@ -128,7 +265,7 @@ async function createRunScopeForRequest(basePath: string, sequenceName: string, 
         executionIndex,
       }).state
 
-  await writeThreadSurfaceState(basePath, nextState)
+  await writeThreadSurfaceState(basePath, withThreadSurfaceStateRevision(currentState, nextState))
 }
 
 async function createStepRunScope(basePath: string, step: Step): Promise<{ stepRun: StepRunScope | null }> {
@@ -141,7 +278,7 @@ async function createStepRunScope(basePath: string, step: Step): Promise<{ stepR
   })
 
   if (result.state !== currentState) {
-    await writeThreadSurfaceState(basePath, result.state)
+    await writeThreadSurfaceState(basePath, withThreadSurfaceStateRevision(currentState, result.state))
   }
 
   return { stepRun: result.stepRun }
@@ -167,7 +304,7 @@ async function finalizeStepRunScope(
   })
 
   if (finalized.stepRun != null) {
-    await writeThreadSurfaceState(basePath, finalized.state)
+    await writeThreadSurfaceState(basePath, withThreadSurfaceStateRevision(currentState, finalized.state))
   }
 
   if (finalized.pendingChildSequences.length > 0) {
@@ -183,7 +320,7 @@ async function finalizeRunScope(basePath: string, runId: string, success: boolea
     endedAt: new Date().toISOString(),
     runSummary,
   }).state
-  await writeThreadSurfaceState(basePath, nextState)
+  await writeThreadSurfaceState(basePath, withThreadSurfaceStateRevision(currentState, nextState))
 }
 
 async function executeStep(
@@ -191,11 +328,11 @@ async function executeStep(
   sequence: Sequence,
   stepId: string,
   runId: string,
-  confirmPolicy: boolean,
-) {
+  options: ExecuteStepOptions,
+): Promise<ExecuteStepResult> {
   const step = sequence.steps.find(candidate => candidate.id === stepId)
   if (!step) {
-    return { success: false, stepId, runId, status: 'FAILED' as const, error: 'Step not found' }
+    return { success: false, stepId, runId, status: 'FAILED', error: 'Step not found' }
   }
 
   const stepRuntime = await createStepRunScope(basePath, step)
@@ -210,13 +347,20 @@ async function executeStep(
       success: false,
       stepId,
       runId,
-      status: 'FAILED' as const,
+      status: 'FAILED',
       error: `Prompt file not found for step '${stepId}'. Expected: ${promptPath}`,
     }
   }
 
+  const runtime = getRunRouteRuntime()
+  const surfaceId = getSurfaceId(step)
+  const startedAt = stepRuntime.stepRun?.startedAt ?? new Date().toISOString()
+  const attempt = stepRuntime.stepRun?.executionIndex ?? 1
+  const inputManifest = makeInputManifest(step, runId, surfaceId, startedAt)
+  const inputManifestRef = getInputManifestRef(runId, surfaceId)
+  const artifactManifestRef = getArtifactManifestRef(runId, surfaceId)
+
   try {
-    const runtime = getRunRouteRuntime()
     const runtimeEventLogPath = getRuntimeEventLogPath(basePath, runId, stepId)
     const rawPrompt = await readPrompt(basePath, stepId)
     const promptForDispatch = step.model === 'shell'
@@ -232,7 +376,71 @@ async function executeStep(
           runtimeEventEmitterCommand: THREADOS_EVENT_EMITTER_COMMAND,
         })
 
+    await writeInputManifest(basePath, runId, surfaceId, inputManifest)
+    await writeCompiledPrompt(basePath, runId, surfaceId, promptForDispatch)
+
+    const approvals = await readApprovals(basePath, runId).catch(() => [])
+    const approvalPresent = options.confirmPolicy
+      || approvals.some(approval => approval.status === 'approved' && (
+        approval.target_ref === `step:${step.id}` || approval.target_ref === options.approvalTargetRef
+      ))
+
+    const currentSurfaceState = await readThreadSurfaceState(basePath)
+    const surface = currentSurfaceState.threadSurfaces.find(candidate => candidate.id === surfaceId)
+    const preRunDecisions = evaluateStepGates(step, sequence.steps, sequence.gates, {
+      policyMode: options.policyConfig.mode,
+      sideEffectMode: options.policyConfig.side_effect_mode,
+      crossSurfaceReads: options.policyConfig.cross_surface_reads,
+      surfaceClass: surface?.surfaceClass ?? 'shared',
+      revealState: surface?.surfaceClass === 'sealed' ? 'revealed' : (surface?.revealState ?? null),
+      isDependency: true,
+      inputManifestPresent: true,
+      approvalPresent,
+    })
+
+    await persistGateDecisions(basePath, runId, surfaceId, preRunDecisions, options.policyConfig.mode)
+
+    if (!isStepRunnable(preRunDecisions)) {
+      const gateReasons = getBlockReasons(preRunDecisions)
+      await buildRunRecord(basePath, {
+        sequence,
+        step,
+        runId,
+        surfaceId,
+        policyConfig: options.policyConfig,
+        compiledPrompt: promptForDispatch,
+        startedAt,
+        status: 'failed',
+        attempt,
+        inputManifestRef,
+        artifactManifestRef: null,
+      })
+      await finalizeStepRunScope(basePath, step, stepRuntime, false, []).catch(() => {})
+      return {
+        success: false,
+        stepId,
+        runId,
+        status: 'READY',
+        error: gateReasons.join(', '),
+        confirmationRequired: preRunDecisions.some(decision => decision.status === 'NEEDS_APPROVAL'),
+        gateReasons,
+      }
+    }
+
     if (step.model === 'shell' && !allowShellModel()) {
+      await buildRunRecord(basePath, {
+        sequence,
+        step,
+        runId,
+        surfaceId,
+        policyConfig: options.policyConfig,
+        compiledPrompt: promptForDispatch,
+        startedAt,
+        status: 'failed',
+        attempt,
+        inputManifestRef,
+        artifactManifestRef: null,
+      })
       await finalizeStepRunScope(basePath, step, stepRuntime, false, []).catch(() => {})
       return {
         success: false,
@@ -256,9 +464,22 @@ async function executeStep(
     const policyResult = await checkPolicy('run_command', {
       command: commandLineFromRunnerConfig(runnerConfig),
       cwd: runnerConfig.cwd,
-      confirmed: confirmPolicy,
+      confirmed: options.confirmPolicy,
     })
     if (!policyResult.allowed) {
+      await buildRunRecord(basePath, {
+        sequence,
+        step,
+        runId,
+        surfaceId,
+        policyConfig: options.policyConfig,
+        compiledPrompt: promptForDispatch,
+        startedAt,
+        status: 'failed',
+        attempt,
+        inputManifestRef,
+        artifactManifestRef: null,
+      })
       await finalizeStepRunScope(basePath, step, stepRuntime, false, []).catch(() => {})
       return {
         success: false,
@@ -270,22 +491,69 @@ async function executeStep(
       }
     }
 
+    await buildRunRecord(basePath, {
+      sequence,
+      step,
+      runId,
+      surfaceId,
+      policyConfig: options.policyConfig,
+      compiledPrompt: promptForDispatch,
+      startedAt,
+      status: 'running',
+      attempt,
+      inputManifestRef,
+      artifactManifestRef: null,
+    })
+
     step.status = 'RUNNING'
     await writeSequence(basePath, sequence)
 
     const result = await runtime.runStep(runnerConfig)
-    const artifactPath = await runtime.saveRunArtifacts(basePath, result)
+    const artifactPath = await runtime.saveRunArtifacts(basePath, result, {
+      surfaceId,
+      compiledPrompt: promptForDispatch,
+      inputManifest,
+      outputContractRef: step.output_contract_ref,
+      completionContract: step.completion_contract,
+    })
     const runtimeEvents = await readRuntimeEventLog(basePath, runId, stepId)
+
+    const completionDecisions = evaluateStepCompletionGates(step, {
+      artifactManifestPresent: true,
+      outputSchemaValid: step.output_contract_ref ? result.status === 'SUCCESS' : true,
+      completionContractSatisfied: step.completion_contract ? result.status === 'SUCCESS' : true,
+    })
+    await persistGateDecisions(basePath, runId, surfaceId, completionDecisions, options.policyConfig.mode)
+
+    const completionPassed = isStepRunnable(completionDecisions)
     step.status = exitCodeToStatus(result.exitCode)
+    if (step.status === 'DONE' && !completionPassed) {
+      step.status = 'NEEDS_REVIEW'
+    }
     await writeSequence(basePath, sequence)
+    await buildRunRecord(basePath, {
+      sequence,
+      step,
+      runId,
+      surfaceId,
+      policyConfig: options.policyConfig,
+      compiledPrompt: promptForDispatch,
+      startedAt,
+      status: result.status === 'SUCCESS' && completionPassed ? 'successful' : 'failed',
+      attempt,
+      inputManifestRef,
+      artifactManifestRef,
+      durationMs: result.duration,
+    })
     await finalizeStepRunScope(basePath, step, stepRuntime, step.status === 'DONE', runtimeEvents.events)
     return {
-      success: result.status === 'SUCCESS',
+      success: result.status === 'SUCCESS' && completionPassed,
       stepId,
       runId,
       status: step.status,
       duration: result.duration,
       artifactPath,
+      gateReasons: completionPassed ? [] : getBlockReasons(completionDecisions),
     }
   } catch (error) {
     step.status = 'FAILED'
@@ -295,7 +563,7 @@ async function executeStep(
       success: false,
       stepId,
       runId,
-      status: 'FAILED' as const,
+      status: 'FAILED',
       error: error instanceof Error ? error.message : String(error),
     }
   }
@@ -336,11 +604,32 @@ export async function POST(request: Request) {
     const startedAt = new Date().toISOString()
     await createRunScopeForRequest(basePath, sequence.name, runId, startedAt)
 
+    const policyEngine = await PolicyEngine.load(basePath)
+    const policyConfig = policyEngine.getConfig()
+    const approvalTargetRef = targetRefFromRunBody(body)
+    if (body.confirmPolicy === true && policyConfig.mode === 'SAFE') {
+      await recordApprovedApprovalLifecycle({
+        basePath,
+        runId,
+        actionType: 'run',
+        targetRef: approvalTargetRef,
+        requestedBy: session.email,
+        resolvedBy: session.email,
+        actor: 'api:run',
+        notes: 'SAFE mode confirmation acknowledged before dispatch.',
+        policyRef: 'SAFE',
+      })
+    }
+
     if ('stepId' in body) {
-      const result = await executeStep(basePath, sequence, body.stepId, runId, body.confirmPolicy === true)
+      const result = await executeStep(basePath, sequence, body.stepId, runId, {
+        confirmPolicy: body.confirmPolicy === true,
+        policyConfig,
+        approvalTargetRef,
+      })
       await finalizeRunScope(basePath, runId, result.success, `step:${body.stepId}`)
       await auditLog('run.step', body.stepId, { runId }, result.success ? 'ok' : 'failed')
-      if (!result.success && 'confirmationRequired' in result && result.confirmationRequired) {
+      if (!result.success && result.confirmationRequired) {
         return jsonError(result.error ?? 'Policy confirmation required', 'POLICY_CONFIRMATION_REQUIRED', 409)
       }
       return NextResponse.json(result)
@@ -349,7 +638,11 @@ export async function POST(request: Request) {
     if ('groupId' in body) {
       const results = []
       for (const step of targetSteps) {
-        results.push(await executeStep(basePath, sequence, step.id, runId, body.confirmPolicy === true))
+        results.push(await executeStep(basePath, sequence, step.id, runId, {
+          confirmPolicy: body.confirmPolicy === true,
+          policyConfig,
+          approvalTargetRef,
+        }))
       }
       const success = results.every(result => result.success)
       await finalizeRunScope(basePath, runId, success, `group:${body.groupId}`)
@@ -359,7 +652,11 @@ export async function POST(request: Request) {
 
     const results = []
     for (const step of targetSteps) {
-      results.push(await executeStep(basePath, sequence, step.id, runId, body.confirmPolicy === true))
+      results.push(await executeStep(basePath, sequence, step.id, runId, {
+        confirmPolicy: body.confirmPolicy === true,
+        policyConfig,
+        approvalTargetRef,
+      }))
     }
     const success = results.every(result => result.success)
     await finalizeRunScope(basePath, runId, success, 'mode:runnable')

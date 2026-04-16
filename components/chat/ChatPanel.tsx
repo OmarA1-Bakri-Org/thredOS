@@ -7,6 +7,7 @@ import { MessageBubble } from './MessageBubble'
 import { ActionCard } from './ActionCard'
 import { DiffPreview } from './DiffPreview'
 import { useUIStore } from '@/lib/ui/store'
+import { createClientId } from '@/lib/utils'
 import type { ProposedAction } from '@/lib/chat/validator'
 
 interface ChatMessage {
@@ -24,6 +25,7 @@ export function ChatPanel() {
   const [applyingMessageId, setApplyingMessageId] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const selectedRunId = useUIStore(s => s.selectedRunId)
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
@@ -32,7 +34,7 @@ export function ChatPanel() {
   const sendMessage = useCallback(async (text: string) => {
     setErrorMessage(null)
     const userMsg: ChatMessage = {
-      id: crypto.randomUUID(),
+      id: createClientId(),
       role: 'user',
       content: text,
       timestamp: Date.now(),
@@ -95,7 +97,7 @@ export function ChatPanel() {
       }
 
       const assistantMsg: ChatMessage = {
-        id: crypto.randomUUID(),
+        id: createClientId(),
         role: 'assistant',
         content: assistantContent,
         timestamp: Date.now(),
@@ -116,7 +118,7 @@ export function ChatPanel() {
       const res = await fetch('/api/apply', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ actions }),
+        body: JSON.stringify({ actions, ...(selectedRunId ? { runId: selectedRunId } : {}) }),
       })
       const result = await res.json()
       if (!result.success) {
@@ -125,7 +127,7 @@ export function ChatPanel() {
       setMessages((prev) => prev.map(m =>
         m.id === messageId ? { ...m, actions: undefined, diff: undefined } : m
       ).concat({
-        id: crypto.randomUUID(),
+        id: createClientId(),
         role: 'assistant',
         content: result.success
           ? `Applied ${actions.length} action(s) successfully.`
@@ -137,7 +139,7 @@ export function ChatPanel() {
       setMessages((prev) => [
         ...prev,
         {
-          id: crypto.randomUUID(),
+          id: createClientId(),
           role: 'assistant',
           content: `Apply error: ${(error as Error).message}`,
           timestamp: Date.now(),
@@ -146,7 +148,7 @@ export function ChatPanel() {
     } finally {
       setApplyingMessageId(null)
     }
-  }, [])
+  }, [selectedRunId])
 
   const handleDiscard = useCallback((messageId: string) => {
     setMessages(prev => prev.map(m =>

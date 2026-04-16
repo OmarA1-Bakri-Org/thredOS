@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 
-import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'fs'
 import { dirname, join, resolve } from 'path'
 import { spawnSync } from 'child_process'
+import { tmpdir } from 'os'
+import { createServer } from 'net'
 
 const mode = process.argv[2]
 const root = process.cwd()
@@ -40,13 +42,184 @@ function timestamp() {
 }
 
 function isUnsupportedMountPath(pathname) {
-  return resolve(pathname).startsWith('/mnt/')
+  return process.platform === 'linux' && resolve(pathname).startsWith('/mnt/')
+}
+
+function resolveNativeLinuxTmpRoot() {
+  const resolvedTmp = resolve(tmpdir())
+  if (process.platform === 'linux' && resolvedTmp.startsWith('/mnt/')) {
+    return '/tmp'
+  }
+  return resolvedTmp
+}
+
+function getFailureMessage(result, label) {
+  if (result.error) {
+    return result.error.message
+  }
+
+  if (result.signal) {
+    return `${label} terminated by signal ${result.signal}`
+  }
+
+  if (typeof result.status === 'number' && result.status !== 0) {
+    return `${label} exited with code ${result.status}`
+  }
+
+  return null
+}
+
+function makeTempVerifyDir() {
+  const prefix = join(resolveNativeLinuxTmpRoot(), 'threados-verify-')
+  const result = spawnSync('mktemp', ['-d', `${prefix}XXXXXX`], { encoding: 'utf8' })
+  const failure = getFailureMessage(result, 'mktemp')
+  if (failure) {
+    throw new Error(`Failed to create native temp directory for verification relay: ${failure}`)
+  }
+
+  const tempDir = result.stdout.trim()
+  if (!tempDir) {
+    throw new Error('Failed to create native temp directory for verification relay: mktemp returned an empty path')
+  }
+
+  return tempDir
+}
+
+function syncRepoToTemp(sourceRoot, tempRoot) {
+  const source = sourceRoot.endsWith('/') ? sourceRoot : `${sourceRoot}/`
+  const destination = tempRoot.endsWith('/') ? tempRoot : `${tempRoot}/`
+  const result = spawnSync('rsync', [
+    '-a',
+    '--delete',
+    '--exclude=.git',
+    '--exclude=.omx',
+    '--exclude=.next',
+    '--exclude=test-results',
+    '--exclude=playwright-report',
+    '--exclude=dist-desktop',
+    '--exclude=.eslintcache',
+    '--exclude=node_modules',
+    source,
+    destination,
+  ], {
+    stdio: 'inherit',
+  })
+
+  const failure = getFailureMessage(result, 'rsync')
+  if (failure) {
+    throw new Error(`Failed to copy verification workspace into native temp directory: ${failure}`)
+  }
+}
+
+function installTempDependencies(tempRoot, bunPath) {
+  const result = spawnSync(bunPath, ['install', '--frozen-lockfile'], {
+    cwd: tempRoot,
+    stdio: 'inherit',
+  })
+
+  const failure = getFailureMessage(result, 'bun install --frozen-lockfile')
+  if (failure) {
+    throw new Error(`Failed to install dependencies in native temp verification workspace: ${failure}`)
+  }
+}
+
+function syncVerifyArtifactsBack(tempRoot, sourceRoot) {
+  const sourceVerifyDir = join(tempRoot, 'test-results', 'verify')
+  if (!existsSync(sourceVerifyDir)) return
+
+  const destinationVerifyDir = join(sourceRoot, 'test-results', 'verify')
+  mkdirSync(destinationVerifyDir, { recursive: true })
+
+  const result = spawnSync('rsync', [
+    '-a',
+    `${sourceVerifyDir}/`,
+    `${destinationVerifyDir}/`,
+  ], {
+    stdio: 'inherit',
+  })
+
+  const failure = getFailureMessage(result, 'rsync')
+  if (failure) {
+    throw new Error(`Failed to sync verification artifacts back to the original workspace: ${failure}`)
+  }
+}
+
+function relayVerificationThroughNativeTemp(modeName, sourceRoot, bunPath) {
+  const tempRoot = makeTempVerifyDir()
+
+  console.warn(`[verify:${modeName}] relaying through native Linux temp copy because ${sourceRoot} is on /mnt/*`)
+  console.warn(`[verify:${modeName}] temp workspace: ${tempRoot}`)
+
+  let exitCode = 1
+  try {
+    syncRepoToTemp(sourceRoot, tempRoot)
+    installTempDependencies(tempRoot, bunPath)
+
+    const result = spawnSync(process.execPath, ['scripts/verify/run.mjs', modeName], {
+      cwd: tempRoot,
+      env: {
+        ...process.env,
+        THREDOS_VERIFY_NATIVE_RELAY: '1',
+      },
+      stdio: 'inherit',
+    })
+
+    syncVerifyArtifactsBack(tempRoot, sourceRoot)
+
+    const failure = getFailureMessage(result, `node scripts/verify/run.mjs ${modeName}`)
+    if (failure) {
+      throw new Error(`Native temp verification relay failed: ${failure}`)
+    }
+
+    exitCode = result.status ?? 0
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true })
+  }
+
+  return exitCode
 }
 
 function ensureBinary(description, binaryPath) {
   if (!existsSync(binaryPath)) {
     throw new Error(`${description} not found at ${binaryPath}`)
   }
+}
+
+async function claimPort(port) {
+  return await new Promise((resolve, reject) => {
+    const server = createServer()
+    server.unref()
+    server.on('error', error => {
+      if (error && error.code !== 'EADDRINUSE' && error.code !== 'EACCES') {
+        reject(error)
+        return
+      }
+      resolve(null)
+    })
+    server.listen({ host: '127.0.0.1', port }, () => {
+      const address = server.address()
+      const claimed = typeof address === 'object' && address ? address.port : null
+      resolve({ server, port: claimed })
+    })
+  })
+}
+
+async function resolvePlaywrightPort(modeName, explicitPort) {
+  if (explicitPort) return { server: null, port: explicitPort }
+
+  const preferredPort = modeName === 'local' ? 4301 : modeName === 'ci' ? 4302 : 4303
+  const preferredClaim = await claimPort(preferredPort)
+  if (preferredClaim && preferredClaim.port) {
+    return { server: preferredClaim.server, port: String(preferredClaim.port) }
+  }
+
+  const fallbackClaim = await claimPort(0)
+  if (!fallbackClaim || !fallbackClaim.port) {
+    throw new Error('Failed to allocate a verification port')
+  }
+
+  console.warn(`[verify:${modeName}] port ${preferredPort} is busy; using ephemeral port ${fallbackClaim.port} instead`)
+  return { server: fallbackClaim.server, port: String(fallbackClaim.port) }
 }
 
 function findBunPath() {
@@ -70,9 +243,68 @@ function findBunPath() {
   return null
 }
 
+const REQUIRED_BROWSER_LIBS = ['libnspr4.so', 'libnss3.so', 'libnssutil3.so', 'libasound.so.2']
+
+function resolveVendoredBrowserLibPaths() {
+  const explicit = process.env.PLAYWRIGHT_BROWSER_LIB_DIR
+  const home = process.env.HOME
+  return [
+    explicit ?? null,
+    home ? join(home, '.cache', 'thredos', 'pwlibs', 'root', 'usr', 'lib', 'x86_64-linux-gnu') : null,
+    '/tmp/pwlibs/root/usr/lib/x86_64-linux-gnu',
+  ].filter(Boolean)
+}
+
+function hasVendoredBrowserLibs(dir) {
+  return REQUIRED_BROWSER_LIBS.every(fileName => existsSync(join(dir, fileName)))
+}
+
 function resolveBrowserLibDir() {
-  const vendorDir = '/tmp/pwlibs/root/usr/lib/x86_64-linux-gnu'
-  return existsSync(vendorDir) ? vendorDir : null
+  return resolveVendoredBrowserLibPaths().find(dir => hasVendoredBrowserLibs(dir)) ?? null
+}
+
+function resolveAlsaPackageName() {
+  const candidate = spawnSync('apt-cache', ['show', 'libasound2t64'], { encoding: 'utf8' })
+  return candidate.status === 0 ? 'libasound2t64' : 'libasound2'
+}
+
+function bootstrapVendoredBrowserLibraries() {
+  const home = process.env.HOME
+  if (!home) return null
+
+  const cacheRoot = join(home, '.cache', 'thredos', 'pwlibs')
+  const debDir = join(cacheRoot, 'debs')
+  const rootDir = join(cacheRoot, 'root')
+  const libDir = join(rootDir, 'usr', 'lib', 'x86_64-linux-gnu')
+
+  if (hasVendoredBrowserLibs(libDir)) {
+    return libDir
+  }
+
+  mkdirSync(debDir, { recursive: true })
+  mkdirSync(rootDir, { recursive: true })
+
+  const packages = ['libnss3', 'libnspr4', resolveAlsaPackageName()]
+  const download = spawnSync('apt', ['download', ...packages], {
+    cwd: debDir,
+    encoding: 'utf8',
+  })
+  if (download.status !== 0) {
+    return null
+  }
+
+  const debFiles = readdirSync(debDir)
+    .filter(fileName => fileName.endsWith('.deb'))
+    .map(fileName => join(debDir, fileName))
+
+  for (const debFile of debFiles) {
+    const extract = spawnSync('dpkg-deb', ['-x', debFile, rootDir], { encoding: 'utf8' })
+    if (extract.status !== 0) {
+      return null
+    }
+  }
+
+  return hasVendoredBrowserLibs(libDir) ? libDir : null
 }
 
 function hasSystemBrowserLibs() {
@@ -85,7 +317,7 @@ function hasSystemBrowserLibs() {
 function ensureBrowserLibraries() {
   if (process.platform !== 'linux') return { ldLibraryPath: null }
 
-  const vendorDir = resolveBrowserLibDir()
+  const vendorDir = resolveBrowserLibDir() ?? bootstrapVendoredBrowserLibraries()
   if (vendorDir) {
     return { ldLibraryPath: vendorDir }
   }
@@ -119,19 +351,34 @@ function prepareWorkspace(artifactsDir) {
   return workspacePath
 }
 
+function getSpecStatus(spec) {
+  const resultStatuses = (spec.tests ?? []).flatMap(test => (test.results ?? []).map(result => result.status ?? 'unknown'))
+
+  if (resultStatuses.some(status => status === 'failed' || status === 'timedOut' || status === 'interrupted')) {
+    return 'failed'
+  }
+
+  if (resultStatuses.some(status => status === 'flaky')) {
+    return 'flaky'
+  }
+
+  if (resultStatuses.length > 0 && resultStatuses.every(status => status === 'skipped')) {
+    return 'skipped'
+  }
+
+  if (spec.ok === false) {
+    return 'failed'
+  }
+
+  return 'passed'
+}
+
 function collectSuiteEntries(suites, file = null, entries = []) {
   for (const suite of suites ?? []) {
     const nextFile = suite.file ?? file
     for (const spec of suite.specs ?? []) {
       const tests = spec.tests ?? []
-      const outcomes = tests.map(test => test.outcome ?? 'unknown')
-      const status = outcomes.some(outcome => outcome === 'unexpected')
-        ? 'failed'
-        : outcomes.some(outcome => outcome === 'flaky')
-          ? 'flaky'
-          : outcomes.some(outcome => outcome === 'skipped')
-            ? 'skipped'
-            : 'passed'
+      const status = getSpecStatus(spec)
       entries.push({
         file: nextFile,
         title: [...(suite.title ? [suite.title] : []), spec.title].join(' › '),
@@ -150,8 +397,10 @@ function readLogTail(filePath, maxChars = 4000) {
   return content.length <= maxChars ? content : content.slice(content.length - maxChars)
 }
 
-function classifyStartupFailure(env, summary) {
-  if (summary?.unexpected === 0) return null
+function classifyStartupFailure(env, summary, rawReport, suites) {
+  if (!rawReport || suites.length > 0 || (summary?.unexpected ?? 0) === 0) {
+    return null
+  }
 
   const buildLogTail = readLogTail(env.PLAYWRIGHT_BUILD_LOG_PATH)
   const serverLogTail = readLogTail(env.PLAYWRIGHT_SERVER_LOG_PATH)
@@ -198,7 +447,7 @@ function writeManifest(env, artifactsDir, modeName, workspacePath, exitStatus) {
         flaky: 0,
         durationMs: 0,
       }
-  const startupFailure = classifyStartupFailure(env, summary)
+  const startupFailure = classifyStartupFailure(env, summary, rawReport, suites)
 
   const manifest = {
     generatedAt: new Date().toISOString(),
@@ -219,9 +468,6 @@ function writeManifest(env, artifactsDir, modeName, workspacePath, exitStatus) {
 }
 
 try {
-  const artifactsDir = join(root, 'test-results', 'verify', mode, timestamp())
-  mkdirSync(artifactsDir, { recursive: true })
-
   const env = {
     ...process.env,
   }
@@ -236,16 +482,6 @@ try {
     applyDefaults(env, parseEnvFile(envFile))
   }
 
-  if (mode === 'local' && isUnsupportedMountPath(root)) {
-    console.error('verify:local is unsupported from /mnt/* mounts. Run it from a native Linux filesystem copy of the repo.')
-    process.exit(1)
-  }
-
-  if (mode === 'ci' && isUnsupportedMountPath(root)) {
-    console.error('verify:ci is unsupported from /mnt/* mounts. Run it from a native Linux filesystem copy of the repo or a Linux CI runner.')
-    process.exit(1)
-  }
-
   ensureBinary('Playwright CLI', join(root, 'node_modules', 'playwright', 'cli.js'))
   ensureBinary('Next.js CLI', join(root, 'node_modules', 'next', 'dist', 'bin', 'next'))
 
@@ -253,6 +489,13 @@ try {
   if (!bunPath) {
     throw new Error('Bun is required for verification bootstrap but was not found on PATH or at ~/.bun/bin/bun')
   }
+
+  if ((mode === 'local' || mode === 'ci') && isUnsupportedMountPath(root) && process.env.THREDOS_VERIFY_NATIVE_RELAY !== '1') {
+    process.exit(relayVerificationThroughNativeTemp(mode, root, bunPath))
+  }
+
+  const artifactsDir = join(root, 'test-results', 'verify', mode, timestamp())
+  mkdirSync(artifactsDir, { recursive: true })
 
   const browserLibraries = ensureBrowserLibraries()
   env.PATH = [dirname(bunPath), env.PATH].filter(Boolean).join(':')
@@ -265,7 +508,9 @@ try {
   env.PLAYWRIGHT_RUN_MANIFEST_PATH = join(artifactsDir, 'run-manifest.json')
   env.PLAYWRIGHT_SERVER_LOG_PATH = join(artifactsDir, 'server.log')
   env.PLAYWRIGHT_BUILD_LOG_PATH = join(artifactsDir, 'build.log')
-  env.PLAYWRIGHT_PORT = env.PLAYWRIGHT_PORT ?? (mode === 'local' ? '4301' : mode === 'ci' ? '4302' : '4303')
+  const portAllocation = await resolvePlaywrightPort(mode, env.PLAYWRIGHT_PORT)
+  env.PLAYWRIGHT_PORT = portAllocation.port
+  const claimedServer = portAllocation.server
 
   let workspacePath = null
   if (mode === 'release-live') {
@@ -278,7 +523,7 @@ try {
     workspacePath = prepareWorkspace(artifactsDir)
     env.THREDOS_BASE_PATH = workspacePath
     env.THREADOS_BASE_PATH = workspacePath
-    env.PLAYWRIGHT_BASE_URL = `http://127.0.0.1:${env.PLAYWRIGHT_PORT}`
+    env.PLAYWRIGHT_BASE_URL = `http://localhost:${env.PLAYWRIGHT_PORT}`
   }
 
   writeFileSync(join(artifactsDir, 'metadata.json'), `${JSON.stringify({
@@ -313,6 +558,10 @@ try {
   })
 
   writeManifest(env, artifactsDir, mode, workspacePath, result.status ?? 1)
+
+  if (claimedServer) {
+    claimedServer.close()
+  }
 
   if (result.error) {
     throw result.error

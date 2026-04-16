@@ -4,18 +4,28 @@ import { useEffect, useRef, useCallback, useState } from 'react'
 import Link from 'next/link'
 import { FilePlus2, Home, LogOut, MessageSquare, Moon, PanelLeft, Play, Plus, Search, ShieldCheck, Sun } from 'lucide-react'
 import { useTheme } from 'next-themes'
+import { PreviewVariantBadge } from '@/components/design/PreviewVariantBadge'
 import { ThredOSBrand } from '@/components/brand/ThredOSBrand'
 import { useDesktopEntitlement, useRunRunnable, useStatus, useResetSequence } from '@/lib/ui/api'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import { getUiVariantTheme, type UiVariant } from '@/lib/ui/design-variants'
 import { useUIStore, type ThreadSurfaceViewMode } from '@/lib/ui/store'
+import { cn } from '@/lib/utils'
 
 const viewModes: Array<{ value: ThreadSurfaceViewMode; label: string; disabled?: boolean }> = [
   { value: 'hierarchy', label: 'Hierarchy' },
   { value: 'lanes', label: 'Lanes' },
 ]
 
-export function TopBar() {
+export function TopBar({
+  uiVariant = 'operator-minimalism',
+  previewMode = false,
+}: {
+  uiVariant?: UiVariant
+  previewMode?: boolean
+}) {
+  const themeTokens = getUiVariantTheme(uiVariant)
   const { data: status } = useStatus()
   const { data: entitlement } = useDesktopEntitlement()
   const runRunnable = useRunRunnable()
@@ -72,7 +82,7 @@ export function TopBar() {
     : null
 
   return (
-    <div className="grid min-h-[4.5rem] grid-cols-1 gap-3 px-4 py-3 lg:grid-cols-[minmax(0,auto)_minmax(0,1fr)_auto] lg:items-center 2xl:px-5">
+    <div data-ui-variant={uiVariant} data-ui-preview={previewMode ? 'true' : 'false'} className="grid min-h-[4.5rem] grid-cols-1 gap-3 px-4 py-3 lg:grid-cols-[minmax(0,auto)_minmax(0,1fr)_auto] lg:items-center 2xl:px-5">
       <div className="flex min-w-0 items-center gap-2.5">
         <Button
           type="button"
@@ -91,12 +101,13 @@ export function TopBar() {
           imageClassName="h-11 w-11"
           labelClassName="truncate"
         />
+        <PreviewVariantBadge uiVariant={uiVariant} previewMode={previewMode} tone="workbench" className="hidden xl:inline-flex" />
       </div>
 
       <div className="flex min-w-0 flex-wrap items-center gap-3 lg:flex-nowrap">
         <div
           data-workbench-cluster="view-mode"
-          className="hidden shrink-0 items-center gap-2 border border-slate-800 bg-[#0a101a] px-2 py-2 xl:flex"
+          className={cn('hidden shrink-0 items-center gap-2 border px-2 py-2 xl:flex', themeTokens.workbench.clusterSurface)}
         >
           {viewModes.map(mode => (
             <Button
@@ -115,7 +126,7 @@ export function TopBar() {
 
         <div
           data-workbench-cluster="command-search"
-          className="flex min-w-0 flex-1 items-center gap-3 border border-slate-800 bg-[#0a101a] px-3 py-2 text-sm text-slate-300"
+          className={cn('flex min-w-0 flex-1 items-center gap-3 border px-3 py-2 text-sm', themeTokens.workbench.searchSurface)}
         >
           <Search className="h-4 w-4 shrink-0 text-slate-300" />
           <input
@@ -129,7 +140,7 @@ export function TopBar() {
       </div>
 
       <div className="flex flex-wrap items-center justify-end gap-2 lg:flex-nowrap">
-        <div data-workbench-cluster="navigation" className="flex items-center gap-2 border border-slate-800 bg-[#0a101a] px-2 py-2">
+        <div data-workbench-cluster="navigation" className={cn('flex items-center gap-2 border px-2 py-2', themeTokens.workbench.clusterSurface)}>
           <Button type="button" asChild variant="outline" size="sm">
             <Link href="/">
               <Home className="h-3.5 w-3.5" />
@@ -148,7 +159,7 @@ export function TopBar() {
             </Button>
           ) : null}
         </div>
-        <div data-workbench-cluster="primary-actions" className="flex items-center gap-2 border border-slate-800 bg-[#0a101a] px-2 py-2">
+        <div data-workbench-cluster="primary-actions" className={cn('flex items-center gap-2 border px-2 py-2', themeTokens.workbench.clusterSurface)}>
           <Button
             type="button"
             variant="outline"
@@ -200,7 +211,7 @@ export function TopBar() {
             <MessageSquare className="h-4 w-4" />
           </Button>
         </div>
-        <div data-workbench-cluster="utility-status" className="flex min-w-0 items-center gap-2 border border-slate-800 bg-[#0a101a] px-2 py-2">
+        <div data-workbench-cluster="utility-status" className={cn('flex min-w-0 items-center gap-2 border px-2 py-2', themeTokens.workbench.clusterSurface)}>
           {status ? (
             <div className="hidden min-w-0 items-center gap-2 xl:flex">
               <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-slate-400">{status.name}</span>
@@ -211,7 +222,7 @@ export function TopBar() {
               ) : null}
               <span
                 data-testid="topbar-status-summary"
-                className="rounded-full border border-[#16417C]/70 bg-[#16417C]/18 px-3 py-1 font-mono text-[11px] uppercase tracking-[0.16em] text-slate-100"
+                className={cn('rounded-full px-3 py-1 font-mono text-[11px] uppercase tracking-[0.16em]', themeTokens.workbench.statusPill)}
               >
                 {statusSummary}
               </span>

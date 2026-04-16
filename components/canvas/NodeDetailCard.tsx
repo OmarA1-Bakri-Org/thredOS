@@ -68,6 +68,7 @@ export function NodeDetailCard() {
   const removeStep = useRemoveStep()
   const removeGate = useRemoveGate()
   const cloneStep = useCloneStep()
+  const [confirmRun, setConfirmRun] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
 
   const { getNode } = useReactFlow()
@@ -111,6 +112,7 @@ export function NodeDetailCard() {
   const isRunning = nodeData.status === 'RUNNING'
   const statusColor = STATUS_COLORS[nodeData.status] ?? '#64748b'
   const typeColor = isStep ? (TYPE_COLORS[step!.type] ?? '#64748b') : '#34d399'
+  const gateNeedsReview = isGate && !!gate?.required_review && (gate.acceptance_conditions?.length ?? 0) > 0
   // Use the node's accent color for HUD brackets (set by SequenceCanvas)
   const accentColor = (flowNode.data as Record<string, unknown>)?.color as string | undefined ?? statusColor
   const deps = isStep ? step!.dependsOn : gate!.dependsOn
@@ -311,7 +313,7 @@ export function NodeDetailCard() {
             <>
               <button
                 type="button"
-                onClick={() => runStep.mutate(selectedNodeId)}
+                onClick={() => setConfirmRun(true)}
                 disabled={runStep.isPending}
                 className="flex items-center gap-1 rounded px-2 py-1 font-mono text-[9px] uppercase tracking-[0.12em] text-emerald-300 transition-all hover:bg-emerald-500/15"
                 title="Run step"
@@ -343,10 +345,10 @@ export function NodeDetailCard() {
             <>
               <button
                 type="button"
-                onClick={() => approveGate.mutate({ gateId: selectedNodeId, acknowledged_conditions: true })}
-                disabled={approveGate.isPending || gate!.status === 'APPROVED'}
+                onClick={() => approveGate.mutate({ gateId: selectedNodeId })}
+                disabled={approveGate.isPending || gate?.status === 'APPROVED' || gateNeedsReview}
                 className="flex items-center gap-1 rounded px-2 py-1 font-mono text-[9px] uppercase tracking-[0.12em] text-emerald-300 transition-all hover:bg-emerald-500/15 disabled:opacity-40"
-                title="Approve gate"
+                title={gateNeedsReview ? 'Open the gate panel to review acceptance conditions before approving' : 'Approve gate'}
               >
                 <Check className="h-3 w-3" />
                 Approve
@@ -354,7 +356,7 @@ export function NodeDetailCard() {
               <button
                 type="button"
                 onClick={() => blockGate.mutate(selectedNodeId)}
-                disabled={blockGate.isPending || gate!.status === 'BLOCKED'}
+                disabled={blockGate.isPending || gate?.status === 'BLOCKED'}
                 className="flex items-center gap-1 rounded px-2 py-1 font-mono text-[9px] uppercase tracking-[0.12em] text-rose-300 transition-all hover:bg-rose-500/15 disabled:opacity-40"
                 title="Block gate"
               >
@@ -390,6 +392,21 @@ export function NodeDetailCard() {
             </button>
           </div>
         </div>
+
+        {confirmRun && isStep && (
+          <ConfirmDialog
+            open
+            title={`Run step ${selectedNodeId}?`}
+            description="This starts a fresh execution for the selected step and acknowledges SAFE mode confirmation before hosted execution."
+            confirmLabel="Run step"
+            tone="default"
+            onCancel={() => setConfirmRun(false)}
+            onConfirm={() => {
+              setConfirmRun(false)
+              runStep.mutate({ stepId: selectedNodeId, confirmPolicy: true })
+            }}
+          />
+        )}
 
         {confirmDelete && (
           <ConfirmDialog

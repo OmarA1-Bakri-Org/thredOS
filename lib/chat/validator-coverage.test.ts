@@ -8,6 +8,8 @@ import type { Sequence } from '../sequence/schema'
 
 let testDir: string
 
+const freshBaseSequence = (): Sequence => structuredClone(baseSequence)
+
 const baseSequence: Sequence = {
   version: '1.0',
   name: 'test-coverage-seq',
@@ -39,7 +41,7 @@ const baseSequence: Sequence = {
 beforeEach(async () => {
   testDir = join(tmpdir(), `validator-cov-test-${Date.now()}-${Math.random().toString(36).slice(2)}`)
   await mkdir(join(testDir, '.threados'), { recursive: true })
-  await writeSequence(testDir, baseSequence)
+  await writeSequence(testDir, freshBaseSequence())
 })
 
 afterEach(async () => {

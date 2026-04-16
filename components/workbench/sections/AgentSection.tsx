@@ -525,7 +525,7 @@ export function AgentSection() {
               </div>
             </>
           ) : (
-            <div className="border border-dashed border-slate-800 px-3 py-4 text-center text-sm text-slate-500">Select an agent to view performance history.</div>
+            <div className="border border-dashed border-slate-800 px-3 py-4 text-center text-sm text-slate-500">Select a registered agent to view local performance.</div>
           )}
         </div>
       ) : null}

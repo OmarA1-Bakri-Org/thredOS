@@ -1,7 +1,7 @@
 # Policy Configuration
 
-ThreadOS enforces safety policies via `.threados/policy.yaml` in your project root.
-If the file does not exist, ThreadOS falls back to SAFE defaults.
+thredOS enforces safety policies via `.threados/policy.yaml` in your project root.
+If the file does not exist, thredOS falls back to SAFE defaults.
 
 ## Configuration
 

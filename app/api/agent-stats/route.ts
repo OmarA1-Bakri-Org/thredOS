@@ -1,5 +1,4 @@
 import { readAgentState } from '@/lib/agents/repository'
-import { summarizeCloudAgentPerformance } from '@/lib/agents/cloud-registry'
 import { aggregateAgentStats, type AgentStats } from '@/lib/agents/stats'
 import { readThreadRunnerState } from '@/lib/thread-runner/repository'
 import { getBasePath } from '@/lib/config'
@@ -54,11 +53,6 @@ export async function GET(request: Request) {
 
     if (stats.totalRuns > 0) {
       return NextResponse.json({ stats: computePerformanceData(stats) })
-    }
-
-    if (agent.registrationNumber) {
-      const cloudStats = await summarizeCloudAgentPerformance(bp, agent.registrationNumber)
-      return NextResponse.json({ stats: cloudStats })
     }
 
     return NextResponse.json({ stats: null })

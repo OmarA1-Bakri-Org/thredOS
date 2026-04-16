@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { isHostedMode } from '@/lib/hosted'
+import { THREDOS_SESSION_COOKIE, verifySessionToken } from '@/lib/auth/session'
 
 interface RateLimitEntry {
   count: number
@@ -16,23 +17,47 @@ declare global {
   var __THREDOS_RATE_LIMITS__: Map<string, RateLimitEntry> | undefined
 }
 
+const LEGACY_THREADOS_SESSION_COOKIE = 'threados_session'
+
 function getRateLimitStore(): Map<string, RateLimitEntry> {
   globalThis.__THREDOS_RATE_LIMITS__ ??= new Map()
   return globalThis.__THREDOS_RATE_LIMITS__
 }
 
+function readCookieValue(cookieHeader: string | null, name: string): string | null {
+  if (!cookieHeader) return null
+  const segments = cookieHeader.split(';')
+  for (const segment of segments) {
+    const [rawName, ...rawValue] = segment.trim().split('=')
+    if (rawName === name) {
+      return rawValue.join('=') || null
+    }
+  }
+  return null
+}
+
 function getClientAddress(request: Request): string {
-  const forwardedFor = request.headers.get('x-forwarded-for')
-  if (forwardedFor) {
-    const firstHop = forwardedFor.split(',')[0]?.trim()
-    if (firstHop) return firstHop
+  const cookieHeader = request.headers.get('cookie')
+  const sessionToken = readCookieValue(cookieHeader, THREDOS_SESSION_COOKIE)
+    ?? readCookieValue(cookieHeader, LEGACY_THREADOS_SESSION_COOKIE)
+  const session = verifySessionToken(sessionToken)
+  if (session?.email) {
+    return `session:${session.email.trim().toLowerCase()}`
   }
 
   const directIp = request.headers.get('cf-connecting-ip') ?? request.headers.get('x-real-ip')
-  if (directIp?.trim()) return directIp.trim()
+  if (directIp?.trim()) return `ip:${directIp.trim()}`
 
   const userAgent = request.headers.get('user-agent')?.trim()
   return userAgent ? `ua:${userAgent}` : 'anonymous'
+}
+
+function pruneExpiredEntries(store: Map<string, RateLimitEntry>, now: number) {
+  for (const [key, entry] of store.entries()) {
+    if (entry.resetAt <= now) {
+      store.delete(key)
+    }
+  }
 }
 
 export function applyRateLimit(request: Request, options: RateLimitOptions): NextResponse | null {
@@ -40,6 +65,7 @@ export function applyRateLimit(request: Request, options: RateLimitOptions): Nex
 
   const now = Date.now()
   const store = getRateLimitStore()
+  pruneExpiredEntries(store, now)
   const key = `${options.bucket}:${getClientAddress(request)}`
   const current = store.get(key)
 

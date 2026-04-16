@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getBasePath } from '@/lib/config'
-import { issueActivationToken } from '@/lib/local-first/entitlements'
+import { activateLocalEntitlement, issueActivationToken } from '@/lib/local-first/entitlements'
 import { readActivationSession, updateActivationSession } from '@/lib/local-first/activation-sessions'
 import { upsertBillingEntitlement } from '@/lib/commercial/billing-state'
 import { resolveDesktopCheckoutSession } from '@/lib/commercial/stripe'
@@ -44,6 +44,7 @@ export async function GET(request: Request) {
     }
 
     const token = issueActivationToken(resolution.payload)
+    await activateLocalEntitlement(basePath, resolution.payload, 'browser-return')
     await updateActivationSession(basePath, stateId, current => ({
       ...current,
       status: 'activated',

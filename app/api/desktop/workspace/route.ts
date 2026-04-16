@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { requireRequestSession } from '@/lib/api-helpers'
 import { getBasePath } from '@/lib/config'
 import { ensureLocalWorkspace, readLocalWorkspace, writeLocalWorkspace } from '@/lib/local-first/workspace'
+import { applyRateLimit } from '@/lib/rate-limit'
 
 const BodySchema = z.object({
   label: z.string().min(1).optional(),
@@ -20,6 +21,12 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const session = requireRequestSession(request)
   if (session instanceof NextResponse) return session
+  const rateLimited = applyRateLimit(request, {
+    bucket: 'desktop-workspace-write',
+    limit: 30,
+    windowMs: 5 * 60 * 1000,
+  })
+  if (rateLimited) return rateLimited
 
   const parsed = BodySchema.safeParse(await request.json().catch(() => null))
   if (!parsed.success) {

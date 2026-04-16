@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { mkdtemp, mkdir, rm } from 'fs/promises'
+import { mkdtemp, mkdir, rm, readFile, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
+import YAML from 'yaml'
 import { writeThreadSurfaceState } from '@/lib/thread-surfaces/repository'
 import { normalizeThreadSurface, type MergeEvent, type RunScope, type ThreadSurface } from '@/lib/thread-surfaces/types'
 
@@ -100,6 +101,76 @@ describe.serial('thread surface read routes', () => {
     expect(res.status).toBe(200)
     const data = await res.json()
     expect(data.threadSurfaces).toEqual(threadSurfaces.map(normalizeThreadSurface))
+  })
+
+  test('GET /api/thread-surfaces reconciles stale root and step labels back to the sequence source of truth', async () => {
+    await writeFile(join(basePath, '.threados', 'sequence.yaml'), YAML.stringify({
+      version: '1.0',
+      name: 'Canonical Sequence',
+      steps: [
+        {
+          id: 'step-a',
+          name: 'Canonical Step A',
+          type: 'base',
+          model: 'claude-code',
+          prompt_file: '.threados/prompts/step-a.md',
+          depends_on: [],
+          status: 'READY',
+        },
+      ],
+      gates: [],
+    }))
+
+    await writeThreadSurfaceState(basePath, {
+      version: 1,
+      threadSurfaces: [
+        {
+          id: 'thread-root',
+          parentSurfaceId: null,
+          parentAgentNodeId: null,
+          depth: 0,
+          surfaceLabel: 'Stale Sequence',
+          createdAt: '2026-03-09T00:00:00.000Z',
+          childSurfaceIds: ['thread-step-a'],
+          sequenceRef: null,
+          spawnedByAgentId: null,
+        },
+        {
+          id: 'thread-step-a',
+          parentSurfaceId: 'thread-root',
+          parentAgentNodeId: 'step-a',
+          depth: 1,
+          surfaceLabel: 'Stale Step A',
+          createdAt: '2026-03-09T00:01:00.000Z',
+          childSurfaceIds: [],
+          sequenceRef: null,
+          spawnedByAgentId: null,
+        },
+      ],
+      runs: [],
+      mergeEvents: [],
+      runEvents: [],
+    })
+
+    const { GET } = await import('@/app/api/thread-surfaces/route')
+    const res = await GET(new Request('http://localhost/api/thread-surfaces'))
+    expect(res.status).toBe(200)
+
+    const data = await res.json()
+    expect(data.threadSurfaces).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'thread-root', surfaceLabel: 'Canonical Sequence' }),
+      expect.objectContaining({ id: 'thread-step-a', surfaceLabel: 'Canonical Step A' }),
+    ]))
+    expect(data.threadSurfaces).toHaveLength(2)
+
+    const persisted = JSON.parse(await readFile(join(basePath, '.threados', 'state', 'thread-surfaces.json'), 'utf-8')) as {
+      threadSurfaces: Array<{ id: string; surfaceLabel: string }>
+    }
+    expect(persisted.threadSurfaces).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'thread-root', surfaceLabel: 'Canonical Sequence' }),
+      expect.objectContaining({ id: 'thread-step-a', surfaceLabel: 'Canonical Step A' }),
+    ]))
+    expect(persisted.threadSurfaces).toHaveLength(2)
   })
 
   test('GET /api/thread-runs returns runs and filters by threadSurfaceId', async () => {

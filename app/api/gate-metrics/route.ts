@@ -17,7 +17,7 @@ export async function GET(request: Request) {
     const auditEntries = await audit.readAll(bp)
 
     const gateAuditEntries: GateAuditEntry[] = auditEntries
-      .filter(e => e.action === 'gate approve' || e.action === 'gate block')
+      .filter(e => e.action === 'gate approve' || e.action === 'gate.approve' || e.action === 'gate block' || e.action === 'gate.block')
       .map(e => ({
         action: e.action,
         gateId: String(e.target),

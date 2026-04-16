@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { Box, GitBranch, ShieldCheck } from 'lucide-react'
 import { buildAgentComposition, buildRegisteredAgentComposition, detectMaterialChange } from '@/lib/agents/composition'
 import { useUIStore, selectCurrentDepthLevel } from '@/lib/ui/store'
@@ -68,6 +68,7 @@ export function NodeSection() {
   const assignAgent = useAssignAgent()
   const selectedThreadSurfaceId = useUIStore(s => s.selectedThreadSurfaceId)
   const { data: threadSkills = [] } = useThreadSurfaceSkills(selectedThreadSurfaceId)
+  const hydrationRunRef = useRef<Record<string, boolean>>({})
 
   const phaseDerivation = status ? derivePhases(status.steps, status.gates) : null
   const selectedPhase = phaseDerivation?.phases.find(p => p.id === selectedPhaseId)
@@ -165,17 +166,36 @@ export function NodeSection() {
       toolIds: defaultTools,
       role: selectedAgent?.role ?? focusedStep.role ?? null,
     })
+    const draftNeedsHydration =
+      !hydrationRunRef.current[focusedStep.id]
+      && agentDraft.stepId === focusedStep.id
+      && agentDraft.promptRef == null
+      && agentDraft.selectedPromptId == null
+      && agentDraft.skillRefs.length === 0
+      && agentDraft.tools.length === 0
+      && (
+        nextDraft.promptRef != null
+        || nextDraft.selectedPromptId != null
+        || nextDraft.skillRefs.length > 0
+        || nextDraft.tools.length > 0
+      )
     if (
       agentDraft.stepId !== focusedStep.id
       || (selectedAgent?.id && agentDraft.id !== selectedAgent.id)
       || (!selectedAgent && agentDraft.name !== nextDraft.name)
+      || draftNeedsHydration
     ) {
       seedAgentDraft(nextDraft)
+      hydrationRunRef.current[focusedStep.id] = true
     }
   }, [
     agentDraft.id,
     agentDraft.name,
+    agentDraft.promptRef,
+    agentDraft.selectedPromptId,
+    agentDraft.skillRefs.length,
     agentDraft.stepId,
+    agentDraft.tools.length,
     defaultPromptId,
     defaultPromptRefId,
     defaultPromptRefPath,
@@ -367,6 +387,7 @@ export function NodeSection() {
             agents={agents}
             promptAssets={promptAssets}
             skillAssets={skillAssets}
+            testIdPrefix="node"
             view={activeAgentCardView}
             selectedPromptId={selectedPrompt?.id ?? null}
             focusedSkillId={selectedSkill?.id ?? null}

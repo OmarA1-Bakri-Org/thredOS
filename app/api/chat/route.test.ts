@@ -48,6 +48,14 @@ function makeRequest(body: unknown): NextRequest {
   })
 }
 
+function makeRawRequest(body: string): NextRequest {
+  return new NextRequest('http://localhost:3000/api/chat', {
+    method: 'POST',
+    body,
+    headers: { 'Content-Type': 'application/json' },
+  })
+}
+
 async function readSSE(response: Response): Promise<string> {
   const text = await response.text()
   return text
@@ -66,6 +74,20 @@ describe('POST /api/chat', () => {
     expect(res.status).toBe(400)
     const body = await res.json()
     expect(body.error).toBe('message is required')
+  })
+
+  test('returns 400 when request body is not valid JSON', async () => {
+    const res = await POST(makeRawRequest('{not-json'))
+    expect(res.status).toBe(400)
+    const body = await res.json()
+    expect(body.error).toBe('invalid JSON body')
+  })
+
+  test('returns 400 when model is not a string', async () => {
+    const res = await POST(makeRequest({ message: 'Hello agent', model: 42 }))
+    expect(res.status).toBe(400)
+    const body = await res.json()
+    expect(body.error).toBe('model must be a string')
   })
 
   test('returns 400 when message exceeds max length', async () => {

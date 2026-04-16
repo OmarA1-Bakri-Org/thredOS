@@ -55,7 +55,7 @@ describe('MessageBubble', () => {
     const assistantMarkup = renderToStaticMarkup(<MessageBubble role="assistant" content="Inspecting the sequence." />)
 
     expect(userMarkup).toContain('Builder prompt')
-    expect(assistantMarkup).toContain('ThreadOS response')
+    expect(assistantMarkup).toContain('thredOS response')
   })
 
   test('renders user content as plain text', () => {

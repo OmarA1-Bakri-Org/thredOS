@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getBasePath } from '@/lib/config'
 import { handleError, requireRequestSession } from '@/lib/api-helpers'
-import { readThreadSurfaceState, writeThreadSurfaceState } from '@/lib/thread-surfaces/repository'
+import { readThreadSurfaceState, withThreadSurfaceStateRevision, writeThreadSurfaceState } from '@/lib/thread-surfaces/repository'
 import { readSequence } from '@/lib/sequence/parser'
 import { reconcileSurfacesWithSequence } from '@/lib/thread-surfaces/materializer'
 
@@ -22,7 +22,7 @@ export async function GET(request: Request) {
 
     if (reconciled !== state) {
       try {
-        await writeThreadSurfaceState(bp, reconciled)
+        await writeThreadSurfaceState(bp, withThreadSurfaceStateRevision(state, reconciled))
         state = reconciled
       } catch (err) {
         console.error('[thread-surfaces.GET] reconciliation write failed (non-fatal):', err)

@@ -1,26 +1,29 @@
 import { describe, it, expect } from 'bun:test'
-import type { Step, Gate } from '@/lib/sequence/schema'
-import type { GateContext } from './engine'
-import { evaluateStepGates, isStepRunnable, getBlockReasons } from './engine'
+import type { Step } from '@/lib/sequence/schema'
+import type { GateContext, CompletionGateContext } from './engine'
+import { evaluateStepCompletionGates, evaluateStepGates, getBlockReasons, isStepRunnable } from './engine'
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function makeStep(overrides: Partial<{ id: string; depends_on: string[]; status: string; side_effect_class: string }>): Step {
+function makeStep(overrides: Partial<Step> = {}): Step {
   return {
-    id: overrides.id ?? 's1',
-    depends_on: overrides.depends_on ?? [],
-    status: overrides.status ?? 'READY',
-    side_effect_class: overrides.side_effect_class,
-  } as unknown as Step
-}
-
-function makeGate(overrides: Partial<{ id: string; status: string }>): Gate {
-  return {
-    id: overrides.id ?? 'g1',
-    status: overrides.status ?? 'PENDING',
-  } as unknown as Gate
+    id: 's1',
+    name: 'Step 1',
+    kind: 'base',
+    type: 'base',
+    phase: 'default',
+    agent_ref: null,
+    prompt_file: '.threados/prompts/s1.md',
+    prompt_ref: { id: 's1', version: 1, path: '.threados/prompts/s1.md' },
+    model: 'codex',
+    surface_ref: 'thread-s1',
+    depends_on: [],
+    status: 'READY',
+    input_contract_ref: null,
+    output_contract_ref: null,
+    gate_set_ref: null,
+    completion_contract: null,
+    side_effect_class: 'none',
+    ...overrides,
+  }
 }
 
 function makeCtx(overrides: Partial<GateContext> = {}): GateContext {
@@ -30,159 +33,100 @@ function makeCtx(overrides: Partial<GateContext> = {}): GateContext {
     crossSurfaceReads: 'allow',
     surfaceClass: 'shared',
     revealState: null,
-    isDependency: false,
+    isDependency: true,
+    inputManifestPresent: true,
+    approvalPresent: true,
     ...overrides,
   }
 }
 
-// ---------------------------------------------------------------------------
-// evaluateStepGates
-// ---------------------------------------------------------------------------
+function makeCompletionCtx(overrides: Partial<CompletionGateContext> = {}): CompletionGateContext {
+  return {
+    artifactManifestPresent: true,
+    outputSchemaValid: true,
+    completionContractSatisfied: true,
+    ...overrides,
+  }
+}
 
 describe('evaluateStepGates', () => {
-  it('returns 3 PASS decisions for a step with no deps, no special conditions', () => {
-    const step = makeStep({ depends_on: [] })
-    const ctx = makeCtx()
-    const decisions = evaluateStepGates(step, [], [], ctx)
+  it('returns five PASS decisions for a normal runnable step', () => {
+    const step = makeStep()
+    const decisions = evaluateStepGates(step, [], [], makeCtx())
+
+    expect(decisions).toHaveLength(5)
+    expect(decisions.every(d => d.status === 'PASS')).toBe(true)
+    expect(decisions.map(d => d.gate_type)).toEqual([
+      'deps_satisfied',
+      'required_inputs_present',
+      'policy_pass',
+      'approval_present',
+      'surface_access_pass',
+    ])
+  })
+
+  it('adds reveal_allowed for sealed surfaces', () => {
+    const step = makeStep()
+    const decisions = evaluateStepGates(step, [], [], makeCtx({ surfaceClass: 'sealed', revealState: 'revealed' }))
+
+    expect(decisions.map(d => d.gate_type)).toContain('reveal_allowed')
+    expect(decisions).toHaveLength(6)
+  })
+
+  it('returns blocked reasons for unresolved dependencies', () => {
+    const dep = makeStep({ id: 'dep-1', status: 'RUNNING' })
+    const step = makeStep({ id: 'child', depends_on: ['dep-1'] })
+    const decisions = evaluateStepGates(step, [dep], [], makeCtx())
+
+    expect(isStepRunnable(decisions)).toBe(false)
+    expect(getBlockReasons(decisions)).toContain('DEP_MISSING')
+  })
+
+  it('requires approval when write side effects are gated', () => {
+    const step = makeStep({ side_effect_class: 'write' })
+    const decisions = evaluateStepGates(step, [], [], makeCtx({ policyMode: 'SAFE', sideEffectMode: 'approved_only', approvalPresent: false }))
+
+    expect(isStepRunnable(decisions)).toBe(false)
+    expect(getBlockReasons(decisions)).toContain('POLICY_BLOCKED')
+    expect(getBlockReasons(decisions)).toContain('APPROVAL_MISSING')
+  })
+
+  it('blocks when required input manifests are missing', () => {
+    const step = makeStep({ input_contract_ref: 'contracts/input.json' })
+    const decisions = evaluateStepGates(step, [], [], makeCtx({ inputManifestPresent: false }))
+
+    expect(isStepRunnable(decisions)).toBe(false)
+    expect(getBlockReasons(decisions)).toContain('INPUT_MISSING')
+  })
+})
+
+describe('evaluateStepCompletionGates', () => {
+  it('returns PASS decisions for successful completion outputs', () => {
+    const step = makeStep({ output_contract_ref: 'contracts/output.json', completion_contract: 'contracts/done.json', side_effect_class: 'write' })
+    const decisions = evaluateStepCompletionGates(step, makeCompletionCtx())
 
     expect(decisions).toHaveLength(3)
     expect(decisions.every(d => d.status === 'PASS')).toBe(true)
   })
 
-  it('decision subjects and gate_types are correct', () => {
-    const step = makeStep({ id: 'my-step', depends_on: [] })
-    const ctx = makeCtx()
-    const decisions = evaluateStepGates(step, [], [], ctx)
+  it('blocks when artifact manifests are required but missing', () => {
+    const step = makeStep({ side_effect_class: 'execute' })
+    const decisions = evaluateStepCompletionGates(step, makeCompletionCtx({ artifactManifestPresent: false }))
 
-    const types = decisions.map(d => d.gate_type)
-    expect(types).toContain('deps_satisfied')
-    expect(types).toContain('policy_pass')
-    expect(types).toContain('surface_access_pass')
-
-    decisions.forEach(d => {
-      expect(d.subject_ref).toBe('my-step')
-      expect(d.subject_type).toBe('step')
-      expect(d.decided_by).toBe('threados')
-      expect(d.id).toMatch(/^gd-/)
-    })
+    expect(getBlockReasons(decisions)).toContain('ARTIFACT_MISSING')
   })
 
-  it('returns BLOCK on deps_satisfied when dep is still RUNNING', () => {
-    const dep = makeStep({ id: 'dep1', status: 'RUNNING' })
-    const step = makeStep({ id: 's2', depends_on: ['dep1'] })
-    const ctx = makeCtx()
-    const decisions = evaluateStepGates(step, [dep], [], ctx)
+  it('blocks when output contract validation fails', () => {
+    const step = makeStep({ output_contract_ref: 'contracts/output.json' })
+    const decisions = evaluateStepCompletionGates(step, makeCompletionCtx({ outputSchemaValid: false }))
 
-    const depDecision = decisions.find(d => d.gate_type === 'deps_satisfied')
-    expect(depDecision?.status).toBe('BLOCK')
-    expect(depDecision?.reason_codes).toContain('DEP_MISSING')
+    expect(getBlockReasons(decisions)).toContain('SCHEMA_INVALID')
   })
 
-  it('returns PASS on deps_satisfied when dep is DONE', () => {
-    const dep = makeStep({ id: 'dep1', status: 'DONE' })
-    const step = makeStep({ id: 's2', depends_on: ['dep1'] })
-    const ctx = makeCtx()
-    const decisions = evaluateStepGates(step, [dep], [], ctx)
+  it('blocks when completion contract is not satisfied', () => {
+    const step = makeStep({ completion_contract: 'contracts/done.json' })
+    const decisions = evaluateStepCompletionGates(step, makeCompletionCtx({ completionContractSatisfied: false }))
 
-    const depDecision = decisions.find(d => d.gate_type === 'deps_satisfied')
-    expect(depDecision?.status).toBe('PASS')
-  })
-
-  it('adds a 4th reveal_allowed decision when surfaceClass is sealed', () => {
-    const step = makeStep({ depends_on: [] })
-    const ctx = makeCtx({ surfaceClass: 'sealed', isDependency: true, revealState: 'revealed' })
-    const decisions = evaluateStepGates(step, [], [], ctx)
-
-    expect(decisions).toHaveLength(4)
-    const revealDecision = decisions.find(d => d.gate_type === 'reveal_allowed')
-    expect(revealDecision).toBeDefined()
-    expect(revealDecision?.status).toBe('PASS')
-  })
-
-  it('reveal_allowed is BLOCK when sealed surface has not been revealed', () => {
-    const step = makeStep({ depends_on: [] })
-    const ctx = makeCtx({ surfaceClass: 'sealed', isDependency: true, revealState: null })
-    const decisions = evaluateStepGates(step, [], [], ctx)
-
-    const revealDecision = decisions.find(d => d.gate_type === 'reveal_allowed')
-    expect(revealDecision?.status).toBe('BLOCK')
-    expect(revealDecision?.reason_codes).toContain('REVEAL_LOCKED')
-  })
-
-  it('does not add reveal_allowed decision for non-sealed surfaces', () => {
-    const step = makeStep({ depends_on: [] })
-    const ctx = makeCtx({ surfaceClass: 'private' })
-    const decisions = evaluateStepGates(step, [], [], ctx)
-
-    expect(decisions).toHaveLength(3)
-    expect(decisions.find(d => d.gate_type === 'reveal_allowed')).toBeUndefined()
-  })
-})
-
-// ---------------------------------------------------------------------------
-// isStepRunnable
-// ---------------------------------------------------------------------------
-
-describe('isStepRunnable', () => {
-  it('returns true when all decisions are PASS', () => {
-    const step = makeStep({ depends_on: [] })
-    const ctx = makeCtx()
-    const decisions = evaluateStepGates(step, [], [], ctx)
-    expect(isStepRunnable(decisions)).toBe(true)
-  })
-
-  it('returns false when any decision is BLOCK', () => {
-    const dep = makeStep({ id: 'dep1', status: 'RUNNING' })
-    const step = makeStep({ id: 's2', depends_on: ['dep1'] })
-    const ctx = makeCtx()
-    const decisions = evaluateStepGates(step, [dep], [], ctx)
-    expect(isStepRunnable(decisions)).toBe(false)
-  })
-
-  it('returns false when any decision is NEEDS_APPROVAL', () => {
-    const step = makeStep({ depends_on: [], side_effect_class: 'write' })
-    const ctx = makeCtx({ policyMode: 'SAFE', sideEffectMode: 'manual_only' })
-    const decisions = evaluateStepGates(step, [], [], ctx)
-    expect(isStepRunnable(decisions)).toBe(false)
-  })
-})
-
-// ---------------------------------------------------------------------------
-// getBlockReasons
-// ---------------------------------------------------------------------------
-
-describe('getBlockReasons', () => {
-  it('returns empty array when all decisions are PASS', () => {
-    const step = makeStep({ depends_on: [] })
-    const ctx = makeCtx()
-    const decisions = evaluateStepGates(step, [], [], ctx)
-    expect(getBlockReasons(decisions)).toHaveLength(0)
-  })
-
-  it('extracts reason codes from BLOCK decisions', () => {
-    const dep = makeStep({ id: 'dep1', status: 'FAILED' })
-    const step = makeStep({ id: 's2', depends_on: ['dep1'] })
-    const ctx = makeCtx()
-    const decisions = evaluateStepGates(step, [dep], [], ctx)
-    const reasons = getBlockReasons(decisions)
-    expect(reasons).toContain('DEP_FAILED')
-  })
-
-  it('extracts reason codes from NEEDS_APPROVAL decisions', () => {
-    const step = makeStep({ depends_on: [], side_effect_class: 'execute' })
-    const ctx = makeCtx({ policyMode: 'SAFE', sideEffectMode: 'manual_only' })
-    const decisions = evaluateStepGates(step, [], [], ctx)
-    const reasons = getBlockReasons(decisions)
-    expect(reasons).toContain('POLICY_BLOCKED')
-  })
-
-  it('collects reasons from multiple blocked decisions', () => {
-    const dep = makeStep({ id: 'dep1', status: 'RUNNING' })
-    const step = makeStep({ id: 's2', depends_on: ['dep1'], side_effect_class: 'write' })
-    const ctx = makeCtx({ policyMode: 'SAFE', sideEffectMode: 'approved_only' })
-    const decisions = evaluateStepGates(step, [dep], [], ctx)
-    const reasons = getBlockReasons(decisions)
-    expect(reasons).toContain('DEP_MISSING')
-    expect(reasons).toContain('POLICY_BLOCKED')
+    expect(getBlockReasons(decisions)).toContain('CONTRACT_INCOMPLETE')
   })
 })

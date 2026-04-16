@@ -1,6 +1,22 @@
 import { describe, expect, test, mock, beforeEach } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
 
+function createDefaultAgentDraft() {
+  return {
+    stepId: null,
+    id: 'draft-agent',
+    name: 'Draft Agent',
+    description: '',
+    role: 'worker',
+    model: 'claude-code',
+    promptRef: null,
+    selectedPromptId: null,
+    focusedSkillId: null,
+    skillRefs: [],
+    tools: [],
+  }
+}
+
 const storeState = {
   activeAccordionSections: ['sequence'] as string[],
   setActiveAccordionSections: (_sections: string[]) => {},
@@ -8,12 +24,21 @@ const storeState = {
   collapseAccordionSection: (_section: string) => {},
   selectedNodeId: null as string | null,
   setSelectedNodeId: (_id: string | null) => {},
+  activeNodePanel: 'details',
+  setActiveNodePanel: (_panel: string) => {},
+  activeAgentCardView: 'identity',
+  setActiveAgentCardView: (_view: string) => {},
+  activeAgentTab: 'workshop',
+  setActiveAgentTab: (_tab: string) => {},
   selectedThreadSurfaceId: null as string | null,
   setSelectedThreadSurfaceId: (_id: string | null) => {},
   selectedPhaseId: null as string | null,
   setSelectedPhaseId: (_id: string | null) => {},
   selectPhaseAndFocus: (_phaseId: string) => {},
   selectedRunId: null as string | null,
+  agentDraft: createDefaultAgentDraft(),
+  seedAgentDraft: () => {},
+  patchAgentDraft: () => {},
   navigationStack: [] as Array<{ threadSurfaceId: string; surfaceLabel: string; depth: number }>,
 }
 
@@ -112,6 +137,10 @@ describe('AccordionPanel', () => {
       activeAccordionSections: ['sequence'],
       selectedNodeId: null,
       selectedPhaseId: null,
+      activeNodePanel: 'details',
+      activeAgentCardView: 'identity',
+      activeAgentTab: 'workshop',
+      agentDraft: createDefaultAgentDraft(),
     })
   })
 

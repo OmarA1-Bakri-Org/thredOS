@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getBasePath } from '@/lib/config'
 import { auditLog, handleError, jsonError, requireRequestSession } from '@/lib/api-helpers'
+import { applyRateLimit } from '@/lib/rate-limit'
 import {
   deleteLibraryAsset,
   ensureLibraryStructure,
@@ -77,6 +78,12 @@ export async function POST(request: Request) {
   try {
     const session = requireRequestSession(request)
     if (session instanceof NextResponse) return session
+    const rateLimited = applyRateLimit(request, {
+      bucket: 'library-write',
+      limit: 30,
+      windowMs: 5 * 60 * 1000,
+    })
+    if (rateLimited) return rateLimited
     const body = WriteSchema.parse(await request.json())
     const basePath = getBasePath()
     await ensureLibraryStructure(basePath)

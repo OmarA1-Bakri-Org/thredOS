@@ -62,7 +62,7 @@ mock.module('@/lib/ui/api', () => ({
   useRequestApproval: () => ({ mutate: () => {}, mutateAsync: async () => ({}) }),
   useResolveApproval: () => ({ mutate: () => {}, mutateAsync: async () => ({}) }),
   useRevealSurface: () => ({ mutate: () => {}, mutateAsync: async () => ({}) }),
-  useExportBundle: () => ({ mutate: () => {}, mutateAsync: async () => ({}) }),
+  useExportBundle: () => ({ mutate: () => {}, mutateAsync: async () => ({}), data: null, error: null, isPending: false }),
   useSurfaceAccess: () => ({ data: null, isLoading: false }),
 }))
 
@@ -104,5 +104,13 @@ describe('TopBar', () => {
     expect(markup).toContain('Ready 4 · Active 1 · Completed 6 · Failed 0')
     expect(markup).toContain('xl:hidden')
     expect(markup).not.toContain('Thread Chat')
+  })
+
+  test('renders preview variant badge when concept review mode is enabled', () => {
+    const markup = renderToStaticMarkup(<TopBar uiVariant="industrial-systems" previewMode />)
+
+    expect(markup).toContain('data-ui-variant="industrial-systems"')
+    expect(markup).toContain('data-ui-preview="true"')
+    expect(markup).toContain('Preview C · Industrial Systems UI')
   })
 })

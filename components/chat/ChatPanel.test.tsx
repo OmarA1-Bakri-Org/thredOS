@@ -1,5 +1,6 @@
-import { describe, expect, test, mock } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
+import * as uiStore from '@/lib/ui/store'
 
 // Mock the store before importing ChatPanel
 const chatUiState = {
@@ -11,9 +12,15 @@ const chatUiState = {
   setChatSize: () => {},
 }
 
-mock.module('@/lib/ui/store', () => ({
-  useUIStore: (selector: (s: typeof chatUiState) => unknown) => selector(chatUiState),
-}))
+beforeEach(() => {
+  spyOn(uiStore, 'useUIStore').mockImplementation(((selector?: (s: typeof chatUiState) => unknown) => (
+    selector ? selector(chatUiState) : chatUiState
+  )) as typeof uiStore.useUIStore)
+})
+
+afterEach(() => {
+  mock.restore()
+})
 
 const { ChatPanel } = await import('./ChatPanel')
 
@@ -32,7 +39,7 @@ describe('ChatPanel', () => {
     expect(markup).toContain('data-testid="chat-empty-state"')
     expect(markup).toContain('data-testid="chat-empty-example-grid"')
     expect(markup).toContain('Ready for bounded guidance')
-    expect(markup).toContain('Ask ThreadOS to inspect, modify, or explain the active sequence.')
+    expect(markup).toContain('Ask thredOS to inspect, modify, or explain the active sequence.')
     expect(markup).toContain('Propose a controlled change and review the diff before applying it.')
   })
 

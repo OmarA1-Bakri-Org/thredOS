@@ -119,6 +119,5 @@ Workspace content stays local by default. Cloud state is limited to:
 
 - account and entitlement state
 - canonical agent registration
-- agent performance history
 
 Prompts, skills, files, thread state, and artifacts should remain in the workspace unless the user explicitly chooses a different path.

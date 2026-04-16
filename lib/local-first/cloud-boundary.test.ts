@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { collectForbiddenCloudKeys, sanitizeAgentForCloud, sanitizePerformanceForCloud } from './cloud-boundary'
+import { collectForbiddenCloudKeys, sanitizeAgentForCloud } from './cloud-boundary'
 import type { AgentRegistration } from '@/lib/agents/types'
 
 describe('cloud boundary', () => {
@@ -67,20 +67,5 @@ describe('cloud boundary', () => {
     })
 
     expect(forbidden.sort()).toEqual(['artifact', 'prompt', 'workspacePath'])
-  })
-
-  test('sanitizePerformanceForCloud keeps only allowed performance fields', () => {
-    const payload = sanitizePerformanceForCloud({
-      id: 'perf-1',
-      registrationNumber: 'AG-20260320-0001',
-      recordedAt: '2026-03-20T10:00:00.000Z',
-      outcome: 'pass',
-      durationMs: 4500,
-      qualityScore: 9,
-      notes: 'Strong run',
-    })
-
-    expect(payload.qualityScore).toBe(9)
-    expect(payload.outcome).toBe('pass')
   })
 })

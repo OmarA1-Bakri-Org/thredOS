@@ -4,7 +4,9 @@ import type { ReactNode } from 'react'
 import dynamic from 'next/dynamic'
 import { PanelLeftClose } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { getUiVariantTheme, type UiVariant } from '@/lib/ui/design-variants'
 import { useUIStore } from '@/lib/ui/store'
+import { cn } from '@/lib/utils'
 import { FloatingChatTrigger } from '@/components/chat/FloatingChatTrigger'
 import { AccordionPanel } from './AccordionPanel'
 
@@ -16,6 +18,8 @@ interface WorkbenchShellProps {
   leftRailOpen?: boolean
   onDismissLeftRail?: () => void
   board: ReactNode
+  uiVariant?: UiVariant
+  previewMode?: boolean
 }
 
 export function WorkbenchShell({
@@ -24,11 +28,14 @@ export function WorkbenchShell({
   leftRailOpen = false,
   onDismissLeftRail,
   board,
+  uiVariant = 'operator-minimalism',
+  previewMode = false,
 }: WorkbenchShellProps) {
+  const theme = getUiVariantTheme(uiVariant)
   const chatOpen = useUIStore(s => s.chatOpen)
   return (
-    <div className="flex h-screen flex-col bg-[#060a12] text-slate-100">
-      <div data-workbench-region="top-bar" className="shrink-0 border-b border-slate-800/80 bg-[#08101d]">
+    <div data-ui-variant={uiVariant} data-ui-preview={previewMode ? 'true' : 'false'} className={cn('flex h-screen flex-col text-slate-100', theme.workbench.shell)}>
+      <div data-workbench-region="top-bar" className={cn('shrink-0 border-b', theme.workbench.topBarRegion)}>
         {topBar}
       </div>
       <div className="flex min-h-0 flex-1">
@@ -36,7 +43,7 @@ export function WorkbenchShell({
           <AccordionPanel />
         </aside>
         <main className="flex min-w-0 flex-1 flex-col">
-          <div data-workbench-region="board" className="min-h-0 flex-1 bg-[#050913]">
+          <div data-workbench-region="board" className={cn('min-h-0 flex-1', theme.workbench.board)}>
             {board}
           </div>
         </main>
@@ -44,10 +51,10 @@ export function WorkbenchShell({
 
       {leftRailOpen ? (
         <div className="fixed inset-0 z-40 xl:hidden" data-workbench-region="left-rail-drawer">
-          <div className="absolute inset-0 bg-[#02050a]/52 backdrop-blur-sm" onClick={onDismissLeftRail} aria-hidden="true" />
+          <div className={cn('absolute inset-0 backdrop-blur-sm', theme.workbench.drawerBackdrop)} onClick={onDismissLeftRail} aria-hidden="true" />
           <aside
             data-workbench-region="left-rail-drawer-panel"
-            className="absolute inset-y-0 left-0 flex w-72 max-w-[90vw] flex-col border-r border-slate-800/80 bg-[#08101d] shadow-[0_28px_80px_rgba(0,0,0,0.55)]"
+            className={cn('absolute inset-y-0 left-0 flex w-72 max-w-[90vw] flex-col shadow-[0_28px_80px_rgba(0,0,0,0.55)]', theme.workbench.drawerPanel)}
           >
             <div className="flex items-center justify-between border-b border-slate-800/80 px-4 py-4">
               <div>

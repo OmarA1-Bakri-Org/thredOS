@@ -4,15 +4,22 @@ import { readSequence, writeSequence } from '@/lib/sequence/parser'
 import { validateDAG } from '@/lib/sequence/dag'
 import { getBasePath } from '@/lib/config'
 import { jsonError, auditLog, handleError, requireRequestSession } from '@/lib/api-helpers'
+import { applyRateLimit } from '@/lib/rate-limit'
 import { StepNotFoundError } from '@/lib/errors'
 import { readAgentState, updateAgentState } from '@/lib/agents/repository'
-import { writePrompt, deletePrompt, validatePromptExists } from '@/lib/prompts/manager'
+import { readPrompt, writePrompt, deletePrompt, validatePromptExists } from '@/lib/prompts/manager'
 import { StepSchema, StepTypeSchema, ModelTypeSchema, StepStatusSchema, type Step } from '@/lib/sequence/schema'
 import type { Sequence } from '@/lib/sequence/schema'
 import { deriveStepThreadSurfaceId } from '@/lib/thread-surfaces/constants'
-import { updateThreadSurfaceState } from '@/lib/thread-surfaces/repository'
+import {
+  readThreadSurfaceState,
+  updateThreadSurfaceState,
+  withThreadSurfaceStateRevision,
+  writeThreadSurfaceState,
+  type ThreadSurfaceState,
+} from '@/lib/thread-surfaces/repository'
 import { materializeStepSurface, removeStepSurface } from '@/lib/thread-surfaces/materializer'
-import { ensurePromptAssetForStep } from '@/lib/library/repository'
+import { deleteLibraryAsset, ensurePromptAssetForStep } from '@/lib/library/repository'
 
 const AddSchema = z.object({
   action: z.literal('add'),
@@ -48,11 +55,27 @@ type EditBody = z.infer<typeof EditSchema>
 type RmBody = z.infer<typeof RmSchema>
 type CloneBody = z.infer<typeof CloneSchema>
 
-/** Validate a field against a Zod schema, returning a jsonError response on failure. */
 function validateField<T>(schema: z.ZodType<T>, value: string, label: string): NextResponse | T {
   const parsed = schema.safeParse(value)
   if (!parsed.success) return jsonError(`Invalid ${label}: ${value}`, 'VALIDATION_ERROR', 400)
   return parsed.data
+}
+
+async function rollbackCoupledState(
+  bp: string,
+  sequenceSnapshot: Sequence,
+  threadSurfaceSnapshot: ThreadSurfaceState,
+) {
+  await writeSequence(bp, structuredClone(sequenceSnapshot)).catch(() => {})
+  await writeThreadSurfaceState(bp, structuredClone(threadSurfaceSnapshot)).catch(() => {})
+}
+
+async function cleanupPromptArtifacts(bp: string, stepId: string, originalPromptContent?: string) {
+  await deleteLibraryAsset(bp, 'prompt', stepId).catch(() => {})
+  await deletePrompt(bp, stepId).catch(() => {})
+  if (originalPromptContent !== undefined) {
+    await writePrompt(bp, stepId, originalPromptContent).catch(() => {})
+  }
 }
 
 async function handleAdd(body: AddBody, seq: Sequence, bp: string) {
@@ -71,27 +94,42 @@ async function handleAdd(body: AddBody, seq: Sequence, bp: string) {
     cwd: body.cwd,
   }
 
-  const v = StepSchema.safeParse(newStep)
-  if (!v.success) return jsonError(v.error.issues.map(e => e.message).join(', '), 'VALIDATION_ERROR', 400)
+  const validated = StepSchema.safeParse(newStep)
+  if (!validated.success) return jsonError(validated.error.issues.map(e => e.message).join(', '), 'VALIDATION_ERROR', 400)
 
-  if (!(await validatePromptExists(bp, body.stepId))) {
-    await writePrompt(bp, body.stepId, `# ${v.data.name}\n\n<!-- Add your prompt here -->\n`)
-  }
-  const promptRef = await ensurePromptAssetForStep(bp, body.stepId, v.data.name)
+  const promptTemplate = `# ${validated.data.name}\n\n<!-- Add your prompt here -->\n`
+  const promptExists = await validatePromptExists(bp, body.stepId)
+  const originalPromptContent = promptExists ? await readPrompt(bp, body.stepId).catch(() => undefined) : undefined
+  const currentSurfaceState = await readThreadSurfaceState(bp)
+  const threadSurfaceSnapshot = structuredClone(currentSurfaceState)
+  const sequenceSnapshot = structuredClone(seq)
 
   seq.steps.push({
-    ...v.data,
-    prompt_ref: promptRef,
+    ...validated.data,
+    prompt_ref: {
+      id: body.stepId,
+      version: 1,
+      path: validated.data.prompt_file,
+    },
   })
   validateDAG(seq)
-  await writeSequence(bp, seq)
+
+  const nextSurfaceState = withThreadSurfaceStateRevision(
+    currentSurfaceState,
+    materializeStepSurface(currentSurfaceState, body.stepId, validated.data.name, seq.name, new Date().toISOString()),
+  )
 
   try {
-    await updateThreadSurfaceState(bp, s =>
-      materializeStepSurface(s, body.stepId, v.data.name, seq.name, new Date().toISOString())
-    )
-  } catch (err) {
-    console.error('[step.add] surface sync failed (non-fatal):', err)
+    await writeSequence(bp, seq)
+    await writeThreadSurfaceState(bp, nextSurfaceState)
+    if (!promptExists) {
+      await writePrompt(bp, body.stepId, promptTemplate)
+    }
+    await ensurePromptAssetForStep(bp, body.stepId, validated.data.name, originalPromptContent ?? promptTemplate)
+  } catch (error) {
+    await rollbackCoupledState(bp, sequenceSnapshot, threadSurfaceSnapshot)
+    await cleanupPromptArtifacts(bp, body.stepId, originalPromptContent)
+    throw error
   }
 
   await auditLog('step.add', body.stepId)
@@ -135,7 +173,7 @@ function applyEditFields(step: Step, body: EditBody): NextResponse | null {
     step.assigned_agent_id = body.assignedAgentId ?? undefined
   }
 
-  return null // no error
+  return null
 }
 
 async function handleEdit(body: EditBody, seq: Sequence, bp: string) {
@@ -206,16 +244,23 @@ async function handleRm(body: RmBody, seq: Sequence, bp: string) {
     return jsonError(`Steps [${deps.map(s => s.id).join(', ')}] depend on '${body.stepId}'`, 'HAS_DEPENDENTS', 409)
   }
 
+  const currentSurfaceState = await readThreadSurfaceState(bp)
+  const threadSurfaceSnapshot = structuredClone(currentSurfaceState)
+  const sequenceSnapshot = structuredClone(seq)
+
   seq.steps.splice(idx, 1)
-  await writeSequence(bp, seq)
-  try { await deletePrompt(bp, body.stepId) } catch { /* ok */ }
+  const nextSurfaceState = withThreadSurfaceStateRevision(currentSurfaceState, removeStepSurface(currentSurfaceState, body.stepId))
 
   try {
-    await updateThreadSurfaceState(bp, s => removeStepSurface(s, body.stepId))
-  } catch (err) {
-    console.error('[step.rm] surface sync failed (non-fatal):', err)
+    await writeSequence(bp, seq)
+    await writeThreadSurfaceState(bp, nextSurfaceState)
+  } catch (error) {
+    await rollbackCoupledState(bp, sequenceSnapshot, threadSurfaceSnapshot)
+    throw error
   }
 
+  await deleteLibraryAsset(bp, 'prompt', body.stepId).catch(() => {})
+  await deletePrompt(bp, body.stepId).catch(() => {})
   await auditLog('step.rm', body.stepId)
   return NextResponse.json({ success: true, action: 'rm', stepId: body.stepId })
 }
@@ -227,27 +272,40 @@ async function handleClone(body: CloneBody, seq: Sequence, bp: string) {
     return jsonError(`Step '${body.newId}' already exists`, 'CONFLICT', 409)
   }
 
-  const clonedPromptFile = `.threados/prompts/${body.newId}.md`
-  const promptRef = await ensurePromptAssetForStep(bp, body.newId, `${src.name} (copy)`)
+  const currentSurfaceState = await readThreadSurfaceState(bp)
+  const threadSurfaceSnapshot = structuredClone(currentSurfaceState)
+  const sequenceSnapshot = structuredClone(seq)
+  const promptTemplate = `# ${src.name} (copy)\n\n<!-- Add your prompt here -->\n`
+
   const cloned: Step = {
     ...src,
     id: body.newId,
     name: `${src.name} (copy)`,
-    prompt_file: clonedPromptFile,
-    prompt_ref: promptRef,
+    prompt_file: `.threados/prompts/${body.newId}.md`,
+    prompt_ref: {
+      id: body.newId,
+      version: 1,
+      path: `.threados/prompts/${body.newId}.md`,
+    },
     status: 'READY',
   }
   seq.steps.push(cloned)
   validateDAG(seq)
-  await writeSequence(bp, seq)
-  await writePrompt(bp, body.newId, `# ${cloned.name}\n\n<!-- Add your prompt here -->\n`)
+
+  const nextSurfaceState = withThreadSurfaceStateRevision(
+    currentSurfaceState,
+    materializeStepSurface(currentSurfaceState, body.newId, cloned.name, seq.name, new Date().toISOString()),
+  )
 
   try {
-    await updateThreadSurfaceState(bp, s =>
-      materializeStepSurface(s, body.newId, cloned.name, seq.name, new Date().toISOString())
-    )
-  } catch (err) {
-    console.error('[step.clone] surface sync failed (non-fatal):', err)
+    await writeSequence(bp, seq)
+    await writeThreadSurfaceState(bp, nextSurfaceState)
+    await writePrompt(bp, body.newId, promptTemplate)
+    await ensurePromptAssetForStep(bp, body.newId, cloned.name, promptTemplate)
+  } catch (error) {
+    await rollbackCoupledState(bp, sequenceSnapshot, threadSurfaceSnapshot)
+    await cleanupPromptArtifacts(bp, body.newId)
+    throw error
   }
 
   await auditLog('step.clone', body.newId, { sourceId: body.sourceId })
@@ -265,6 +323,12 @@ export async function POST(request: Request) {
   try {
     const session = requireRequestSession(request)
     if (session instanceof NextResponse) return session
+    const rateLimited = applyRateLimit(request, {
+      bucket: 'step-write',
+      limit: 30,
+      windowMs: 5 * 60 * 1000,
+    })
+    if (rateLimited) return rateLimited
     const body = BodySchema.parse(await request.json())
     const bp = getBasePath()
     const seq = await readSequence(bp)

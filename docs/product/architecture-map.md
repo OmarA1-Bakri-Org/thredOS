@@ -2,7 +2,7 @@
 
 ## Top-Level Shape
 
-ThreadOS is a local-first application with one visible product entry and several layers behind it:
+thredOS is a local-first application with one visible product entry and several layers behind it:
 
 - UI in `app/`, `components/`, and `lib/ui/`
 - local API routes in `app/api/`
@@ -109,7 +109,7 @@ The main execution path is:
 
 ## Orchestration
 
-ThreadOS has two orchestration faces: deterministic CLI control and chat-assisted control.
+thredOS has two orchestration faces: deterministic CLI control and chat-assisted control.
 
 CLI orchestration:
 
@@ -160,7 +160,7 @@ The model separates three things:
 - a run: one execution attempt for that surface
 - run events and merge events: the history of what happened during that execution
 
-That model is what allows ThreadOS to render hierarchy, lanes, merges, ancestry, skills, and run history instead of only showing a flat list of steps.
+That model is what allows thredOS to render hierarchy, lanes, merges, ancestry, skills, and run history instead of only showing a flat list of steps.
 
 ## Important Current Caveat
 

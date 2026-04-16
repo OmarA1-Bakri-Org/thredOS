@@ -3,6 +3,7 @@ import { readSequence } from '@/lib/sequence/parser'
 import { readMprocsMap } from '@/lib/mprocs/state'
 import { getBasePath } from '@/lib/config'
 import { handleError, requireRequestSession } from '@/lib/api-helpers'
+import { reconcileState } from '@/lib/reconciliation/reconciler'
 import type { Sequence, Step } from '@/lib/sequence/schema'
 
 interface StatusSummary {
@@ -63,6 +64,10 @@ export async function GET(request: Request) {
     const session = requireRequestSession(request)
     if (session instanceof NextResponse) return session
     const bp = getBasePath()
+    const reconciliation = await reconcileState(bp)
+    if (reconciliation.errors.length > 0) {
+      console.warn('[status.GET] reconciliation completed with errors:', reconciliation.errors)
+    }
     const [sequence, mprocsMap] = await Promise.all([readSequence(bp), readMprocsMap(bp)])
     return NextResponse.json(buildStatus(sequence, mprocsMap))
   } catch (err) {

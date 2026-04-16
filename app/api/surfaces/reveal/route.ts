@@ -2,20 +2,30 @@ import { NextResponse } from 'next/server'
 import { canReveal, revealSurface } from '@/lib/barriers/reveal'
 import { createBarrierAttestation } from '@/lib/barriers/barrier-attestation'
 import { appendTraceEvent } from '@/lib/traces/writer'
-import { readThreadSurfaceState, writeThreadSurfaceState } from '@/lib/thread-surfaces/repository'
+import { readThreadSurfaceState, withThreadSurfaceStateRevision, writeThreadSurfaceState } from '@/lib/thread-surfaces/repository'
 import { getBasePath } from '@/lib/config'
 import { handleError, requireRequestSession } from '@/lib/api-helpers'
+import { applyRateLimit } from '@/lib/rate-limit'
 import { normalizeThreadSurface } from '@/lib/thread-surfaces/types'
 
 export async function POST(request: Request) {
   try {
     const session = requireRequestSession(request)
     if (session instanceof NextResponse) return session
+    const rateLimited = applyRateLimit(request, {
+      bucket: 'surface-reveal',
+      limit: 30,
+      windowMs: 5 * 60 * 1000,
+    })
+    if (rateLimited) return rateLimited
 
     const body = await request.json()
     const { surfaceId, runId } = body
     if (!surfaceId) {
       return NextResponse.json({ error: 'surfaceId required', code: 'MISSING_PARAM' }, { status: 400 })
+    }
+    if (!runId) {
+      return NextResponse.json({ error: 'runId required', code: 'MISSING_PARAM' }, { status: 400 })
     }
 
     const bp = getBasePath()
@@ -38,26 +48,34 @@ export async function POST(request: Request) {
 
     const updatedSurfaces = state.threadSurfaces.map((s, i) => (i === surfaceIndex ? revealed : s))
     const updatedState = { ...state, threadSurfaces: updatedSurfaces }
-    await writeThreadSurfaceState(bp, updatedState)
+    await writeThreadSurfaceState(bp, withThreadSurfaceStateRevision(state, updatedState))
 
     const attestation = createBarrierAttestation({
       surfaceId,
-      runId: runId ?? '',
+      runId,
       isolationLabel: revealed.isolationLabel,
       revealState: revealed.revealState ?? 'revealed',
     })
 
-    if (runId) {
-      await appendTraceEvent(bp, runId, {
-        ts: new Date().toISOString(),
-        run_id: runId,
-        surface_id: surfaceId,
-        actor: 'api:surfaces/reveal',
-        event_type: 'surface-revealed',
-        payload_ref: null,
-        policy_ref: null,
-      })
-    }
+    const ts = new Date().toISOString()
+    await appendTraceEvent(bp, runId, {
+      ts,
+      run_id: runId,
+      surface_id: surfaceId,
+      actor: 'api:surfaces/reveal',
+      event_type: 'surface-revealed',
+      payload_ref: null,
+      policy_ref: null,
+    })
+    await appendTraceEvent(bp, runId, {
+      ts,
+      run_id: runId,
+      surface_id: surfaceId,
+      actor: 'api:surfaces/reveal',
+      event_type: 'barrier-attested',
+      payload_ref: null,
+      policy_ref: null,
+    })
 
     return NextResponse.json({ surface: revealed, attestation })
   } catch (err) {

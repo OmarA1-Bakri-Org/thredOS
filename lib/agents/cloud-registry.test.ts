@@ -2,12 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { mkdtemp, rm } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import {
-  listCloudAgentPerformance,
-  recordCloudAgentPerformance,
-  registerCloudAgent,
-  summarizeCloudAgentPerformance,
-} from './cloud-registry'
+import { registerCloudAgent } from './cloud-registry'
 import type { AgentRegistration } from './types'
 
 const tempDirs: string[] = []
@@ -54,38 +49,12 @@ function createAgent(overrides: Partial<AgentRegistration> = {}): AgentRegistrat
 }
 
 describe('cloud agent registry', () => {
-  test('registers an agent and records performance without workspace content', async () => {
+  test('registers an agent without workspace content', async () => {
     const workspace = await createTempWorkspace()
     const registration = await registerCloudAgent(workspace, createAgent())
 
     expect(registration.registrationNumber.startsWith('AG-')).toBe(true)
     expect(registration.agentId).toBe('agent-alpha')
     expect(registration.promptRef).toEqual({ id: 'agent-alpha-prompt', version: 1 })
-
-    await recordCloudAgentPerformance(workspace, {
-      registrationNumber: registration.registrationNumber,
-      outcome: 'pass',
-      durationMs: 4200,
-      qualityScore: 9,
-      notes: 'Local-first execution succeeded',
-    })
-    await recordCloudAgentPerformance(workspace, {
-      registrationNumber: registration.registrationNumber,
-      outcome: 'fail',
-      durationMs: 5100,
-      qualityScore: 4,
-      notes: null,
-    })
-
-    const records = await listCloudAgentPerformance(workspace, registration.registrationNumber)
-    const summary = await summarizeCloudAgentPerformance(workspace, registration.registrationNumber)
-
-    expect(records).toHaveLength(2)
-    expect(summary).toEqual({
-      totalRuns: 2,
-      passRate: 50,
-      avgTimeMs: 4650,
-      quality: 7,
-    })
   })
 })

@@ -17,7 +17,19 @@ export function ensureRootSurface(
   sequenceLabel: string,
   now: string,
 ): ThreadSurfaceState {
-  if (state.threadSurfaces.some(s => s.id === ROOT_ID)) return state
+  const existingRoot = state.threadSurfaces.find(s => s.id === ROOT_ID)
+  if (existingRoot) {
+    if (existingRoot.surfaceLabel === sequenceLabel) return state
+
+    return {
+      ...state,
+      threadSurfaces: state.threadSurfaces.map(surface =>
+        surface.id === ROOT_ID
+          ? { ...surface, surfaceLabel: sequenceLabel }
+          : surface,
+      ),
+    }
+  }
 
   const root: ThreadSurface = {
     id: ROOT_ID,
@@ -49,7 +61,19 @@ export function materializeStepSurface(
   state = ensureRootSurface(state, sequenceLabel, now)
 
   const surfaceId = stepSurfaceId(stepId)
-  if (state.threadSurfaces.some(s => s.id === surfaceId)) return state
+  const existingSurface = state.threadSurfaces.find(s => s.id === surfaceId)
+  if (existingSurface) {
+    if (existingSurface.surfaceLabel === stepName) return state
+
+    return {
+      ...state,
+      threadSurfaces: state.threadSurfaces.map(surface =>
+        surface.id === surfaceId
+          ? { ...surface, surfaceLabel: stepName }
+          : surface,
+      ),
+    }
+  }
 
   const surface: ThreadSurface = {
     id: surfaceId,
@@ -148,10 +172,19 @@ export function clearAllSurfaces(): ThreadSurfaceState {
 
 /**
  * Reconcile thread surfaces with the current sequence steps.
+ * - Ensures the root surface exists and has the current sequence label
  * - Creates missing surfaces for steps that exist in the sequence
  * - Removes orphaned surfaces for steps no longer in the sequence
+ * - Refreshes step surface labels from the sequence source of truth
  *
- * Returns state unchanged if steps is empty (nothing to reconcile against).
+ * May return an updated state even when `steps` is empty (e.g., after a root-label
+ * refresh or other side-effect-driven updates).
+ *
+ * @param state - The current thread surface state
+ * @param steps - Array of step objects from the sequence
+ * @param sequenceLabel - The current sequence name/label
+ * @param now - ISO timestamp for new surface creation
+ * @returns Updated ThreadSurfaceState (may be the same reference if unchanged)
  */
 export function reconcileSurfacesWithSequence(
   state: ThreadSurfaceState,
@@ -159,11 +192,15 @@ export function reconcileSurfacesWithSequence(
   sequenceLabel: string,
   now: string,
 ): ThreadSurfaceState {
-  if (steps.length === 0) return state
-
   let result = state
 
-  // Create missing surfaces
+  if (result.threadSurfaces.some(surface => surface.id === ROOT_ID)) {
+    result = ensureRootSurface(result, sequenceLabel, now)
+  }
+
+  if (steps.length === 0) return result
+
+  // Create missing surfaces and refresh step labels from the sequence source of truth.
   for (const step of steps) {
     result = materializeStepSurface(result, step.id, step.name, sequenceLabel, now)
   }

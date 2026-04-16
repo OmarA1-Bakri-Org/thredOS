@@ -19,7 +19,7 @@ export function ThredOSBrand({
   return (
     <div className={cn('flex items-end gap-4', className)}>
       <Image
-        src="/thredOS.png"
+        src="/thredos_mark_sym_flat.svg"
         alt="thredOS"
         width={72}
         height={72}

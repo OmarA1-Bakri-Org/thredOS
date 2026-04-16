@@ -64,6 +64,7 @@ function StatBar({ value }: { value: number }) {
 export function AgentDetailCard() {
   const selectedNodeId = useUIStore(s => s.selectedNodeId)
   const setSelectedNodeId = useUIStore(s => s.setSelectedNodeId)
+  const sharedAgentDraft = useUIStore(s => s.agentDraft)
   const focusAgentPanel = useUIStore(s => s.focusAgentPanel)
   const seedAgentDraft = useUIStore(s => s.seedAgentDraft)
 
@@ -78,7 +79,7 @@ export function AgentDetailCard() {
   const wrapperRef = useRef<HTMLDivElement | null>(null)
   const [cardHeightPx, setCardHeightPx] = useState(620)
   const [cardWidthPx, setCardWidthPx] = useState(320)
-  const [containerMetrics, setContainerMetrics] = useState({ width: 1440, height: 900, topInset: 24 })
+  const [containerMetrics, setContainerMetrics] = useState({ width: 1440, height: 900, topInset: 96 })
 
   const { getNode } = useReactFlow()
   const { x: tx, y: ty, zoom } = useViewport()
@@ -99,7 +100,7 @@ export function AgentDetailCard() {
   const promptId = sequenceStep?.prompt_ref?.id ?? step?.id ?? null
   const nodeDescription = sequenceStep?.node_description
   const expectedOutcome = sequenceStep?.expected_outcome
-  const draft = (() => {
+  const derivedDraft = (() => {
     if (!step || !threadSurfaceId || !profile) return null
     const skillRefs = selectedAgent?.skillRefs?.length
       ? selectedAgent.skillRefs
@@ -133,6 +134,14 @@ export function AgentDetailCard() {
       role: selectedAgent?.role ?? profile.role,
     })
   })()
+  const sharedDraftIsUnhydrated = sharedAgentDraft.stepId === step?.id
+    && sharedAgentDraft.promptRef == null
+    && sharedAgentDraft.selectedPromptId == null
+    && sharedAgentDraft.skillRefs.length === 0
+    && sharedAgentDraft.tools.length === 0
+  const draft = derivedDraft && sharedAgentDraft.stepId === step?.id && !sharedDraftIsUnhydrated
+    ? sharedAgentDraft
+    : derivedDraft
   const currentComposition = selectedAgent
     ? buildRegisteredAgentComposition({
         model: selectedAgent.model,
@@ -177,11 +186,25 @@ export function AgentDetailCard() {
     if (!draft || !threadSurfaceId || !selectedNodeId) return
     setActionState('Registering canonical agent...')
     try {
-      const response = await registerAgent.mutateAsync(buildAgentRegistrationInput({
+      const registrationInput = buildAgentRegistrationInput({
         draft,
         agent: selectedAgent,
         threadSurfaceId,
-      }))
+      })
+
+      if (!registrationInput.promptRef) {
+        const fallbackPromptId = draft.selectedPromptId ?? step?.id ?? undefined
+        registrationInput.promptRef = sequenceStep?.prompt_ref
+          ?? (promptPath && fallbackPromptId
+            ? {
+                id: fallbackPromptId,
+                version: 1,
+                path: promptPath,
+              }
+            : null)
+      }
+
+      const response = await registerAgent.mutateAsync(registrationInput)
       await assignAgent.mutateAsync({ stepId: selectedNodeId, agentId: response.agent.id })
       seedAgentDraft(buildAgentDraft({
         step: {
@@ -226,7 +249,7 @@ export function AgentDetailCard() {
       setContainerMetrics({
         width: containerRect.width || window.innerWidth,
         height: containerRect.height || window.innerHeight,
-        topInset: Math.max(24, (topBarRect?.bottom ?? containerRect.top) - containerRect.top + 24),
+        topInset: Math.max(96, (topBarRect?.bottom ?? containerRect.top) - containerRect.top + 24),
       })
     }
 
@@ -272,7 +295,7 @@ export function AgentDetailCard() {
       style={{
         left: cardX,
         top: cardTop,
-        zIndex: 999,
+        zIndex: 1001,
         transformOrigin: '0 0',
         transform: `scale(${zoom})`,
       }}

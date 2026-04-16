@@ -1,5 +1,15 @@
-import { describe, test, expect } from 'bun:test'
-import { cn } from './utils'
+import { afterEach, describe, expect, test } from 'bun:test'
+import { cn, createClientId } from './utils'
+
+const originalCryptoDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'crypto')
+
+afterEach(() => {
+  if (originalCryptoDescriptor) {
+    Object.defineProperty(globalThis, 'crypto', originalCryptoDescriptor)
+  } else {
+    Reflect.deleteProperty(globalThis, 'crypto')
+  }
+})
 
 describe('cn', () => {
   test('merges class names', () => {
@@ -16,7 +26,6 @@ describe('cn', () => {
   })
 
   test('merges tailwind conflicts correctly', () => {
-    // twMerge should resolve conflicts
     const result = cn('px-2', 'px-4')
     expect(result).toBe('px-4')
   })
@@ -36,5 +45,29 @@ describe('cn', () => {
     const result = cn(['foo', 'bar'])
     expect(result).toContain('foo')
     expect(result).toContain('bar')
+  })
+})
+
+describe('createClientId', () => {
+  test('uses crypto.randomUUID when available', () => {
+    Object.defineProperty(globalThis, 'crypto', {
+      configurable: true,
+      value: {
+        randomUUID: () => 'uuid-1234',
+      },
+    })
+
+    expect(createClientId()).toBe('uuid-1234')
+  })
+
+  test('falls back when crypto.randomUUID is unavailable', () => {
+    Object.defineProperty(globalThis, 'crypto', {
+      configurable: true,
+      value: {},
+    })
+
+    const id = createClientId()
+    expect(id.startsWith('msg-')).toBe(true)
+    expect(id.length).toBeGreaterThan(12)
   })
 })

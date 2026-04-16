@@ -1,14 +1,16 @@
 'use client'
 
-import { useEffect, useRef, useCallback } from 'react'
+import { useEffect, useRef, useCallback, useState } from 'react'
 import { useTheme } from 'next-themes'
 import { Sun, Moon, MessageSquare } from 'lucide-react'
 import { useUIStore } from '@/lib/ui/store'
-import { useStatus, useRunRunnable } from '@/lib/ui/api'
+import * as uiApi from '@/lib/ui/api'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 
 export function Toolbar() {
-  const { data: status } = useStatus()
-  const runRunnable = useRunRunnable()
+  const { data: status } = uiApi.useStatus()
+  const runRunnable = uiApi.useRunRunnable()
+  const [confirmRun, setConfirmRun] = useState(false)
   const searchQuery = useUIStore(s => s.searchQuery)
   const setSearchQuery = useUIStore(s => s.setSearchQuery)
   const toggleMinimap = useUIStore(s => s.toggleMinimap)
@@ -38,7 +40,7 @@ export function Toolbar() {
       <span className="font-bold text-sm">thredOS</span>
       {status && <span className="text-xs text-muted-foreground">{status.name}</span>}
       <button
-        onClick={() => runRunnable.mutate(undefined)}
+        onClick={() => { setConfirmRun(true); }}
         disabled={runRunnable.isPending}
         className="px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 disabled:opacity-50"
       >
@@ -71,6 +73,18 @@ export function Toolbar() {
           <span className="text-red-600">Failed: {status.summary.failed}</span>
         </div>
       )}
+      <ConfirmDialog
+        open={confirmRun}
+        title="Run runnable frontier?"
+        description="This dispatches the current runnable steps and acknowledges SAFE mode confirmation before hosted execution."
+        confirmLabel="Run runnable"
+        tone="default"
+        onCancel={() => { setConfirmRun(false); }}
+        onConfirm={() => {
+          setConfirmRun(false);
+          runRunnable.mutate({ confirmPolicy: true });
+        }}
+      />
     </div>
   )
 }

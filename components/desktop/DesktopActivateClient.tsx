@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
+import { PreviewVariantBadge } from '@/components/design/PreviewVariantBadge'
+import { type UiVariant, getUiVariantTheme } from '@/lib/ui/design-variants'
 import { isClientVerificationMode } from '@/lib/verification/runtime'
 
 type ActivationResolution =
@@ -11,7 +13,14 @@ type ActivationResolution =
   | { status: 'error'; error: string }
   | { status: 'ready'; deepLink: string; customerEmail: string | null; entitlementStatus: string }
 
-export function DesktopActivateClient() {
+export function DesktopActivateClient({
+  uiVariant = 'operator-minimalism',
+  previewMode = false,
+}: {
+  uiVariant?: UiVariant
+  previewMode?: boolean
+}) {
+  const theme = getUiVariantTheme(uiVariant)
   const searchParams = useSearchParams()
   const verificationMode = isClientVerificationMode()
   const stateId = searchParams.get('state')
@@ -66,10 +75,15 @@ export function DesktopActivateClient() {
   }, [resolution, verificationMode])
 
   return (
-    <div data-testid="desktop-activate-page" className="flex min-h-screen bg-[#060a12] text-slate-100">
-      <div className="m-auto w-full max-w-2xl border border-slate-800/90 bg-[#08101d] px-8 py-10 shadow-[0_28px_80px_rgba(0,0,0,0.45)]">
-        <div className="font-mono text-[11px] uppercase tracking-[0.28em] text-sky-300/60">Desktop activation return</div>
-        <h1 className="mt-4 text-4xl font-light tracking-[-0.04em] text-white">Finish activating thredOS Desktop.</h1>
+    <div data-testid="desktop-activate-page" data-ui-variant={uiVariant} data-ui-preview={previewMode ? 'true' : 'false'} className={`flex min-h-screen text-slate-100 ${theme.auth.root}`}>
+      <div className={`${theme.auth.primaryPanel} m-auto w-full max-w-2xl px-8 py-10 shadow-[0_28px_80px_rgba(0,0,0,0.45)]`}>
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <div className="font-mono text-[11px] uppercase tracking-[0.28em] text-sky-300/60">Desktop activation return</div>
+            <h1 className="mt-4 text-4xl font-light tracking-[-0.04em] text-white">Finish activating thredOS Desktop.</h1>
+          </div>
+          <PreviewVariantBadge uiVariant={uiVariant} previewMode={previewMode} tone="auth" />
+        </div>
 
         {resolution.status === 'processing' || resolution.status === 'idle' ? (
           <p data-testid="desktop-activate-processing" className="mt-5 text-sm leading-7 text-slate-300">
@@ -113,7 +127,7 @@ export function DesktopActivateClient() {
         ) : null}
 
         <div className="mt-8 border-t border-slate-800 pt-5 text-sm text-slate-400">
-          Need to restart the flow? Return to the <Link href="/" className="text-sky-200 hover:text-white">launch surface</Link>.
+          Need to restart the flow? Return to the <Link href={previewMode ? `/?uiVariant=${uiVariant}&preview=1` : '/'} className="text-sky-200 hover:text-white">launch surface</Link>.
         </div>
       </div>
     </div>

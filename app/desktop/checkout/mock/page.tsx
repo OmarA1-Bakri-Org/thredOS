@@ -1,12 +1,10 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
+import { PreviewVariantBadge } from '@/components/design/PreviewVariantBadge'
+import { getUiVariantTheme, resolvePreviewMode, resolveUiVariant, takeFirstQueryValue } from '@/lib/ui/design-variants'
 import { isVerificationMode } from '@/lib/verification/runtime'
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>
-
-function takeFirst(value: string | string[] | undefined, fallback = ''): string {
-  return Array.isArray(value) ? value[0] ?? fallback : value ?? fallback
-}
 
 export default async function MockDesktopCheckoutPage({
   searchParams,
@@ -18,21 +16,29 @@ export default async function MockDesktopCheckoutPage({
   }
 
   const params = await searchParams
-  const state = takeFirst(params.state)
-  const sessionId = takeFirst(params.session_id)
-  const email = takeFirst(params.email, 'verifier@thredos.local')
-  const plan = takeFirst(params.plan, 'desktop-public-beta')
+  const state = takeFirstQueryValue(params.state)
+  const sessionId = takeFirstQueryValue(params.session_id)
+  const email = takeFirstQueryValue(params.email, 'verifier@thredos.local')
+  const plan = takeFirstQueryValue(params.plan, 'desktop-public-beta')
+  const uiVariant = resolveUiVariant(takeFirstQueryValue(params.uiVariant))
+  const previewMode = resolvePreviewMode(takeFirstQueryValue(params.preview))
+  const theme = getUiVariantTheme(uiVariant)
 
-  const successHref = `/desktop/activate?state=${encodeURIComponent(state)}&session_id=${encodeURIComponent(sessionId)}`
-  const cancelHref = `/desktop/activate?state=${encodeURIComponent(state)}&status=cancelled`
+  const successHref = `/desktop/activate?state=${encodeURIComponent(state)}&session_id=${encodeURIComponent(sessionId)}&uiVariant=${uiVariant}${previewMode ? '&preview=1' : ''}`
+  const cancelHref = `/desktop/activate?state=${encodeURIComponent(state)}&status=cancelled&uiVariant=${uiVariant}${previewMode ? '&preview=1' : ''}`
 
   return (
-    <div className="flex min-h-screen bg-[#060a12] text-slate-100">
-      <div className="m-auto w-full max-w-2xl border border-slate-800/90 bg-[#08101d] px-8 py-10 shadow-[0_28px_80px_rgba(0,0,0,0.45)]">
-        <div className="font-mono text-[11px] uppercase tracking-[0.28em] text-sky-300/60">Verification checkout</div>
-        <h1 className="mt-4 text-4xl font-light tracking-[-0.04em] text-white">
-          thredOS Desktop Public Beta
-        </h1>
+    <div data-ui-variant={uiVariant} data-ui-preview={previewMode ? 'true' : 'false'} className={`flex min-h-screen text-slate-100 ${theme.auth.root}`}>
+      <div className={`${theme.auth.primaryPanel} m-auto w-full max-w-2xl px-8 py-10 shadow-[0_28px_80px_rgba(0,0,0,0.45)]`}>
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <div className="font-mono text-[11px] uppercase tracking-[0.28em] text-sky-300/60">Verification checkout</div>
+            <h1 className="mt-4 text-4xl font-light tracking-[-0.04em] text-white">
+              thredOS Desktop Public Beta
+            </h1>
+          </div>
+          <PreviewVariantBadge uiVariant={uiVariant} previewMode={previewMode} tone="auth" />
+        </div>
         <p className="mt-5 text-sm leading-7 text-slate-300">
           This stub checkout page exists only for deterministic browser verification. It preserves the browser return flow without requiring a live Stripe session in local or CI runs.
         </p>

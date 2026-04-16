@@ -73,16 +73,6 @@ export interface CloudAgentRegistration {
   tools: string[]
 }
 
-export interface AgentPerformanceRecord {
-  id: string
-  registrationNumber: string
-  recordedAt: string
-  outcome: 'pass' | 'fail' | 'needs_review'
-  durationMs: number | null
-  qualityScore: number | null
-  notes: string | null
-}
-
 export function startSignIn(): Promise<ActivationSession> {
   return postJson<ActivationSession>('/api/desktop/auth/start', {})
 }
@@ -137,28 +127,14 @@ export function registerAgentCloud(agentId: string): Promise<CloudAgentRegistrat
     .then(response => response.registration)
 }
 
-export function fetchAgentPerformance(registrationNumber: string): Promise<AgentPerformanceRecord[]> {
-  return fetchJson<{ records: AgentPerformanceRecord[] }>(`/api/agent-cloud/performance?registrationNumber=${encodeURIComponent(registrationNumber)}`)
-    .then(response => response.records)
-}
-
-export function recordAgentPerformance(input: {
-  registrationNumber: string
-  outcome: 'pass' | 'fail' | 'needs_review'
-  durationMs?: number | null
-  qualityScore?: number | null
-  notes?: string | null
-}): Promise<AgentPerformanceRecord> {
-  return postJson<{ record: AgentPerformanceRecord }>('/api/agent-cloud/performance', input)
-    .then(response => response.record)
-}
-
 function invalidateRuntimeQueries(qc: ReturnType<typeof useQueryClient>) {
   qc.invalidateQueries({ queryKey: ['status'] })
   qc.invalidateQueries({ queryKey: ['sequence'] })
   qc.invalidateQueries({ queryKey: ['thread-surfaces'] })
   qc.invalidateQueries({ queryKey: ['thread-runs'] })
   qc.invalidateQueries({ queryKey: ['thread-merges'] })
+  qc.invalidateQueries({ queryKey: ['traces'] })
+  qc.invalidateQueries({ queryKey: ['approvals'] })
 }
 
 export function unwrapThreadSurfacesResponse(response: ThreadSurfacesResponse): ThreadSurface[] {
@@ -413,7 +389,14 @@ export function useRegisterAgent() {
       threadSurfaceIds?: string[]
       skillRefs?: SkillRef[]
       skills?: Array<{ id: string; label: string }>
-    }) => postJson<{ agent: AgentRegistration; cloudRegistration?: CloudAgentRegistration; replacementOf?: string; materialChange?: boolean; reasons?: string[] }>('/api/agents', input),
+    }) => postJson<{
+      agent: AgentRegistration
+      cloudRegistration?: CloudAgentRegistration | null
+      cloudSyncError?: string | null
+      replacementOf?: string
+      materialChange?: boolean
+      reasons?: string[]
+    }>('/api/agents', input),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['agents'] })
       qc.invalidateQueries({ queryKey: ['agent-profile'] })
@@ -551,6 +534,7 @@ export function useGateMetrics(gateId: string | null) {
 
 // ── Packs hooks ─────────────────────────────────────────────────────
 import type { Pack } from '@/lib/packs/types'
+import type { PackInstallInput, PackInstallResult } from '@/lib/packs/install'
 
 export function useListPacks() {
   return useQuery<Pack[]>({
@@ -581,6 +565,19 @@ export function usePromotePack() {
     mutationFn: (packId: string) => postJson('/api/packs', { action: 'promote', packId }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['packs'] }) },
     onError: (error) => { console.error('Promote pack failed:', error) },
+  })
+}
+
+
+export function useInstallPack() {
+  const qc = useQueryClient()
+  return useMutation<PackInstallResult, Error, PackInstallInput>({
+    mutationFn: (input) => postJson<PackInstallResult>('/api/packs/install', input),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['packs'] })
+      invalidateRuntimeQueries(qc)
+    },
+    onError: (error) => { console.error('Install pack failed:', error) },
   })
 }
 
@@ -690,6 +687,15 @@ export function useRecordRun() {
 }
 
 // ── V.1: Traces ─────────────────────────────────────────────────────
+
+export function useGateDecisions(runId: string | null, subjectRef?: string | null) {
+  const query = runId ? "/api/gate-decisions?runId=" + encodeURIComponent(runId) + (subjectRef ? "&subjectRef=" + encodeURIComponent(subjectRef) : "") : null
+  return useQuery({
+    queryKey: ["gate-decisions", runId, subjectRef ?? null],
+    queryFn: () => fetchJson<{ decisions: unknown[] }>(query!).then(r => r.decisions),
+    enabled: !!query,
+  })
+}
 
 export function useTraces(runId: string | null) {
   return useQuery({

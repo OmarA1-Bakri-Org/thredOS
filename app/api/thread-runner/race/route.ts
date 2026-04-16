@@ -1,9 +1,13 @@
 import { getBasePath } from '@/lib/config'
 import { enrollRace, recordRun, listRaces, getRaceResults } from '@/lib/thread-runner/race-executor'
 import { enableThreadRunner } from '@/lib/hosted'
+import { requireRequestSession } from '@/lib/api-helpers'
+import { applyRateLimit } from '@/lib/rate-limit'
 
 export async function GET(request: Request) {
   try {
+    const session = requireRequestSession(request)
+    if ('status' in session) return session
     if (!enableThreadRunner()) {
       return Response.json({ error: 'Thread Runner is disabled for thredOS Desktop launch' }, { status: 403 })
     }
@@ -27,6 +31,14 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const session = requireRequestSession(request)
+    if ('status' in session) return session
+    const rateLimited = applyRateLimit(request, {
+      bucket: 'thread-runner-race',
+      limit: 30,
+      windowMs: 5 * 60 * 1000,
+    })
+    if (rateLimited) return rateLimited
     if (!enableThreadRunner()) {
       return Response.json({ error: 'Thread Runner is disabled for thredOS Desktop launch' }, { status: 403 })
     }

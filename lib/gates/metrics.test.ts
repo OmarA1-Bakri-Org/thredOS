@@ -37,4 +37,16 @@ describe('computeGateMetrics', () => {
     const result = computeGateMetrics('gate-1', entries)
     expect(result.avgTimeToApprovalMs).toBe(300_000)
   })
+
+  test('accepts dotted audit action names written by the API routes', () => {
+    const entries: GateAuditEntry[] = [
+      { action: 'gate.block', gateId: 'gate-1', timestamp: '2026-01-01T00:00:00Z' },
+      { action: 'gate.approve', gateId: 'gate-1', timestamp: '2026-01-01T00:05:00Z' },
+    ]
+    const result = computeGateMetrics('gate-1', entries)
+    expect(result.totalAttempts).toBe(2)
+    expect(result.approvals).toBe(1)
+    expect(result.blocks).toBe(1)
+    expect(result.avgTimeToApprovalMs).toBe(300_000)
+  })
 })

@@ -7,6 +7,10 @@
 - `bun test lib/local-first/cloud-boundary.test.ts`
 - `bun test lib/local-first/activation-sessions.test.ts`
 - `bun test lib/commercial/stripe.test.ts`
+- `bun test lib/thread-surfaces/repository.test.ts`
+- `bun test test/api/surface-proof-routes.test.ts`
+- `bun test components/inspector/ThreadSurfaceInspector.test.tsx`
+- `bun test components/workbench/sections/RunSection.test.tsx`
 - `bun run build`
 - `bun run test:ui`
 - `bun run verify:ci`
@@ -23,6 +27,7 @@
 
 ## Verification program
 
+- `bun run dev:wsl` when operating from WSL on a repo mounted under `/mnt/*`; this is the supported desktop beta dev command.
 - `bun run verify:local` from a native Linux filesystem copy when validating the deterministic dev flow.
 - `bun run verify:ci` on the Linux production-parity runner before release promotion.
 - `bun run verify:release-live` only in the gated release environment with real auth and billing secrets.
@@ -33,6 +38,11 @@
   - server stdout/stderr logs
   - screenshots and traces for each suite
   - any operator notes required for live checkout completion
+- Export evidence for a release-candidate run must include:
+  - `.threados/exports/<runId>/bundle.json`
+  - copied `trace.ndjson`
+  - copied `approvals.ndjson` when present
+  - copied `gate-decisions.ndjson`
 
 ## Privacy boundary
 
@@ -75,3 +85,5 @@
   - confirm dialog focus and dismissal behavior
   - Node + Agent + Run panel readability in the packaged build
   - live checkout completion and browser return back into desktop activation
+  - Thread Surface inspector policy card readability
+  - Run panel trace / approvals / export affordances

@@ -6,6 +6,10 @@ import { WorkflowStepContextPanel } from '@/components/workflows/WorkflowStepCon
 import { ThreadFlowPlane } from '@/components/hierarchy/ThreadFlowPlane'
 import { contentCreatorWorkflow } from '@/lib/workflows'
 
+function formatScopeList(scopes?: string[]): string {
+  return scopes && scopes.length > 0 ? scopes.join(', ') : '—'
+}
+
 export function ThreadSurfaceInspector({
   detail,
   workflowStep,
@@ -51,6 +55,39 @@ export function ThreadSurfaceInspector({
         {detail.surfaceDescription ? (
           <p className="mt-3 text-sm leading-relaxed text-slate-200">{detail.surfaceDescription}</p>
         ) : null}
+      </section>
+
+      <section
+        data-testid={`${testIdPrefix}-surface-policy`}
+        className="border border-slate-700 bg-slate-950/65 px-4 py-4"
+      >
+        <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-slate-500">Surface policy</div>
+        <div className="mt-3 grid gap-3 text-sm text-slate-100 md:grid-cols-2">
+          <div className="border border-slate-800/90 bg-[#08101d] px-3 py-2.5">
+            <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Class</div>
+            <div className="mt-1.5 text-white">{detail.surfaceClass ?? '—'}</div>
+          </div>
+          <div className="border border-slate-800/90 bg-[#08101d] px-3 py-2.5">
+            <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Visibility</div>
+            <div className="mt-1.5 text-white">{detail.visibility ?? '—'}</div>
+          </div>
+          <div className="border border-slate-800/90 bg-[#08101d] px-3 py-2.5">
+            <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Reveal state</div>
+            <div className="mt-1.5 text-white">{detail.revealState ?? '—'}</div>
+          </div>
+          <div className="border border-slate-800/90 bg-[#08101d] px-3 py-2.5">
+            <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Isolation</div>
+            <div className="mt-1.5 text-white">{detail.isolationLabel ?? '—'}</div>
+          </div>
+          <div className="border border-slate-800/90 bg-[#08101d] px-3 py-2.5">
+            <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Read scopes</div>
+            <div className="mt-1.5 break-words text-white">{formatScopeList(detail.allowedReadScopes)}</div>
+          </div>
+          <div className="border border-slate-800/90 bg-[#08101d] px-3 py-2.5">
+            <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Write scopes</div>
+            <div className="mt-1.5 break-words text-white">{formatScopeList(detail.allowedWriteScopes)}</div>
+          </div>
+        </div>
       </section>
 
       {hierarchyNodes.length > 0 && onSelectNode ? (

@@ -22,6 +22,7 @@ interface AgentTopTrumpCardProps {
   agents: AgentRegistration[]
   promptAssets: LibraryAssetDraft[]
   skillAssets: LibraryAssetDraft[]
+  testIdPrefix?: string
   changeSummary?: { title: string; detail: string } | null
   view: AgentCardView
   selectedPromptId: string | null
@@ -52,6 +53,7 @@ export function AgentTopTrumpCard({
   agents,
   promptAssets,
   skillAssets,
+  testIdPrefix,
   changeSummary,
   view,
   selectedPromptId,
@@ -97,6 +99,8 @@ export function AgentTopTrumpCard({
     { label: 'Quality', value: performance ? `${performance.quality}/10` : '—' },
   ]
 
+  const testId = (suffix: string) => (testIdPrefix ? `${testIdPrefix}-${suffix}` : suffix)
+
   return (
     <article data-testid="agent-top-trump-card" className="space-y-3 border border-emerald-500/20 bg-emerald-500/5 px-3 py-3">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -133,7 +137,7 @@ export function AgentTopTrumpCard({
             size="sm"
             variant={view === item ? 'default' : 'outline'}
             onClick={() => onViewChange(item)}
-            data-testid={`agent-card-tab-${item}`}
+            data-testid={testId(`agent-card-tab-${item}`)}
             data-active={view === item ? 'true' : 'false'}
             className="capitalize"
           >
@@ -165,6 +169,7 @@ export function AgentTopTrumpCard({
                   <input
                     value={draftName}
                     onChange={e => onDraftNameChange(e.target.value)}
+                    data-testid={testId('draft-name')}
                     className="mt-1.5 w-full border border-slate-700 bg-[#08101d] px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-500/50"
                   />
                 </div>
@@ -173,6 +178,7 @@ export function AgentTopTrumpCard({
                   <input
                     value={draftRole}
                     onChange={e => onDraftRoleChange(e.target.value)}
+                    data-testid={testId('draft-role')}
                     className="mt-1.5 w-full border border-slate-700 bg-[#08101d] px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-500/50"
                   />
                 </div>
@@ -182,6 +188,7 @@ export function AgentTopTrumpCard({
                 <textarea
                   value={draftDescription}
                   onChange={e => onDraftDescriptionChange(e.target.value)}
+                  data-testid={testId('draft-description')}
                   rows={3}
                   className="mt-1.5 w-full resize-none border border-slate-700 bg-[#08101d] px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-500/50"
                 />
@@ -190,13 +197,14 @@ export function AgentTopTrumpCard({
             <div className="border-t border-slate-800/80 pt-3">
               <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Registry</div>
               <div className="mt-2 text-sm text-slate-300">
-                {agent ? 'Registered agent with performance history and lineage.' : 'Pick a registered agent or mint a new one from this loadout.'}
+                {agent ? 'Registered canonical agent with lineage.' : 'Pick a registered agent or mint a new one from this loadout.'}
               </div>
               <div className="mt-3">
                 <label className="block font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Assign existing agent</label>
                 <select
                   value={agent?.id ?? ''}
                   onChange={e => onAssignAgent(e.target.value || null)}
+                  data-testid={testId('assign-existing-agent')}
                   className="mt-1.5 w-full border border-slate-700 bg-[#08101d] px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-500/50"
                 >
                   <option value="">Unassigned</option>
@@ -298,7 +306,7 @@ export function AgentTopTrumpCard({
           />
           <div className="border border-slate-800 bg-[#060e1a] px-3 py-3">
             <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Selected skills</div>
-            <div className="mt-2">
+            <div className="mt-2" data-testid={testId('selected-skills')}>
               {selectedSkillIds.length ? (
                 <SkillBadgeRow skills={selectedSkillIds.map(skillId => ({ id: skillId, label: skillId, inherited: false }))} />
               ) : (
@@ -338,7 +346,7 @@ export function AgentTopTrumpCard({
               ) : null}
             </div>
           ) : null}
-          <div className="border border-slate-800 bg-[#060e1a] px-3 py-3">
+          <div className="border border-slate-800 bg-[#060e1a] px-3 py-3" data-testid={testId('tooling-section')}>
             <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Tooling</div>
             <div className="mt-2 grid gap-2">
               {AVAILABLE_TOOL_OPTIONS.map(tool => {
@@ -347,6 +355,7 @@ export function AgentTopTrumpCard({
                   <button
                     key={tool.id}
                     type="button"
+                    data-testid={testId(`tool-option-${tool.id}`)}
                     onClick={() => onToggleTool(tool.id)}
                     className={`flex w-full items-start justify-between gap-3 border px-3 py-2 text-left transition-all ${
                       selected

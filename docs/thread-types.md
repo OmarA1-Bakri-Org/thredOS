@@ -1,6 +1,6 @@
 # Thread Types Guide
 
-ThreadOS supports six thread types, each representing a different multi-agent coordination pattern.
+thredOS supports six thread types, each representing a different multi-agent coordination pattern.
 
 ## Base (`base`)
 

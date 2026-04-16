@@ -3,7 +3,8 @@ import { z } from 'zod'
 import { getBasePath } from '@/lib/config'
 import { handleError, jsonError, requireRequestSession } from '@/lib/api-helpers'
 import { readAgentState, updateAgentState } from '@/lib/agents/repository'
-import { registerCloudAgent } from '@/lib/agents/cloud-registry'
+import { applyRateLimit } from '@/lib/rate-limit'
+import * as cloudRegistry from '@/lib/agents/cloud-registry'
 import { buildAgentComposition, buildRegisteredAgentComposition, detectMaterialChange } from '@/lib/agents/composition'
 import type { AgentRegistration, AgentSkill } from '@/lib/agents/types'
 import { ensureLibraryStructure, readLibraryCatalog, skillRefFromEntry, syncAgentAsset } from '@/lib/library/repository'
@@ -33,6 +34,8 @@ const AgentBodySchema = z.object({
   skills: z.array(AgentSkillSchema).optional(),
   supersedesAgentId: z.string().optional(),
 })
+
+const PUBLIC_CLOUD_SYNC_ERROR = 'Cloud registration unavailable'
 
 export async function GET(request: Request) {
   try {
@@ -119,6 +122,12 @@ export async function POST(request: Request) {
   try {
     const session = requireRequestSession(request)
     if (session instanceof NextResponse) return session
+    const rateLimited = applyRateLimit(request, {
+      bucket: 'agents-write',
+      limit: 30,
+      windowMs: 5 * 60 * 1000,
+    })
+    if (rateLimited) return rateLimited
     const parsed = AgentBodySchema.safeParse(await request.json())
     if (!parsed.success) {
       return jsonError(parsed.error.issues.map(e => e.message).join(', '), 'VALIDATION_ERROR', 400)
@@ -186,22 +195,38 @@ export async function POST(request: Request) {
         })
 
         const registered = updated.agents.find(agent => agent.id === replacement.id)!
-        const cloudRegistration = await registerCloudAgent(bp, registered)
-        const synced = await updateAgentState(bp, (current) => ({
-          ...current,
-          agents: current.agents.map(agent => agent.id === registered.id
-            ? {
-                ...agent,
-                registrationNumber: cloudRegistration.registrationNumber,
-                cloudSyncedAt: new Date().toISOString(),
-              }
-            : agent),
-        }))
-        const persisted = synced.agents.find(agent => agent.id === replacement.id)!
+        let cloudRegistration: Awaited<ReturnType<typeof cloudRegistry.registerCloudAgent>> | null = null
+        let cloudSyncError: string | null = null
+        let persisted = registered
+
+        try {
+          const syncedRegistration = await cloudRegistry.registerCloudAgent(bp, registered)
+          cloudRegistration = syncedRegistration
+          cloudSyncError = null
+        } catch (error) {
+          console.error('[agents.POST] cloud registration failed for replacement agent', error)
+          cloudSyncError = PUBLIC_CLOUD_SYNC_ERROR
+        }
+
+        if (cloudRegistration) {
+          const synced = await updateAgentState(bp, (current) => ({
+            ...current,
+            agents: current.agents.map(agent => agent.id === registered.id
+              ? {
+                  ...agent,
+                  registrationNumber: cloudRegistration!.registrationNumber,
+                  cloudSyncedAt: new Date().toISOString(),
+                }
+              : agent),
+          }))
+          persisted = synced.agents.find(agent => agent.id === replacement.id) ?? registered
+        }
+
         await syncAgentAsset(bp, persisted)
         return NextResponse.json({
           agent: persisted,
           cloudRegistration,
+          cloudSyncError,
           replacementOf: anchorId,
           materialChange: true,
           reasons: currentDecision.reasons,
@@ -256,20 +281,35 @@ export async function POST(request: Request) {
     })
 
     const registered = updated.agents.find(a => a.id === agent.id)!
-    const cloudRegistration = await registerCloudAgent(bp, registered)
-    const synced = await updateAgentState(bp, (current) => ({
-      ...current,
-      agents: current.agents.map(item => item.id === registered.id
-        ? {
-            ...item,
-            registrationNumber: cloudRegistration.registrationNumber,
-            cloudSyncedAt: new Date().toISOString(),
-          }
-        : item),
-    }))
-    const persisted = synced.agents.find(a => a.id === agent.id)!
+    let cloudRegistration: Awaited<ReturnType<typeof cloudRegistry.registerCloudAgent>> | null = null
+    let cloudSyncError: string | null = null
+    let persisted = registered
+
+    try {
+      const syncedRegistration = await cloudRegistry.registerCloudAgent(bp, registered)
+      cloudRegistration = syncedRegistration
+      cloudSyncError = null
+    } catch (error) {
+      console.error('[agents.POST] cloud registration failed', error)
+      cloudSyncError = PUBLIC_CLOUD_SYNC_ERROR
+    }
+
+    if (cloudRegistration) {
+      const synced = await updateAgentState(bp, (current) => ({
+        ...current,
+        agents: current.agents.map(item => item.id === registered.id
+          ? {
+              ...item,
+              registrationNumber: cloudRegistration!.registrationNumber,
+              cloudSyncedAt: new Date().toISOString(),
+            }
+          : item),
+      }))
+      persisted = synced.agents.find(a => a.id === agent.id) ?? registered
+    }
+
     await syncAgentAsset(bp, persisted)
-    return NextResponse.json({ agent: persisted, cloudRegistration }, { status: 201 })
+    return NextResponse.json({ agent: persisted, cloudRegistration, cloudSyncError }, { status: 201 })
   } catch (err) {
     if (err instanceof Error && err.message.includes('already exists')) {
       return jsonError(err.message, 'CONFLICT', 409)

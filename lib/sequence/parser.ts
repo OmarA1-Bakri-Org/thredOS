@@ -4,20 +4,45 @@ import { join } from 'path'
 import { existsSync } from 'fs'
 import { SequenceSchema, type Sequence } from './schema'
 import { writeFileAtomic } from '../fs/atomic'
-import { SequenceValidationError } from '../errors'
+import { SequenceValidationError, ThredOSError } from '../errors'
 
 const SEQUENCE_PATH = '.threados/sequence.yaml'
 
+const SEQUENCE_REVISION = Symbol('threados.sequenceRevision')
+
+type SequenceWithRevision = Sequence & {
+  [SEQUENCE_REVISION]?: string | null
+}
+
 /** Default empty sequence returned when no sequence.yaml exists */
-const DEFAULT_SEQUENCE: Sequence = {
-  version: '1.0',
-  name: 'New Sequence',
-  steps: [],
-  gates: [],
-  metadata: {
-    created_at: new Date().toISOString(),
-    description: 'Default empty sequence',
-  },
+function createDefaultSequence(): Sequence {
+  return {
+    version: '1.0',
+    name: 'New Sequence',
+    steps: [],
+    gates: [],
+    metadata: {
+      created_at: new Date().toISOString(),
+      description: 'Default empty sequence',
+    },
+  }
+}
+
+function attachRevision<T extends Sequence>(sequence: T, revision: string | null): T {
+  Object.defineProperty(sequence, SEQUENCE_REVISION, {
+    value: revision,
+    enumerable: true,
+    configurable: true,
+    writable: true,
+  })
+  return sequence
+}
+
+async function readCurrentRevision(fullPath: string): Promise<string | null> {
+  if (!existsSync(fullPath)) {
+    return null
+  }
+  return readFile(fullPath, 'utf-8')
 }
 
 /**
@@ -32,7 +57,7 @@ export async function readSequence(basePath: string): Promise<Sequence> {
   const fullPath = join(basePath, SEQUENCE_PATH)
 
   if (!existsSync(fullPath)) {
-    return DEFAULT_SEQUENCE
+    return attachRevision(createDefaultSequence(), null)
   }
 
   const content = await readFile(fullPath, 'utf-8')
@@ -43,7 +68,7 @@ export async function readSequence(basePath: string): Promise<Sequence> {
   if (!result.success) {
     throw new SequenceValidationError(result.error)
   }
-  return result.data
+  return attachRevision(result.data, content)
 }
 
 /**
@@ -58,6 +83,15 @@ export async function writeSequence(
   sequence: Sequence
 ): Promise<void> {
   const fullPath = join(basePath, SEQUENCE_PATH)
+  const currentRevision = await readCurrentRevision(fullPath)
+  const expectedRevision = (sequence as SequenceWithRevision)[SEQUENCE_REVISION]
+
+  if (expectedRevision !== undefined && currentRevision !== expectedRevision) {
+    throw new ThredOSError(
+      'Sequence was modified concurrently. Reload the latest workflow state and retry your change.',
+      'SEQUENCE_CONFLICT'
+    )
+  }
 
   // Validate before writing
   const result = SequenceSchema.safeParse(sequence)
@@ -67,4 +101,5 @@ export async function writeSequence(
 
   const content = YAML.stringify(result.data, { indent: 2 })
   await writeFileAtomic(fullPath, content)
+  attachRevision(sequence, content)
 }

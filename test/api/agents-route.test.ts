@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import YAML from 'yaml'
+import { readAgentState } from '@/lib/agents/repository'
 import { readSequence } from '@/lib/sequence/parser'
 
 let basePath: string
@@ -177,5 +178,120 @@ describe.serial('POST /api/step assignment sync', () => {
     expect(step?.skill_refs).toEqual([
       { id: 'files', version: 3, path: '.threados/skills/files/SKILL.md', capabilities: ['edit'] },
     ])
+  })
+
+  test('unassigning an agent clears only assigned_agent_id and preserves the synced loadout', async () => {
+    const { POST: registerAgent } = await import('@/app/api/agents/route')
+    const { POST: editStep } = await import('@/app/api/step/route')
+
+    await registerAgent(new Request('http://localhost/api/agents', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(registrationBody({
+        threadSurfaceIds: [],
+        promptRef: {
+          id: 'canonical-review-prompt',
+          version: 2,
+          path: '.threados/prompts/canonical-review.md',
+        },
+        skillRefs: [{ id: 'files', version: 3, path: '.threados/skills/files/SKILL.md', capabilities: ['edit'] }],
+        tools: ['shell', 'git'],
+        model: 'claude-code',
+        role: 'builder',
+      })),
+    }))
+
+    await editStep(new Request('http://localhost/api/step', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'edit', stepId: 'step-a', assignedAgentId: 'agent-a' }),
+    }))
+
+    const unassigned = await editStep(new Request('http://localhost/api/step', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'edit', stepId: 'step-a', assignedAgentId: null }),
+    }))
+    expect(unassigned.status).toBe(200)
+
+    const sequence = await readSequence(basePath)
+    const step = sequence.steps.find(item => item.id === 'step-a')
+    expect(step?.assigned_agent_id).toBeUndefined()
+    expect(step?.model).toBe('claude-code')
+    expect(step?.role).toBe('builder')
+    expect(step?.prompt_ref).toEqual({
+      id: 'canonical-review-prompt',
+      version: 2,
+      path: '.threados/prompts/canonical-review.md',
+    })
+    expect(step?.prompt_file).toBe('.threados/prompts/canonical-review.md')
+    expect(step?.skill_refs).toEqual([
+      { id: 'files', version: 3, path: '.threados/skills/files/SKILL.md', capabilities: ['edit'] },
+    ])
+  })
+
+  test('registered agents and assigned loadouts persist across fresh route reads', async () => {
+    const { POST: registerAgent, GET: listAgents } = await import('@/app/api/agents/route')
+    const { POST: editStep } = await import('@/app/api/step/route')
+    const { GET: getSequence } = await import('@/app/api/sequence/route')
+
+    await registerAgent(new Request('http://localhost/api/agents', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(registrationBody({
+        threadSurfaceIds: [],
+        promptRef: {
+          id: 'restart-proof-prompt',
+          version: 4,
+          path: '.threados/prompts/restart-proof.md',
+        },
+        skillRefs: [{ id: 'tools', version: 5, path: '.threados/skills/tools/SKILL.md', capabilities: ['run'] }],
+        tools: ['shell'],
+        model: 'gpt-5.2',
+        role: 'builder',
+      })),
+    }))
+
+    await editStep(new Request('http://localhost/api/step', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'edit', stepId: 'step-a', assignedAgentId: 'agent-a' }),
+    }))
+
+    const agentState = await readAgentState(basePath)
+    expect(agentState.agents.find(agent => agent.id === 'agent-a')?.promptRef).toEqual({
+      id: 'restart-proof-prompt',
+      version: 4,
+      path: '.threados/prompts/restart-proof.md',
+    })
+
+    const agentsResponse = await listAgents(new Request('http://localhost/api/agents'))
+    expect(agentsResponse.status).toBe(200)
+    await expect(agentsResponse.json()).resolves.toMatchObject({
+      agents: [
+        expect.objectContaining({
+          id: 'agent-a',
+          model: 'gpt-5.2',
+          role: 'builder',
+        }),
+      ],
+    })
+
+    const sequenceResponse = await getSequence(new Request('http://localhost/api/sequence'))
+    expect(sequenceResponse.status).toBe(200)
+    const sequencePayload = await sequenceResponse.json()
+    expect(sequencePayload.steps).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'step-a',
+        assigned_agent_id: 'agent-a',
+        model: 'gpt-5.2',
+        role: 'builder',
+        prompt_ref: {
+          id: 'restart-proof-prompt',
+          version: 4,
+          path: '.threados/prompts/restart-proof.md',
+        },
+      }),
+    ]))
   })
 })
