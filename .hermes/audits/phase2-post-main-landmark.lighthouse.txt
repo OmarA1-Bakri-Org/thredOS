@@ -1,0 +1,15 @@
+## Lighthouse Audit Results
+Mode: navigation
+Device: desktop
+URL: http://localhost:3011/
+### Category Scores
+- Accessibility: 100 (accessibility)
+- Best Practices: 100 (best-practices)
+- SEO: 100 (seo)
+### Audit Summary
+Passed: 47
+Failed: 0
+Total Timing: 8670.91ms
+### Reports
+- /tmp/chrome-devtools-mcp-y77SVa/report.json
+- /tmp/chrome-devtools-mcp-TGTWIf/report.html

@@ -81,3 +81,7 @@ scripts/codex-*.cmd
 #Ignore vscode AI rules
 .github\instructions\codacy.instructions.md
 .threados/surfaces/
+
+# Hermes audit artifacts (recomputed per run)
+.hermes/audits/*.json
+.hermes/audits/*.png

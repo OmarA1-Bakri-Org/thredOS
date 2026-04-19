@@ -110,7 +110,7 @@ export function ProductEntryScreenClient({
   const primaryLabel = isAuthenticated ? 'Open Desktop Surface' : isHostedMode ? 'Activate Desktop' : 'Open thredOS'
 
   return (
-    <div data-ui-variant={uiVariant} data-ui-preview={previewMode ? 'true' : 'false'} className={cn('flex min-h-screen text-slate-100', theme.entry.root)}>
+    <main data-ui-variant={uiVariant} data-ui-preview={previewMode ? 'true' : 'false'} className={cn('flex min-h-screen text-slate-100', theme.entry.root)}>
       <div className="m-auto flex w-full max-w-6xl flex-col gap-8 px-6 py-12">
         <Panel
           padding="none"
@@ -273,6 +273,6 @@ export function ProductEntryScreenClient({
           </Panel>
         </div>
       </div>
-    </div>
+    </main>
   )
 }
