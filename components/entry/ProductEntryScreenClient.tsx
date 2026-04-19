@@ -4,6 +4,7 @@ import { ArrowRight, Library, Network, ShieldCheck, Sparkles } from 'lucide-reac
 import { PreviewVariantBadge } from '@/components/design/PreviewVariantBadge'
 import { ThredOSBrand } from '@/components/brand/ThredOSBrand'
 import { buttonVariants } from '@/components/ui/button'
+import { Panel } from '@/components/ui/panel'
 import { getUiVariantTheme, type UiVariant } from '@/lib/ui/design-variants'
 import { cn } from '@/lib/utils'
 import type { ProductEntryScreenProps } from './ProductEntryScreen'
@@ -111,7 +112,12 @@ export function ProductEntryScreenClient({
   return (
     <div data-ui-variant={uiVariant} data-ui-preview={previewMode ? 'true' : 'false'} className={cn('flex min-h-screen text-slate-100', theme.entry.root)}>
       <div className="m-auto flex w-full max-w-6xl flex-col gap-8 px-6 py-12">
-        <div className={cn('space-y-4 px-8 py-8 shadow-[0_28px_80px_rgba(0,0,0,0.45)]', theme.entry.hero)}>
+        <Panel
+          padding="none"
+          elevation="overlay"
+          themeClassName={theme.entry.hero}
+          className="space-y-4 px-8 py-8"
+        >
           <div className="flex flex-wrap items-start justify-between gap-4">
             <ThredOSBrand
               priority
@@ -132,12 +138,15 @@ export function ProductEntryScreenClient({
               registration.
             </p>
           </div>
-        </div>
+        </Panel>
 
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1.18fr)_minmax(0,0.82fr)]">
-          <div
+          <Panel
             data-entry-option="thredos"
-            className={cn('group flex h-full flex-col justify-between p-8 text-left shadow-[0_28px_80px_rgba(0,0,0,0.45)]', theme.entry.primaryPanel)}
+            padding="none"
+            elevation="overlay"
+            themeClassName={theme.entry.primaryPanel}
+            className="group flex h-full flex-col justify-between p-8 text-left"
           >
             <div className="space-y-6">
               <div className="flex items-center justify-between">
@@ -160,27 +169,27 @@ export function ProductEntryScreenClient({
                 </p>
               </div>
               <div className="grid gap-3 md:grid-cols-3">
-                <div className={cn('px-4 py-4', theme.entry.diagramPanel)}>
+                <Panel tone="none" padding="md" themeClassName={theme.entry.diagramPanel}>
                   <div className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.18em] text-slate-300">
                     <Library className="h-3.5 w-3.5 text-sky-300/80" />
                     Library
                   </div>
                   <div className="mt-2 text-sm text-slate-100">Local prompts, local skills, canonical agents</div>
-                </div>
-                <div className={cn('px-4 py-4', theme.entry.diagramPanel)}>
+                </Panel>
+                <Panel tone="none" padding="md" themeClassName={theme.entry.diagramPanel}>
                   <div className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.18em] text-slate-300">
                     <Sparkles className="h-3.5 w-3.5 text-sky-300/80" />
                     Surfaces
                   </div>
                   <div className="mt-2 text-sm text-slate-100">Tiered parent and child execution planes</div>
-                </div>
-                <div className={cn('px-4 py-4', theme.entry.diagramPanel)}>
+                </Panel>
+                <Panel tone="none" padding="md" themeClassName={theme.entry.diagramPanel}>
                   <div className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.18em] text-slate-300">
                     <ShieldCheck className="h-3.5 w-3.5 text-sky-300/80" />
                     Control
                   </div>
                   <div className="mt-2 text-sm text-slate-100">Browser activation, SAFE mode, and local custody</div>
-                </div>
+                </Panel>
               </div>
               <DesktopSurfaceDiagram uiVariant={uiVariant} />
             </div>
@@ -205,9 +214,14 @@ export function ProductEntryScreenClient({
                 <ArrowRight className="h-4 w-4" />
               </button>
             </div>
-          </div>
+          </Panel>
 
-          <div className={cn('flex h-full flex-col justify-between overflow-hidden p-8 shadow-[0_28px_80px_rgba(0,0,0,0.45)]', theme.entry.secondaryPanel)}>
+          <Panel
+            padding="none"
+            elevation="overlay"
+            themeClassName={theme.entry.secondaryPanel}
+            className="flex h-full flex-col justify-between overflow-hidden p-8"
+          >
             <div className="space-y-6">
               <div className="flex items-center justify-between">
                 <span className="rounded-full border border-emerald-500/35 bg-emerald-500/10 px-4 py-1 font-mono text-[11px] uppercase tracking-[0.18em] text-emerald-100">
@@ -223,22 +237,31 @@ export function ProductEntryScreenClient({
                   workspace product.
                 </p>
               </div>
-              <div className="space-y-3 border border-emerald-500/25 bg-emerald-500/5 px-5 py-5">
+              <Panel
+                tone="emerald"
+                padding="lg"
+                className="space-y-3"
+              >
                 <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-emerald-300/70">Included now</div>
                 <ul className="space-y-2 text-sm text-slate-200">
                   <li>thredOS Desktop launch path</li>
                   <li>Tiered thread surfaces and lineage views</li>
                   <li>Activation, agent registry, and local-first workspace custody</li>
                 </ul>
-              </div>
-              <div className={cn('space-y-3 px-5 py-5', theme.entry.diagramPanel)}>
+              </Panel>
+              <Panel
+                tone="none"
+                padding="lg"
+                themeClassName={theme.entry.diagramPanel}
+                className="space-y-3"
+              >
                 <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-300">Held back</div>
                 <ul className="space-y-2 text-sm text-slate-300">
                   <li>Thread Runner remains a separate cloud proving layer</li>
                   <li>thredOS Node follows after Desktop launch</li>
                   <li>Unsafe chat apply and shell execution stay restricted</li>
                 </ul>
-              </div>
+              </Panel>
             </div>
 
             <div className="mt-8 flex items-center justify-between border-t border-slate-800/90 pt-6">
@@ -247,7 +270,7 @@ export function ProductEntryScreenClient({
                 Desktop beta
               </span>
             </div>
-          </div>
+          </Panel>
         </div>
       </div>
     </div>
