@@ -1,7 +1,7 @@
 'use client'
 
-import { useCallback, useEffect, useMemo } from 'react'
-import { ReactFlow, ReactFlowProvider, MiniMap, Controls, Background, useReactFlow } from '@xyflow/react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { ReactFlow, ReactFlowProvider, MiniMap, Controls, Background, useReactFlow, applyNodeChanges, applyEdgeChanges, type Node, type Edge, type NodeChange, type EdgeChange } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { useStatus, useThreadMerges, useThreadRuns, useThreadSurfaces } from '@/lib/ui/api'
 import { useUIStore } from '@/lib/ui/store'
@@ -50,13 +50,69 @@ function SequenceFlowGraph({
   childCountByStepId?: Map<string, number>
 }) {
   const searchQuery = useUIStore(s => s.searchQuery)
-  const { nodes, edges } = useSequenceGraph(status, searchQuery, childCountByStepId)
+  const { nodes: graphNodes, edges: graphEdges } = useSequenceGraph(status, searchQuery, childCountByStepId)
   const { fitView } = useReactFlow()
   const { menu, openMenu, closeMenu } = useCanvasContextMenu()
 
+  // Controlled nodes/edges with local drag state.
+  //
+  // The source `useSequenceGraph` recomputes positions from ELK on every
+  // status change. We lift to local state so user drags persist, and we
+  // reconcile upstream graph changes by:
+  //   - replacing any new/removed nodes 1:1 from the upstream result
+  //   - preserving the CURRENT position of any node already present in
+  //     local state (don't stomp user drags)
+  // Same approach for edges (no persistent user-edits on edges today,
+  // but keeping symmetric for future).
+  const [nodes, setNodes] = useState<Node[]>(graphNodes)
+  const [edges, setEdges] = useState<Edge[]>(graphEdges)
+  const positionsRef = useRef<Map<string, { x: number; y: number }>>(new Map())
+
   useEffect(() => {
-    if (nodes.length > 0) {
-      const t = setTimeout(() => fitView({ padding: 0.15 }), 80)
+    setNodes(prev => {
+      const prevPositions = new Map(prev.map(n => [n.id, n.position]))
+      return graphNodes.map(n => {
+        const kept = prevPositions.get(n.id)
+        return kept ? { ...n, position: kept } : n
+      })
+    })
+  }, [graphNodes])
+
+  useEffect(() => {
+    setEdges(graphEdges)
+  }, [graphEdges])
+
+  const onNodesChange = useCallback(
+    (changes: NodeChange[]) => {
+      setNodes(current => {
+        const next = applyNodeChanges(changes, current)
+        // Cache post-drag positions so the reconcile effect above doesn't
+        // overwrite user drags when graphNodes re-emits.
+        for (const change of changes) {
+          if (change.type === 'position' && change.position) {
+            positionsRef.current.set(change.id, change.position)
+          }
+        }
+        return next
+      })
+    },
+    [],
+  )
+
+  const onEdgesChange = useCallback(
+    (changes: EdgeChange[]) => setEdges(current => applyEdgeChanges(changes, current)),
+    [],
+  )
+
+  // Run fitView ONLY on the first successful render of this canvas, so
+  // manual drags never get clobbered by an auto-refit on upstream changes.
+  const didInitialFitRef = useRef(false)
+  useEffect(() => {
+    if (!didInitialFitRef.current && nodes.length > 0) {
+      const t = setTimeout(() => {
+        fitView({ padding: 0.15 })
+        didInitialFitRef.current = true
+      }, 80)
       return () => clearTimeout(t)
     }
   }, [nodes.length, fitView])
@@ -86,6 +142,8 @@ function SequenceFlowGraph({
       <ReactFlow
         nodes={nodes}
         edges={edges}
+        onNodesChange={onNodesChange}
+        onEdgesChange={onEdgesChange}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         fitView
