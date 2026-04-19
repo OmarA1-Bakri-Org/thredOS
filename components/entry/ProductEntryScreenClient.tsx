@@ -5,6 +5,7 @@ import { PreviewVariantBadge } from '@/components/design/PreviewVariantBadge'
 import { ThredOSBrand } from '@/components/brand/ThredOSBrand'
 import { buttonVariants } from '@/components/ui/button'
 import { Panel } from '@/components/ui/panel'
+import { TopologyPulse } from '@/components/entry/topology-pulse'
 import { getUiVariantTheme, type UiVariant } from '@/lib/ui/design-variants'
 import { cn } from '@/lib/utils'
 import type { ProductEntryScreenProps } from './ProductEntryScreen'
@@ -59,11 +60,11 @@ function DesktopSurfaceDiagram({ uiVariant }: { uiVariant: UiVariant }) {
 
           <div className="flex items-center justify-center">
             <div className="flex flex-col items-center gap-2">
-              <div className="h-14 w-px bg-gradient-to-b from-transparent via-sky-400/70 to-transparent" />
+              <TopologyPulse direction="down" />
               <div className="rounded-full border border-emerald-500/35 bg-emerald-500/10 px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.16em] text-emerald-100">
                 account/entitlement & canonical registration only
               </div>
-              <div className="h-14 w-px bg-gradient-to-b from-transparent via-sky-400/70 to-transparent" />
+              <TopologyPulse direction="down" delay={1.2} />
             </div>
           </div>
 
