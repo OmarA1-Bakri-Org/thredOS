@@ -21,6 +21,7 @@
     "test": "bun test",
     "test:ui": "playwright test test/ui/main-page.e2e.ts",
     "check": "bun run lint && bun run typecheck && bun test",
+    "a11y": "axe http://localhost:3011 --exit --tags wcag2aa,wcag21aa",
     "verify:local": "node scripts/verify/run.mjs local",
     "verify:ci": "node scripts/verify/run.mjs ci",
     "verify:release-live": "node scripts/verify/run.mjs release-live"
@@ -50,6 +51,7 @@
     "zustand": "^5.0.11"
   },
   "devDependencies": {
+    "@axe-core/cli": "^4.11.2",
     "@axe-core/playwright": "^4.10.2",
     "@playwright/test": "^1.54.2",
     "@tailwindcss/postcss": "^4",
