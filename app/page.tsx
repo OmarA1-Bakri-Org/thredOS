@@ -16,7 +16,6 @@ function buildPrimaryHref({
   uiVariant: string
   previewMode: boolean
 }) {
-  const hasVariantQuery = previewMode || uiVariant !== 'operator-minimalism'
   const isDefaultVariant = uiVariant === 'premium-control'
   const variantSuffix = previewMode || !isDefaultVariant ? `uiVariant=${uiVariant}${previewMode ? '&preview=1' : ''}` : ''
   const appHref = variantSuffix ? `/app?${variantSuffix}` : '/app'

@@ -13,7 +13,6 @@ import type { Sequence } from '@/lib/sequence/schema'
 import { deriveStepThreadSurfaceId } from '@/lib/thread-surfaces/constants'
 import {
   readThreadSurfaceState,
-  updateThreadSurfaceState,
   withThreadSurfaceStateRevision,
   writeThreadSurfaceState,
   type ThreadSurfaceState,
