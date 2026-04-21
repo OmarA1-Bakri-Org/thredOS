@@ -50,8 +50,11 @@ import {
   evaluateRuntimeCondition,
   evaluateSequenceCondition,
   readRuntimeContext,
-  storeRuntimeContextValue,
 } from '@/lib/runtime/context'
+import {
+  AbortWorkflowError,
+  executeNativeOperationalAction,
+} from '@/lib/runtime/native-actions'
 
 const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000
 const THREADOS_EVENT_EMITTER_COMMAND = 'thread event'
@@ -105,13 +108,6 @@ class ApprovalRequiredError extends Error {
   constructor(message: string) {
     super(message)
     this.name = 'ApprovalRequiredError'
-  }
-}
-
-class AbortWorkflowError extends Error {
-  constructor(message: string) {
-    super(message)
-    this.name = 'AbortWorkflowError'
   }
 }
 
@@ -334,38 +330,10 @@ async function executeNativeStepActions(
       )
     }
 
-    if (action.type !== 'composio_tool') continue
-
-    const config = (action.config ?? {}) as Record<string, unknown>
-    const toolSlug = typeof config.tool_slug === 'string' ? config.tool_slug : ''
-    const input = config.arguments
-    const actionArgs = input && typeof input === 'object' && !Array.isArray(input)
-      ? input as Record<string, unknown>
-      : {}
-    const actionId = typeof action.id === 'string' ? action.id : toolSlug || 'composio_tool'
-
-    if (!toolSlug) {
-      throw new Error(`Composio action '${actionId}' is missing config.tool_slug`)
-    }
-
-    try {
-      const result = await (runtime.runComposioTool ?? executeComposioTool)({
-        toolSlug,
-        arguments: actionArgs,
-        timeoutMs: typeof action.timeout_ms === 'number' ? action.timeout_ms : step.timeout_ms,
-      })
-
-      if (typeof action.output_key === 'string' && action.output_key.length > 0) {
-        await storeRuntimeContextValue(basePath, action.output_key, result)
-      }
-    } catch (error) {
-      const policy = typeof action.on_failure === 'string' ? action.on_failure : 'abort_step'
-      const message = `Composio action '${actionId}' failed: ${error instanceof Error ? error.message : String(error)}`
-
-      if (policy === 'warn' || policy === 'skip') continue
-      if (policy === 'abort_workflow') throw new AbortWorkflowError(message)
-      throw new Error(message)
-    }
+    await executeNativeOperationalAction(basePath, sequence, step, runId, {
+      ...runtime,
+      runComposioTool: runtime.runComposioTool ?? executeComposioTool,
+    }, action)
   }
 }
 

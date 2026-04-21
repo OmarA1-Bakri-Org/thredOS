@@ -23,11 +23,13 @@ import {
   evaluateSequenceCondition,
   evaluateRuntimeCondition,
   buildConditionContext,
-  getNestedRuntimeValue,
-  hydrateApolloApprovalRuntimeContext,
   readRuntimeContext,
-  storeRuntimeContextValue,
 } from '../../runtime/context'
+import {
+  AbortWorkflowError,
+  executeNativeOperationalAction,
+  renderRuntimeContextTemplate,
+} from '../../runtime/native-actions'
 
 const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000 // 30 minutes
 const THREADOS_EVENT_EMITTER_COMMAND = 'thread event'
@@ -72,13 +74,6 @@ interface CLIRunRuntime {
 
 declare global {
   var __THREADOS_CLI_RUN_RUNTIME__: CLIRunRuntime | undefined
-}
-
-class AbortWorkflowError extends Error {
-  constructor(message: string) {
-    super(message)
-    this.name = 'AbortWorkflowError'
-  }
 }
 
 class ApprovalRequiredError extends Error {
@@ -201,65 +196,11 @@ async function executeStepActions(
       throw new ApprovalRequiredError(`Awaiting approval for step '${step.id}' via action '${String(action.id ?? 'approval')}'`)
     }
 
-    if (action.type !== 'composio_tool') continue
-
-    const config = (action.config ?? {}) as Record<string, unknown>
-    const toolSlug = typeof config.tool_slug === 'string' ? config.tool_slug : ''
-    const input = config.arguments
-    const actionArgs = input && typeof input === 'object' && !Array.isArray(input)
-      ? input as Record<string, unknown>
-      : {}
-    const actionId = typeof action.id === 'string' ? action.id : toolSlug || 'composio_tool'
-
-    if (!toolSlug) {
-      throw new Error(`Composio action '${actionId}' is missing config.tool_slug`)
-    }
-
-    try {
-      const result = await (runtime.runComposioTool ?? executeComposioTool)({
-        toolSlug,
-        arguments: actionArgs,
-        timeoutMs: typeof action.timeout_ms === 'number' ? action.timeout_ms : step.timeout_ms,
-      })
-
-      if (typeof action.output_key === 'string' && action.output_key.length > 0) {
-        await storeRuntimeContextValue(basePath, action.output_key, result)
-      }
-    } catch (error) {
-      const policy = typeof action.on_failure === 'string' ? action.on_failure : 'abort_step'
-      const message = `Composio action '${actionId}' failed: ${error instanceof Error ? error.message : String(error)}`
-
-      if (policy === 'warn' || policy === 'skip') {
-        console.warn(message)
-        continue
-      }
-      if (policy === 'abort_workflow') {
-        throw new AbortWorkflowError(message)
-      }
-      throw new Error(message)
-    }
+    await executeNativeOperationalAction(basePath, sequence, step, runId, {
+      ...runtime,
+      runComposioTool: runtime.runComposioTool ?? executeComposioTool,
+    }, action)
   }
-}
-
-async function renderRuntimeContextTemplate(
-  basePath: string,
-  template: string,
-  runtimeContext: Record<string, unknown>,
-): Promise<string> {
-  const hydratedContext = await hydrateApolloApprovalRuntimeContext(basePath, runtimeContext)
-
-  return template.replace(/\{\{\s*([A-Za-z0-9_.]+)\s*\}\}/g, (match, path: string) => {
-    const value = getNestedRuntimeValue(hydratedContext, path)
-    if (value === undefined) return match
-    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') {
-      return String(value)
-    }
-    try {
-      return JSON.stringify(value)
-    } catch {
-      return match
-    }
-  })
 }
 
 interface ApprovalRequirement {

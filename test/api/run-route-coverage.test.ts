@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { mkdtemp, mkdir, rm, writeFile } from 'fs/promises'
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import YAML from 'yaml'
+import { runStep as executeProcess } from '@/lib/runner/wrapper'
 import { readApprovals } from '@/lib/approvals/repository'
 import { readSequence } from '@/lib/sequence/parser'
 import { readTraceEvents } from '@/lib/traces/reader'
@@ -1078,5 +1079,97 @@ describe.serial('run route coverage — error handling', () => {
     expect(res.status).toBe(200)
     const data = await res.json()
     expect(data.success).toBe(true)
+  })
+
+  test('POST executes cli, write_file, sub_agent, and rube_tool native actions with API parity', async () => {
+    const artifactDir = join(basePath, 'apollo-artifacts')
+    const icpConfigPath = join(artifactDir, 'icp-config.json')
+    const qualifiedSegmentPath = join(artifactDir, 'qualified-segment.json')
+    const composioCalls: Array<{ toolSlug: string; arguments: Record<string, unknown> }> = []
+
+    globalThis.__THREADOS_RUN_ROUTE_RUNTIME__ = {
+      dispatch: async (_model: string, opts: { stepId: string; runId: string; cwd: string; timeout: number }) => {
+        if (opts.stepId.endsWith('spawn-artifact-agent')) {
+          const script = `const fs=require('fs');fs.mkdirSync(${JSON.stringify(artifactDir)},{recursive:true});fs.writeFileSync(${JSON.stringify(qualifiedSegmentPath)}, JSON.stringify({segment_name:'API Segment',total_qualified:2}, null, 2));`
+          return {
+            stepId: opts.stepId,
+            runId: opts.runId,
+            command: process.execPath,
+            args: ['-e', script],
+            cwd: opts.cwd,
+            timeout: opts.timeout,
+            env: {},
+          }
+        }
+
+        return {
+          stepId: opts.stepId,
+          runId: opts.runId,
+          command: process.execPath,
+          args: ['-e', 'process.exit(0)'],
+          cwd: opts.cwd,
+          timeout: opts.timeout,
+          env: {},
+        }
+      },
+      runStep: executeProcess,
+      saveRunArtifacts: async () => join(basePath, '.threados', 'runs', 'mock'),
+      runComposioTool: async input => {
+        composioCalls.push({ toolSlug: input.toolSlug, arguments: input.arguments })
+        return { ok: true, tool: input.toolSlug }
+      },
+    }
+
+    await mkdir(join(basePath, '.threados', 'state'), { recursive: true })
+    await writeFile(
+      join(basePath, '.threados', 'state', 'runtime-context.json'),
+      JSON.stringify({ icp_config: { sources: ['apollo_saved'], output: { apollo_stage_name: 'API Review' } } }),
+    )
+
+    await setupTestSequence({
+      version: '1.0',
+      name: 'native-action-api-seq',
+      steps: [
+        {
+          id: 'native-api-step',
+          name: 'Native API Step',
+          type: 'base',
+          model: 'codex',
+          prompt_file: '.threados/prompts/native-api-step.md',
+          depends_on: [],
+          status: 'READY',
+          actions: [
+            { id: 'cli-action', type: 'cli', config: { command: "printf 'api-cli'" }, output_key: 'cli_result' },
+            { id: 'write-icp', type: 'write_file', config: { file_path: icpConfigPath }, output_key: 'icp_config_file' },
+            { id: 'spawn-artifact-agent', type: 'sub_agent', config: { prompt: 'Write the qualified segment artifact JSON.', subagent_type: 'general-purpose' }, output_key: 'sub_agent_result' },
+            { id: 'apollo-alias', type: 'rube_tool', config: { tool_slug: 'APOLLO_TEST_TOOL', arguments: { query: 'segment' } }, output_key: 'apollo_tool_result' },
+          ],
+        },
+      ],
+      gates: [],
+    })
+    await writePrompt('native-api-step')
+
+    const { POST } = await import('@/app/api/run/route')
+    const res = await POST(new Request('http://localhost/api/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: confirmedBody({ stepId: 'native-api-step' }),
+    }))
+
+    expect(res.status).toBe(200)
+    const data = await res.json()
+    expect(data.success).toBe(true)
+    expect(data.status).toBe('DONE')
+
+    const runtimeContext = JSON.parse(await readFile(join(basePath, '.threados', 'state', 'runtime-context.json'), 'utf-8'))
+    expect(runtimeContext.cli_result).toMatchObject({ stdout: 'api-cli', exitCode: 0, status: 'success' })
+    expect(runtimeContext.icp_config_file).toMatchObject({ path: icpConfigPath, status: 'written', sourceKey: 'icp_config' })
+    expect(runtimeContext.sub_agent_result).toMatchObject({ status: 'success', exitCode: 0, subagentType: 'general-purpose' })
+    expect(runtimeContext.apollo_tool_result).toEqual({ ok: true, tool: 'APOLLO_TEST_TOOL' })
+
+    expect(JSON.parse(await readFile(icpConfigPath, 'utf-8'))).toEqual({ sources: ['apollo_saved'], output: { apollo_stage_name: 'API Review' } })
+    expect(JSON.parse(await readFile(qualifiedSegmentPath, 'utf-8'))).toEqual({ segment_name: 'API Segment', total_qualified: 2 })
+    expect(composioCalls).toEqual([{ toolSlug: 'APOLLO_TEST_TOOL', arguments: { query: 'segment' } }])
   })
 })

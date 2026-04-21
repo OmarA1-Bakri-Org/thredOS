@@ -6,6 +6,7 @@ import { runCommand } from './run'
 import { readSequence } from '../../sequence/parser'
 import { appendApproval, readApprovals } from '../../approvals/repository'
 import { readTraceEvents } from '../../traces/reader'
+import { runStep as executeProcess } from '../../runner/wrapper'
 import { emptyThreadSurfaceState, createRootThreadSurfaceRun, createChildThreadSurfaceRun } from '../../thread-surfaces/mutations'
 import { writeThreadSurfaceState } from '../../thread-surfaces/repository'
 import { deriveStepThreadSurfaceId } from '../../thread-surfaces/constants'
@@ -23,6 +24,93 @@ beforeEach(async () => {
 afterEach(async () => {
   delete globalThis.__THREADOS_CLI_RUN_RUNTIME__
   await cleanTempDir(tempDir)
+})
+
+describe('run step native action execution', () => {
+  test('executes cli, write_file, sub_agent, and rube_tool actions with runtime context outputs', async () => {
+    const artifactDir = join(tempDir, 'apollo-artifacts')
+    const icpConfigPath = join(artifactDir, 'icp-config.json')
+    const qualifiedSegmentPath = join(artifactDir, 'qualified-segment.json')
+    const composioCalls: Array<{ toolSlug: string; arguments: Record<string, unknown> }> = []
+
+    const seq = makeSequence({
+      steps: [
+        makeStep({
+          id: 'native-actions',
+          model: 'codex',
+          status: 'READY',
+          prompt_file: '.threados/prompts/native-actions.md',
+          actions: [
+            { id: 'cli-action', type: 'cli', config: { command: "printf 'cli-ok'" }, output_key: 'cli_result' },
+            { id: 'write-icp', type: 'write_file', config: { file_path: icpConfigPath }, output_key: 'icp_config_file' },
+            { id: 'spawn-artifact-agent', type: 'sub_agent', config: { prompt: 'Write the qualified segment artifact JSON.', subagent_type: 'general-purpose' }, output_key: 'sub_agent_result' },
+            { id: 'apollo-alias', type: 'rube_tool' as any, config: { tool_slug: 'APOLLO_TEST_TOOL', arguments: { query: 'segment' } }, output_key: 'apollo_tool_result' },
+          ] as any,
+        }),
+      ],
+    })
+
+    await writeTestSequence(tempDir, seq)
+    await writeFile(join(tempDir, '.threados/prompts/native-actions.md'), '# native actions')
+    await writeFile(
+      join(tempDir, '.threados/state/runtime-context.json'),
+      JSON.stringify({ icp_config: { sources: ['apollo_saved'], output: { apollo_stage_name: 'Review' } } }),
+      'utf-8',
+    )
+
+    globalThis.__THREADOS_CLI_RUN_RUNTIME__ = {
+      dispatch: async (_model, opts) => {
+        if (opts.stepId.endsWith('spawn-artifact-agent')) {
+          const script = `const fs=require('fs');fs.mkdirSync(${JSON.stringify(artifactDir)},{recursive:true});fs.writeFileSync(${JSON.stringify(qualifiedSegmentPath)}, JSON.stringify({segment_name:'Mid-Market',total_qualified:1}, null, 2));`
+          return {
+            stepId: opts.stepId,
+            runId: opts.runId,
+            command: process.execPath,
+            args: ['-e', script],
+            cwd: opts.cwd,
+            timeout: opts.timeout,
+          }
+        }
+
+        return {
+          stepId: opts.stepId,
+          runId: opts.runId,
+          command: process.execPath,
+          args: ['-e', 'process.exit(0)'],
+          cwd: opts.cwd,
+          timeout: opts.timeout,
+        }
+      },
+      runStep: executeProcess,
+      saveRunArtifacts: async () => '.threados/runs/mock',
+      runComposioTool: async input => {
+        composioCalls.push({ toolSlug: input.toolSlug, arguments: input.arguments })
+        return { ok: true, tool: input.toolSlug }
+      },
+    }
+
+    const logs: string[] = []
+    const origLog = console.log
+    console.log = (msg: string) => logs.push(msg)
+
+    await runCommand('step', ['native-actions'], { ...jsonOpts, basePath: tempDir })
+
+    console.log = origLog
+
+    const output = JSON.parse(logs[0])
+    expect(output.success).toBe(true)
+    expect(output.status).toBe('DONE')
+
+    const runtimeContext = JSON.parse(await readFile(join(tempDir, '.threados/state/runtime-context.json'), 'utf-8'))
+    expect(runtimeContext.cli_result).toMatchObject({ stdout: 'cli-ok', exitCode: 0, status: 'success' })
+    expect(runtimeContext.icp_config_file).toMatchObject({ path: icpConfigPath, status: 'written', sourceKey: 'icp_config' })
+    expect(runtimeContext.sub_agent_result).toMatchObject({ status: 'success', exitCode: 0, subagentType: 'general-purpose' })
+    expect(runtimeContext.apollo_tool_result).toEqual({ ok: true, tool: 'APOLLO_TEST_TOOL' })
+
+    expect(JSON.parse(await readFile(icpConfigPath, 'utf-8'))).toEqual({ sources: ['apollo_saved'], output: { apollo_stage_name: 'Review' } })
+    expect(JSON.parse(await readFile(qualifiedSegmentPath, 'utf-8'))).toEqual({ segment_name: 'Mid-Market', total_qualified: 1 })
+    expect(composioCalls).toEqual([{ toolSlug: 'APOLLO_TEST_TOOL', arguments: { query: 'segment' } }])
+  })
 })
 
 describe('run command — unknown subcommand', () => {
