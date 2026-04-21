@@ -536,7 +536,7 @@ steps:
   phase: phase-5-persistence
   surface_class: private
   depends_on:
-  - resolve-apollo-stage
+  - review-approval
   prompt_file: .threados/prompts/create-missing-apollo-contacts.md
   execution: sequential
   timeout_ms: 600000
@@ -593,7 +593,7 @@ steps:
   phase: phase-5-persistence
   surface_class: private
   depends_on:
-  - create-missing-apollo-contacts
+  - review-approval
   prompt_file: .threados/prompts/update-apollo-stages.md
   execution: sequential
   timeout_ms: 300000
@@ -623,7 +623,7 @@ steps:
   phase: phase-5-persistence
   surface_class: private
   depends_on:
-  - update-apollo-stages
+  - review-approval
   prompt_file: .threados/prompts/falkordb-upsert-and-signal.md
   execution: sequential
   timeout_ms: 300000
@@ -664,7 +664,7 @@ steps:
   phase: phase-5-persistence
   surface_class: private
   depends_on:
-  - signal-agents
+  - falkordb-upsert-and-signal
   prompt_file: .threados/prompts/remember-learnings.md
   execution: sequential
   timeout_ms: 15000

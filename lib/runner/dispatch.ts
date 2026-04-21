@@ -1,4 +1,4 @@
-import { writeFile } from 'fs/promises'
+import { mkdir, writeFile } from 'fs/promises'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import { randomUUID } from 'crypto'
@@ -34,9 +34,12 @@ interface AgentDispatcher {
  * Write the compiled prompt to a temp file for the agent to read.
  * Returns the path to the temp file.
  */
-async function writeTempPrompt(compiledPrompt: string, stepId: string): Promise<string> {
-  const fileName = `threados-prompt-${stepId}-${randomUUID().slice(0, 8)}.md`
-  const filePath = join(tmpdir(), fileName)
+async function writeTempPrompt(compiledPrompt: string, stepId: string, cwd: string): Promise<string> {
+  const safeStepId = stepId.replace(/[^A-Za-z0-9._-]+/g, '-')
+  const promptDir = join(cwd, '.threados', 'tmp-prompts')
+  await mkdir(promptDir, { recursive: true })
+  const fileName = `threados-prompt-${safeStepId}-${randomUUID().slice(0, 8)}.md`
+  const filePath = join(promptDir, fileName)
   await writeFile(filePath, compiledPrompt, 'utf-8')
   return filePath
 }
@@ -198,7 +201,7 @@ export async function dispatch(
   }
 
   // Write prompt to temp file
-  const promptFilePath = await writeTempPrompt(opts.compiledPrompt, opts.stepId)
+  const promptFilePath = await writeTempPrompt(opts.compiledPrompt, opts.stepId, opts.cwd)
 
   // Build the runner config
   return dispatcher.buildConfig(opts, promptFilePath)
