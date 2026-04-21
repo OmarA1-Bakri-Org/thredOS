@@ -111,6 +111,58 @@ describe('run step native action execution', () => {
     expect(JSON.parse(await readFile(qualifiedSegmentPath, 'utf-8'))).toEqual({ segment_name: 'Mid-Market', total_qualified: 1 })
     expect(composioCalls).toEqual([{ toolSlug: 'APOLLO_TEST_TOOL', arguments: { query: 'segment' } }])
   })
+
+  test('sub_agent under a shell parent falls back to claude-code instead of inheriting shell', async () => {
+    const dispatchModels: string[] = []
+
+    const seq = makeSequence({
+      steps: [
+        makeStep({
+          id: 'shell-parent-subagent',
+          model: 'shell',
+          status: 'READY',
+          prompt_file: '.threados/prompts/shell-parent-subagent.md',
+          actions: [
+            { id: 'spawn-subagent', type: 'sub_agent', config: { prompt: 'Say OK.', subagent_type: 'general-purpose' }, output_key: 'sub_agent_result' },
+          ] as any,
+        }),
+      ],
+    })
+
+    await writeTestSequence(tempDir, seq)
+    await writeFile(join(tempDir, '.threados/prompts/shell-parent-subagent.md'), 'exit 0\n')
+
+    globalThis.__THREADOS_CLI_RUN_RUNTIME__ = {
+      dispatch: async (model, opts) => {
+        dispatchModels.push(model)
+        return {
+          stepId: opts.stepId,
+          runId: opts.runId,
+          command: process.execPath,
+          args: ['-e', 'process.exit(0)'],
+          cwd: opts.cwd,
+          timeout: opts.timeout,
+        }
+      },
+      runStep: executeProcess,
+      saveRunArtifacts: async () => '.threados/runs/mock',
+    }
+
+    const logs: string[] = []
+    const origLog = console.log
+    console.log = (msg: string) => logs.push(msg)
+
+    await runCommand('step', ['shell-parent-subagent'], { ...jsonOpts, basePath: tempDir })
+
+    console.log = origLog
+
+    const output = JSON.parse(logs[0])
+    expect(output.success).toBe(true)
+    expect(dispatchModels).toEqual(['claude-code', 'shell'])
+
+    const runtimeContext = JSON.parse(await readFile(join(tempDir, '.threados/state/runtime-context.json'), 'utf-8'))
+    expect(runtimeContext.sub_agent_result).toMatchObject({ status: 'success', model: 'claude-code', subagentType: 'general-purpose' })
+  })
 })
 
 describe('run command — unknown subcommand', () => {

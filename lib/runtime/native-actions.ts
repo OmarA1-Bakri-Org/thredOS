@@ -192,6 +192,10 @@ async function executeWriteFileAction(basePath: string, action: Record<string, u
   await mkdir(dirname(targetPath), { recursive: true })
   await writeFile(targetPath, content, 'utf-8')
 
+  if (APOLLO_FILE_SOURCE_KEYS[basename(targetPath)]) {
+    await storeRuntimeContextValue(basePath, 'apollo_artifact_dir', dirname(targetPath))
+  }
+
   await storeActionOutput(basePath, action, {
     path: targetPath,
     bytes: Buffer.byteLength(content, 'utf-8'),
@@ -216,7 +220,10 @@ async function executeSubAgentAction(
   }
 
   const compiledPrompt = await renderRuntimeContextTemplate(basePath, prompt)
-  const model = (typeof config.model === 'string' && config.model.length > 0 ? config.model : step.model) as ModelType
+  const resolvedModel = typeof config.model === 'string' && config.model.length > 0
+    ? config.model
+    : (step.model === 'shell' ? 'claude-code' : step.model)
+  const model = resolvedModel as ModelType
   const nestedStepId = `${step.id}::${actionId}`
   const runnerConfig = await runtime.dispatch(model, {
     stepId: nestedStepId,

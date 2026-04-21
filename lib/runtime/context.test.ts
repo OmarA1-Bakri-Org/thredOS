@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { mkdtemp, mkdir, rm, writeFile } from 'fs/promises'
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { buildConditionContext, evaluateRuntimeCondition, hydrateApolloApprovalRuntimeContext } from './context'
@@ -178,5 +178,45 @@ describe('apollo approval runtime hydration', () => {
     expect(hydrated.enriched_segment).toEqual({
       credits_used: 9,
     })
+  })
+
+  test('does not hydrate from a global default artifact directory when apollo_artifact_dir is unset', async () => {
+    const globalArtifactDir = join(tmpdir(), 'apollo-segment')
+    const globalIcpPath = join(globalArtifactDir, 'icp-config.json')
+    let previousGlobalIcp: string | null = null
+
+    try {
+      previousGlobalIcp = await readFile(globalIcpPath, 'utf-8')
+    } catch {
+      previousGlobalIcp = null
+    }
+
+    await mkdir(globalArtifactDir, { recursive: true })
+    await writeFile(globalIcpPath, JSON.stringify({ output: { apollo_stage_name: 'GLOBAL LEAK' } }), 'utf-8')
+
+    try {
+      const hydrated = await hydrateApolloApprovalRuntimeContext(tempDir, {
+        icp_config: {
+          output: {
+            apollo_stage_name: 'Workspace Scoped',
+            tag_in_apollo: true,
+          },
+        },
+      })
+
+      expect(hydrated.icp_config).toEqual({
+        output: {
+          apollo_stage_name: 'Workspace Scoped',
+          tag_in_apollo: true,
+        },
+      })
+      expect(hydrated.stage_id_or_MISSING).toBe('MISSING')
+    } finally {
+      if (previousGlobalIcp === null) {
+        await rm(globalIcpPath, { force: true })
+      } else {
+        await writeFile(globalIcpPath, previousGlobalIcp, 'utf-8')
+      }
+    }
   })
 })

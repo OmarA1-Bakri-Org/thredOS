@@ -4,7 +4,6 @@ import type { Sequence } from '../sequence/schema'
 
 export type RuntimeContext = Record<string, unknown>
 
-const DEFAULT_APOLLO_ARTIFACT_DIR = '/tmp/apollo-segment'
 const APOLLO_EXCLUDED_KEYS = ['dnc', 'recently_contacted', 'existing_pipeline', 'special_handling', 'non_omar_owned', 'duplicates'] as const
 const APOLLO_PERSONA_LANES = ['A', 'B', 'C', 'D', 'E'] as const
 
@@ -68,11 +67,12 @@ function mergeRuntimeContexts(target: RuntimeContext, source: RuntimeContext): R
   return target
 }
 
-function normalizeApolloArtifactDir(basePath: string, runtimeContext: RuntimeContext): string {
+function normalizeApolloArtifactDir(basePath: string, runtimeContext: RuntimeContext): string | null {
   const configured = typeof runtimeContext.apollo_artifact_dir === 'string' && runtimeContext.apollo_artifact_dir.trim().length > 0
     ? runtimeContext.apollo_artifact_dir.trim()
-    : DEFAULT_APOLLO_ARTIFACT_DIR
+    : null
 
+  if (!configured) return null
   return isAbsolute(configured) ? configured : join(basePath, configured)
 }
 
@@ -167,13 +167,15 @@ export async function hydrateApolloApprovalRuntimeContext(basePath: string, runt
   const hydrated = cloneRuntimeContext(runtimeContext)
   const artifactDir = normalizeApolloArtifactDir(basePath, runtimeContext)
 
-  const [savedContacts, discoveredProspects, qualifiedSegment, enrichedSegment, icpConfig] = await Promise.all([
-    readOptionalArtifactObject(join(artifactDir, 'saved-contacts.json')),
-    readOptionalArtifactObject(join(artifactDir, 'discovered-prospects.json')),
-    readOptionalArtifactObject(join(artifactDir, 'qualified-segment.json')),
-    readOptionalArtifactObject(join(artifactDir, 'enriched-segment.json')),
-    readOptionalArtifactObject(join(artifactDir, 'icp-config.json')),
-  ])
+  const [savedContacts, discoveredProspects, qualifiedSegment, enrichedSegment, icpConfig] = artifactDir
+    ? await Promise.all([
+        readOptionalArtifactObject(join(artifactDir, 'saved-contacts.json')),
+        readOptionalArtifactObject(join(artifactDir, 'discovered-prospects.json')),
+        readOptionalArtifactObject(join(artifactDir, 'qualified-segment.json')),
+        readOptionalArtifactObject(join(artifactDir, 'enriched-segment.json')),
+        readOptionalArtifactObject(join(artifactDir, 'icp-config.json')),
+      ])
+    : [null, null, null, null, null]
 
   if (savedContacts) {
     mergeRuntimeContexts(hydrated, { saved_contacts: savedContacts })
