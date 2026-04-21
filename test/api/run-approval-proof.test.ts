@@ -89,11 +89,85 @@ describe.serial('run route approval proof', () => {
     })
 
     const traces = await readTraceEvents(basePath, body.runId)
-    expect(traces.map(entry => entry.event_type)).toEqual(['approval-requested', 'approval-resolved'])
+    expect(traces.map(entry => entry.event_type)).toEqual([
+      'approval-requested',
+      'approval-resolved',
+      'gate-evaluated',
+      'gate-evaluated',
+      'gate-evaluated',
+      'gate-evaluated',
+      'gate-evaluated',
+      'gate-evaluated',
+      'gate-evaluated',
+      'gate-evaluated',
+    ])
     expect(traces[0]).toMatchObject({
       actor: 'api:run',
       surface_id: 'step:step-safe',
     })
+  })
+
+  test('approval action hydrates Apollo artifact fields into pending approval notes', async () => {
+    const artifactDir = join(basePath, 'apollo-segment-artifacts')
+    await mkdir(join(basePath, '.threados', 'state'), { recursive: true })
+    await mkdir(artifactDir, { recursive: true })
+    await writeFile(join(basePath, '.threados', 'state', 'runtime-context.json'), JSON.stringify({
+      apollo_artifact_dir: artifactDir,
+      icp_config: {
+        enrichment: { max_apollo_credits: 30 },
+        output: { apollo_stage_name: 'Review Stage', tag_in_apollo: true },
+      },
+      resolved_stage_id: 'stage-789',
+    }))
+    await writeFile(join(artifactDir, 'qualified-segment.json'), JSON.stringify({
+      segment_name: 'Mid-Market',
+      total_qualified: 2,
+      contacts: [
+        { source: 'apollo_saved', persona_lane: 'A' },
+        { source: 'both', persona_lane: 'B' },
+      ],
+      excluded: { duplicates: 1 },
+    }))
+    await writeFile(join(artifactDir, 'enriched-segment.json'), JSON.stringify({ credits_used: 7 }))
+
+    await setupSequence({
+      version: '1.0',
+      name: 'approval-hydration-seq',
+      steps: [
+        {
+          id: 'step-review',
+          name: 'Review Step',
+          type: 'base',
+          model: 'codex',
+          prompt_file: '.threados/prompts/step-review.md',
+          depends_on: [],
+          status: 'READY',
+          actions: [{
+            id: 'review-before-send',
+            type: 'approval',
+            config: {
+              approval_prompt: 'Review {{qualified_segment.segment_name}} | saved {{counts.saved}} | both {{counts.both}} | dupes {{excluded.duplicates}} | credits {{enriched_segment.credits_used}}/{{icp_config.enrichment.max_apollo_credits}} | stage {{stage_id_or_MISSING}}',
+            },
+          }],
+        },
+      ],
+      gates: [],
+    })
+    await writePrompt('step-review')
+
+    const { POST } = await import('@/app/api/run/route')
+    const response = await POST(new Request('http://localhost/api/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ stepId: 'step-review', confirmPolicy: true }),
+    }))
+
+    expect(response.status).toBe(200)
+    const body = await response.json()
+    expect(body.success).toBe(false)
+    expect(body.status).toBe('BLOCKED')
+    const approvals = await readApprovals(basePath, body.runId)
+    expect(approvals.at(-1)?.notes).toBe('Review Mid-Market | saved 1 | both 1 | dupes 1 | credits 7/30 | stage stage-789')
   })
 
   test('POWER mode run skips SAFE approval recording', async () => {
@@ -120,6 +194,6 @@ describe.serial('run route approval proof', () => {
     const body = await response.json()
     expect(body.success).toBe(true)
     await expect(readApprovals(basePath, body.runId)).resolves.toEqual([])
-    await expect(readTraceEvents(basePath, body.runId)).resolves.toEqual([])
+    await expect(readTraceEvents(basePath, body.runId)).resolves.toHaveLength(8)
   })
 })

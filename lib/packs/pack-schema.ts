@@ -6,19 +6,105 @@ export const PackPhaseSchema = z.object({
   order: z.number().int().nonnegative(),
 })
 
+export const PackActionRetrySchema = z.object({
+  max_attempts: z.number().int().positive().optional(),
+  delay_ms: z.number().int().nonnegative().optional(),
+  backoff: z.enum(['none', 'linear', 'exponential']).optional(),
+  retry_on: z.array(z.string().min(1)).default([]),
+})
+
+export const PackActionConfigSchema = z.object({
+  command: z.string().min(1).optional(),
+  tool_slug: z.string().min(1).optional(),
+  arguments: z.record(z.string(), z.unknown()).optional(),
+  skill_name: z.string().min(1).optional(),
+  file_path: z.string().min(1).optional(),
+  prompt: z.string().min(1).optional(),
+  subagent_type: z.string().min(1).optional(),
+  approval_prompt: z.string().min(1).optional(),
+  condition: z.string().min(1).optional(),
+  if_true: z.array(z.unknown()).optional(),
+  if_false: z.array(z.unknown()).optional(),
+}).catchall(z.unknown())
+
+export const PackActionSchema = z.object({
+  id: z.string().min(1),
+  type: z.enum(['cli', 'composio_tool', 'skill', 'read_file', 'write_file', 'sub_agent', 'approval', 'conditional']),
+  description: z.string().min(1).optional(),
+  config: PackActionConfigSchema.default({}),
+  retry: PackActionRetrySchema.optional(),
+  timeout_ms: z.number().int().nonnegative().optional(),
+  output_key: z.string().min(1).optional(),
+  on_failure: z.enum(['abort_step', 'abort_workflow', 'skip', 'warn', 'retry']).optional(),
+})
+
 export const PackStepSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
   type: z.enum(['base', 'p', 'c', 'f', 'b', 'l']),
   model: z.string().min(1),
   phase: z.string().min(1),
+  execution: z.enum(['sequential', 'parallel', 'sub_agent']).optional(),
+  timeout_ms: z.number().int().nonnegative().optional(),
+  condition: z.string().min(1).optional(),
   surface_class: z.enum(['shared', 'private', 'sealed', 'control']).default('shared'),
   depends_on: z.array(z.string()).default([]),
+  actions: z.array(PackActionSchema).default([]),
   prompt_file: z.string().optional(),
   orchestrator: z.string().optional(),
   fusion_candidates: z.boolean().optional(),
   fusion_synth: z.boolean().optional(),
   watchdog_for: z.string().optional(),
+})
+
+export const PackPrerequisiteConnectionSchema = z.object({
+  name: z.string().min(1),
+  type: z.enum(['composio', 'direct_api', 'local']),
+  required: z.boolean(),
+  health_check: z.string().min(1).optional(),
+  on_unavailable: z.enum(['abort', 'skip_dependent_steps', 'warn']).optional(),
+})
+
+export const PackPrerequisitesSchema = z.object({
+  connections: z.array(PackPrerequisiteConnectionSchema).default([]),
+  env_vars: z.array(z.string().min(1)).default([]),
+  key_ids: z.record(z.string(), z.string()).default({}),
+})
+
+export const PackSharedReferenceSchema = z.object({
+  id: z.string().min(1),
+  path: z.string().min(1),
+  load_when: z.string().min(1).optional(),
+  required: z.boolean().default(false),
+})
+
+export const PackRateLimitSchema = z.object({
+  max: z.number().int().nonnegative(),
+  per: z.enum(['call', 'step', 'session', 'day', 'week']),
+  enforce: z.enum(['hard', 'soft']),
+  current_check: z.string().min(1).optional(),
+  on_breach: z.enum(['abort', 'warn', 'throttle', 'skip_remaining']).optional(),
+})
+
+export const PackTimeoutsSchema = z.object({
+  workflow_max_ms: z.number().int().nonnegative(),
+  step_default_ms: z.number().int().nonnegative(),
+  api_call_ms: z.number().int().nonnegative().optional(),
+  apollo_poll_ms: z.number().int().nonnegative().optional(),
+  approval_wait_ms: z.number().int().nonnegative().optional(),
+})
+
+export const PackGateSchema = z.object({
+  id: z.string().min(1),
+  step_id: z.string().min(1),
+  when: z.enum(['pre', 'post']).default('post'),
+  type: z.enum(['hard', 'soft', 'approval']),
+  check: z.string().min(1),
+  on_fail: z.enum(['abort', 'warn', 'retry', 'skip', 'ask_user', 'flag_for_review']),
+  message: z.string().min(1).optional(),
+  max_retries: z.number().int().nonnegative().optional(),
+  retry_delay_ms: z.number().int().nonnegative().optional(),
+  retry_action: z.string().min(1).optional(),
 })
 
 export const PackManifestSchema = z.object({
@@ -28,6 +114,11 @@ export const PackManifestSchema = z.object({
   thread_types: z.array(z.enum(['base', 'p', 'c', 'f', 'b', 'l'])),
   default_policy: z.enum(['SAFE', 'POWER']).default('SAFE'),
   agents: z.array(z.string()).default([]),
+  prerequisites: PackPrerequisitesSchema.optional(),
+  shared_references: z.array(PackSharedReferenceSchema).default([]),
+  rate_limits: z.record(z.string(), PackRateLimitSchema).default({}),
+  timeouts: PackTimeoutsSchema.optional(),
+  gates: z.array(PackGateSchema).default([]),
   surface_classes: z.array(z.enum(['shared', 'private', 'sealed', 'control'])).default(['shared']),
   phases: z.array(PackPhaseSchema),
   steps: z.array(PackStepSchema),

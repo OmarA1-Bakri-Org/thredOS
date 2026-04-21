@@ -21,6 +21,19 @@ const makeManifest = (overrides: Partial<PackManifest> = {}): PackManifest => ({
       type: 'base',
       model: 'gpt-4o',
       phase: 'phase-1',
+      execution: 'sequential',
+      timeout_ms: 30000,
+      condition: 'first_run == true',
+      actions: [
+        {
+          id: 'run-alpha',
+          type: 'cli',
+          description: 'Run alpha',
+          config: { command: 'echo alpha' },
+          output_key: 'alpha_result',
+          on_failure: 'warn',
+        },
+      ],
       surface_class: 'shared',
       depends_on: [],
     },
@@ -30,11 +43,31 @@ const makeManifest = (overrides: Partial<PackManifest> = {}): PackManifest => ({
       type: 'p',
       model: 'gpt-4o',
       phase: 'phase-2',
+      execution: 'sub_agent',
+      actions: [
+        {
+          id: 'delegate-beta',
+          type: 'sub_agent',
+          config: { prompt: 'Do beta', subagent_type: 'researcher' },
+          on_failure: 'abort_workflow',
+        },
+      ],
       surface_class: 'sealed',
       depends_on: ['alpha'],
     },
   ],
-  gate_sets: [],
+  gates: [
+    {
+      id: 'alpha-ready',
+      step_id: 'alpha',
+      when: 'post',
+      type: 'hard',
+      check: 'alpha_result.success == true',
+      on_fail: 'abort',
+      message: 'Alpha must succeed before beta',
+    },
+  ],
+  gate_sets: ['default-gates'],
   ...overrides,
 })
 
@@ -46,8 +79,53 @@ describe('compilePack', () => {
     expect(result.sequence.pack_version).toBe('2.0.0')
     expect(result.sequence.version).toBe('1.0')
     expect(result.sequence.thread_type).toBe('base')
-    expect(result.sequence.gates).toEqual([])
+    expect(result.sequence.gates).toEqual([
+      {
+        id: 'alpha-ready',
+        name: 'alpha-ready',
+        depends_on: ['alpha'],
+        status: 'PENDING',
+        cascade: false,
+        childGateIds: [],
+        description: 'Alpha must succeed before beta',
+        acceptance_conditions: ['alpha_result.success == true'],
+        required_review: false,
+      },
+    ])
     expect(result.sequence.default_policy_ref).toBe('policy:SAFE')
+  })
+
+  test('propagates step execution metadata into the compiled sequence', () => {
+    const result = compilePack(makeManifest())
+    const alphaStep = result.sequence.steps.find(s => s.id === 'alpha')!
+    const betaStep = result.sequence.steps.find(s => s.id === 'beta')!
+
+    expect(alphaStep.timeout_ms).toBe(30000)
+    expect(alphaStep.gate_set_ref).toBe('default-gates')
+    expect(alphaStep.side_effect_class).toBe('execute')
+    expect((alphaStep as any).execution).toBe('sequential')
+    expect((alphaStep as any).condition).toBe('first_run == true')
+    expect((alphaStep as any).actions).toEqual([
+      {
+        id: 'run-alpha',
+        type: 'cli',
+        description: 'Run alpha',
+        config: { command: 'echo alpha' },
+        output_key: 'alpha_result',
+        on_failure: 'warn',
+      },
+    ])
+
+    expect(betaStep.side_effect_class).toBe('execute')
+    expect((betaStep as any).execution).toBe('sub_agent')
+    expect((betaStep as any).actions).toEqual([
+      {
+        id: 'delegate-beta',
+        type: 'sub_agent',
+        config: { prompt: 'Do beta', subagent_type: 'researcher' },
+        on_failure: 'abort_workflow',
+      },
+    ])
   })
 
   test('produces surfaces for each step (root + N step surfaces)', () => {

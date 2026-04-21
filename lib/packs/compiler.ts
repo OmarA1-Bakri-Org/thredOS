@@ -34,11 +34,15 @@ export interface CompileResult {
       gate_set_ref: string | null
       completion_contract: string | null
       side_effect_class: 'none' | 'read' | 'write' | 'execute'
+      execution?: 'sequential' | 'parallel' | 'sub_agent'
+      condition?: string
+      actions?: unknown[]
       orchestrator?: string
       fusion_candidates?: boolean
       fusion_synth?: boolean
       watchdog_for?: string
       fanout?: number
+      timeout_ms?: number
     }>
     deps: Array<{ step_id: string; dep_id: string }>
     gates: unknown[]
@@ -70,6 +74,16 @@ export function compilePack(manifest: PackManifest, options: CompilePackOptions 
   const installName = options.installName ?? manifest.name
   const modelOverrides = options.modelOverrides ?? {}
 
+  const inferSideEffectClass = (actions: unknown[] | undefined): 'none' | 'read' | 'write' | 'execute' => {
+    if (!actions || actions.length === 0) return 'none'
+    const typed = actions as Array<Record<string, unknown>>
+    const actionTypes = typed.map(action => String(action.type ?? ''))
+    if (actionTypes.some(type => ['cli', 'composio_tool', 'sub_agent', 'approval', 'conditional'].includes(type))) return 'execute'
+    if (actionTypes.some(type => ['write_file'].includes(type))) return 'write'
+    if (actionTypes.some(type => ['read_file', 'skill'].includes(type))) return 'read'
+    return 'none'
+  }
+
   const steps = manifest.steps.map(ps => {
     const promptFile = ps.prompt_file ?? `.threados/prompts/${ps.id}.md`
     return {
@@ -93,16 +107,31 @@ export function compilePack(manifest: PackManifest, options: CompilePackOptions 
       output_contract_ref: null,
       gate_set_ref: manifest.gate_sets[0] ?? null,
       completion_contract: null,
-      side_effect_class: 'none' as const,
+      side_effect_class: inferSideEffectClass(ps.actions),
+      execution: ps.execution,
+      condition: ps.condition,
+      actions: ps.actions,
       orchestrator: ps.orchestrator,
       fusion_candidates: ps.fusion_candidates,
       fusion_synth: ps.fusion_synth,
       watchdog_for: ps.watchdog_for,
+      timeout_ms: ps.timeout_ms,
       ...(options.parallelTracks && ps.type === 'p' ? { fanout: options.parallelTracks } : {}),
     }
   })
 
   const deps = steps.flatMap(step => step.depends_on.map(dep_id => ({ step_id: step.id, dep_id })))
+  const gates = (manifest.gates ?? []).map(gate => ({
+    id: gate.id,
+    name: gate.id,
+    depends_on: [gate.step_id],
+    status: 'PENDING' as const,
+    cascade: false,
+    childGateIds: [],
+    description: gate.message,
+    acceptance_conditions: [gate.check],
+    required_review: gate.type === 'approval',
+  }))
 
   const sequence = {
     id: buildSequenceId(manifest, installName),
@@ -111,7 +140,7 @@ export function compilePack(manifest: PackManifest, options: CompilePackOptions 
     thread_type: manifest.thread_types[0],
     steps,
     deps,
-    gates: [] as unknown[],
+    gates,
     pack_id: manifest.id,
     pack_version: manifest.version,
     default_policy_ref: options.policyMode ? `policy:${options.policyMode}` : manifest.default_policy ? `policy:${manifest.default_policy}` : null,

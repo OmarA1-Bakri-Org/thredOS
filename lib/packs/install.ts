@@ -101,8 +101,9 @@ function buildInstalledSequence(input: {
   installName?: string
   overrides?: PackInstallOverrides
   steps: Step[]
+  gates: Sequence['gates']
 }): Sequence {
-  const { currentSequence, manifest, installName, overrides, steps } = input
+  const { currentSequence, manifest, installName, overrides, steps, gates } = input
   const modelOverrides = overrides?.modelOverrides ?? {}
   const now = new Date().toISOString()
 
@@ -125,7 +126,7 @@ function buildInstalledSequence(input: {
       }
     }),
     deps: steps.flatMap(step => step.depends_on.map(dep_id => ({ step_id: step.id, dep_id }))),
-    gates: [],
+    gates,
     metadata: {
       ...currentSequence.metadata,
       updated_at: now,
@@ -166,6 +167,7 @@ export async function installPack(basePath: string, input: PackInstallInput): Pr
     installName: input.installName,
     overrides: input.compileOverrides,
     steps: compiled.sequence.steps as Step[],
+    gates: compiled.sequence.gates as Sequence['gates'],
   })
   const nextSurfaceState = buildInstalledSurfaceState(currentSurfaceState, compiled.surfaces)
   const nextStepIds = nextSequence.steps.map(step => step.id)

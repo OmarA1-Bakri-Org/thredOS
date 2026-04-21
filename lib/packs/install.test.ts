@@ -28,6 +28,9 @@ const VALID_PACK = {
       type: 'base',
       model: 'claude-code',
       phase: 'phase-alpha',
+      execution: 'sequential',
+      timeout_ms: 30000,
+      actions: [{ id: 'run-alpha', type: 'cli', config: { command: 'echo alpha' }, on_failure: 'warn' }],
       surface_class: 'shared',
       depends_on: [],
     },
@@ -37,11 +40,24 @@ const VALID_PACK = {
       type: 'p',
       model: 'gpt-4o',
       phase: 'phase-alpha',
+      execution: 'sub_agent',
+      actions: [{ id: 'delegate-beta', type: 'sub_agent', config: { prompt: 'Do beta', subagent_type: 'researcher' }, on_failure: 'abort_workflow' }],
       surface_class: 'sealed',
       depends_on: ['alpha'],
     },
   ],
-  gate_sets: [],
+  gates: [
+    {
+      id: 'alpha-ready',
+      step_id: 'alpha',
+      when: 'post',
+      type: 'hard',
+      check: 'alpha.success == true',
+      on_fail: 'abort',
+      message: 'Alpha must succeed',
+    },
+  ],
+  gate_sets: ['default-gates'],
 }
 
 beforeEach(async () => {
@@ -96,9 +112,27 @@ describe('installPack', () => {
     expect(sequence.steps.map(step => step.id)).toEqual(['alpha', 'beta'])
     expect(sequence.steps[0].model).toBe('gpt-5.4')
     expect(sequence.steps[0].prompt_ref?.path).toBe('.threados/prompts/alpha.md')
+    expect(sequence.steps[0].timeout_ms).toBe(30000)
+    expect(sequence.steps[0].execution).toBe('sequential')
+    expect((sequence.steps[0] as any).actions).toHaveLength(1)
+    expect(sequence.steps[0].gate_set_ref).toBe('default-gates')
+    expect(sequence.steps[0].side_effect_class).toBe('execute')
+    expect(sequence.gates).toEqual([
+      {
+        id: 'alpha-ready',
+        name: 'alpha-ready',
+        depends_on: ['alpha'],
+        status: 'PENDING',
+        cascade: false,
+        childGateIds: [],
+        description: 'Alpha must succeed',
+        acceptance_conditions: ['alpha.success == true'],
+        required_review: false,
+      },
+    ])
 
     const surfaces = await readThreadSurfaceState(basePath)
-    expect(surfaces.threadSurfaces.map(surface => surface.id)).toEqual(['thread-root', 'thread-alpha', 'thread-beta'])
+    expect(new Set(surfaces.threadSurfaces.map(surface => surface.id))).toEqual(new Set(['thread-root', 'thread-alpha', 'thread-beta']))
 
     expect(await validatePromptExists(basePath, 'alpha')).toBe(true)
     expect(await validatePromptExists(basePath, 'beta')).toBe(true)
