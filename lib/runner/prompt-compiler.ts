@@ -189,7 +189,8 @@ function buildSequenceState(currentStepId: string, sequence: Sequence): string {
 
   const statusGroups: Array<{ filter: (s: Step) => boolean; label: string; format?: (s: Step) => string }> = [
     { filter: s => s.status === 'DONE', label: 'Completed' },
-    { filter: s => s.status === 'RUNNING', label: 'Running', format: s => `${s.id}${s.id === currentStepId ? ' \u2190 you' : ''}` },
+    { filter: s => s.status === 'SKIPPED', label: 'Skipped' },
+    { filter: s => s.status === 'RUNNING', label: 'Running', format: s => `${s.id}${s.id === currentStepId ? ' ← you' : ''}` },
     { filter: s => s.status === 'READY' && s.id !== currentStepId, label: 'Pending' },
     { filter: s => s.status === 'FAILED', label: 'Failed' },
   ]

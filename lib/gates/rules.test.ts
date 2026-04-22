@@ -49,6 +49,12 @@ describe('checkDepsSatisfied', () => {
     expect(result.reason_codes).toContain(GateReasonCode.DEP_MISSING)
   })
 
+  it('treats skipped dependencies as satisfied', () => {
+    const dep = makeStep({ id: 'dep1', status: 'SKIPPED' as Step['status'] })
+    const result = checkDepsSatisfied(makeStep({ depends_on: ['dep1'] }), [dep], [])
+    expect(result.status).toBe('PASS')
+  })
+
   it('returns BLOCK when a dependency gate is pending', () => {
     const gate = { id: 'g1', status: 'PENDING' } as unknown as Gate
     const result = checkDepsSatisfied(makeStep({ depends_on: ['g1'] }), [], [gate])

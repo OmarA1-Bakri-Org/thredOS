@@ -440,7 +440,7 @@ describe('run runnable — no runnable steps', () => {
     expect(output.executed).toHaveLength(0)
   })
 
-  test('returns no runnable steps when READY step condition evaluates false', async () => {
+  test('marks false-condition READY steps as durable SKIPPED', async () => {
     const seq = makeSequence({
       steps: [
         makeStep({ id: 'a', status: 'READY', condition: "icp_config.sources contains 'apollo_discovery'" } as any),
@@ -460,7 +460,87 @@ describe('run runnable — no runnable steps', () => {
     const output = JSON.parse(logs[0])
     expect(output.success).toBe(true)
     expect(output.executed).toHaveLength(0)
-    expect(output.error).toContain('No runnable steps')
+    expect(output.error).toBeUndefined()
+    expect(output.skipped).toEqual(['a'])
+
+    const updatedSequence = await readSequence(tempDir)
+    expect(updatedSequence.steps.find(step => step.id === 'a')?.status).toBe('SKIPPED')
+  })
+
+  test('marks false-condition optional steps as SKIPPED and continues downstream mandatory work', async () => {
+    const dispatchOrder: string[] = []
+    const seq = makeSequence({
+      steps: [
+        makeStep({
+          id: 'optional-branch',
+          status: 'READY',
+          model: 'shell',
+          prompt_file: '.threados/prompts/optional-branch.md',
+          condition: "icp_config.sources contains 'apollo_discovery'",
+        } as any),
+        makeStep({
+          id: 'mandatory-downstream',
+          status: 'READY',
+          model: 'shell',
+          prompt_file: '.threados/prompts/mandatory-downstream.md',
+          depends_on: ['optional-branch'],
+        }),
+      ],
+    })
+    await writeTestSequence(tempDir, seq)
+    await writeFile(join(tempDir, '.threados/prompts/optional-branch.md'), 'echo should-not-run')
+    await writeFile(join(tempDir, '.threados/prompts/mandatory-downstream.md'), 'echo mandatory-ran')
+    await writeFile(join(tempDir, '.threados/state/runtime-context.json'), JSON.stringify({ icp_config: { sources: ['apollo_saved'] } }), 'utf-8')
+
+    globalThis.__THREADOS_CLI_RUN_RUNTIME__ = {
+      dispatch: async (_model, opts) => ({
+        stepId: opts.stepId,
+        runId: opts.runId,
+        command: process.execPath,
+        args: ['-e', 'process.exit(0)'],
+        cwd: opts.cwd,
+        timeout: opts.timeout,
+      }),
+      runStep: async config => {
+        dispatchOrder.push(config.stepId)
+        return {
+          stepId: config.stepId,
+          runId: config.runId,
+          command: config.command,
+          args: config.args,
+          cwd: config.cwd,
+          startTime: new Date(),
+          endTime: new Date(),
+          duration: 10,
+          exitCode: 0,
+          stdout: 'ok',
+          stderr: '',
+          timedOut: false,
+          status: 'SUCCESS',
+        }
+      },
+      saveRunArtifacts: async () => '.threados/runs/mock',
+    }
+
+    const logs: string[] = []
+    const origLog = console.log
+    console.log = (msg: string) => logs.push(msg)
+
+    await runCommand('runnable', [], { ...jsonOpts, basePath: tempDir })
+
+    console.log = origLog
+
+    const output = JSON.parse(logs[0])
+    expect(output.success).toBe(true)
+    expect(output.executed).toHaveLength(1)
+    expect(output.executed[0]).toMatchObject({ stepId: 'mandatory-downstream', success: true, status: 'DONE' })
+    expect(output.skipped).toEqual(['optional-branch'])
+    expect(output.waiting).toEqual([])
+    expect(dispatchOrder).toEqual(['mandatory-downstream'])
+
+    const updatedSequence = await readSequence(tempDir)
+    expect(updatedSequence.steps.find(step => step.id === 'optional-branch')?.status).toBe('SKIPPED')
+    expect(updatedSequence.steps.find(step => step.id === 'mandatory-downstream')?.status).toBe('DONE')
   })
 
   test('returns runnable step when runtime context satisfies condition', async () => {

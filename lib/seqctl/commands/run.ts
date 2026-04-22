@@ -64,6 +64,11 @@ interface RunRunnableResult {
   error?: string
 }
 
+interface RunnableStepSelection {
+  steps: Step[]
+  skippedIds: string[]
+}
+
 interface CLIRunRuntime {
   dispatch: typeof dispatch
   runStep: typeof runStep
@@ -261,26 +266,62 @@ function getSurfaceId(step: Step): string {
   return step.surface_ref || `thread-${step.id}`
 }
 
+function getCompletedNodeIds(sequence: Sequence): Set<string> {
+  return new Set([
+    ...sequence.steps
+      .filter(step => step.status === 'DONE' || step.status === 'SKIPPED')
+      .map(step => step.id),
+    ...sequence.gates
+      .filter(gate => gate.status === 'APPROVED')
+      .map(gate => gate.id),
+  ])
+}
+
+async function reconcileSkippedSteps(basePath: string, sequence: Sequence): Promise<string[]> {
+  const skippedIds: string[] = []
+  let changed = false
+
+  while (true) {
+    const completedNodes = getCompletedNodeIds(sequence)
+    let changedThisPass = false
+
+    for (const step of sequence.steps) {
+      if (step.status !== 'READY') continue
+      if (!step.depends_on.every(depId => completedNodes.has(depId))) continue
+
+      const conditionSatisfied = await evaluateStepCondition(basePath, sequence, step)
+      if (conditionSatisfied) continue
+
+      step.status = 'SKIPPED'
+      skippedIds.push(step.id)
+      changedThisPass = true
+      changed = true
+    }
+
+    if (!changedThisPass) break
+  }
+
+  if (changed) {
+    await writeSequence(basePath, sequence)
+  }
+
+  return skippedIds
+}
+
+function renderActionContract(step: Step): string {
+  const actions = (step as Step & { actions?: unknown[] }).actions
+  if (!Array.isArray(actions) || actions.length === 0) return ''
+  return `\n\n## THREADOS ACTION CONTRACT\n${JSON.stringify(actions, null, 2)}\n`
+}
+
 /**
  * Get runnable steps (READY status with all dependencies satisfied)
  */
-async function getRunnableSteps(basePath: string, sequence: Sequence): Promise<Step[]> {
-  const doneSteps = new Set(
-    sequence.steps
-      .filter(s => s.status === 'DONE')
-      .map(s => s.id)
-  )
+async function getRunnableSteps(basePath: string, sequence: Sequence): Promise<RunnableStepSelection> {
+  const skippedIds = await reconcileSkippedSteps(basePath, sequence)
+  const completedNodes = getCompletedNodeIds(sequence)
 
-  // Gates that are approved also count as done
-  const approvedGates = new Set(
-    sequence.gates
-      .filter(g => g.status === 'APPROVED')
-      .map(g => g.id)
-  )
-
-  const completedNodes = new Set([...doneSteps, ...approvedGates])
-
-  return (await Promise.all(sequence.steps.map(async step => {
+  const steps = (await Promise.all(sequence.steps.map(async step => {
     const eligibleStatus = step.status === 'READY'
       || (step.status === 'BLOCKED' && await hasSatisfiedApprovalRequirements(basePath, sequence, step))
     if (!eligibleStatus) return null
@@ -291,6 +332,8 @@ async function getRunnableSteps(basePath: string, sequence: Sequence): Promise<S
     const conditionSatisfied = await evaluateStepCondition(basePath, sequence, step)
     return conditionSatisfied ? step : null
   }))).filter((step): step is Step => step !== null)
+
+  return { steps, skippedIds }
 }
 
 /**
@@ -561,8 +604,13 @@ async function handleRunRunnable(
 
   while (true) {
     const latestSequence = await readSequence(basePath)
-    const runnableSteps = await getRunnableSteps(basePath, latestSequence)
-      .then(steps => steps.filter(step => !alreadyExecuted.has(step.id)))
+    const { steps: latestRunnableSteps, skippedIds: latestSkippedIds } = await getRunnableSteps(basePath, latestSequence)
+    for (const skippedStepId of latestSkippedIds) {
+      if (!alreadyExecuted.has(skippedStepId)) {
+        skipped.add(skippedStepId)
+      }
+    }
+    const runnableSteps = latestRunnableSteps.filter(step => !alreadyExecuted.has(step.id))
 
     if (runnableSteps.length === 0) break
 
@@ -590,7 +638,7 @@ async function handleRunRunnable(
     if (executed.some(result => result.abortWorkflow)) break
   }
 
-  const result: RunRunnableResult = executed.length === 0
+  const result: RunRunnableResult = executed.length === 0 && skipped.size === 0 && waiting.size === 0
     ? { success: true, executed, skipped: Array.from(skipped), waiting: Array.from(waiting), error: 'No runnable steps found' }
     : { success: executed.every(e => e.success), executed, skipped: Array.from(skipped), waiting: Array.from(waiting) }
   await finalizeRootRunScopeForCommand(basePath, runId, result.success, 'mode:runnable')
@@ -677,8 +725,13 @@ async function handleRunGroup(
   const waiting = new Set<string>()
   const groupStepIds = new Set(groupSteps.map(step => step.id))
 
-  const runnableInGroup = await getRunnableSteps(basePath, sequence)
-    .then(steps => steps.filter(step => groupStepIds.has(step.id)))
+  const { steps: runnableGroupCandidates, skippedIds: skippedGroupCandidates } = await getRunnableSteps(basePath, sequence)
+  for (const skippedStepId of skippedGroupCandidates) {
+    if (groupStepIds.has(skippedStepId)) {
+      skipped.add(skippedStepId)
+    }
+  }
+  const runnableInGroup = runnableGroupCandidates.filter(step => groupStepIds.has(step.id))
 
   for (const step of runnableInGroup) {
     const stepResult = await executeSingleStep(basePath, sequence, step.id, runId, mprocsClient)

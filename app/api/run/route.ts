@@ -91,7 +91,7 @@ type ExecuteStepResult = {
   success: boolean
   stepId: string
   runId: string
-  status: 'DONE' | 'FAILED' | 'NEEDS_REVIEW' | 'READY' | 'RUNNING' | 'BLOCKED'
+  status: 'DONE' | 'FAILED' | 'NEEDS_REVIEW' | 'READY' | 'RUNNING' | 'BLOCKED' | 'SKIPPED'
   error?: string
   duration?: number
   artifactPath?: string
@@ -105,6 +105,16 @@ type BatchExecuteResult = {
   executed: ExecuteStepResult[]
   skipped: string[]
   waiting: string[]
+}
+
+interface RunnableStepSelection {
+  steps: Step[]
+  skippedIds: string[]
+}
+
+interface ResolvedTargetSteps {
+  steps: Step[]
+  skippedIds: string[]
 }
 
 class ApprovalRequiredError extends Error {
@@ -211,13 +221,49 @@ async function hasSatisfiedApprovalRequirements(basePath: string, sequence: Sequ
   return true
 }
 
-async function getRunnableSteps(basePath: string, sequence: Sequence): Promise<Step[]> {
-  const done = new Set([
-    ...sequence.steps.filter(step => step.status === 'DONE').map(step => step.id),
+function getCompletedNodeIds(sequence: Sequence): Set<string> {
+  return new Set([
+    ...sequence.steps.filter(step => step.status === 'DONE' || step.status === 'SKIPPED').map(step => step.id),
     ...sequence.gates.filter(gate => gate.status === 'APPROVED').map(gate => gate.id),
   ])
+}
 
-  return (await Promise.all(sequence.steps.map(async step => {
+async function reconcileSkippedSteps(basePath: string, sequence: Sequence): Promise<string[]> {
+  const skippedIds: string[] = []
+  let changed = false
+
+  while (true) {
+    const completedNodes = getCompletedNodeIds(sequence)
+    let changedThisPass = false
+
+    for (const step of sequence.steps) {
+      if (step.status !== 'READY') continue
+      if (!step.depends_on.every(dep => completedNodes.has(dep))) continue
+
+      const conditionSatisfied = await evaluateSequenceCondition(basePath, sequence, (step as Step & { condition?: string }).condition)
+      if (conditionSatisfied) continue
+
+      step.status = 'SKIPPED'
+      skippedIds.push(step.id)
+      changedThisPass = true
+      changed = true
+    }
+
+    if (!changedThisPass) break
+  }
+
+  if (changed) {
+    await writeSequence(basePath, sequence)
+  }
+
+  return skippedIds
+}
+
+async function getRunnableSteps(basePath: string, sequence: Sequence): Promise<RunnableStepSelection> {
+  const skippedIds = await reconcileSkippedSteps(basePath, sequence)
+  const done = getCompletedNodeIds(sequence)
+
+  const steps = (await Promise.all(sequence.steps.map(async step => {
     const isReady = step.status === 'READY'
     const isReopenableBlocked = step.status === 'BLOCKED' && await hasSatisfiedApprovalRequirements(basePath, sequence, step)
     if (!isReady && !isReopenableBlocked) return null
@@ -225,23 +271,32 @@ async function getRunnableSteps(basePath: string, sequence: Sequence): Promise<S
     const conditionSatisfied = await evaluateSequenceCondition(basePath, sequence, (step as Step & { condition?: string }).condition)
     return conditionSatisfied ? step : null
   }))).filter((step): step is Step => step != null)
+
+  return { steps, skippedIds }
 }
 
-async function resolveTargetSteps(basePath: string, sequence: Sequence, body: RunRequestBody): Promise<Step[]> {
+async function resolveTargetSteps(basePath: string, sequence: Sequence, body: RunRequestBody): Promise<ResolvedTargetSteps> {
   if ('stepId' in body) {
     const step = sequence.steps.find(candidate => candidate.id === body.stepId)
-    return step ? [step] : []
+    return { steps: step ? [step] : [], skippedIds: [] }
   }
 
   if ('groupId' in body) {
-    return (await getRunnableSteps(basePath, sequence)).filter(step => step.group_id === body.groupId)
+    const selection = await getRunnableSteps(basePath, sequence)
+    return {
+      steps: selection.steps.filter(step => step.group_id === body.groupId),
+      skippedIds: selection.skippedIds,
+    }
   }
 
-  const runnableSteps = await getRunnableSteps(basePath, sequence)
-  const runnableById = new Map(runnableSteps.map(step => [step.id, step]))
-  return topologicalSort(sequence)
-    .map(stepId => runnableById.get(stepId) ?? null)
-    .filter((step): step is Step => step != null)
+  const selection = await getRunnableSteps(basePath, sequence)
+  const runnableById = new Map(selection.steps.map(step => [step.id, step]))
+  return {
+    steps: topologicalSort(sequence)
+      .map(stepId => runnableById.get(stepId) ?? null)
+      .filter((step): step is Step => step != null),
+    skippedIds: selection.skippedIds,
+  }
 }
 
 function policyStatusToHttp(result: PolicyCheckResult): { code: string; status: number } {
@@ -791,17 +846,25 @@ async function executeBatchSteps(
   options: ExecuteStepOptions,
   scopeStepIds?: Set<string>,
   expandRunnableFrontier = false,
+  initialSkippedIds: string[] = [],
 ): Promise<BatchExecuteResult> {
   const executed: ExecuteStepResult[] = []
-  const skipped = new Set<string>()
+  const skipped = new Set<string>(initialSkippedIds)
   const waiting = new Set<string>()
   const alreadyExecuted = new Set<string>()
 
   while (true) {
     const currentSequence = expandRunnableFrontier ? await readSequence(basePath) : sequence
+    const currentSelection = await getRunnableSteps(basePath, currentSequence)
+    for (const skippedStepId of currentSelection.skippedIds) {
+      if (scopeStepIds == null || scopeStepIds.has(skippedStepId)) {
+        skipped.add(skippedStepId)
+      }
+    }
+
     const currentTargetSteps = expandRunnableFrontier
-      ? (await getRunnableSteps(basePath, currentSequence)).filter(step => !alreadyExecuted.has(step.id))
-      : targetSteps.filter(step => !alreadyExecuted.has(step.id))
+      ? currentSelection.steps.filter(step => !alreadyExecuted.has(step.id))
+      : targetSteps.filter(step => !alreadyExecuted.has(step.id) && currentSelection.steps.some(candidate => candidate.id === step.id))
 
     if (currentTargetSteps.length === 0) break
 
@@ -854,7 +917,7 @@ export async function POST(request: Request) {
     const sequence = await readSequence(basePath)
     validateDAG(sequence)
 
-    const targetSteps = await resolveTargetSteps(basePath, sequence, body)
+    const { steps: targetSteps, skippedIds: targetSkippedIds } = await resolveTargetSteps(basePath, sequence, body)
     const batchPolicy = await enforceBatchPolicy(basePath, targetSteps.length, body.confirmPolicy === true)
     if (!batchPolicy.allowed) {
       const policyHttp = policyStatusToHttp(batchPolicy)
@@ -865,7 +928,7 @@ export async function POST(request: Request) {
       if ('stepId' in body) {
         return jsonError(`Step '${body.stepId}' not found`, 'NOT_FOUND', 404)
       }
-      return NextResponse.json({ success: true, executed: [] })
+      return NextResponse.json({ success: true, executed: [], skipped: targetSkippedIds, waiting: [] })
     }
 
     const runId = randomUUID()
@@ -909,7 +972,7 @@ export async function POST(request: Request) {
         confirmPolicy: body.confirmPolicy === true,
         policyConfig,
         approvalTargetRef,
-      }, groupStepIds)
+      }, groupStepIds, false, targetSkippedIds)
       await finalizeRunScope(basePath, runId, result.success ? 'successful' : 'failed', `group:${body.groupId}`)
       await auditLog('run.group', body.groupId, { runId, count: result.executed.length }, result.success ? 'ok' : 'failed')
       return NextResponse.json(result)
@@ -919,7 +982,7 @@ export async function POST(request: Request) {
       confirmPolicy: body.confirmPolicy === true,
       policyConfig,
       approvalTargetRef,
-    }, undefined, true)
+    }, undefined, true, targetSkippedIds)
     await finalizeRunScope(basePath, runId, result.success ? 'successful' : 'failed', 'mode:runnable')
     await auditLog('run.runnable', '*', { runId, count: result.executed.length }, result.success ? 'ok' : 'failed')
     return NextResponse.json(result)
