@@ -1,14 +1,261 @@
 version: 1
 prompts:
-  orch-worker-3:
-    id: orch-worker-3
+  context7-review:
+    id: context7-review
     kind: prompt
-    title: orch worker 3
+    title: Context7 Documentation Review
     version: 1
-    path: .threados/prompts/orch-worker-3.md
-    updatedAt: 2026-03-24T06:35:23.175Z
+    path: .threados/prompts/context7-review.md
+    updatedAt: 2026-04-22T07:47:01.825Z
     lastEditor: null
-    description: Canonical prompt asset for orch worker 3
+    description: Canonical prompt asset for Context7 Documentation Review
+    capabilities: []
+    links:
+      agentIds: []
+      nodeIds: []
+  health-check:
+    id: health-check
+    kind: prompt
+    title: Health Check
+    version: 1
+    path: .threados/prompts/health-check.md
+    updatedAt: 2026-04-22T07:47:01.905Z
+    lastEditor: null
+    description: Canonical prompt asset for Health Check
+    capabilities: []
+    links:
+      agentIds: []
+      nodeIds: []
+  register-agent:
+    id: register-agent
+    kind: prompt
+    title: Register Agent
+    version: 1
+    path: .threados/prompts/register-agent.md
+    updatedAt: 2026-04-22T07:47:01.976Z
+    lastEditor: null
+    description: Canonical prompt asset for Register Agent
+    capabilities: []
+    links:
+      agentIds: []
+      nodeIds: []
+  pre-session:
+    id: pre-session
+    kind: prompt
+    title: Pre-Session State Load
+    version: 1
+    path: .threados/prompts/pre-session.md
+    updatedAt: 2026-04-22T07:47:02.064Z
+    lastEditor: null
+    description: Canonical prompt asset for Pre-Session State Load
+    capabilities: []
+    links:
+      agentIds: []
+      nodeIds: []
+  setup-workspace:
+    id: setup-workspace
+    kind: prompt
+    title: Setup Workspace
+    version: 1
+    path: .threados/prompts/setup-workspace.md
+    updatedAt: 2026-04-22T07:47:02.150Z
+    lastEditor: null
+    description: Canonical prompt asset for Setup Workspace
+    capabilities: []
+    links:
+      agentIds: []
+      nodeIds: []
+  input-collection:
+    id: input-collection
+    kind: prompt
+    title: ICP Input Collection
+    version: 1
+    path: .threados/prompts/input-collection.md
+    updatedAt: 2026-04-22T07:47:02.226Z
+    lastEditor: null
+    description: Canonical prompt asset for ICP Input Collection
+    capabilities: []
+    links:
+      agentIds: []
+      nodeIds: []
+  apollo-saved-contacts-search:
+    id: apollo-saved-contacts-search
+    kind: prompt
+    title: Apollo Saved Contacts Search
+    version: 1
+    path: .threados/prompts/apollo-saved-contacts-search.md
+    updatedAt: 2026-04-22T07:47:02.298Z
+    lastEditor: null
+    description: Canonical prompt asset for Apollo Saved Contacts Search
+    capabilities: []
+    links:
+      agentIds: []
+      nodeIds: []
+  apollo-discovery:
+    id: apollo-discovery
+    kind: prompt
+    title: Apollo Prospect Discovery
+    version: 1
+    path: .threados/prompts/apollo-discovery.md
+    updatedAt: 2026-04-22T07:47:02.374Z
+    lastEditor: null
+    description: Canonical prompt asset for Apollo Prospect Discovery
+    capabilities: []
+    links:
+      agentIds: []
+      nodeIds: []
+  merge-dedup-comply:
+    id: merge-dedup-comply
+    kind: prompt
+    title: Merge Dedup and Compliance
+    version: 1
+    path: .threados/prompts/merge-dedup-comply.md
+    updatedAt: 2026-04-22T07:47:02.458Z
+    lastEditor: null
+    description: Canonical prompt asset for Merge Dedup and Compliance
+    capabilities: []
+    links:
+      agentIds: []
+      nodeIds: []
+  enrichment:
+    id: enrichment
+    kind: prompt
+    title: Apollo Enrichment
+    version: 1
+    path: .threados/prompts/enrichment.md
+    updatedAt: 2026-04-22T07:47:02.528Z
+    lastEditor: null
+    description: Canonical prompt asset for Apollo Enrichment
+    capabilities: []
+    links:
+      agentIds: []
+      nodeIds: []
+  review-approval:
+    id: review-approval
+    kind: prompt
+    title: Segment Review and Approval
+    version: 1
+    path: .threados/prompts/review-approval.md
+    updatedAt: 2026-04-22T07:47:02.610Z
+    lastEditor: null
+    description: Canonical prompt asset for Segment Review and Approval
+    capabilities: []
+    links:
+      agentIds: []
+      nodeIds: []
+  resolve-apollo-stage:
+    id: resolve-apollo-stage
+    kind: prompt
+    title: Resolve Apollo Target Stage
+    version: 1
+    path: .threados/prompts/resolve-apollo-stage.md
+    updatedAt: 2026-04-22T07:47:02.682Z
+    lastEditor: null
+    description: Canonical prompt asset for Resolve Apollo Target Stage
+    capabilities: []
+    links:
+      agentIds: []
+      nodeIds: []
+  create-missing-apollo-contacts:
+    id: create-missing-apollo-contacts
+    kind: prompt
+    title: Create Missing Apollo Contacts
+    version: 1
+    path: .threados/prompts/create-missing-apollo-contacts.md
+    updatedAt: 2026-04-22T07:47:02.758Z
+    lastEditor: null
+    description: Canonical prompt asset for Create Missing Apollo Contacts
+    capabilities: []
+    links:
+      agentIds: []
+      nodeIds: []
+  update-apollo-stages:
+    id: update-apollo-stages
+    kind: prompt
+    title: Update Apollo Stages
+    version: 1
+    path: .threados/prompts/update-apollo-stages.md
+    updatedAt: 2026-04-22T07:47:02.841Z
+    lastEditor: null
+    description: Canonical prompt asset for Update Apollo Stages
+    capabilities: []
+    links:
+      agentIds: []
+      nodeIds: []
+  falkordb-upsert-and-signal:
+    id: falkordb-upsert-and-signal
+    kind: prompt
+    title: FalkorDB Upsert and Signal
+    version: 1
+    path: .threados/prompts/falkordb-upsert-and-signal.md
+    updatedAt: 2026-04-22T07:47:02.917Z
+    lastEditor: null
+    description: Canonical prompt asset for FalkorDB Upsert and Signal
+    capabilities: []
+    links:
+      agentIds: []
+      nodeIds: []
+  signal-agents:
+    id: signal-agents
+    kind: prompt
+    title: Signal Downstream Agents
+    version: 1
+    path: .threados/prompts/signal-agents.md
+    updatedAt: 2026-04-22T07:47:02.995Z
+    lastEditor: null
+    description: Canonical prompt asset for Signal Downstream Agents
+    capabilities: []
+    links:
+      agentIds: []
+      nodeIds: []
+  remember-learnings:
+    id: remember-learnings
+    kind: prompt
+    title: Remember Segment Learnings
+    version: 1
+    path: .threados/prompts/remember-learnings.md
+    updatedAt: 2026-04-22T07:47:03.074Z
+    lastEditor: null
+    description: Canonical prompt asset for Remember Segment Learnings
+    capabilities: []
+    links:
+      agentIds: []
+      nodeIds: []
+  display-summary:
+    id: display-summary
+    kind: prompt
+    title: Display Summary
+    version: 1
+    path: .threados/prompts/display-summary.md
+    updatedAt: 2026-04-22T07:47:03.154Z
+    lastEditor: null
+    description: Canonical prompt asset for Display Summary
+    capabilities: []
+    links:
+      agentIds: []
+      nodeIds: []
+  telegram-summary:
+    id: telegram-summary
+    kind: prompt
+    title: Telegram Alert
+    version: 1
+    path: .threados/prompts/telegram-summary.md
+    updatedAt: 2026-04-22T07:47:03.230Z
+    lastEditor: null
+    description: Canonical prompt asset for Telegram Alert
+    capabilities: []
+    links:
+      agentIds: []
+      nodeIds: []
+  log-session:
+    id: log-session
+    kind: prompt
+    title: Log Session and Cleanup
+    version: 1
+    path: .threados/prompts/log-session.md
+    updatedAt: 2026-04-22T07:47:03.304Z
+    lastEditor: null
+    description: Canonical prompt asset for Log Session and Cleanup
     capabilities: []
     links:
       agentIds: []
