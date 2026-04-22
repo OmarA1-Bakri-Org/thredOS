@@ -56,6 +56,28 @@ describe('assessCompletionResult', () => {
     expect(result.status).toBe('NEEDS_REVIEW')
     expect(result.reasons).toContain('OBVIOUS_NON_COMPLETION_PAYLOAD')
   })
+
+  test('downgrades zero-exit line-start permission denied payloads to NEEDS_REVIEW', () => {
+    const result = assessCompletionResult({
+      exitCode: 0,
+      stdout: 'Permission denied: cannot access the requested admin tool from this environment.',
+      stderr: '',
+    })
+
+    expect(result.status).toBe('NEEDS_REVIEW')
+    expect(result.reasons).toContain('OBVIOUS_NON_COMPLETION_PAYLOAD')
+  })
+
+  test('downgrades zero-exit unable-to-complete payloads to NEEDS_REVIEW', () => {
+    const result = assessCompletionResult({
+      exitCode: 0,
+      stdout: "I'm unable to complete this because the billing console is unavailable in this environment.",
+      stderr: '',
+    })
+
+    expect(result.status).toBe('NEEDS_REVIEW')
+    expect(result.reasons).toContain('OBVIOUS_NON_COMPLETION_PAYLOAD')
+  })
 })
 
 describe('getSupportedModels', () => {

@@ -811,6 +811,58 @@ describe('run step — with mock runtime', () => {
     expect(updatedSeq.steps[0].status).toBe('NEEDS_REVIEW')
   })
 
+  test('run step downgrades zero-exit permission denied payloads to NEEDS_REVIEW', async () => {
+    const seq = makeSequence({
+      steps: [
+        makeStep({ id: 'permission-denied-step', model: 'shell', status: 'READY', prompt_file: '.threados/prompts/permission-denied-step.md' }),
+      ],
+    })
+    await writeTestSequence(tempDir, seq)
+    await writeFile(join(tempDir, '.threados/prompts/permission-denied-step.md'), '#!/bin/sh\necho blocked\n')
+
+    globalThis.__THREADOS_CLI_RUN_RUNTIME__ = {
+      dispatch: async (_model, opts) => ({
+        stepId: opts.stepId,
+        runId: opts.runId,
+        command: process.execPath,
+        args: ['-e', 'process.exit(0)'],
+        cwd: opts.cwd,
+        timeout: opts.timeout,
+      }),
+      runStep: async config => ({
+        stepId: config.stepId,
+        runId: config.runId,
+        command: config.command,
+        args: config.args,
+        cwd: config.cwd,
+        startTime: new Date(),
+        endTime: new Date(),
+        duration: 50,
+        exitCode: 0,
+        stdout: 'Permission denied: cannot access the requested admin tool from this environment.',
+        stderr: '',
+        timedOut: false,
+        status: 'SUCCESS',
+      }),
+      saveRunArtifacts: async () => '.threados/runs/mock',
+    }
+
+    const logs: string[] = []
+    const origLog = console.log
+    console.log = (msg: string) => logs.push(msg)
+
+    await runCommand('step', ['permission-denied-step'], { ...jsonOpts, basePath: tempDir })
+
+    console.log = origLog
+
+    const output = JSON.parse(logs[0])
+    expect(output.success).toBe(false)
+    expect(output.status).toBe('NEEDS_REVIEW')
+
+    const updatedSeq = await readSequence(tempDir)
+    expect(updatedSeq.steps[0].status).toBe('NEEDS_REVIEW')
+  })
+
   test('run step marks step as FAILED when runtime throws', async () => {
     const seq = makeSequence({
       steps: [
