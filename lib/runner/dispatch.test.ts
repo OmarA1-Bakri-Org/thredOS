@@ -1,5 +1,7 @@
 import { describe, test, expect } from 'bun:test'
-import { readFile } from 'fs/promises'
+import { chmod, mkdir, mkdtemp, readFile, rm } from 'fs/promises'
+import { tmpdir } from 'os'
+import { join } from 'path'
 import { assessCompletionResult, dispatch, checkAgentAvailable, exitCodeToStatus, getSupportedModels } from './dispatch'
 import type { ModelType } from '../sequence/schema'
 
@@ -145,6 +147,26 @@ describe('dispatch', () => {
     expect(config.args).toBeDefined()
     expect(config.args![0]).toContain('threados-prompt-merge-dedup-comply-spawn_merge_agent-')
     expect(config.args![0]).not.toContain('::')
+  })
+
+  test('fails fast when the workspace-local temp prompt root is not writable', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'threados-dispatch-preflight-'))
+    const promptRoot = join(cwd, '.threados', 'tmp-prompts')
+    await mkdir(promptRoot, { recursive: true })
+    await chmod(promptRoot, 0o555)
+
+    try {
+      await expect(dispatch('shell', {
+        stepId: 'blocked-write',
+        runId: 'run-preflight',
+        compiledPrompt: 'echo blocked',
+        cwd,
+        timeout: 5000,
+      })).rejects.toThrow(`Runtime preflight failed: prompt temp root is not writable: ${promptRoot}`)
+    } finally {
+      await chmod(promptRoot, 0o755)
+      await rm(cwd, { recursive: true, force: true })
+    }
   })
 
   test('dispatch exposes THREADOS_EVENT_LOG to the child process', async () => {

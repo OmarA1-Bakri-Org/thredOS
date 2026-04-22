@@ -13,6 +13,7 @@ import {
   validateStepPromptExists,
 } from '../../runner/step-preparation'
 import { assessCompletionResult, dispatch } from '../../runner/dispatch'
+import { preflightStepEnvironment } from '../../runner/environment-preflight'
 import { StepNotFoundError } from '../../errors'
 import type { Step, Sequence, StepStatus } from '../../sequence/schema'
 import { ROOT_THREAD_SURFACE_ID } from '../../thread-surfaces/constants'
@@ -491,6 +492,7 @@ async function executeSingleStep(
   await writeSequence(basePath, sequence)
 
   try {
+    await preflightStepEnvironment(basePath, step)
     const runtime = getCLIRunRuntime()
     const runtimeEventLogPath = getRuntimeEventLogPath(basePath, runId, stepId)
     const surfaceId = getSurfaceId(step)

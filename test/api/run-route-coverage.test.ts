@@ -668,6 +668,64 @@ describe.serial('run route coverage — runnable mode', () => {
     expect(sequence.steps.find(step => step.id === 'first-run-conditional-step')?.status).toBe('BLOCKED')
   })
 
+  test('POST with mode=runnable fails fast when composio auth is not configured for a composio step', async () => {
+    await setupTestSequence({
+      version: '1.0',
+      name: 'composio-auth-runnable-seq',
+      steps: [
+        {
+          id: 'composio-auth-step',
+          name: 'Composio Auth Step',
+          type: 'base',
+          model: 'codex',
+          prompt_file: '.threados/prompts/composio-auth-step.md',
+          depends_on: [],
+          status: 'READY',
+          actions: [{
+            id: 'apollo-usage',
+            type: 'composio_tool',
+            config: { tool_slug: 'APOLLO_VIEW_API_USAGE_STATS', arguments: { team: 'growth' } },
+            output_key: 'apollo_usage',
+          }],
+        },
+      ],
+      gates: [],
+    })
+    await writePrompt('composio-auth-step')
+
+    const isolatedHome = await mkdtemp(join(tmpdir(), 'threados-route-composio-auth-'))
+    const originalHome = process.env.HOME
+    process.env.HOME = isolatedHome
+
+    const { POST } = await import('@/app/api/run/route')
+    const res = await POST(new Request('http://localhost/api/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: confirmedBody({ mode: 'runnable' }),
+    }))
+
+    if (originalHome === undefined) {
+      delete process.env.HOME
+    } else {
+      process.env.HOME = originalHome
+    }
+    await rm(isolatedHome, { recursive: true, force: true })
+
+    expect(res.status).toBe(200)
+    const data = await res.json()
+    expect(data.success).toBe(false)
+    expect(data.executed).toHaveLength(1)
+    expect(data.executed[0]).toMatchObject({
+      stepId: 'composio-auth-step',
+      success: false,
+      status: 'FAILED',
+    })
+    expect(data.executed[0].error).toContain('Composio auth is not configured')
+
+    const sequence = await readSequence(basePath)
+    expect(sequence.steps.find(step => step.id === 'composio-auth-step')?.status).toBe('FAILED')
+  })
+
   test('POST with mode=runnable executes nested composio_tool actions inside native conditional branches and persists output_key', async () => {
     const composioCalls: Array<{ toolSlug: string; arguments: Record<string, unknown> }> = []
     globalThis.__THREADOS_RUN_ROUTE_RUNTIME__ = {

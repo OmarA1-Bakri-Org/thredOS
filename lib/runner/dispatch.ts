@@ -4,6 +4,7 @@ import { randomUUID } from 'crypto'
 import { AgentNotFoundError } from '../errors'
 import type { RunnerConfig, RunResult } from './wrapper'
 import type { ModelType } from '../sequence/schema'
+import { preflightDispatchEnvironment } from './environment-preflight'
 
 export interface DispatchOptions {
   stepId: string
@@ -198,6 +199,8 @@ export async function dispatch(
   if (!available) {
     throw new AgentNotFoundError(model, dispatcher.installHint)
   }
+
+  await preflightDispatchEnvironment(opts.cwd)
 
   // Write prompt to temp file
   const promptFilePath = await writeTempPrompt(opts.compiledPrompt, opts.stepId, opts.cwd)

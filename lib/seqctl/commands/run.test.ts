@@ -1,5 +1,6 @@
 import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
-import { mkdir, readFile, writeFile } from 'fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'fs/promises'
+import { tmpdir } from 'os'
 import { join } from 'path'
 import { createTempDir, cleanTempDir, makeSequence, makeStep, writeTestSequence } from '../../../test/helpers/setup'
 import { runCommand } from './run'
@@ -1228,6 +1229,83 @@ describe('run step — with mock runtime', () => {
     expect(compiledPromptSeen).toContain('THREADOS ACTION CONTRACT')
     expect(compiledPromptSeen).toContain('apollo-usage')
     expect(compiledPromptSeen).toContain('APOLLO_VIEW_API_USAGE_STATS')
+  })
+
+  test('run step fails fast when composio auth is not configured for a composio action', async () => {
+    const seq = makeSequence({
+      steps: [
+        makeStep({
+          id: 'composio-auth-step',
+          model: 'shell',
+          status: 'READY',
+          prompt_file: '.threados/prompts/composio-auth-step.md',
+          actions: [{
+            id: 'apollo-usage',
+            type: 'composio_tool',
+            config: {
+              tool_slug: 'APOLLO_VIEW_API_USAGE_STATS',
+              arguments: { team: 'growth' },
+            },
+            output_key: 'apollo_usage',
+          }],
+        } as any),
+      ],
+    })
+    await writeTestSequence(tempDir, seq)
+    await writeFile(join(tempDir, '.threados/prompts/composio-auth-step.md'), 'echo action')
+
+    globalThis.__THREADOS_CLI_RUN_RUNTIME__ = {
+      dispatch: async (_model, opts) => ({
+        stepId: opts.stepId,
+        runId: opts.runId,
+        command: process.execPath,
+        args: ['-e', 'process.exit(0)'],
+        cwd: opts.cwd,
+        timeout: opts.timeout,
+      }),
+      runStep: async config => ({
+        stepId: config.stepId,
+        runId: config.runId,
+        command: config.command,
+        args: config.args,
+        cwd: config.cwd,
+        startTime: new Date(),
+        endTime: new Date(),
+        duration: 15,
+        exitCode: 0,
+        stdout: 'ok',
+        stderr: '',
+        timedOut: false,
+        status: 'SUCCESS',
+      }),
+      saveRunArtifacts: async () => '.threados/runs/mock',
+    } as any
+
+    const isolatedHome = await mkdtemp(join(tmpdir(), 'threados-composio-auth-'))
+    const originalHome = process.env.HOME
+    process.env.HOME = isolatedHome
+
+    const logs: string[] = []
+    const origLog = console.log
+    console.log = (msg: string) => logs.push(msg)
+
+    await runCommand('step', ['composio-auth-step'], { ...jsonOpts, basePath: tempDir })
+
+    console.log = origLog
+    if (originalHome === undefined) {
+      delete process.env.HOME
+    } else {
+      process.env.HOME = originalHome
+    }
+    await rm(isolatedHome, { recursive: true, force: true })
+
+    const output = JSON.parse(logs[0])
+    expect(output.success).toBe(false)
+    expect(output.status).toBe('FAILED')
+    expect(output.error).toContain('Composio auth is not configured')
+
+    const persisted = await readSequence(tempDir)
+    expect(persisted.steps.find(step => step.id === 'composio-auth-step')?.status).toBe('FAILED')
   })
 
   test('run step downgrades contract-bound composio steps when the expected persisted output is missing', async () => {

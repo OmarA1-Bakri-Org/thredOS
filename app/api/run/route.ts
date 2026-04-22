@@ -33,6 +33,7 @@ import {
   type RunRecordJson,
 } from '@/lib/runner/artifacts'
 import { assessCompletionResult, dispatch } from '@/lib/runner/dispatch'
+import { preflightStepEnvironment } from '@/lib/runner/environment-preflight'
 import { runStep, type RunnerConfig } from '@/lib/runner/wrapper'
 import { topologicalSort, validateDAG } from '@/lib/sequence/dag'
 import { readSequence, writeSequence } from '@/lib/sequence/parser'
@@ -663,6 +664,7 @@ async function executeStep(
   const artifactManifestRef = getArtifactManifestRef(runId, surfaceId)
 
   try {
+    await preflightStepEnvironment(basePath, step)
     const runtimeEventLogPath = getRuntimeEventLogPath(basePath, runId, stepId)
     const preparedPrompt = await prepareStepPromptForDispatch({
       stepId,
