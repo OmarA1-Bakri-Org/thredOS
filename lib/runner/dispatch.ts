@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from 'fs/promises'
 import { join } from 'path'
 import { randomUUID } from 'crypto'
+import { spawnSync } from 'child_process'
 import { AgentNotFoundError } from '../errors'
 import type { RunnerConfig, RunResult } from './wrapper'
 import type { ModelType } from '../sequence/schema'
@@ -85,9 +86,10 @@ const dispatchers: Record<string, AgentDispatcher> = {
         runId: opts.runId,
         command: 'codex',
         args: [
-          '-q',
-          `Execute the task described in ${promptFilePath}. Read the file first, then follow all instructions.`,
+          'exec',
           '--full-auto',
+          '--skip-git-repo-check',
+          `Execute the task described in ${promptFilePath}. Read the file first, then follow all instructions.`,
         ],
         cwd: opts.cwd,
         timeout: opts.timeout,
@@ -164,12 +166,11 @@ export async function checkAgentAvailable(model: ModelType): Promise<boolean> {
   try {
     const isWindows = process.platform === 'win32'
     const checkCmd = isWindows ? 'where' : 'which'
-    const proc = Bun.spawn([checkCmd, dispatcher.binary], {
-      stdout: 'pipe',
-      stderr: 'pipe',
+    const proc = spawnSync(checkCmd, [dispatcher.binary], {
+      stdio: 'ignore',
+      env: process.env,
     })
-    await proc.exited
-    return proc.exitCode === 0
+    return proc.status === 0
   } catch {
     return false
   }

@@ -14,7 +14,12 @@ const FUSION_WIDTH = 220
 const FUSION_HEIGHT = 80
 const GROUP_PADDING = 36
 
-const elk = new ELK()
+let elk: InstanceType<typeof ELK> | null = null
+
+function getElkInstance() {
+  if (!elk) elk = new ELK()
+  return elk
+}
 
 type StepItem = SequenceStatus['steps'][number]
 type GateItem = SequenceStatus['gates'][number]
@@ -22,6 +27,17 @@ type GateItem = SequenceStatus['gates'][number]
 interface ElkNode { id: string; width: number; height: number }
 interface ElkEdge { id: string; sources: string[]; targets: string[] }
 interface GroupBounds { minX: number; minY: number; maxX: number; maxY: number }
+
+interface AggregateGateItem {
+  id: string
+  name: string
+  status: string
+  dependsOn: string[]
+  description: string
+  acceptance_conditions: string[]
+  required_review: boolean
+  gateIds: string[]
+}
 
 export function useSequenceGraph(
   status: SequenceStatus | undefined,
@@ -42,10 +58,11 @@ export function useSequenceGraph(
     const lowerQuery = searchQuery.toLowerCase()
 
     const stepMap = new Map(status.steps.map(s => [s.id, s]))
-    const gateMap = new Map(status.gates.map(g => [g.id, g]))
+    const aggregateGates = buildAggregateGates(status.gates)
+    const gateMap = new Map(aggregateGates.map(g => [g.id, g]))
 
-    const { stepPhaseMap, gatePhaseMap } = buildPhaseMaps(status)
-    const { elkNodes, elkEdges } = buildElkGraph(status, lowerQuery)
+    const { stepPhaseMap, gatePhaseMap } = buildPhaseMaps(status, aggregateGates)
+    const { elkNodes, elkEdges } = buildElkGraph(status, aggregateGates, lowerQuery)
 
     const graph = {
       id: 'root',
@@ -60,7 +77,7 @@ export function useSequenceGraph(
       edges: elkEdges,
     }
 
-    elk.layout(graph).then(layoutedGraph => {
+    getElkInstance().layout(graph).then(layoutedGraph => {
       if (cancelled) return
 
       const nodes = buildLayoutNodes(layoutedGraph, stepMap, gateMap, stepPhaseMap, gatePhaseMap, childCountByStepId)
@@ -76,18 +93,51 @@ export function useSequenceGraph(
   return layoutResult
 }
 
-function buildPhaseMaps(status: SequenceStatus) {
+function buildPhaseMaps(status: SequenceStatus, aggregateGates: AggregateGateItem[]) {
   const phaseDerivation = derivePhases(status.steps, status.gates)
   const stepPhaseMap = new Map<string, string>()
   const gatePhaseMap = new Map<string, string>()
+  const aggregateGateIdsByStepId = new Map(aggregateGates.map(gate => [gate.dependsOn[0] ?? '', gate.id]))
   for (const phase of phaseDerivation.phases) {
-    for (const stepId of phase.stepIds) stepPhaseMap.set(stepId, phase.id)
-    for (const gateId of phase.gateIds) gatePhaseMap.set(gateId, phase.id)
+    for (const stepId of phase.stepIds) {
+      stepPhaseMap.set(stepId, phase.id)
+      const aggregateGateId = aggregateGateIdsByStepId.get(stepId)
+      if (aggregateGateId) gatePhaseMap.set(aggregateGateId, phase.id)
+    }
   }
   return { stepPhaseMap, gatePhaseMap }
 }
 
-function buildElkGraph(status: SequenceStatus, lowerQuery: string) {
+function summarizeAggregateGateStatus(gates: GateItem[]): string {
+  if (gates.some(gate => gate.status === 'BLOCKED')) return 'BLOCKED'
+  if (gates.every(gate => gate.status === 'APPROVED')) return 'APPROVED'
+  return 'PENDING'
+}
+
+export function buildAggregateGates(gates: GateItem[]): AggregateGateItem[] {
+  const grouped = new Map<string, GateItem[]>()
+  for (const gate of gates) {
+    const stepIds = gate.dependsOn.length > 0 ? gate.dependsOn : ['orphan']
+    for (const stepId of stepIds) {
+      const bucket = grouped.get(stepId)
+      if (bucket) bucket.push(gate)
+      else grouped.set(stepId, [gate])
+    }
+  }
+
+  return Array.from(grouped.entries()).map(([stepId, groupedGates]) => ({
+    id: `gate:${stepId}`,
+    name: `${stepId} gates`,
+    status: summarizeAggregateGateStatus(groupedGates),
+    dependsOn: [stepId],
+    description: groupedGates.map(gate => gate.description).filter(Boolean).join('\n'),
+    acceptance_conditions: groupedGates.flatMap(gate => gate.acceptance_conditions).filter((condition): condition is string => typeof condition === 'string' && condition.length > 0),
+    required_review: groupedGates.some(gate => gate.required_review),
+    gateIds: groupedGates.map(gate => gate.id),
+  }))
+}
+
+export function buildElkGraph(status: SequenceStatus, aggregateGates: AggregateGateItem[], lowerQuery: string) {
   const elkNodes: ElkNode[] = []
   const elkEdges: ElkEdge[] = []
   const visibleIds = new Set<string>()
@@ -97,14 +147,14 @@ function buildElkGraph(status: SequenceStatus, lowerQuery: string) {
     elkNodes.push(buildStepElkNode(step))
     visibleIds.add(step.id)
   }
-  for (const gate of status.gates) {
+  for (const gate of aggregateGates) {
     if (isNodeHidden(gate, lowerQuery)) continue
     elkNodes.push({ id: gate.id, width: GATE_SIZE, height: GATE_SIZE })
     visibleIds.add(gate.id)
   }
 
-  addDependencyEdges(elkEdges, status.steps, visibleIds)
-  addDependencyEdges(elkEdges, status.gates, visibleIds)
+  addStepDependencyEdges(elkEdges, status.steps, visibleIds, new Set(aggregateGates.map(gate => gate.dependsOn[0] ?? '')))
+  addAggregateGateEdges(elkEdges, aggregateGates, status.steps, visibleIds)
 
   return { elkNodes, elkEdges, visibleIds }
 }
@@ -122,24 +172,39 @@ function buildStepElkNode(step: StepItem): ElkNode {
   }
 }
 
-function addDependencyEdges(
+function addStepDependencyEdges(
   elkEdges: ElkEdge[],
   items: Array<{ id: string; dependsOn: string[] }>,
   visibleIds: Set<string>,
+  stepsWithAggregateGates: Set<string>,
 ) {
   for (const item of items) {
     for (const dep of item.dependsOn) {
-      if (visibleIds.has(item.id) && visibleIds.has(dep)) {
-        elkEdges.push({ id: `${dep}->${item.id}`, sources: [dep], targets: [item.id] })
+      const sourceId = stepsWithAggregateGates.has(dep) ? `gate:${dep}` : dep
+      if (visibleIds.has(item.id) && visibleIds.has(sourceId)) {
+        elkEdges.push({ id: `${sourceId}->${item.id}`, sources: [sourceId], targets: [item.id] })
       }
     }
+  }
+}
+
+function addAggregateGateEdges(
+  elkEdges: ElkEdge[],
+  aggregateGates: AggregateGateItem[],
+  _steps: StepItem[],
+  visibleIds: Set<string>,
+) {
+  for (const gate of aggregateGates) {
+    const stepId = gate.dependsOn[0] ?? ''
+    if (!stepId || !visibleIds.has(gate.id) || !visibleIds.has(stepId)) continue
+    elkEdges.push({ id: `${stepId}->${gate.id}`, sources: [stepId], targets: [gate.id] })
   }
 }
 
 function buildLayoutNodes(
   layoutedGraph: { children?: Array<{ id: string; x?: number; y?: number; width?: number; height?: number }> },
   stepMap: Map<string, StepItem>,
-  gateMap: Map<string, GateItem>,
+  gateMap: Map<string, AggregateGateItem>,
   stepPhaseMap: Map<string, string>,
   gatePhaseMap: Map<string, string>,
   childCountByStepId?: Map<string, number>,
@@ -184,7 +249,7 @@ function buildStepNode(
 
 function buildGateNode(
   elkNode: { id: string },
-  gate: GateItem,
+  gate: AggregateGateItem,
   x: number,
   y: number,
   gatePhaseMap: Map<string, string>,
@@ -240,7 +305,7 @@ function addGroupBoundaryNodes(nodes: Node[], groupMembers: Map<string, GroupBou
 function buildLayoutEdges(
   layoutedGraph: { edges?: Array<{ id: string; sources?: string[]; targets?: string[] }> },
   stepMap: Map<string, StepItem>,
-  gateMap: Map<string, GateItem>,
+  gateMap: Map<string, AggregateGateItem>,
 ): Edge[] {
   return (layoutedGraph.edges || []).map(e => {
     const sourceId = e.sources?.[0] ?? ''
