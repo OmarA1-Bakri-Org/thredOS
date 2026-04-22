@@ -194,7 +194,8 @@ export async function installPack(basePath: string, input: PackInstallInput): Pr
   const promptSnapshot = await snapshotPrompts(basePath, currentSequence)
   const authoredPromptContents = new Map<string, string | null>()
   for (const step of compiledSteps) {
-    authoredPromptContents.set(step.id, await readAuthoredPromptContent(basePath, packRoot, step))
+    const authoredPromptPath = step.prompt_ref?.path ?? step.prompt_file
+    authoredPromptContents.set(step.id, await readAuthoredPromptContent(basePath, packRoot, { prompt_file: authoredPromptPath }))
   }
 
   const nextSequence = buildInstalledSequence({
