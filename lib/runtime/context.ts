@@ -1,6 +1,7 @@
 import { mkdir, readFile, writeFile } from 'fs/promises'
-import { isAbsolute, join } from 'path'
+import { isAbsolute, resolve } from 'path'
 import type { Sequence } from '../sequence/schema'
+import { resolvePathWithinBase } from './path-safety'
 
 export type RuntimeContext = Record<string, unknown>
 
@@ -8,11 +9,18 @@ const APOLLO_EXCLUDED_KEYS = ['dnc', 'recently_contacted', 'existing_pipeline', 
 const APOLLO_PERSONA_LANES = ['A', 'B', 'C', 'D', 'E'] as const
 
 function getRuntimeContextPath(basePath: string): string {
-  return `${basePath}/.threados/state/runtime-context.json`
+  return resolvePathWithinBase(basePath, '.threados/state/runtime-context.json', 'runtime context path')
+}
+
+function isUnsafeRuntimeSegment(segment: string): boolean {
+  return segment === '__proto__' || segment === 'prototype' || segment === 'constructor'
 }
 
 export function getNestedRuntimeValue(input: unknown, path: string): unknown {
   return path.split('.').reduce<unknown>((current, key) => {
+    if (isUnsafeRuntimeSegment(key)) {
+      return undefined
+    }
     if (key === 'length' && (Array.isArray(current) || typeof current === 'string')) {
       return current.length
     }
@@ -26,6 +34,9 @@ export function getNestedRuntimeValue(input: unknown, path: string): unknown {
 export function setNestedRuntimeValue(target: RuntimeContext, path: string, value: unknown): void {
   const segments = path.split('.').filter(Boolean)
   if (segments.length === 0) return
+  if (segments.some(isUnsafeRuntimeSegment)) {
+    throw new Error(`runtime context path '${path}' contains a forbidden segment`)
+  }
 
   let current: RuntimeContext = target
   for (const segment of segments.slice(0, -1)) {
@@ -73,7 +84,13 @@ function normalizeApolloArtifactDir(basePath: string, runtimeContext: RuntimeCon
     : null
 
   if (!configured) return null
-  return isAbsolute(configured) ? configured : join(basePath, configured)
+  return isAbsolute(configured)
+    ? resolve(configured)
+    : resolvePathWithinBase(basePath, configured, 'apollo artifact directory')
+}
+
+function resolveApolloArtifactFile(artifactDir: string, fileName: string): string {
+  return resolve(artifactDir, fileName)
 }
 
 async function readOptionalArtifactObject(path: string): Promise<Record<string, unknown> | null> {
@@ -168,14 +185,14 @@ export async function hydrateApolloApprovalRuntimeContext(basePath: string, runt
   const artifactDir = normalizeApolloArtifactDir(basePath, runtimeContext)
 
   const [savedContacts, discoveredProspects, qualifiedSegment, enrichedSegment, icpConfig] = artifactDir
-    ? await Promise.all([
-        readOptionalArtifactObject(join(artifactDir, 'saved-contacts.json')),
-        readOptionalArtifactObject(join(artifactDir, 'discovered-prospects.json')),
-        readOptionalArtifactObject(join(artifactDir, 'qualified-segment.json')),
-        readOptionalArtifactObject(join(artifactDir, 'enriched-segment.json')),
-        readOptionalArtifactObject(join(artifactDir, 'icp-config.json')),
+      ? await Promise.all([
+        readOptionalArtifactObject(resolveApolloArtifactFile(artifactDir, 'saved-contacts.json')),
+        readOptionalArtifactObject(resolveApolloArtifactFile(artifactDir, 'discovered-prospects.json')),
+        readOptionalArtifactObject(resolveApolloArtifactFile(artifactDir, 'qualified-segment.json')),
+        readOptionalArtifactObject(resolveApolloArtifactFile(artifactDir, 'enriched-segment.json')),
+        readOptionalArtifactObject(resolveApolloArtifactFile(artifactDir, 'icp-config.json')),
       ])
-    : [null, null, null, null, null]
+: [null, null, null, null, null]
 
   if (savedContacts) {
     mergeRuntimeContexts(hydrated, { saved_contacts: savedContacts })
@@ -228,7 +245,7 @@ export async function readRuntimeContext(basePath: string): Promise<RuntimeConte
 }
 
 export async function writeRuntimeContext(basePath: string, context: RuntimeContext): Promise<void> {
-  await mkdir(`${basePath}/.threados/state`, { recursive: true })
+  await mkdir(resolvePathWithinBase(basePath, '.threados/state', 'runtime state directory'), { recursive: true })
   await writeFile(getRuntimeContextPath(basePath), `${JSON.stringify(context, null, 2)}\n`, 'utf-8')
 }
 

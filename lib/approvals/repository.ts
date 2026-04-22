@@ -1,6 +1,7 @@
 import { appendFile, readFile, mkdir, readdir } from 'fs/promises'
 import { join } from 'path'
 import { ApprovalSchema, type Approval } from '@/lib/contracts/schemas'
+import { assertSafePathSegment, resolvePathWithinBase } from '../runtime/path-safety'
 
 const RUNS_PATH = '.threados/runs'
 
@@ -31,7 +32,8 @@ export async function appendApproval(
   approval: Approval,
 ): Promise<void> {
   const validated = ApprovalSchema.parse(approval)
-  const dirPath = join(basePath, RUNS_PATH, runId)
+  const safeRunId = assertSafePathSegment(runId, 'runId')
+  const dirPath = resolvePathWithinBase(basePath, join(RUNS_PATH, safeRunId), 'approval run directory')
   await mkdir(dirPath, { recursive: true })
   const filePath = join(dirPath, 'approvals.ndjson')
   await appendFile(filePath, JSON.stringify(validated) + '\n', 'utf-8')
@@ -41,7 +43,8 @@ export async function readApprovals(
   basePath: string,
   runId: string,
 ): Promise<Approval[]> {
-  const filePath = join(basePath, RUNS_PATH, runId, 'approvals.ndjson')
+  const safeRunId = assertSafePathSegment(runId, 'runId')
+  const filePath = resolvePathWithinBase(basePath, join(RUNS_PATH, safeRunId, 'approvals.ndjson'), 'approval log')
   let content: string
   try {
     content = await readFile(filePath, 'utf-8')
@@ -58,7 +61,7 @@ export async function hasApprovedApproval(
   targetRef: string,
   actionType: Approval['action_type'] = 'run',
 ): Promise<boolean> {
-  const runsPath = join(basePath, RUNS_PATH)
+  const runsPath = resolvePathWithinBase(basePath, RUNS_PATH, 'approval runs directory')
   let runEntries: string[]
   try {
     runEntries = await readdir(runsPath)

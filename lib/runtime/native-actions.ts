@@ -13,6 +13,7 @@ import type { Step, Sequence, ModelType } from '../sequence/schema'
 import type { RunnerConfig, RunResult } from '../runner/wrapper'
 import { assessCompletionResult, type CompletionAssessment } from '../runner/dispatch'
 import type { dispatch } from '../runner/dispatch'
+import { resolveAbsoluteOrWithinBase } from './path-safety'
 
 const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000
 
@@ -160,7 +161,7 @@ async function executeCliAction(
 }
 
 function resolveWriteTarget(basePath: string, filePath: string): string {
-  return isAbsolute(filePath) ? filePath : join(basePath, filePath)
+  return resolveAbsoluteOrWithinBase(basePath, filePath, 'write_file target')
 }
 
 function resolveWriteSourceKey(action: Record<string, unknown>, targetPath: string, runtimeContext: RuntimeContext): string | null {

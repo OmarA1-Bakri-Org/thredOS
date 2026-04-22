@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import { buildConditionContext, evaluateRuntimeCondition, hydrateApolloApprovalRuntimeContext } from './context'
+import { buildConditionContext, evaluateRuntimeCondition, hydrateApolloApprovalRuntimeContext, storeRuntimeContextValue } from './context'
 import type { Sequence } from '../sequence/schema'
 
 const baseSequence: Sequence = {
@@ -218,5 +218,9 @@ describe('apollo approval runtime hydration', () => {
         await writeFile(globalIcpPath, previousGlobalIcp, 'utf-8')
       }
     }
+  })
+
+  test('rejects prototype-polluting runtime context paths', async () => {
+    await expect(storeRuntimeContextValue(tempDir, '__proto__.polluted', 'yes')).rejects.toThrow('forbidden segment')
   })
 })

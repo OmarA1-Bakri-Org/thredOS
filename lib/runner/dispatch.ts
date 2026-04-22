@@ -1,9 +1,9 @@
 import { mkdir, writeFile } from 'fs/promises'
-import { join } from 'path'
 import { randomUUID } from 'crypto'
 import { AgentNotFoundError } from '../errors'
 import type { RunnerConfig, RunResult } from './wrapper'
 import type { ModelType } from '../sequence/schema'
+import { resolvePathWithinBase } from '../runtime/path-safety'
 
 export interface DispatchOptions {
   stepId: string
@@ -35,10 +35,10 @@ interface AgentDispatcher {
  */
 async function writeTempPrompt(compiledPrompt: string, stepId: string, cwd: string): Promise<string> {
   const safeStepId = stepId.replace(/[^A-Za-z0-9._-]+/g, '-')
-  const promptDir = join(cwd, '.threados', 'tmp-prompts')
+  const promptDir = resolvePathWithinBase(cwd, '.threados/tmp-prompts', 'temporary prompt directory')
   await mkdir(promptDir, { recursive: true })
   const fileName = `threados-prompt-${safeStepId}-${randomUUID().slice(0, 8)}.md`
-  const filePath = join(promptDir, fileName)
+  const filePath = resolvePathWithinBase(promptDir, fileName, 'temporary prompt file')
   await writeFile(filePath, compiledPrompt, 'utf-8')
   return filePath
 }

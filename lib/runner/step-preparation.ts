@@ -1,8 +1,8 @@
 import { access, readFile } from 'fs/promises'
-import { join } from 'path'
 import type { InputManifestJson } from './artifacts'
 import { compilePrompt } from './prompt-compiler'
 import type { Sequence, Step } from '../sequence/schema'
+import { resolvePathWithinBase } from '../runtime/path-safety'
 
 export interface PrepareStepPromptOptions {
   stepId: string
@@ -33,7 +33,7 @@ export function resolveStepPromptFile(step: Step): string {
 }
 
 export function resolveStepPromptPath(basePath: string, step: Step): string {
-  return join(basePath, resolveStepPromptFile(step))
+  return resolvePathWithinBase(basePath, resolveStepPromptFile(step), `prompt path for step '${step.id}'`)
 }
 
 export async function validateStepPromptExists(basePath: string, step: Step): Promise<boolean> {

@@ -104,4 +104,8 @@ describe('approval repository', () => {
     await expect(hasApprovedApproval(tmpDir, 'step:other')).resolves.toBe(false)
     await expect(hasApprovedApproval(tmpDir, 'step:missing')).resolves.toBe(false)
   })
+
+  test('rejects traversal-like run ids', async () => {
+    await expect(appendApproval(tmpDir, '../escape', makeApproval())).rejects.toThrow('single path segment')
+  })
 })
