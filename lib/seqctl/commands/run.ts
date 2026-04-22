@@ -338,6 +338,79 @@ async function getRunnableSteps(basePath: string, sequence: Sequence): Promise<R
   return { steps, skippedIds }
 }
 
+async function getDirectRunPrecheckResult(basePath: string, stepId: string, runId: string): Promise<RunStepResult | null> {
+  const latestSequence = await readSequence(basePath)
+  const step = latestSequence.steps.find(candidate => candidate.id === stepId)
+  if (!step) {
+    throw new StepNotFoundError(stepId)
+  }
+
+  if (step.status !== 'READY' && step.status !== 'BLOCKED') {
+    return null
+  }
+
+  const { steps: runnableSteps, skippedIds } = await getRunnableSteps(basePath, latestSequence)
+  if (runnableSteps.some(candidate => candidate.id === stepId)) {
+    return null
+  }
+
+  const refreshedSequence = await readSequence(basePath)
+  const refreshedStep = refreshedSequence.steps.find(candidate => candidate.id === stepId)
+  if (!refreshedStep) {
+    throw new StepNotFoundError(stepId)
+  }
+
+  if (refreshedStep.status !== 'READY' && refreshedStep.status !== 'BLOCKED') {
+    return null
+  }
+
+  if (skippedIds.includes(stepId)) {
+    return {
+      success: false,
+      stepId,
+      runId,
+      status: 'SKIPPED',
+      error: `Step '${stepId}' was skipped because its condition evaluated false`,
+    }
+  }
+
+  const completedNodes = getCompletedNodeIds(refreshedSequence)
+  if (!refreshedStep.depends_on.every(depId => completedNodes.has(depId))) {
+    return {
+      success: false,
+      stepId,
+      runId,
+      status: 'BLOCKED',
+      error: `Step '${stepId}' is blocked by unsatisfied dependencies`,
+    }
+  }
+
+  if (refreshedStep.status === 'BLOCKED') {
+    return {
+      success: false,
+      stepId,
+      runId,
+      status: 'BLOCKED',
+      error: `Step '${stepId}' is blocked pending approval or other pre-execution authority`,
+    }
+  }
+
+  return {
+    success: false,
+    stepId,
+    runId,
+    status: refreshedStep.status,
+    error: `Step '${stepId}' is not runnable from status '${refreshedStep.status}'`,
+  }
+}
+
+function getHumanResultStatus(result: Pick<RunStepResult, 'status' | 'success'>): string {
+  if (result.status === 'BLOCKED') return 'BLOCKED'
+  if (result.status === 'NEEDS_REVIEW') return 'NEEDS_REVIEW'
+  if (result.status === 'SKIPPED') return 'SKIPPED'
+  return result.success ? 'DONE' : 'FAILED'
+}
+
 /**
  * Execute a single step via the Agent Execution Protocol:
  * 1. Read prompt file
@@ -580,7 +653,8 @@ async function handleRunStep(
   const startedAt = new Date().toISOString()
   await createRootRunScopeForCommand(basePath, sequence.name, runId, startedAt)
 
-  const result = await executeSingleStep(basePath, sequence, stepId, runId, mprocsClient)
+  const precheckResult = await getDirectRunPrecheckResult(basePath, stepId, runId)
+  const result = precheckResult ?? await executeSingleStep(basePath, sequence, stepId, runId, mprocsClient)
   await finalizeRootRunScopeForCommand(basePath, runId, result.success, `step:${stepId}`)
 
   const mprocsMap = await readMprocsMap(basePath)
@@ -595,6 +669,10 @@ async function handleRunStep(
     console.log(`Artifacts: ${result.artifactPath}`)
   } else if (result.status === 'BLOCKED') {
     console.log(`Step '${stepId}' blocked: ${result.error || 'Awaiting approval'}`)
+  } else if (result.status === 'SKIPPED') {
+    console.log(`Step '${stepId}' skipped: ${result.error || 'Condition evaluated false'}`)
+  } else if (result.status === 'NEEDS_REVIEW') {
+    console.error(`Step '${stepId}' needs review: ${result.error || 'Completion evidence was inconclusive'}`)
   } else {
     console.error(`Step '${stepId}' failed: ${result.error || 'Unknown error'}`)
   }
@@ -699,11 +777,7 @@ function outputRunnableResult(result: RunRunnableResult, options: CLIOptions): v
   }
   console.log(`Executed ${result.executed.length} step(s)`)
   for (const e of result.executed) {
-    const humanStatus = e.status === 'BLOCKED'
-      ? 'BLOCKED'
-      : e.success
-        ? 'DONE'
-        : 'FAILED'
+    const humanStatus = getHumanResultStatus(e)
     console.log(`  ${e.stepId}: ${humanStatus} (${e.duration}ms)`)
   }
   if (result.skipped.length > 0) {
@@ -773,11 +847,7 @@ async function handleRunGroup(
   } else {
     console.log(`Executed ${executed.length} step(s) from group '${groupId}'`)
     for (const e of executed) {
-      const humanStatus = e.status === 'BLOCKED'
-        ? 'BLOCKED'
-        : e.success
-          ? 'DONE'
-          : 'FAILED'
+      const humanStatus = getHumanResultStatus(e)
       console.log(`  ${e.stepId}: ${humanStatus} (${e.duration}ms)`)
     }
     if (result.skipped.length > 0) {

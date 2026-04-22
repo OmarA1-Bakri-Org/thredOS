@@ -1167,6 +1167,62 @@ describe('run step — with mock runtime', () => {
     expect(persisted.steps.find(step => step.id === 'contract-action-step')?.status).toBe('NEEDS_REVIEW')
   })
 
+  test('run step prints NEEDS_REVIEW in human-readable output when completion is downgraded', async () => {
+    const seq = makeSequence({
+      steps: [
+        makeStep({
+          id: 'needs-review-step',
+          model: 'shell',
+          status: 'READY',
+          prompt_file: '.threados/prompts/needs-review-step.md',
+        }),
+      ],
+    })
+    await writeTestSequence(tempDir, seq)
+    await writeFile(join(tempDir, '.threados/prompts/needs-review-step.md'), 'echo ok')
+
+    globalThis.__THREADOS_CLI_RUN_RUNTIME__ = {
+      dispatch: async (_model, opts) => ({
+        stepId: opts.stepId,
+        runId: opts.runId,
+        command: process.execPath,
+        args: ['-e', 'process.exit(0)'],
+        cwd: opts.cwd,
+        timeout: opts.timeout,
+      }),
+      runStep: async config => ({
+        stepId: config.stepId,
+        runId: config.runId,
+        command: config.command,
+        args: config.args,
+        cwd: config.cwd,
+        startTime: new Date(),
+        endTime: new Date(),
+        duration: 15,
+        exitCode: 0,
+        stdout: 'I do not have permission to perform that action.',
+        stderr: '',
+        timedOut: false,
+        status: 'SUCCESS',
+      }),
+      saveRunArtifacts: async () => '.threados/runs/mock',
+    } as any
+
+    const logs: string[] = []
+    const origLog = console.log
+    const origErr = console.error
+    console.log = (msg: string) => logs.push(msg)
+    console.error = (msg: string) => logs.push(msg)
+
+    await runCommand('step', ['needs-review-step'], { json: false, help: false, watch: false, basePath: tempDir })
+
+    console.log = origLog
+    console.error = origErr
+
+    expect(logs.some(line => line.includes("needs review"))).toBe(true)
+    expect(logs.some(line => line.includes('failed'))).toBe(false)
+  })
+
   test('run step executes native conditional actions, supports nested path length checks, and persists only the selected branch output', async () => {
     const seq = makeSequence({
       steps: [
@@ -2017,6 +2073,94 @@ describe('run step — with mock runtime', () => {
     expect(updatedSeq.steps.find(step => step.id === 'after-approval')?.status).toBe('DONE')
   })
 
+  test('run step keeps approval-blocked steps blocked when dependencies are still unsatisfied after approval', async () => {
+    const seq = makeSequence({
+      steps: [
+        makeStep({
+          id: 'upstream',
+          model: 'shell',
+          status: 'RUNNING',
+          prompt_file: '.threados/prompts/upstream.md',
+        }),
+        makeStep({
+          id: 'approval-step',
+          model: 'shell',
+          status: 'BLOCKED',
+          prompt_file: '.threados/prompts/approval-step.md',
+          depends_on: ['upstream'],
+          actions: [{
+            id: 'review-before-send',
+            type: 'approval',
+            config: {
+              approval_prompt: 'Human review required before send',
+            },
+          }],
+        } as any),
+      ],
+    })
+    await writeTestSequence(tempDir, seq)
+    await writeFile(join(tempDir, '.threados/prompts/upstream.md'), 'echo upstream')
+    await writeFile(join(tempDir, '.threados/prompts/approval-step.md'), 'echo should-not-run')
+    await appendApproval(tempDir, 'run-approved-earlier', {
+      id: 'approval-approved-earlier',
+      action_type: 'run',
+      target_ref: 'step:approval-step',
+      requested_by: 'seqctl:run',
+      status: 'approved',
+      approved_by: 'human-reviewer',
+      approved_at: '2026-03-28T10:00:00.000Z',
+      notes: 'Approved already',
+    })
+
+    let dispatchCalls = 0
+    globalThis.__THREADOS_CLI_RUN_RUNTIME__ = {
+      dispatch: async (_model, opts) => {
+        dispatchCalls += 1
+        return {
+          stepId: opts.stepId,
+          runId: opts.runId,
+          command: process.execPath,
+          args: ['-e', 'process.exit(0)'],
+          cwd: opts.cwd,
+          timeout: opts.timeout,
+        }
+      },
+      runStep: async config => ({
+        stepId: config.stepId,
+        runId: config.runId,
+        command: config.command,
+        args: config.args,
+        cwd: config.cwd,
+        startTime: new Date(),
+        endTime: new Date(),
+        duration: 15,
+        exitCode: 0,
+        stdout: 'should-not-run',
+        stderr: '',
+        timedOut: false,
+        status: 'SUCCESS',
+      }),
+      saveRunArtifacts: async () => '.threados/runs/mock',
+    } as any
+
+    const logs: string[] = []
+    const origLog = console.log
+    console.log = (msg: string) => logs.push(msg)
+
+    await runCommand('step', ['approval-step'], { ...jsonOpts, basePath: tempDir })
+
+    console.log = origLog
+
+    const output = JSON.parse(logs[0])
+    expect(output.success).toBe(false)
+    expect(output.status).toBe('BLOCKED')
+    expect(output.error).toContain('dependencies')
+    expect(dispatchCalls).toBe(0)
+
+    const updatedSeq = await readSequence(tempDir)
+    expect(updatedSeq.steps.find(step => step.id === 'approval-step')?.status).toBe('BLOCKED')
+  })
+
   test('run step keeps approval-blocked thread surface runs pending', async () => {
     const seq = makeSequence({
       steps: [
@@ -2490,6 +2634,54 @@ describe('run runnable — with mock runtime', () => {
     expect(combined).toContain('Executed 1 step(s)')
     expect(combined).toContain('r-1')
     expect(combined).toContain('DONE')
+  })
+
+  test('run runnable prints NEEDS_REVIEW instead of FAILED in human-readable summaries', async () => {
+    const seq = makeSequence({
+      steps: [
+        makeStep({ id: 'review-me', status: 'READY', model: 'shell', prompt_file: '.threados/prompts/review-me.md', depends_on: [] }),
+      ],
+    })
+    await writeTestSequence(tempDir, seq)
+    await writeFile(join(tempDir, '.threados/prompts/review-me.md'), 'echo ok')
+
+    globalThis.__THREADOS_CLI_RUN_RUNTIME__ = {
+      dispatch: async (_model, opts) => ({
+        stepId: opts.stepId,
+        runId: opts.runId,
+        command: process.execPath,
+        args: ['-e', 'process.exit(0)'],
+        cwd: opts.cwd,
+        timeout: opts.timeout,
+      }),
+      runStep: async config => ({
+        stepId: config.stepId,
+        runId: config.runId,
+        command: config.command,
+        args: config.args,
+        cwd: config.cwd,
+        startTime: new Date(),
+        endTime: new Date(),
+        duration: 150,
+        exitCode: 0,
+        stdout: 'I cannot access the requested admin tool because I do not have permission to use it.',
+        stderr: '',
+        timedOut: false,
+        status: 'SUCCESS',
+      }),
+      saveRunArtifacts: async () => '.threados/runs/mock',
+    }
+
+    const logs: string[] = []
+    const origLog = console.log
+    console.log = (msg: string) => logs.push(msg)
+
+    await runCommand('runnable', [], { json: false, help: false, watch: false, basePath: tempDir })
+
+    console.log = origLog
+
+    expect(logs.some(line => line.includes('review-me: NEEDS_REVIEW'))).toBe(true)
+    expect(logs.some(line => line.includes('review-me: FAILED'))).toBe(false)
   })
 })
 
