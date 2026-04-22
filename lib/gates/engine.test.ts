@@ -91,6 +91,30 @@ describe('evaluateStepGates', () => {
     expect(getBlockReasons(decisions)).toContain('APPROVAL_MISSING')
   })
 
+  it('treats approval evidence as satisfying approval-gated execution authority', () => {
+    const step = makeStep({ side_effect_class: 'write' })
+    const decisions = evaluateStepGates(step, [], [], makeCtx({ policyMode: 'SAFE', sideEffectMode: 'approved_only', approvalPresent: true }))
+
+    expect(isStepRunnable(decisions)).toBe(true)
+    expect(getBlockReasons(decisions)).toEqual([])
+  })
+
+  it('does not let approval evidence bypass non-approval blockers', () => {
+    const step = makeStep({ side_effect_class: 'write' })
+    const decisions = evaluateStepGates(step, [], [], makeCtx({
+      policyMode: 'SAFE',
+      sideEffectMode: 'approved_only',
+      approvalPresent: true,
+      surfaceClass: 'sealed',
+      revealState: 'sealed',
+      isDependency: false,
+    }))
+
+    expect(isStepRunnable(decisions)).toBe(false)
+    expect(getBlockReasons(decisions)).toContain('ACCESS_DENIED')
+    expect(getBlockReasons(decisions)).toContain('REVEAL_LOCKED')
+  })
+
   it('blocks when required input manifests are missing', () => {
     const step = makeStep({ input_contract_ref: 'contracts/input.json' })
     const decisions = evaluateStepGates(step, [], [], makeCtx({ inputManifestPresent: false }))

@@ -4,6 +4,7 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import YAML from 'yaml'
 import { readApprovals } from '@/lib/approvals/repository'
+import { recordApprovedApprovalLifecycle } from '@/lib/approvals/runtime'
 import { readTraceEvents } from '@/lib/traces/reader'
 
 let basePath = ''
@@ -168,6 +169,60 @@ describe.serial('run route approval proof', () => {
     expect(body.status).toBe('BLOCKED')
     const approvals = await readApprovals(basePath, body.runId)
     expect(approvals.at(-1)?.notes).toBe('Review Mid-Market | saved 1 | both 1 | dupes 1 | credits 7/30 | stage stage-789')
+  })
+
+  test('blocked approval-gated write step reopens once approval evidence exists without bypassing other authority checks', async () => {
+    await mkdir(join(basePath, '.threados'), { recursive: true })
+    await writeFile(join(basePath, '.threados', 'policy.yaml'), YAML.stringify({
+      mode: 'SAFE',
+      side_effect_mode: 'approved_only',
+      cross_surface_reads: 'dependency_only',
+    }))
+    await setupSequence({
+      version: '1.0',
+      name: 'approval-reopen-seq',
+      steps: [
+        {
+          id: 'step-approved-write',
+          name: 'Approved Write Step',
+          type: 'base',
+          model: 'codex',
+          prompt_file: '.threados/prompts/step-approved-write.md',
+          depends_on: [],
+          status: 'BLOCKED',
+          side_effect_class: 'write',
+        },
+      ],
+      gates: [],
+    })
+    await writePrompt('step-approved-write')
+    await recordApprovedApprovalLifecycle({
+      basePath,
+      runId: 'seed-approval-run',
+      actionType: 'run',
+      targetRef: 'step:step-approved-write',
+      requestedBy: 'tester@thredos',
+      resolvedBy: 'tester@thredos',
+      actor: 'test:seed',
+      notes: 'seed approval',
+    })
+
+    const { POST } = await import('@/app/api/run/route')
+    const response = await POST(new Request('http://localhost/api/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ stepId: 'step-approved-write', confirmPolicy: true }),
+    }))
+
+    expect(response.status).toBe(200)
+    const body = await response.json()
+    expect(body.success).toBe(true)
+
+    const persistedSequence = YAML.parse(await Bun.file(join(basePath, '.threados', 'sequence.yaml')).text())
+    expect(persistedSequence.steps.find((step: { id: string; status: string }) => step.id === 'step-approved-write')?.status).toBe('DONE')
+
+    const traces = await readTraceEvents(basePath, body.runId)
+    expect(traces.some(entry => entry.event_type === 'gate-blocked')).toBe(false)
   })
 
   test('POWER mode run skips SAFE approval recording', async () => {
