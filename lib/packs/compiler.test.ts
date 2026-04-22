@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { ZodError } from 'zod'
 import { compilePack } from './compiler'
 import type { PackManifest } from './pack-schema'
 
@@ -200,6 +201,104 @@ describe('compilePack', () => {
       expect(surface.parentSurfaceId).toBe('thread-root')
       expect(surface.depth).toBe(1)
       expect(surface.childSurfaceIds).toEqual([])
+    }
+  })
+
+  test('rejects invalid step ids with explicit diagnostics', () => {
+    const base = makeManifest()
+    const manifest = makeManifest({
+      steps: [
+        {
+          ...base.steps[0],
+          id: 'Alpha_Step',
+        },
+      ],
+    }) as PackManifest
+
+    try {
+      compilePack(manifest)
+      throw new Error('expected compilePack to reject invalid ids')
+    } catch (error) {
+      expect(error).toBeInstanceOf(ZodError)
+      const zodError = error as ZodError
+      expect(zodError.issues).toContainEqual(expect.objectContaining({
+        path: ['steps', 0, 'id'],
+        message: 'Step ID must contain only lowercase letters, numbers, and hyphens',
+      }))
+    }
+  })
+
+  test('rejects missing dependency references with explicit diagnostics', () => {
+    const base = makeManifest()
+    const manifest = makeManifest({
+      steps: [
+        base.steps[0],
+        {
+          ...base.steps[1],
+          depends_on: ['missing-step'],
+        },
+      ],
+    }) as PackManifest
+
+    try {
+      compilePack(manifest)
+      throw new Error('expected compilePack to reject missing deps')
+    } catch (error) {
+      expect(error).toBeInstanceOf(ZodError)
+      const zodError = error as ZodError
+      expect(zodError.issues).toContainEqual(expect.objectContaining({
+        path: ['steps', 1, 'depends_on', 0],
+        message: 'Unknown dependency step "missing-step"',
+      }))
+    }
+  })
+
+  test('rejects invalid phase refs with explicit diagnostics', () => {
+    const base = makeManifest()
+    const manifest = makeManifest({
+      steps: [
+        base.steps[0],
+        {
+          ...base.steps[1],
+          phase: 'missing-phase',
+        },
+      ],
+    }) as PackManifest
+
+    try {
+      compilePack(manifest)
+      throw new Error('expected compilePack to reject invalid phase refs')
+    } catch (error) {
+      expect(error).toBeInstanceOf(ZodError)
+      const zodError = error as ZodError
+      expect(zodError.issues).toContainEqual(expect.objectContaining({
+        path: ['steps', 1, 'phase'],
+        message: 'Unknown phase "missing-phase"',
+      }))
+    }
+  })
+
+  test('rejects invalid gate targets with explicit diagnostics', () => {
+    const base = makeManifest()
+    const manifest = makeManifest({
+      gates: [
+        {
+          ...base.gates[0],
+          step_id: 'missing-step',
+        },
+      ],
+    }) as PackManifest
+
+    try {
+      compilePack(manifest)
+      throw new Error('expected compilePack to reject invalid gate targets')
+    } catch (error) {
+      expect(error).toBeInstanceOf(ZodError)
+      const zodError = error as ZodError
+      expect(zodError.issues).toContainEqual(expect.objectContaining({
+        path: ['gates', 0, 'step_id'],
+        message: 'Unknown gate target step "missing-step"',
+      }))
     }
   })
 })

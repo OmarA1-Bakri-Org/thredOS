@@ -1,7 +1,16 @@
 import { z } from 'zod'
 
+const PACK_ID_PATTERN = /^[a-z0-9-]+$/
+
+function packIdSchema(label: string) {
+  return z.string()
+    .regex(PACK_ID_PATTERN, { message: `${label} ID must contain only lowercase letters, numbers, and hyphens` })
+    .min(1, { message: `${label} ID cannot be empty` })
+    .max(64, { message: `${label} ID cannot exceed 64 characters` })
+}
+
 export const PackPhaseSchema = z.object({
-  id: z.string().min(1),
+  id: packIdSchema('Phase'),
   label: z.string().min(1),
   order: z.number().int().nonnegative(),
 })
@@ -39,7 +48,7 @@ export const PackActionSchema = z.object({
 })
 
 export const PackStepSchema = z.object({
-  id: z.string().min(1),
+  id: packIdSchema('Step'),
   name: z.string().min(1),
   type: z.enum(['base', 'p', 'c', 'f', 'b', 'l']),
   model: z.string().min(1),
@@ -95,7 +104,7 @@ export const PackTimeoutsSchema = z.object({
 })
 
 export const PackGateSchema = z.object({
-  id: z.string().min(1),
+  id: packIdSchema('Gate'),
   step_id: z.string().min(1),
   when: z.enum(['pre', 'post']).default('post'),
   type: z.enum(['hard', 'soft', 'approval']),
@@ -107,8 +116,8 @@ export const PackGateSchema = z.object({
   retry_action: z.string().min(1).optional(),
 })
 
-export const PackManifestSchema = z.object({
-  id: z.string().min(1),
+const PackManifestBaseSchema = z.object({
+  id: packIdSchema('Pack'),
   version: z.string().min(1),
   name: z.string().min(1),
   thread_types: z.array(z.enum(['base', 'p', 'c', 'f', 'b', 'l'])),
@@ -124,6 +133,41 @@ export const PackManifestSchema = z.object({
   steps: z.array(PackStepSchema),
   gate_sets: z.array(z.string()).default([]),
   export_bundle_schema: z.string().optional(),
+})
+
+export const PackManifestSchema = PackManifestBaseSchema.superRefine((manifest, ctx) => {
+  const phaseIds = new Set(manifest.phases.map(phase => phase.id))
+  const stepIds = new Set(manifest.steps.map(step => step.id))
+
+  manifest.steps.forEach((step, stepIndex) => {
+    if (!phaseIds.has(step.phase)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['steps', stepIndex, 'phase'],
+        message: `Unknown phase "${step.phase}"`,
+      })
+    }
+
+    step.depends_on.forEach((depId, depIndex) => {
+      if (!stepIds.has(depId)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['steps', stepIndex, 'depends_on', depIndex],
+          message: `Unknown dependency step "${depId}"`,
+        })
+      }
+    })
+  })
+
+  manifest.gates.forEach((gate, gateIndex) => {
+    if (!stepIds.has(gate.step_id)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['gates', gateIndex, 'step_id'],
+        message: `Unknown gate target step "${gate.step_id}"`,
+      })
+    }
+  })
 })
 
 export type PackManifest = z.infer<typeof PackManifestSchema>

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { mkdir, mkdtemp, rm, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
+import { ZodError } from 'zod'
 import { loadPack } from './loader'
 
 const VALID_PACK_YAML = `
@@ -202,5 +203,23 @@ describe('loadPack', () => {
 
   test('throws for missing pack file', async () => {
     await expect(loadPack(basePath, 'nonexistent-pack', '1.0.0')).rejects.toThrow()
+  })
+
+  test('rejects semantic pack validation failures with explicit diagnostics', async () => {
+    const packDir = join(basePath, '.threados/packs/test-pack/1.0.0')
+    await mkdir(packDir, { recursive: true })
+    await writeFile(join(packDir, 'pack.yaml'), VALID_PACK_YAML.replace('phase: phase-beta', 'phase: missing-phase'), 'utf-8')
+
+    try {
+      await loadPack(basePath, 'test-pack', '1.0.0')
+      throw new Error('expected loadPack to reject invalid semantic refs')
+    } catch (error) {
+      expect(error).toBeInstanceOf(ZodError)
+      const zodError = error as ZodError
+      expect(zodError.issues).toContainEqual(expect.objectContaining({
+        path: ['steps', 1, 'phase'],
+        message: 'Unknown phase "missing-phase"',
+      }))
+    }
   })
 })

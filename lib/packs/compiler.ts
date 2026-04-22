@@ -1,5 +1,5 @@
 import { createHash } from 'crypto'
-import type { PackManifest } from './pack-schema'
+import { PackManifestSchema, type PackManifest } from './pack-schema'
 import type { ThreadSurface } from '@/lib/thread-surfaces/types'
 
 export interface CompilePackOptions {
@@ -70,8 +70,9 @@ function buildSequenceId(manifest: PackManifest, installName: string): string {
 }
 
 export function compilePack(manifest: PackManifest, options: CompilePackOptions = {}): CompileResult {
+  const validatedManifest = PackManifestSchema.parse(manifest)
   const now = new Date().toISOString()
-  const installName = options.installName ?? manifest.name
+  const installName = options.installName ?? validatedManifest.name
   const modelOverrides = options.modelOverrides ?? {}
 
   const inferSideEffectClass = (actions: unknown[] | undefined): 'none' | 'read' | 'write' | 'execute' => {
@@ -84,7 +85,7 @@ export function compilePack(manifest: PackManifest, options: CompilePackOptions 
     return 'none'
   }
 
-  const steps = manifest.steps.map(ps => {
+  const steps = validatedManifest.steps.map(ps => {
     const installedPromptFile = `.threados/prompts/${ps.id}.md`
     const authoredPromptPath = ps.prompt_file ?? installedPromptFile
     return {
