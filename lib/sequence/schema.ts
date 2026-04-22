@@ -2,7 +2,7 @@ import { createHash } from 'crypto'
 import { z } from 'zod'
 
 export const StepStatusSchema = z.enum([
-  'READY', 'RUNNING', 'NEEDS_REVIEW', 'DONE', 'FAILED', 'BLOCKED',
+  'READY', 'RUNNING', 'NEEDS_REVIEW', 'DONE', 'FAILED', 'BLOCKED', 'SKIPPED',
 ])
 export type StepStatus = z.infer<typeof StepStatusSchema>
 

@@ -1,14 +1,18 @@
 import { randomUUID } from 'crypto'
-import { access, readFile } from 'fs/promises'
-import { join } from 'path'
 import { readSequence, writeSequence } from '../../sequence/parser'
 import { validateDAG, topologicalSort } from '../../sequence/dag'
+import { evaluateStepCompletionGates, isStepRunnable } from '../../gates/engine'
 import { MprocsClient } from '../../mprocs/client'
 import { updateStepProcess, readMprocsMap } from '../../mprocs/state'
 import { runStep } from '../../runner/wrapper'
 import { getRuntimeEventLogPath, saveRunArtifacts } from '../../runner/artifacts'
-import { compilePrompt } from '../../runner/prompt-compiler'
-import { dispatch, exitCodeToStatus } from '../../runner/dispatch'
+import {
+  makeStepInputManifest,
+  prepareStepPromptForDispatch,
+  resolveStepPromptPath,
+  validateStepPromptExists,
+} from '../../runner/step-preparation'
+import { assessCompletionResult, dispatch } from '../../runner/dispatch'
 import { StepNotFoundError } from '../../errors'
 import type { Step, Sequence, StepStatus } from '../../sequence/schema'
 import { ROOT_THREAD_SURFACE_ID } from '../../thread-surfaces/constants'
@@ -59,6 +63,11 @@ interface RunRunnableResult {
   skipped: string[]
   waiting: string[]
   error?: string
+}
+
+interface RunnableStepSelection {
+  steps: Step[]
+  skippedIds: string[]
 }
 
 interface CLIRunRuntime {
@@ -126,13 +135,6 @@ function getCLIRunRuntime(): CLIRunRuntime {
     saveRunArtifacts,
     runComposioTool: executeComposioTool,
   }
-}
-
-function resolvePromptPath(basePath: string, step: Step): string {
-  const promptFile = typeof step.prompt_file === 'string' && step.prompt_file.length > 0
-    ? step.prompt_file
-    : `.threados/prompts/${step.id}.md`
-  return join(basePath, promptFile)
 }
 
 async function executeStepActions(
@@ -261,31 +263,66 @@ async function evaluateStepCondition(basePath: string, sequence: Sequence, step:
   return evaluateSequenceCondition(basePath, sequence, (step as Step & { condition?: string }).condition)
 }
 
+function getSurfaceId(step: Step): string {
+  return step.surface_ref || `thread-${step.id}`
+}
+
+function getCompletedNodeIds(sequence: Sequence): Set<string> {
+  return new Set([
+    ...sequence.steps
+      .filter(step => step.status === 'DONE' || step.status === 'SKIPPED')
+      .map(step => step.id),
+    ...sequence.gates
+      .filter(gate => gate.status === 'APPROVED')
+      .map(gate => gate.id),
+  ])
+}
+
+async function reconcileSkippedSteps(basePath: string, sequence: Sequence): Promise<string[]> {
+  const skippedIds: string[] = []
+  let changed = false
+
+  while (true) {
+    const completedNodes = getCompletedNodeIds(sequence)
+    let changedThisPass = false
+
+    for (const step of sequence.steps) {
+      if (step.status !== 'READY') continue
+      if (!step.depends_on.every(depId => completedNodes.has(depId))) continue
+
+      const conditionSatisfied = await evaluateStepCondition(basePath, sequence, step)
+      if (conditionSatisfied) continue
+
+      step.status = 'SKIPPED'
+      skippedIds.push(step.id)
+      changedThisPass = true
+      changed = true
+    }
+
+    if (!changedThisPass) break
+  }
+
+  if (changed) {
+    await writeSequence(basePath, sequence)
+  }
+
+  return skippedIds
+}
+
 function renderActionContract(step: Step): string {
   const actions = (step as Step & { actions?: unknown[] }).actions
   if (!Array.isArray(actions) || actions.length === 0) return ''
   return `\n\n## THREADOS ACTION CONTRACT\n${JSON.stringify(actions, null, 2)}\n`
 }
+
 /**
  * Get runnable steps (READY status with all dependencies satisfied)
  */
-async function getRunnableSteps(basePath: string, sequence: Sequence): Promise<Step[]> {
-  const doneSteps = new Set(
-    sequence.steps
-      .filter(s => s.status === 'DONE')
-      .map(s => s.id)
-  )
+async function getRunnableSteps(basePath: string, sequence: Sequence): Promise<RunnableStepSelection> {
+  const skippedIds = await reconcileSkippedSteps(basePath, sequence)
+  const completedNodes = getCompletedNodeIds(sequence)
 
-  // Gates that are approved also count as done
-  const approvedGates = new Set(
-    sequence.gates
-      .filter(g => g.status === 'APPROVED')
-      .map(g => g.id)
-  )
-
-  const completedNodes = new Set([...doneSteps, ...approvedGates])
-
-  return (await Promise.all(sequence.steps.map(async step => {
+  const steps = (await Promise.all(sequence.steps.map(async step => {
     const eligibleStatus = step.status === 'READY'
       || (step.status === 'BLOCKED' && await hasSatisfiedApprovalRequirements(basePath, sequence, step))
     if (!eligibleStatus) return null
@@ -296,6 +333,8 @@ async function getRunnableSteps(basePath: string, sequence: Sequence): Promise<S
     const conditionSatisfied = await evaluateStepCondition(basePath, sequence, step)
     return conditionSatisfied ? step : null
   }))).filter((step): step is Step => step !== null)
+
+  return { steps, skippedIds }
 }
 
 /**
@@ -321,10 +360,9 @@ async function executeSingleStep(
 
   const stepRuntime = await createStepRunScope(basePath, sequence, step)
 
-  const promptPath = resolvePromptPath(basePath, step)
-  try {
-    await access(promptPath)
-  } catch {
+  const promptPath = resolveStepPromptPath(basePath, step)
+  const promptExists = await validateStepPromptExists(basePath, step)
+  if (!promptExists) {
     // Bug fix: persist FAILED status so step isn't re-selected by run runnable
     step.status = 'FAILED'
     await writeSequence(basePath, sequence)
@@ -345,31 +383,25 @@ async function executeSingleStep(
   try {
     const runtime = getCLIRunRuntime()
     const runtimeEventLogPath = getRuntimeEventLogPath(basePath, runId, stepId)
+    const surfaceId = getSurfaceId(step)
+    const startedAt = stepRuntime.stepRun?.startedAt ?? new Date().toISOString()
+    const inputManifest = makeStepInputManifest(step, runId, surfaceId, startedAt)
     await executeStepActions(basePath, sequence, step, runId, runtime)
-    // 1. Read raw prompt
-    const rawPrompt = await readFile(promptPath, 'utf-8')
-    const actionContract = renderActionContract(step)
-    const promptWithActions = `${rawPrompt}${actionContract}`
-
-    // 2. Compile with context (skip for shell — shell runs raw script directly)
-    const promptForDispatch = step.model === 'shell'
-      ? promptWithActions
-      : await compilePrompt({
-          stepId,
-          step,
-          rawPrompt: promptWithActions,
-          sequence,
-          basePath,
-          maxTokens: step.model === 'claude-code' ? 8000 : 4000,
-          runtimeEventLogPath,
-          runtimeEventEmitterCommand: THREADOS_EVENT_EMITTER_COMMAND,
-        })
+    const preparedPrompt = await prepareStepPromptForDispatch({
+      stepId,
+      step,
+      sequence,
+      basePath,
+      maxTokens: step.model === 'claude-code' ? 8000 : 4000,
+      runtimeEventLogPath,
+      runtimeEventEmitterCommand: THREADOS_EVENT_EMITTER_COMMAND,
+    })
 
     // 3. Dispatch to agent (writes temp prompt, resolves CLI, checks availability)
     const runnerConfig = await runtime.dispatch(step.model, {
       stepId,
       runId,
-      compiledPrompt: promptForDispatch,
+      compiledPrompt: preparedPrompt.promptForDispatch,
       cwd: step.cwd || basePath,
       timeout: step.timeout_ms || DEFAULT_TIMEOUT_MS,
       runtimeEventLogPath,
@@ -380,11 +412,28 @@ async function executeSingleStep(
     const result = await runtime.runStep(runnerConfig)
 
     // 5. Save artifacts
-    const artifactPath = await runtime.saveRunArtifacts(basePath, result)
+    const artifactPath = await runtime.saveRunArtifacts(basePath, result, {
+      surfaceId,
+      compiledPrompt: preparedPrompt.promptForDispatch,
+      inputManifest,
+      outputContractRef: step.output_contract_ref,
+      completionContract: step.completion_contract,
+    })
     const runtimeEvents = await readRuntimeEventLog(basePath, runId, stepId)
 
-    // 6. Map exit code to step status
-    const newStatus = exitCodeToStatus(result.exitCode)
+    const completionAssessment = assessCompletionResult(result)
+    const completionDecisions = evaluateStepCompletionGates(step, {
+      artifactManifestPresent: Boolean(artifactPath),
+      outputSchemaValid: step.output_contract_ref ? result.status === 'SUCCESS' : true,
+      completionContractSatisfied: step.completion_contract ? result.status === 'SUCCESS' : true,
+    })
+    const completionPassed = isStepRunnable(completionDecisions)
+
+    // 6. Map completion to step status
+    let newStatus = completionAssessment.status
+    if (newStatus === 'DONE' && !completionPassed) {
+      newStatus = 'NEEDS_REVIEW'
+    }
     step.status = newStatus
     await writeSequence(basePath, sequence)
     await finalizeStepRunScope(basePath, step, stepRuntime, newStatus === 'DONE' ? 'successful' : 'failed', runtimeEvents.events)
@@ -567,8 +616,13 @@ async function handleRunRunnable(
 
   while (true) {
     const latestSequence = await readSequence(basePath)
-    const runnableSteps = await getRunnableSteps(basePath, latestSequence)
-      .then(steps => steps.filter(step => !alreadyExecuted.has(step.id)))
+    const { steps: latestRunnableSteps, skippedIds: latestSkippedIds } = await getRunnableSteps(basePath, latestSequence)
+    for (const skippedStepId of latestSkippedIds) {
+      if (!alreadyExecuted.has(skippedStepId)) {
+        skipped.add(skippedStepId)
+      }
+    }
+    const runnableSteps = latestRunnableSteps.filter(step => !alreadyExecuted.has(step.id))
 
     if (runnableSteps.length === 0) break
 
@@ -596,7 +650,7 @@ async function handleRunRunnable(
     if (executed.some(result => result.abortWorkflow)) break
   }
 
-  const result: RunRunnableResult = executed.length === 0
+  const result: RunRunnableResult = executed.length === 0 && skipped.size === 0 && waiting.size === 0
     ? { success: true, executed, skipped: Array.from(skipped), waiting: Array.from(waiting), error: 'No runnable steps found' }
     : { success: executed.every(e => e.success), executed, skipped: Array.from(skipped), waiting: Array.from(waiting) }
   await finalizeRootRunScopeForCommand(basePath, runId, result.success, 'mode:runnable')
@@ -683,8 +737,13 @@ async function handleRunGroup(
   const waiting = new Set<string>()
   const groupStepIds = new Set(groupSteps.map(step => step.id))
 
-  const runnableInGroup = await getRunnableSteps(basePath, sequence)
-    .then(steps => steps.filter(step => groupStepIds.has(step.id)))
+  const { steps: runnableGroupCandidates, skippedIds: skippedGroupCandidates } = await getRunnableSteps(basePath, sequence)
+  for (const skippedStepId of skippedGroupCandidates) {
+    if (groupStepIds.has(skippedStepId)) {
+      skipped.add(skippedStepId)
+    }
+  }
+  const runnableInGroup = runnableGroupCandidates.filter(step => groupStepIds.has(step.id))
 
   for (const step of runnableInGroup) {
     const stepResult = await executeSingleStep(basePath, sequence, step.id, runId, mprocsClient)

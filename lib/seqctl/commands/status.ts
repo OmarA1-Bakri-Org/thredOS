@@ -36,6 +36,7 @@ interface SequenceStatus {
     ready: number
     running: number
     done: number
+    skipped: number
     failed: number
     blocked: number
     needsReview: number
@@ -78,6 +79,7 @@ function buildSummary(sequence: Sequence) {
     ready: 0,
     running: 0,
     done: 0,
+    skipped: 0,
     failed: 0,
     blocked: 0,
     needsReview: 0,
@@ -93,6 +95,9 @@ function buildSummary(sequence: Sequence) {
         break
       case 'DONE':
         summary.done++
+        break
+      case 'SKIPPED':
+        summary.skipped++
         break
       case 'FAILED':
         summary.failed++
@@ -148,6 +153,7 @@ function displayStatus(status: SequenceStatus): void {
   console.log(`  Ready: ${status.summary.ready}`)
   console.log(`  Running: ${status.summary.running}`)
   console.log(`  Done: ${status.summary.done}`)
+  console.log(`  Skipped: ${status.summary.skipped}`)
   console.log(`  Failed: ${status.summary.failed}`)
   console.log(`  Blocked: ${status.summary.blocked}`)
   console.log(`  Needs Review: ${status.summary.needsReview}`)
