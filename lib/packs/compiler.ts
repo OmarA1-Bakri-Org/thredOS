@@ -85,7 +85,8 @@ export function compilePack(manifest: PackManifest, options: CompilePackOptions 
   }
 
   const steps = manifest.steps.map(ps => {
-    const promptFile = ps.prompt_file ?? `.threados/prompts/${ps.id}.md`
+    const installedPromptFile = `.threados/prompts/${ps.id}.md`
+    const authoredPromptPath = ps.prompt_file ?? installedPromptFile
     return {
       id: ps.id,
       name: ps.name,
@@ -94,11 +95,11 @@ export function compilePack(manifest: PackManifest, options: CompilePackOptions 
       phase: ps.phase,
       agent_ref: null,
       model: modelOverrides[ps.id] ?? ps.model,
-      prompt_file: promptFile,
+      prompt_file: installedPromptFile,
       prompt_ref: {
         id: ps.id,
         version: 1,
-        path: promptFile,
+        path: authoredPromptPath,
       },
       surface_ref: `thread-${ps.id}`,
       depends_on: ps.depends_on,

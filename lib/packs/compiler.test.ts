@@ -181,12 +181,17 @@ describe('compilePack', () => {
     expect(betaStep.prompt_file).toBe('.threados/prompts/beta.md')
   })
 
-  test('uses explicit prompt_file when provided in manifest step', () => {
+  test('materializes installed prompt_file separately from authored prompt source when manifest prompt_file is provided', () => {
     const manifest = makeManifest()
     manifest.steps[0] = { ...manifest.steps[0], prompt_file: 'custom/path/alpha.md' }
     const result = compilePack(manifest)
     const alphaStep = result.sequence.steps.find(s => s.id === 'alpha')!
-    expect(alphaStep.prompt_file).toBe('custom/path/alpha.md')
+    expect(alphaStep.prompt_file).toBe('.threados/prompts/alpha.md')
+    expect(alphaStep.prompt_ref).toEqual({
+      id: 'alpha',
+      version: 1,
+      path: 'custom/path/alpha.md',
+    })
   })
 
   test('step surfaces have correct parent linkage and depth', () => {
