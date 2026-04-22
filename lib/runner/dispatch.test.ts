@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'bun:test'
 import { readFile } from 'fs/promises'
-import { dispatch, checkAgentAvailable, exitCodeToStatus, getSupportedModels } from './dispatch'
+import { assessCompletionResult, dispatch, checkAgentAvailable, exitCodeToStatus, getSupportedModels } from './dispatch'
 import type { ModelType } from '../sequence/schema'
 
 const unsupportedModel = 'unknown-model' as ModelType
@@ -28,6 +28,33 @@ describe('exitCodeToStatus', () => {
 
   test('maps 137 (SIGKILL) to FAILED', () => {
     expect(exitCodeToStatus(137)).toBe('FAILED')
+  })
+})
+
+describe('assessCompletionResult', () => {
+  test('keeps successful zero-exit runs as DONE when output looks complete', () => {
+    expect(assessCompletionResult({ exitCode: 0, stdout: 'Work complete. FILES_CREATED: dist/out.json', stderr: '' }).status).toBe('DONE')
+  })
+
+  test('does not downgrade incidental troubleshooting text that is not a first-person blocker', () => {
+    expect(
+      assessCompletionResult({
+        exitCode: 0,
+        stdout: 'Updated docs with troubleshooting text about permission denied and access denied errors.',
+        stderr: '',
+      }).status,
+    ).toBe('DONE')
+  })
+
+  test('downgrades zero-exit refusals to NEEDS_REVIEW', () => {
+    const result = assessCompletionResult({
+      exitCode: 0,
+      stdout: 'I cannot access the requested system because I do not have permission to use that tool.',
+      stderr: '',
+    })
+
+    expect(result.status).toBe('NEEDS_REVIEW')
+    expect(result.reasons).toContain('OBVIOUS_NON_COMPLETION_PAYLOAD')
   })
 })
 

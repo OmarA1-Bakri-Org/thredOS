@@ -499,7 +499,62 @@ describe.serial('run route coverage — runnable mode', () => {
 
     const sequence = await readSequence(basePath)
     expect(sequence.steps.find(step => step.id === 'conditional-step')?.status).toBe('BLOCKED')
-    expect(sequence.steps.find(step => step.id === 'skipped-by-condition')?.status).toBe('READY')
+    expect(sequence.steps.find(step => step.id === 'skipped-by-condition')?.status).toBe('SKIPPED')
+  })
+
+  test('POST with mode=runnable marks false-condition optional steps SKIPPED and continues downstream mandatory work', async () => {
+    const dispatchOrder: string[] = []
+    globalThis.__THREADOS_RUN_ROUTE_RUNTIME__ = {
+      ...createMockRuntime(),
+      runStep: async ({ stepId, runId }: { stepId: string; runId: string }) => {
+        dispatchOrder.push(stepId)
+        return {
+          stepId,
+          runId,
+          exitCode: 0,
+          status: 'SUCCESS' as const,
+          duration: 10,
+          stdout: 'ok',
+          stderr: '',
+          startTime: new Date('2026-03-10T10:00:00.000Z'),
+          endTime: new Date('2026-03-10T10:00:10.000Z'),
+        }
+      },
+    }
+
+    await setupTestSequence({
+      version: '1.0',
+      name: 'optional-skip-unblocks-downstream',
+      steps: [
+        { id: 'optional-branch', name: 'Optional Branch', type: 'base', model: 'codex', prompt_file: '.threados/prompts/optional-branch.md', depends_on: [], status: 'READY', condition: "icp_config.sources contains 'apollo_discovery'" },
+        { id: 'mandatory-downstream', name: 'Mandatory Downstream', type: 'base', model: 'codex', prompt_file: '.threados/prompts/mandatory-downstream.md', depends_on: ['optional-branch'], status: 'READY' },
+      ],
+      gates: [],
+    })
+    await writePrompt('optional-branch')
+    await writePrompt('mandatory-downstream')
+    await mkdir(join(basePath, '.threados', 'state'), { recursive: true })
+    await writeFile(join(basePath, '.threados', 'state', 'runtime-context.json'), JSON.stringify({ icp_config: { sources: ['apollo_saved'] } }))
+
+    const { POST } = await import('@/app/api/run/route')
+    const res = await POST(new Request('http://localhost/api/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: confirmedBody({ mode: 'runnable' }),
+    }))
+
+    expect(res.status).toBe(200)
+    const data = await res.json()
+    expect(data.success).toBe(true)
+    expect(data.executed).toHaveLength(1)
+    expect(data.executed[0]).toMatchObject({ stepId: 'mandatory-downstream', success: true, status: 'DONE' })
+    expect(data.skipped).toEqual(['optional-branch'])
+    expect(data.waiting).toEqual([])
+    expect(dispatchOrder).toEqual(['mandatory-downstream'])
+
+    const sequence = await readSequence(basePath)
+    expect(sequence.steps.find(step => step.id === 'optional-branch')?.status).toBe('SKIPPED')
+    expect(sequence.steps.find(step => step.id === 'mandatory-downstream')?.status).toBe('DONE')
   })
 
   test('POST with mode=runnable evaluates first_run as true for native conditional actions on the first execution', async () => {
@@ -837,6 +892,59 @@ describe.serial('run route coverage — error handling', () => {
     expect(data.error).toContain('Prompt file not found')
   })
 
+  test('POST with stepId respects custom prompt_file paths and action-contract assembly', async () => {
+    const dispatchedPrompts: string[] = []
+    globalThis.__THREADOS_RUN_ROUTE_RUNTIME__ = {
+      ...createMockRuntime(),
+      dispatch: async (_model, opts) => {
+        dispatchedPrompts.push(opts.compiledPrompt)
+        return createMockRuntime().dispatch(_model, opts)
+      },
+    }
+
+    await setupTestSequence({
+      version: '1.0',
+      name: 'custom-prompt-path-seq',
+      steps: [
+        {
+          id: 'custom-prompt-step',
+          name: 'Custom Prompt Step',
+          type: 'base',
+          model: 'shell',
+          prompt_file: '.threados/custom-prompts/api/custom-prompt-step.md',
+          depends_on: [],
+          status: 'READY',
+          actions: [{
+            id: 'document-contract',
+            type: 'conditional',
+            config: {
+              condition: '1 == 2',
+              if_true: [],
+              if_false: [],
+            },
+          }],
+        },
+      ],
+      gates: [],
+    })
+    await mkdir(join(basePath, '.threados', 'custom-prompts', 'api'), { recursive: true })
+    await writeFile(join(basePath, '.threados', 'custom-prompts', 'api', 'custom-prompt-step.md'), 'echo api custom prompt\n')
+
+    const { POST } = await import('@/app/api/run/route')
+    const res = await POST(new Request('http://localhost/api/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: confirmedBody({ stepId: 'custom-prompt-step' }),
+    }))
+
+    expect(res.status).toBe(200)
+    const data = await res.json()
+    expect(data.success).toBe(true)
+    expect(dispatchedPrompts).toHaveLength(1)
+    expect(dispatchedPrompts[0]).toContain('echo api custom prompt')
+    expect(dispatchedPrompts[0]).toContain('## THREADOS ACTION CONTRACT')
+  })
+
   test('POST with stepId where runtime throws returns failure', async () => {
     await setupTestSequence({
       version: '1.0',
@@ -904,6 +1012,48 @@ describe.serial('run route coverage — error handling', () => {
     expect(res.status).toBe(200)
     const data = await res.json()
     expect(data.status).toBe('NEEDS_REVIEW')
+  })
+
+  test('POST with stepId downgrades zero-exit blocked payloads to NEEDS_REVIEW', async () => {
+    await setupTestSequence({
+      version: '1.0',
+      name: 'blocked-output-seq',
+      steps: [
+        { id: 'blocked-output-step', name: 'Blocked Output', type: 'base', model: 'codex', prompt_file: '.threados/prompts/blocked-output-step.md', depends_on: [], status: 'READY' },
+      ],
+      gates: [],
+    })
+    await writePrompt('blocked-output-step')
+
+    globalThis.__THREADOS_RUN_ROUTE_RUNTIME__ = {
+      ...createMockRuntime(),
+      runStep: async ({ stepId, runId }: { stepId: string; runId: string }) => ({
+        stepId,
+        runId,
+        exitCode: 0,
+        status: 'SUCCESS' as const,
+        duration: 4,
+        stdout: 'I cannot complete this because the required tool is unavailable in this environment.',
+        stderr: '',
+        startTime: new Date('2026-03-10T10:00:00.000Z'),
+        endTime: new Date('2026-03-10T10:00:04.000Z'),
+      }),
+    }
+
+    const { POST } = await import('@/app/api/run/route')
+    const res = await POST(new Request('http://localhost/api/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: confirmedBody({ stepId: 'blocked-output-step' }),
+    }))
+
+    expect(res.status).toBe(200)
+    const data = await res.json()
+    expect(data.success).toBe(false)
+    expect(data.status).toBe('NEEDS_REVIEW')
+
+    const persisted = await readSequence(basePath)
+    expect(persisted.steps.find(step => step.id === 'blocked-output-step')?.status).toBe('NEEDS_REVIEW')
   })
 
   test('POST with stepId that has nonzero exit code returns FAILED', async () => {

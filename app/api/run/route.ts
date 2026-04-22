@@ -17,7 +17,12 @@ import { evaluateStepCompletionGates, evaluateStepGates, getBlockReasons, isStep
 import { allowShellModel } from '@/lib/hosted'
 import { PolicyEngine } from '@/lib/policy/engine'
 import type { PolicyConfig } from '@/lib/policy/schema'
-import { readPrompt, validatePromptExists } from '@/lib/prompts/manager'
+import {
+  makeStepInputManifest,
+  prepareStepPromptForDispatch,
+  resolveStepPromptPath,
+  validateStepPromptExists,
+} from '@/lib/runner/step-preparation'
 import { applyRateLimit } from '@/lib/rate-limit'
 import {
   getRuntimeEventLogPath,
@@ -25,11 +30,9 @@ import {
   writeCompiledPrompt,
   writeInputManifest,
   writeRunRecord,
-  type InputManifestJson,
   type RunRecordJson,
 } from '@/lib/runner/artifacts'
-import { dispatch, exitCodeToStatus } from '@/lib/runner/dispatch'
-import { compilePrompt } from '@/lib/runner/prompt-compiler'
+import { assessCompletionResult, dispatch } from '@/lib/runner/dispatch'
 import { runStep, type RunnerConfig } from '@/lib/runner/wrapper'
 import { topologicalSort, validateDAG } from '@/lib/sequence/dag'
 import { readSequence, writeSequence } from '@/lib/sequence/parser'
@@ -88,7 +91,7 @@ type ExecuteStepResult = {
   success: boolean
   stepId: string
   runId: string
-  status: 'DONE' | 'FAILED' | 'NEEDS_REVIEW' | 'READY' | 'RUNNING' | 'BLOCKED'
+  status: 'DONE' | 'FAILED' | 'NEEDS_REVIEW' | 'READY' | 'RUNNING' | 'BLOCKED' | 'SKIPPED'
   error?: string
   duration?: number
   artifactPath?: string
@@ -102,6 +105,16 @@ type BatchExecuteResult = {
   executed: ExecuteStepResult[]
   skipped: string[]
   waiting: string[]
+}
+
+interface RunnableStepSelection {
+  steps: Step[]
+  skippedIds: string[]
+}
+
+interface ResolvedTargetSteps {
+  steps: Step[]
+  skippedIds: string[]
 }
 
 class ApprovalRequiredError extends Error {
@@ -208,13 +221,49 @@ async function hasSatisfiedApprovalRequirements(basePath: string, sequence: Sequ
   return true
 }
 
-async function getRunnableSteps(basePath: string, sequence: Sequence): Promise<Step[]> {
-  const done = new Set([
-    ...sequence.steps.filter(step => step.status === 'DONE').map(step => step.id),
+function getCompletedNodeIds(sequence: Sequence): Set<string> {
+  return new Set([
+    ...sequence.steps.filter(step => step.status === 'DONE' || step.status === 'SKIPPED').map(step => step.id),
     ...sequence.gates.filter(gate => gate.status === 'APPROVED').map(gate => gate.id),
   ])
+}
 
-  return (await Promise.all(sequence.steps.map(async step => {
+async function reconcileSkippedSteps(basePath: string, sequence: Sequence): Promise<string[]> {
+  const skippedIds: string[] = []
+  let changed = false
+
+  while (true) {
+    const completedNodes = getCompletedNodeIds(sequence)
+    let changedThisPass = false
+
+    for (const step of sequence.steps) {
+      if (step.status !== 'READY') continue
+      if (!step.depends_on.every(dep => completedNodes.has(dep))) continue
+
+      const conditionSatisfied = await evaluateSequenceCondition(basePath, sequence, (step as Step & { condition?: string }).condition)
+      if (conditionSatisfied) continue
+
+      step.status = 'SKIPPED'
+      skippedIds.push(step.id)
+      changedThisPass = true
+      changed = true
+    }
+
+    if (!changedThisPass) break
+  }
+
+  if (changed) {
+    await writeSequence(basePath, sequence)
+  }
+
+  return skippedIds
+}
+
+async function getRunnableSteps(basePath: string, sequence: Sequence): Promise<RunnableStepSelection> {
+  const skippedIds = await reconcileSkippedSteps(basePath, sequence)
+  const done = getCompletedNodeIds(sequence)
+
+  const steps = (await Promise.all(sequence.steps.map(async step => {
     const isReady = step.status === 'READY'
     const isReopenableBlocked = step.status === 'BLOCKED' && await hasSatisfiedApprovalRequirements(basePath, sequence, step)
     if (!isReady && !isReopenableBlocked) return null
@@ -222,23 +271,32 @@ async function getRunnableSteps(basePath: string, sequence: Sequence): Promise<S
     const conditionSatisfied = await evaluateSequenceCondition(basePath, sequence, (step as Step & { condition?: string }).condition)
     return conditionSatisfied ? step : null
   }))).filter((step): step is Step => step != null)
+
+  return { steps, skippedIds }
 }
 
-async function resolveTargetSteps(basePath: string, sequence: Sequence, body: RunRequestBody): Promise<Step[]> {
+async function resolveTargetSteps(basePath: string, sequence: Sequence, body: RunRequestBody): Promise<ResolvedTargetSteps> {
   if ('stepId' in body) {
     const step = sequence.steps.find(candidate => candidate.id === body.stepId)
-    return step ? [step] : []
+    return { steps: step ? [step] : [], skippedIds: [] }
   }
 
   if ('groupId' in body) {
-    return (await getRunnableSteps(basePath, sequence)).filter(step => step.group_id === body.groupId)
+    const selection = await getRunnableSteps(basePath, sequence)
+    return {
+      steps: selection.steps.filter(step => step.group_id === body.groupId),
+      skippedIds: selection.skippedIds,
+    }
   }
 
-  const runnableSteps = await getRunnableSteps(basePath, sequence)
-  const runnableById = new Map(runnableSteps.map(step => [step.id, step]))
-  return topologicalSort(sequence)
-    .map(stepId => runnableById.get(stepId) ?? null)
-    .filter((step): step is Step => step != null)
+  const selection = await getRunnableSteps(basePath, sequence)
+  const runnableById = new Map(selection.steps.map(step => [step.id, step]))
+  return {
+    steps: topologicalSort(sequence)
+      .map(stepId => runnableById.get(stepId) ?? null)
+      .filter((step): step is Step => step != null),
+    skippedIds: selection.skippedIds,
+  }
 }
 
 function policyStatusToHttp(result: PolicyCheckResult): { code: string; status: number } {
@@ -364,18 +422,6 @@ function collectDownstreamDependents(
   }
 
   return discovered
-}
-
-function makeInputManifest(step: Step, runId: string, surfaceId: string, createdAt: string): InputManifestJson {
-  return {
-    stepId: step.id,
-    runId,
-    surfaceId,
-    promptRef: step.prompt_ref?.path ?? step.prompt_file ?? null,
-    dependsOn: step.depends_on,
-    inputContractRef: step.input_contract_ref ?? null,
-    createdAt,
-  }
 }
 
 async function persistGateDecisions(
@@ -552,8 +598,8 @@ async function executeStep(
   }
 
   const stepRuntime = await createStepRunScope(basePath, step)
-  const promptPath = step.prompt_file
-  const promptExists = await validatePromptExists(basePath, stepId)
+  const promptPath = resolveStepPromptPath(basePath, step)
+  const promptExists = await validateStepPromptExists(basePath, step)
 
   if (!promptExists) {
     step.status = 'FAILED'
@@ -572,28 +618,24 @@ async function executeStep(
   const surfaceId = getSurfaceId(step)
   const startedAt = stepRuntime.stepRun?.startedAt ?? new Date().toISOString()
   const attempt = stepRuntime.stepRun?.executionIndex ?? 1
-  const inputManifest = makeInputManifest(step, runId, surfaceId, startedAt)
+  const inputManifest = makeStepInputManifest(step, runId, surfaceId, startedAt)
   const inputManifestRef = getInputManifestRef(runId, surfaceId)
   const artifactManifestRef = getArtifactManifestRef(runId, surfaceId)
 
   try {
     const runtimeEventLogPath = getRuntimeEventLogPath(basePath, runId, stepId)
-    const rawPrompt = await readPrompt(basePath, stepId)
-    const promptForDispatch = step.model === 'shell'
-      ? rawPrompt
-      : await compilePrompt({
-          stepId,
-          step,
-          rawPrompt,
-          sequence,
-          basePath,
-          maxTokens: step.model === 'claude-code' ? 8000 : 4000,
-          runtimeEventLogPath,
-          runtimeEventEmitterCommand: THREADOS_EVENT_EMITTER_COMMAND,
-        })
+    const preparedPrompt = await prepareStepPromptForDispatch({
+      stepId,
+      step,
+      sequence,
+      basePath,
+      maxTokens: step.model === 'claude-code' ? 8000 : 4000,
+      runtimeEventLogPath,
+      runtimeEventEmitterCommand: THREADOS_EVENT_EMITTER_COMMAND,
+    })
 
     await writeInputManifest(basePath, runId, surfaceId, inputManifest)
-    await writeCompiledPrompt(basePath, runId, surfaceId, promptForDispatch)
+    await writeCompiledPrompt(basePath, runId, surfaceId, preparedPrompt.promptForDispatch)
 
     const approvals = await readApprovals(basePath, runId).catch(() => [])
     const approvalPresent = options.confirmPolicy
@@ -626,7 +668,7 @@ async function executeStep(
         runId,
         surfaceId,
         policyConfig: options.policyConfig,
-        compiledPrompt: promptForDispatch,
+        compiledPrompt: preparedPrompt.promptForDispatch,
         startedAt,
         status: 'failed',
         attempt,
@@ -652,7 +694,7 @@ async function executeStep(
         runId,
         surfaceId,
         policyConfig: options.policyConfig,
-        compiledPrompt: promptForDispatch,
+        compiledPrompt: preparedPrompt.promptForDispatch,
         startedAt,
         status: 'failed',
         attempt,
@@ -674,7 +716,7 @@ async function executeStep(
     const runnerConfig = await runtime.dispatch(step.model, {
       stepId,
       runId,
-      compiledPrompt: promptForDispatch,
+      compiledPrompt: preparedPrompt.promptForDispatch,
       cwd: step.cwd || basePath,
       timeout: step.timeout_ms || DEFAULT_TIMEOUT_MS,
       runtimeEventLogPath,
@@ -693,7 +735,7 @@ async function executeStep(
         runId,
         surfaceId,
         policyConfig: options.policyConfig,
-        compiledPrompt: promptForDispatch,
+        compiledPrompt: preparedPrompt.promptForDispatch,
         startedAt,
         status: 'failed',
         attempt,
@@ -717,7 +759,7 @@ async function executeStep(
       runId,
       surfaceId,
       policyConfig: options.policyConfig,
-      compiledPrompt: promptForDispatch,
+      compiledPrompt: preparedPrompt.promptForDispatch,
       startedAt,
       status: 'running',
       attempt,
@@ -731,22 +773,23 @@ async function executeStep(
     const result = await runtime.runStep(runnerConfig)
     const artifactPath = await runtime.saveRunArtifacts(basePath, result, {
       surfaceId,
-      compiledPrompt: promptForDispatch,
+      compiledPrompt: preparedPrompt.promptForDispatch,
       inputManifest,
       outputContractRef: step.output_contract_ref,
       completionContract: step.completion_contract,
     })
     const runtimeEvents = await readRuntimeEventLog(basePath, runId, stepId)
 
+    const completionAssessment = assessCompletionResult(result)
     const completionDecisions = evaluateStepCompletionGates(step, {
-      artifactManifestPresent: true,
+      artifactManifestPresent: Boolean(artifactPath),
       outputSchemaValid: step.output_contract_ref ? result.status === 'SUCCESS' : true,
       completionContractSatisfied: step.completion_contract ? result.status === 'SUCCESS' : true,
     })
     await persistGateDecisions(basePath, runId, surfaceId, completionDecisions, options.policyConfig.mode)
 
     const completionPassed = isStepRunnable(completionDecisions)
-    step.status = exitCodeToStatus(result.exitCode)
+    step.status = completionAssessment.status
     if (step.status === 'DONE' && !completionPassed) {
       step.status = 'NEEDS_REVIEW'
     }
@@ -757,9 +800,9 @@ async function executeStep(
       runId,
       surfaceId,
       policyConfig: options.policyConfig,
-      compiledPrompt: promptForDispatch,
+      compiledPrompt: preparedPrompt.promptForDispatch,
       startedAt,
-      status: result.status === 'SUCCESS' && completionPassed ? 'successful' : 'failed',
+      status: step.status === 'DONE' ? 'successful' : 'failed',
       attempt,
       inputManifestRef,
       artifactManifestRef,
@@ -767,13 +810,13 @@ async function executeStep(
     })
     await finalizeStepRunScope(basePath, step, stepRuntime, step.status === 'DONE' ? 'successful' : 'failed', runtimeEvents.events)
     return {
-      success: result.status === 'SUCCESS' && completionPassed,
+      success: step.status === 'DONE',
       stepId,
       runId,
       status: step.status,
       duration: result.duration,
       artifactPath,
-      gateReasons: completionPassed ? [] : getBlockReasons(completionDecisions),
+      gateReasons: completionPassed ? completionAssessment.reasons : [...completionAssessment.reasons, ...getBlockReasons(completionDecisions)],
     }
   } catch (error) {
     step.status = error instanceof ApprovalRequiredError ? 'BLOCKED' : 'FAILED'
@@ -804,17 +847,25 @@ async function executeBatchSteps(
   options: ExecuteStepOptions,
   scopeStepIds?: Set<string>,
   expandRunnableFrontier = false,
+  initialSkippedIds: string[] = [],
 ): Promise<BatchExecuteResult> {
   const executed: ExecuteStepResult[] = []
-  const skipped = new Set<string>()
+  const skipped = new Set<string>(initialSkippedIds)
   const waiting = new Set<string>()
   const alreadyExecuted = new Set<string>()
 
   while (true) {
     const currentSequence = expandRunnableFrontier ? await readSequence(basePath) : sequence
+    const currentSelection = await getRunnableSteps(basePath, currentSequence)
+    for (const skippedStepId of currentSelection.skippedIds) {
+      if (scopeStepIds == null || scopeStepIds.has(skippedStepId)) {
+        skipped.add(skippedStepId)
+      }
+    }
+
     const currentTargetSteps = expandRunnableFrontier
-      ? (await getRunnableSteps(basePath, currentSequence)).filter(step => !alreadyExecuted.has(step.id))
-      : targetSteps.filter(step => !alreadyExecuted.has(step.id))
+      ? currentSelection.steps.filter(step => !alreadyExecuted.has(step.id))
+      : targetSteps.filter(step => !alreadyExecuted.has(step.id) && currentSelection.steps.some(candidate => candidate.id === step.id))
 
     if (currentTargetSteps.length === 0) break
 
@@ -867,7 +918,7 @@ export async function POST(request: Request) {
     const sequence = await readSequence(basePath)
     validateDAG(sequence)
 
-    const targetSteps = await resolveTargetSteps(basePath, sequence, body)
+    const { steps: targetSteps, skippedIds: targetSkippedIds } = await resolveTargetSteps(basePath, sequence, body)
     const batchPolicy = await enforceBatchPolicy(basePath, targetSteps.length, body.confirmPolicy === true)
     if (!batchPolicy.allowed) {
       const policyHttp = policyStatusToHttp(batchPolicy)
@@ -878,7 +929,7 @@ export async function POST(request: Request) {
       if ('stepId' in body) {
         return jsonError(`Step '${body.stepId}' not found`, 'NOT_FOUND', 404)
       }
-      return NextResponse.json({ success: true, executed: [] })
+      return NextResponse.json({ success: true, executed: [], skipped: targetSkippedIds, waiting: [] })
     }
 
     const runId = randomUUID()
@@ -922,7 +973,7 @@ export async function POST(request: Request) {
         confirmPolicy: body.confirmPolicy === true,
         policyConfig,
         approvalTargetRef,
-      }, groupStepIds)
+      }, groupStepIds, false, targetSkippedIds)
       await finalizeRunScope(basePath, runId, result.success ? 'successful' : 'failed', `group:${body.groupId}`)
       await auditLog('run.group', body.groupId, { runId, count: result.executed.length }, result.success ? 'ok' : 'failed')
       return NextResponse.json(result)
@@ -932,7 +983,7 @@ export async function POST(request: Request) {
       confirmPolicy: body.confirmPolicy === true,
       policyConfig,
       approvalTargetRef,
-    }, undefined, true)
+    }, undefined, true, targetSkippedIds)
     await finalizeRunScope(basePath, runId, result.success ? 'successful' : 'failed', 'mode:runnable')
     await auditLog('run.runnable', '*', { runId, count: result.executed.length }, result.success ? 'ok' : 'failed')
     return NextResponse.json(result)

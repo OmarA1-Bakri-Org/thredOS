@@ -3,6 +3,7 @@ import { basename, dirname, isAbsolute, join } from 'path'
 import { hydrateApolloApprovalRuntimeContext, getNestedRuntimeValue, readRuntimeContext, storeRuntimeContextValue, type RuntimeContext } from './context'
 import type { Step, Sequence, ModelType } from '../sequence/schema'
 import type { RunnerConfig, RunResult } from '../runner/wrapper'
+import { assessCompletionResult, type CompletionAssessment } from '../runner/dispatch'
 import type { dispatch } from '../runner/dispatch'
 
 const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000
@@ -38,6 +39,24 @@ function normalizeActionType(type: unknown): string {
 
 function normalizeResultStatus(result: RunResult): 'success' | 'failed' {
   return result.exitCode === 0 ? 'success' : 'failed'
+}
+
+function normalizeCompletionStatus(completion: CompletionAssessment): 'success' | 'needs_review' | 'failed' {
+  if (completion.status === 'DONE') return 'success'
+  if (completion.status === 'NEEDS_REVIEW') return 'needs_review'
+  return 'failed'
+}
+
+function buildSubAgentPrompt(taskPrompt: string): string {
+  return [
+    'You are executing a thredOS native sub_agent action.',
+    'Complete the requested work directly.',
+    'Exit 0 only if you actually completed the requested work and produced the requested result.',
+    'If you are blocked, refused, missing permissions, or required tools are unavailable, explain the blocker and exit 42 instead of 0.',
+    '',
+    '## Task',
+    taskPrompt,
+  ].join('\n')
 }
 
 function resolveActionTimeout(action: Record<string, unknown>, step: Step): number {
@@ -219,7 +238,7 @@ async function executeSubAgentAction(
     throw new Error(`sub_agent action '${actionId}' is missing config.prompt`)
   }
 
-  const compiledPrompt = await renderRuntimeContextTemplate(basePath, prompt)
+  const compiledPrompt = buildSubAgentPrompt(await renderRuntimeContextTemplate(basePath, prompt))
   const resolvedModel = typeof config.model === 'string' && config.model.length > 0
     ? config.model
     : (step.model === 'shell' ? 'claude-code' : step.model)
@@ -233,6 +252,7 @@ async function executeSubAgentAction(
     timeout: resolveActionTimeout(action, step),
   })
   const result = await runtime.runStep(runnerConfig)
+  const completion = assessCompletionResult(result)
   const output = {
     actionId,
     model,
@@ -241,13 +261,16 @@ async function executeSubAgentAction(
     stdout: result.stdout,
     stderr: result.stderr,
     exitCode: result.exitCode,
-    status: normalizeResultStatus(result),
+    status: normalizeCompletionStatus(completion),
+    reviewReasons: completion.reasons,
   }
 
   await storeActionOutput(basePath, action, output)
 
-  if (result.exitCode !== 0) {
-    await handleActionFailure(action, `sub_agent action '${actionId}' failed with exit code ${result.exitCode}: ${result.stderr.trim() || result.stdout.trim() || prompt}`)
+  if (completion.status !== 'DONE') {
+    const failureDetail = result.stderr.trim() || result.stdout.trim() || prompt
+    const reasonSuffix = completion.reasons.length > 0 ? ` [${completion.reasons.join(', ')}]` : ''
+    await handleActionFailure(action, `sub_agent action '${actionId}' did not produce completion evidence${reasonSuffix}: ${failureDetail}`)
   }
 }
 

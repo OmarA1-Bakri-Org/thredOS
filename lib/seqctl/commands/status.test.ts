@@ -66,6 +66,7 @@ describe.serial('statusCommand', () => {
     expect(output.summary.ready).toBe(1)
     expect(output.summary.running).toBe(1)
     expect(output.summary.done).toBe(1)
+    expect(output.summary.skipped).toBe(0)
     expect(output.summary.failed).toBe(0)
   })
 
@@ -156,7 +157,7 @@ describe.serial('statusCommand', () => {
 
   // --- Summary computation for all status types ---
 
-  test('computes summary with FAILED, BLOCKED, and NEEDS_REVIEW steps', async () => {
+  test('computes summary with FAILED, BLOCKED, NEEDS_REVIEW, and SKIPPED steps', async () => {
     const { statusCommand } = await import('./status')
 
     const allStatusSequence = {
@@ -166,6 +167,7 @@ describe.serial('statusCommand', () => {
         { id: 'ready-step', name: 'Ready', type: 'base', model: 'claude-code', prompt_file: '.threados/prompts/ready.md', depends_on: [], status: 'READY' },
         { id: 'running-step', name: 'Running', type: 'base', model: 'claude-code', prompt_file: '.threados/prompts/running.md', depends_on: [], status: 'RUNNING' },
         { id: 'done-step', name: 'Done', type: 'base', model: 'claude-code', prompt_file: '.threados/prompts/done.md', depends_on: [], status: 'DONE' },
+        { id: 'skipped-step', name: 'Skipped', type: 'base', model: 'claude-code', prompt_file: '.threados/prompts/skipped.md', depends_on: [], status: 'SKIPPED' },
         { id: 'failed-step', name: 'Failed', type: 'base', model: 'claude-code', prompt_file: '.threados/prompts/failed.md', depends_on: [], status: 'FAILED' },
         { id: 'blocked-step', name: 'Blocked', type: 'base', model: 'claude-code', prompt_file: '.threados/prompts/blocked.md', depends_on: [], status: 'BLOCKED' },
         { id: 'review-step', name: 'Needs Review', type: 'base', model: 'claude-code', prompt_file: '.threados/prompts/review.md', depends_on: [], status: 'NEEDS_REVIEW' },
@@ -183,10 +185,11 @@ describe.serial('statusCommand', () => {
     console.log = origLog
 
     const output = JSON.parse(logs[0])
-    expect(output.summary.total).toBe(6)
+    expect(output.summary.total).toBe(7)
     expect(output.summary.ready).toBe(1)
     expect(output.summary.running).toBe(1)
     expect(output.summary.done).toBe(1)
+    expect(output.summary.skipped).toBe(1)
     expect(output.summary.failed).toBe(1)
     expect(output.summary.blocked).toBe(1)
     expect(output.summary.needsReview).toBe(1)

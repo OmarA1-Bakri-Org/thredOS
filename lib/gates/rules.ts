@@ -25,7 +25,7 @@ export function checkDepsSatisfied(
       if (depStep.status === 'FAILED') {
         reason_codes.push(GateReasonCode.DEP_FAILED)
         evidence_refs.push(`step:${depId}:status=${depStep.status}`)
-      } else if (depStep.status !== 'DONE') {
+      } else if (depStep.status !== 'DONE' && depStep.status !== 'SKIPPED') {
         reason_codes.push(GateReasonCode.DEP_MISSING)
         evidence_refs.push(`step:${depId}:status=${depStep.status}`)
       }

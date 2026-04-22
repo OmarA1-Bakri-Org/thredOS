@@ -162,6 +162,81 @@ describe('run step native action execution', () => {
 
     const runtimeContext = JSON.parse(await readFile(join(tempDir, '.threados/state/runtime-context.json'), 'utf-8'))
     expect(runtimeContext.sub_agent_result).toMatchObject({ status: 'success', model: 'claude-code', subagentType: 'general-purpose' })
+    expect(runtimeContext.sub_agent_result.prompt).toContain('Exit 0 only if you actually completed the requested work')
+  })
+
+  test('sub_agent zero-exit refusal payload fails the parent step instead of being treated as success', async () => {
+    const seq = makeSequence({
+      steps: [
+        makeStep({
+          id: 'blocked-subagent',
+          model: 'codex',
+          status: 'READY',
+          prompt_file: '.threados/prompts/blocked-subagent.md',
+          actions: [
+            { id: 'spawn-subagent', type: 'sub_agent', config: { prompt: 'Open the restricted admin tool and finish the task.', subagent_type: 'general-purpose' }, output_key: 'sub_agent_result' },
+          ] as any,
+        }),
+      ],
+    })
+
+    await writeTestSequence(tempDir, seq)
+    await writeFile(join(tempDir, '.threados/prompts/blocked-subagent.md'), '# blocked subagent')
+
+    globalThis.__THREADOS_CLI_RUN_RUNTIME__ = {
+      dispatch: async (_model, opts) => ({
+        stepId: opts.stepId,
+        runId: opts.runId,
+        command: process.execPath,
+        args: ['-e', 'process.exit(0)'],
+        cwd: opts.cwd,
+        timeout: opts.timeout,
+      }),
+      runStep: async config => config.stepId.endsWith('spawn-subagent')
+        ? {
+            stepId: config.stepId,
+            runId: config.runId,
+            exitCode: 0,
+            status: 'SUCCESS' as const,
+            duration: 5,
+            stdout: 'I cannot access the requested admin tool because I do not have permission to use it.',
+            stderr: '',
+            startTime: new Date('2026-03-10T10:00:00.000Z'),
+            endTime: new Date('2026-03-10T10:00:05.000Z'),
+          }
+        : {
+            stepId: config.stepId,
+            runId: config.runId,
+            exitCode: 0,
+            status: 'SUCCESS' as const,
+            duration: 5,
+            stdout: 'parent ok',
+            stderr: '',
+            startTime: new Date('2026-03-10T10:00:10.000Z'),
+            endTime: new Date('2026-03-10T10:00:15.000Z'),
+          },
+      saveRunArtifacts: async () => '.threados/runs/mock',
+    }
+
+    const logs: string[] = []
+    const origLog = console.log
+    console.log = (msg: string) => logs.push(msg)
+
+    await runCommand('step', ['blocked-subagent'], { ...jsonOpts, basePath: tempDir })
+
+    console.log = origLog
+
+    const output = JSON.parse(logs[0])
+    expect(output.success).toBe(false)
+    expect(output.status).toBe('FAILED')
+    expect(output.error).toContain('did not produce completion evidence')
+
+    const persisted = await readSequence(tempDir)
+    expect(persisted.steps.find(step => step.id === 'blocked-subagent')?.status).toBe('FAILED')
+
+    const runtimeContext = JSON.parse(await readFile(join(tempDir, '.threados/state/runtime-context.json'), 'utf-8'))
+    expect(runtimeContext.sub_agent_result).toMatchObject({ status: 'needs_review', exitCode: 0 })
+    expect(runtimeContext.sub_agent_result.reviewReasons).toContain('OBVIOUS_NON_COMPLETION_PAYLOAD')
   })
 })
 
@@ -440,7 +515,7 @@ describe('run runnable — no runnable steps', () => {
     expect(output.executed).toHaveLength(0)
   })
 
-  test('returns no runnable steps when READY step condition evaluates false', async () => {
+  test('marks false-condition READY steps as durable SKIPPED', async () => {
     const seq = makeSequence({
       steps: [
         makeStep({ id: 'a', status: 'READY', condition: "icp_config.sources contains 'apollo_discovery'" } as any),
@@ -460,7 +535,87 @@ describe('run runnable — no runnable steps', () => {
     const output = JSON.parse(logs[0])
     expect(output.success).toBe(true)
     expect(output.executed).toHaveLength(0)
-    expect(output.error).toContain('No runnable steps')
+    expect(output.error).toBeUndefined()
+    expect(output.skipped).toEqual(['a'])
+
+    const updatedSequence = await readSequence(tempDir)
+    expect(updatedSequence.steps.find(step => step.id === 'a')?.status).toBe('SKIPPED')
+  })
+
+  test('marks false-condition optional steps as SKIPPED and continues downstream mandatory work', async () => {
+    const dispatchOrder: string[] = []
+    const seq = makeSequence({
+      steps: [
+        makeStep({
+          id: 'optional-branch',
+          status: 'READY',
+          model: 'shell',
+          prompt_file: '.threados/prompts/optional-branch.md',
+          condition: "icp_config.sources contains 'apollo_discovery'",
+        } as any),
+        makeStep({
+          id: 'mandatory-downstream',
+          status: 'READY',
+          model: 'shell',
+          prompt_file: '.threados/prompts/mandatory-downstream.md',
+          depends_on: ['optional-branch'],
+        }),
+      ],
+    })
+    await writeTestSequence(tempDir, seq)
+    await writeFile(join(tempDir, '.threados/prompts/optional-branch.md'), 'echo should-not-run')
+    await writeFile(join(tempDir, '.threados/prompts/mandatory-downstream.md'), 'echo mandatory-ran')
+    await writeFile(join(tempDir, '.threados/state/runtime-context.json'), JSON.stringify({ icp_config: { sources: ['apollo_saved'] } }), 'utf-8')
+
+    globalThis.__THREADOS_CLI_RUN_RUNTIME__ = {
+      dispatch: async (_model, opts) => ({
+        stepId: opts.stepId,
+        runId: opts.runId,
+        command: process.execPath,
+        args: ['-e', 'process.exit(0)'],
+        cwd: opts.cwd,
+        timeout: opts.timeout,
+      }),
+      runStep: async config => {
+        dispatchOrder.push(config.stepId)
+        return {
+          stepId: config.stepId,
+          runId: config.runId,
+          command: config.command,
+          args: config.args,
+          cwd: config.cwd,
+          startTime: new Date(),
+          endTime: new Date(),
+          duration: 10,
+          exitCode: 0,
+          stdout: 'ok',
+          stderr: '',
+          timedOut: false,
+          status: 'SUCCESS',
+        }
+      },
+      saveRunArtifacts: async () => '.threados/runs/mock',
+    }
+
+    const logs: string[] = []
+    const origLog = console.log
+    console.log = (msg: string) => logs.push(msg)
+
+    await runCommand('runnable', [], { ...jsonOpts, basePath: tempDir })
+
+    console.log = origLog
+
+    const output = JSON.parse(logs[0])
+    expect(output.success).toBe(true)
+    expect(output.executed).toHaveLength(1)
+    expect(output.executed[0]).toMatchObject({ stepId: 'mandatory-downstream', success: true, status: 'DONE' })
+    expect(output.skipped).toEqual(['optional-branch'])
+    expect(output.waiting).toEqual([])
+    expect(dispatchOrder).toEqual(['mandatory-downstream'])
+
+    const updatedSequence = await readSequence(tempDir)
+    expect(updatedSequence.steps.find(step => step.id === 'optional-branch')?.status).toBe('SKIPPED')
+    expect(updatedSequence.steps.find(step => step.id === 'mandatory-downstream')?.status).toBe('DONE')
   })
 
   test('returns runnable step when runtime context satisfies condition', async () => {
@@ -602,6 +757,58 @@ describe('run step — with mock runtime', () => {
     // Verify the step status was persisted
     const updatedSeq = await readSequence(tempDir)
     expect(updatedSeq.steps[0].status).toBe('DONE')
+  })
+
+  test('run step downgrades zero-exit blocked payloads to NEEDS_REVIEW', async () => {
+    const seq = makeSequence({
+      steps: [
+        makeStep({ id: 'blocked-step', model: 'shell', status: 'READY', prompt_file: '.threados/prompts/blocked-step.md' }),
+      ],
+    })
+    await writeTestSequence(tempDir, seq)
+    await writeFile(join(tempDir, '.threados/prompts/blocked-step.md'), '#!/bin/sh\necho blocked\n')
+
+    globalThis.__THREADOS_CLI_RUN_RUNTIME__ = {
+      dispatch: async (_model, opts) => ({
+        stepId: opts.stepId,
+        runId: opts.runId,
+        command: process.execPath,
+        args: ['-e', 'process.exit(0)'],
+        cwd: opts.cwd,
+        timeout: opts.timeout,
+      }),
+      runStep: async config => ({
+        stepId: config.stepId,
+        runId: config.runId,
+        command: config.command,
+        args: config.args,
+        cwd: config.cwd,
+        startTime: new Date(),
+        endTime: new Date(),
+        duration: 50,
+        exitCode: 0,
+        stdout: 'I cannot complete this because the required tool is unavailable in this environment.',
+        stderr: '',
+        timedOut: false,
+        status: 'SUCCESS',
+      }),
+      saveRunArtifacts: async () => '.threados/runs/mock',
+    }
+
+    const logs: string[] = []
+    const origLog = console.log
+    console.log = (msg: string) => logs.push(msg)
+
+    await runCommand('step', ['blocked-step'], { ...jsonOpts, basePath: tempDir })
+
+    console.log = origLog
+
+    const output = JSON.parse(logs[0])
+    expect(output.success).toBe(false)
+    expect(output.status).toBe('NEEDS_REVIEW')
+
+    const updatedSeq = await readSequence(tempDir)
+    expect(updatedSeq.steps[0].status).toBe('NEEDS_REVIEW')
   })
 
   test('run step marks step as FAILED when runtime throws', async () => {
@@ -1881,6 +2088,77 @@ describe('run step — with mock runtime', () => {
     console.error = origErr
 
     expect(logs.some(l => l.includes('failed'))).toBe(true)
+  })
+
+  test('run step respects custom prompt_file paths and persists canonical artifacts like API', async () => {
+    const dispatchedPrompts: string[] = []
+    const savedArtifacts: Array<Record<string, unknown>> = []
+    const seq = makeSequence({
+      steps: [
+        makeStep({
+          id: 'custom-prompt-step',
+          model: 'shell',
+          status: 'READY',
+          prompt_file: '.threados/custom-prompts/runtime/custom-prompt-step.md',
+          surface_ref: 'thread-custom-prompt-step',
+          actions: [{
+            id: 'document-contract',
+            type: 'conditional',
+            config: {
+              condition: '1 == 2',
+              if_true: [],
+              if_false: [],
+            },
+          }] as any,
+        }),
+      ],
+    })
+    await writeTestSequence(tempDir, seq)
+    await mkdir(join(tempDir, '.threados/custom-prompts/runtime'), { recursive: true })
+    await writeFile(join(tempDir, '.threados/custom-prompts/runtime/custom-prompt-step.md'), 'echo custom prompt path\n')
+
+    globalThis.__THREADOS_CLI_RUN_RUNTIME__ = {
+      dispatch: async (_model, opts) => {
+        dispatchedPrompts.push(opts.compiledPrompt)
+        return {
+          stepId: opts.stepId,
+          runId: opts.runId,
+          command: process.execPath,
+          args: ['-e', 'process.exit(0)'],
+          cwd: opts.cwd,
+          timeout: opts.timeout,
+        }
+      },
+      runStep: executeProcess,
+      saveRunArtifacts: async (_basePath, result, options) => {
+        savedArtifacts.push({ result, options })
+        return '.threados/runs/mock'
+      },
+    }
+
+    const logs: string[] = []
+    const origLog = console.log
+    console.log = (msg: string) => logs.push(msg)
+
+    await runCommand('step', ['custom-prompt-step'], { ...jsonOpts, basePath: tempDir })
+
+    console.log = origLog
+
+    const output = JSON.parse(logs[0])
+    expect(output.success).toBe(true)
+    expect(dispatchedPrompts).toHaveLength(1)
+    expect(dispatchedPrompts[0]).toContain('echo custom prompt path')
+    expect(dispatchedPrompts[0]).toContain('## THREADOS ACTION CONTRACT')
+    expect(savedArtifacts).toHaveLength(1)
+    expect(savedArtifacts[0]?.options).toMatchObject({
+      surfaceId: 'thread-custom-prompt-step',
+      compiledPrompt: dispatchedPrompts[0],
+      inputManifest: {
+        stepId: 'custom-prompt-step',
+        surfaceId: 'thread-custom-prompt-step',
+        promptRef: '.threados/custom-prompts/runtime/custom-prompt-step.md',
+      },
+    })
   })
 
   test('run step fails when prompt file is missing', async () => {

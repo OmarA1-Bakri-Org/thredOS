@@ -51,6 +51,7 @@ next-env.d.ts
 .threados/__pycache__/
 .threados/audit.log
 .threados/sequence.yaml.bak
+.threados/tmp-prompts/
 
 # Vendored binaries (not committed)
 vendor/
