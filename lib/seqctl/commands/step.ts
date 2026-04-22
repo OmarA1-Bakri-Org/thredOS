@@ -141,7 +141,10 @@ async function editStep(
 
   // Update fields that were provided
   if (options.name) step.name = options.name as string
-  if (options.type) step.type = options.type as StepType
+  if (options.type) {
+    step.type = options.type as StepType
+    step.kind = options.type as StepType
+  }
   if (options.model) step.model = options.model as ModelType
   if (options.prompt) step.prompt_file = options.prompt as string
   if (options.status) step.status = options.status as StepStatus

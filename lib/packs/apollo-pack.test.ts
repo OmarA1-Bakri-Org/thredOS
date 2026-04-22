@@ -2,9 +2,12 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { cp, mkdir, mkdtemp, rm, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import { loadPack } from './loader'
-import { compilePack } from './compiler'
-import { installPack } from './install'
+// @ts-expect-error Bun query imports used to isolate module cache from test-level mocks
+const { loadPack } = await import('./loader.ts?apollo-pack-loader-suite') as { loadPack: typeof import('./loader').loadPack }
+// @ts-expect-error Bun query imports used to isolate module cache from test-level mocks
+const { compilePack } = await import('./compiler.ts?apollo-pack-compiler-suite') as { compilePack: typeof import('./compiler').compilePack }
+// @ts-expect-error Bun query imports used to isolate module cache from test-level mocks
+const { installPack } = await import('./install.ts?apollo-pack-install-suite') as { installPack: typeof import('./install').installPack }
 import { readSequence, writeSequence } from '@/lib/sequence/parser'
 import type { Sequence } from '@/lib/sequence/schema'
 import { readThreadSurfaceState } from '@/lib/thread-surfaces/repository'

@@ -45,6 +45,7 @@ async function handleFusionCreate(basePath: string, args: string[]): Promise<Fus
     const step = sequence.steps.find(s => s.id === cid)!
     step.fusion_candidates = true
     step.type = 'f'
+    step.kind = 'f'
   }
 
   // Create or update synth step
@@ -52,6 +53,7 @@ async function handleFusionCreate(basePath: string, args: string[]): Promise<Fus
     const synthStep: Step = {
       id: synthId,
       name: `Fusion synth: ${synthId}`,
+      kind: 'f',
       type: 'f',
       model: 'claude-code',
       prompt_file: `.threados/prompts/${synthId}.md`,
@@ -64,6 +66,7 @@ async function handleFusionCreate(basePath: string, args: string[]): Promise<Fus
     const existing = sequence.steps.find(s => s.id === synthId)!
     existing.fusion_synth = true
     existing.type = 'f'
+    existing.kind = 'f'
     for (const cid of candidateIds) {
       if (!existing.depends_on.includes(cid)) existing.depends_on.push(cid)
     }

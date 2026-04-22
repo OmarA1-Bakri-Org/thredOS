@@ -75,7 +75,7 @@ function derivePromptRef(raw: Record<string, unknown>, stepId: string, promptFil
 function coerceStep(raw: unknown): Record<string, unknown> {
   const input = (raw ?? {}) as Record<string, unknown>
   const id = String(input.id ?? '')
-  const kind = input.kind ?? input.type ?? 'base'
+  const kind = input.type ?? input.kind ?? 'base'
   const promptFile = String(input.prompt_file ?? input.promptPath ?? `.threados/prompts/${id || 'step'}.md`)
 
   return {

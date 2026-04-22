@@ -285,6 +285,7 @@ function validateEnumUpdates(
     const typeResult = StepTypeSchema.safeParse(updates.type)
     if (!typeResult.success) return `Invalid type: ${updates.type}`
     step.type = typeResult.data
+    step.kind = typeResult.data
   }
   if (updates.model !== undefined) {
     const modelResult = ModelTypeSchema.safeParse(updates.model)
@@ -441,6 +442,7 @@ const actionAppliers: Record<string, ActionApplier> = {
       const step = seq.steps.find(s => s.id === String(sid))!
       step.group_id = groupId
       step.type = 'p'
+      step.kind = 'p'
     }
     return null
   },
@@ -457,15 +459,21 @@ const actionAppliers: Record<string, ActionApplier> = {
       const step = seq.steps.find(s => s.id === String(cid))!
       step.fusion_candidates = true
       step.type = 'f'
+      step.kind = 'f'
     }
     if (!seq.steps.some(s => s.id === synthId)) {
       const synthStep = StepSchema.safeParse({
-        id: synthId, name: `Fusion synth: ${synthId}`, type: 'f',
+        id: synthId, name: `Fusion synth: ${synthId}`, kind: 'f', type: 'f',
         model: 'claude-code', prompt_file: `.threados/prompts/${synthId}.md`,
         depends_on: candidateIds.map(String), status: 'READY', fusion_synth: true,
       })
       if (!synthStep.success) return `Invalid synth step: ${synthStep.error.issues.map(i => i.message).join(', ')}`
       seq.steps.push(synthStep.data)
+    } else {
+      const existing = seq.steps.find(s => s.id === synthId)!
+      existing.fusion_synth = true
+      existing.type = 'f'
+      existing.kind = 'f'
     }
     return null
   },

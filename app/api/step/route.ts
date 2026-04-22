@@ -171,6 +171,7 @@ function applyEditFields(step: Step, body: EditBody): NextResponse | null {
 
   if (body.assignedAgentId !== undefined) {
     step.assigned_agent_id = body.assignedAgentId ?? undefined
+    step.agent_ref = body.assignedAgentId ?? null
   }
 
   return null
