@@ -1,6 +1,14 @@
-import { mkdir, writeFile } from 'fs/promises'
+import { access, mkdir, writeFile } from 'fs/promises'
 import { basename, dirname, isAbsolute, join } from 'path'
-import { hydrateApolloApprovalRuntimeContext, getNestedRuntimeValue, readRuntimeContext, storeRuntimeContextValue, type RuntimeContext } from './context'
+import {
+  buildConditionContext,
+  evaluateRuntimeCondition,
+  hydrateApolloApprovalRuntimeContext,
+  getNestedRuntimeValue,
+  readRuntimeContext,
+  storeRuntimeContextValue,
+  type RuntimeContext,
+} from './context'
 import type { Step, Sequence, ModelType } from '../sequence/schema'
 import type { RunnerConfig, RunResult } from '../runner/wrapper'
 import { assessCompletionResult, type CompletionAssessment } from '../runner/dispatch'
@@ -307,6 +315,123 @@ async function executeComposioCompatibleAction(
     await storeActionOutput(basePath, action, result ?? null)
   } catch (error) {
     await handleActionFailure(action, `Composio action '${actionId}' failed: ${error instanceof Error ? error.message : String(error)}`)
+  }
+}
+
+export interface SelectedStepEvidenceAssessment {
+  outputSchemaValid: boolean
+  completionContractSatisfied: boolean
+  reasons: string[]
+}
+
+async function pathExists(path: string): Promise<boolean> {
+  try {
+    await access(path)
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function collectExecutedActions(
+  basePath: string,
+  sequence: Sequence,
+  actions: Array<Record<string, unknown>>,
+): Promise<Array<Record<string, unknown>>> {
+  const selected: Array<Record<string, unknown>> = []
+
+  for (const action of actions) {
+    if (action.type === 'conditional') {
+      const config = (action.config ?? {}) as Record<string, unknown>
+      const branchContext = buildConditionContext(sequence, await readRuntimeContext(basePath))
+      const branchActions = evaluateRuntimeCondition(String(config.condition ?? ''), branchContext)
+        ? config.if_true
+        : config.if_false
+      const nestedActions = Array.isArray(branchActions)
+        ? branchActions.filter((candidate): candidate is Record<string, unknown> => !!candidate && typeof candidate === 'object')
+        : []
+      selected.push(...await collectExecutedActions(basePath, sequence, nestedActions))
+      continue
+    }
+
+    selected.push(action)
+  }
+
+  return selected
+}
+
+export async function assessSelectedStepEvidence(
+  basePath: string,
+  sequence: Sequence,
+  step: Step,
+): Promise<SelectedStepEvidenceAssessment> {
+  if (!step.output_contract_ref && !step.completion_contract) {
+    return { outputSchemaValid: true, completionContractSatisfied: true, reasons: [] }
+  }
+
+  const runtimeContext = await readRuntimeContext(basePath)
+  const actions = await collectExecutedActions(
+    basePath,
+    sequence,
+    ((step.actions ?? []) as Array<Record<string, unknown>>).filter(action => !!action && typeof action === 'object'),
+  )
+  const reasons = new Set<string>()
+
+  for (const action of actions) {
+    const actionType = normalizeActionType(action.type)
+    const outputKey = typeof action.output_key === 'string' && action.output_key.length > 0
+      ? action.output_key
+      : null
+    const evidenceValue = outputKey ? getNestedRuntimeValue(runtimeContext, outputKey) : undefined
+
+    if (actionType === 'write_file') {
+      const config = (action.config ?? {}) as Record<string, unknown>
+      const rawFilePath = typeof config.file_path === 'string' ? config.file_path.trim() : ''
+      if (!rawFilePath) continue
+
+      const evidencePath = evidenceValue && typeof evidenceValue === 'object' && !Array.isArray(evidenceValue)
+        && typeof (evidenceValue as Record<string, unknown>).path === 'string'
+        ? (evidenceValue as Record<string, unknown>).path as string
+        : resolveWriteTarget(basePath, rawFilePath)
+
+      if (!await pathExists(evidencePath)) {
+        reasons.add('EXPLICIT_ARTIFACT_PATH_MISSING')
+      }
+
+      if (outputKey) {
+        const status = evidenceValue && typeof evidenceValue === 'object' && !Array.isArray(evidenceValue)
+          ? (evidenceValue as Record<string, unknown>).status
+          : undefined
+        if (status !== 'written') {
+          reasons.add('EXPLICIT_ACTION_RESULT_MISSING')
+        }
+      }
+      continue
+    }
+
+    if (actionType === 'composio_tool') {
+      if (outputKey && evidenceValue == null) {
+        reasons.add('EXPLICIT_OUTPUT_KEY_MISSING')
+      }
+      continue
+    }
+
+    if (actionType === 'sub_agent') {
+      if (!outputKey) continue
+      const status = evidenceValue && typeof evidenceValue === 'object' && !Array.isArray(evidenceValue)
+        ? (evidenceValue as Record<string, unknown>).status
+        : undefined
+      if (status !== 'success') {
+        reasons.add('EXPLICIT_ACTION_RESULT_MISSING')
+      }
+    }
+  }
+
+  const passed = reasons.size === 0
+  return {
+    outputSchemaValid: passed,
+    completionContractSatisfied: passed,
+    reasons: Array.from(reasons),
   }
 }
 

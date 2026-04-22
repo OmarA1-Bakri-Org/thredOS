@@ -1098,6 +1098,75 @@ describe('run step — with mock runtime', () => {
     expect(compiledPromptSeen).toContain('APOLLO_VIEW_API_USAGE_STATS')
   })
 
+  test('run step downgrades contract-bound composio steps when the expected persisted output is missing', async () => {
+    const seq = makeSequence({
+      steps: [
+        makeStep({
+          id: 'contract-action-step',
+          model: 'shell',
+          status: 'READY',
+          prompt_file: '.threados/prompts/contract-action-step.md',
+          output_contract_ref: 'contracts/apollo-usage.json',
+          completion_contract: 'contracts/apollo-usage-complete.json',
+          actions: [{
+            id: 'apollo-usage',
+            type: 'composio_tool',
+            config: {
+              tool_slug: 'APOLLO_VIEW_API_USAGE_STATS',
+              arguments: { team: 'growth' },
+            },
+            output_key: 'apollo_usage',
+          }],
+        } as any),
+      ],
+    })
+    await writeTestSequence(tempDir, seq)
+    await writeFile(join(tempDir, '.threados/prompts/contract-action-step.md'), 'echo action')
+
+    globalThis.__THREADOS_CLI_RUN_RUNTIME__ = {
+      dispatch: async (_model, opts) => ({
+        stepId: opts.stepId,
+        runId: opts.runId,
+        command: process.execPath,
+        args: ['-e', 'process.exit(0)'],
+        cwd: opts.cwd,
+        timeout: opts.timeout,
+      }),
+      runStep: async config => ({
+        stepId: config.stepId,
+        runId: config.runId,
+        command: config.command,
+        args: config.args,
+        cwd: config.cwd,
+        startTime: new Date(),
+        endTime: new Date(),
+        duration: 15,
+        exitCode: 0,
+        stdout: 'ok',
+        stderr: '',
+        timedOut: false,
+        status: 'SUCCESS',
+      }),
+      saveRunArtifacts: async () => '.threados/runs/mock',
+      runComposioTool: async () => null,
+    } as any
+
+    const logs: string[] = []
+    const origLog = console.log
+    console.log = (msg: string) => logs.push(msg)
+
+    await runCommand('step', ['contract-action-step'], { ...jsonOpts, basePath: tempDir })
+
+    console.log = origLog
+
+    const output = JSON.parse(logs[0])
+    expect(output.success).toBe(false)
+    expect(output.status).toBe('NEEDS_REVIEW')
+
+    const persisted = await readSequence(tempDir)
+    expect(persisted.steps.find(step => step.id === 'contract-action-step')?.status).toBe('NEEDS_REVIEW')
+  })
+
   test('run step executes native conditional actions, supports nested path length checks, and persists only the selected branch output', async () => {
     const seq = makeSequence({
       steps: [
