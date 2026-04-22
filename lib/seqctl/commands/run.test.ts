@@ -793,6 +793,31 @@ describe('run runnable — no runnable steps', () => {
     await expect(runCommand('runnable', [], { ...jsonOpts, basePath: tempDir })).rejects.toThrow(/runtime-context\.json|JSON|Unexpected token|Expected property name/i)
   })
 
+  test('surfaces invalid condition-driving runtime value types instead of silently skipping work', async () => {
+    const seq = makeSequence({
+      steps: [
+        makeStep({
+          id: 'ctx-step',
+          status: 'READY',
+          model: 'shell',
+          prompt_file: '.threados/prompts/ctx-step.md',
+          condition: 'icp_config.sources.length == 2',
+        } as any),
+      ],
+    })
+    await writeTestSequence(tempDir, seq)
+    await writeFile(join(tempDir, '.threados/prompts/ctx-step.md'), 'echo ok')
+    await writeFile(
+      join(tempDir, '.threados/state/runtime-context.json'),
+      JSON.stringify({ icp_config: { sources: 'apollo_saved,apollo_discovery' } }),
+      'utf-8',
+    )
+
+    await expect(runCommand('runnable', [], { ...jsonOpts, basePath: tempDir })).rejects.toThrow(
+      "Runtime context value 'icp_config.sources' must be an array of strings",
+    )
+  })
+
   test('prints human-readable message when no runnable steps', async () => {
     const seq = makeSequence({
       steps: [makeStep({ id: 'a', status: 'DONE' })],

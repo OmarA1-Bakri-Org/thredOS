@@ -135,11 +135,39 @@ function mergeRuntimeContexts(target: RuntimeContext, source: RuntimeContext): R
   return target
 }
 
-function normalizeApolloArtifactDir(basePath: string, runtimeContext: RuntimeContext): string | null {
-  const configured = typeof runtimeContext.apollo_artifact_dir === 'string' && runtimeContext.apollo_artifact_dir.trim().length > 0
-    ? runtimeContext.apollo_artifact_dir.trim()
-    : null
+function assertRuntimeValue(condition: boolean, message: string): void {
+  if (!condition) {
+    throw new Error(message)
+  }
+}
 
+function readOptionalNonEmptyStringRuntimeValue(runtimeContext: RuntimeContext, key: string): string | null {
+  const value = runtimeContext[key]
+  if (value == null) return null
+  assertRuntimeValue(typeof value === 'string' && value.trim().length > 0, `Runtime context value '${key}' must be a non-empty string when provided`)
+  return value as string
+}
+
+function assertStringArrayRuntimeValue(value: unknown, key: string): asserts value is string[] {
+  assertRuntimeValue(
+    Array.isArray(value) && value.every(candidate => typeof candidate === 'string'),
+    `Runtime context value '${key}' must be an array of strings`,
+  )
+}
+
+function validateConditionRuntimeValue(context: RuntimeContext, path: string): void {
+  if (path === 'first_run') {
+    assertRuntimeValue(typeof getNestedRuntimeValue(context, path) === 'boolean', "Runtime context value 'first_run' must be a boolean")
+    return
+  }
+
+  if (path === 'icp_config.sources' || path === 'icp_config.sources.length') {
+    assertStringArrayRuntimeValue(getNestedRuntimeValue(context, 'icp_config.sources'), 'icp_config.sources')
+  }
+}
+
+function normalizeApolloArtifactDir(basePath: string, runtimeContext: RuntimeContext): string | null {
+  const configured = readOptionalNonEmptyStringRuntimeValue(runtimeContext, 'apollo_artifact_dir')
   if (!configured) return null
   return isAbsolute(configured) ? configured : join(basePath, configured)
 }
@@ -265,6 +293,10 @@ export async function hydrateApolloApprovalRuntimeContext(basePath: string, runt
   }
 
   if (hydrated.resolved_stage_id != null) {
+    assertRuntimeValue(
+      typeof hydrated.resolved_stage_id === 'string',
+      "Runtime context value 'resolved_stage_id' must be a string or null when provided",
+    )
     assertHydratedRuntimeConflict(hydrated, 'stage_id_or_MISSING', hydrated.resolved_stage_id)
     hydrated.stage_id_or_MISSING = hydrated.resolved_stage_id
   } else if (getNestedRuntimeValue(hydrated, 'icp_config.output.tag_in_apollo') === true) {
@@ -349,6 +381,7 @@ export function evaluateRuntimeCondition(expression: string, context: RuntimeCon
   const containsMatch = normalized.match(/^([A-Za-z0-9_.]+)\s+contains\s+(.+)$/)
   if (containsMatch) {
     const [, path, rawExpected] = containsMatch
+    validateConditionRuntimeValue(context, path)
     const expected = parseLiteral(rawExpected)
     const value = getNestedRuntimeValue(context, path)
     if (typeof expected !== 'string') return false
@@ -360,6 +393,7 @@ export function evaluateRuntimeCondition(expression: string, context: RuntimeCon
   const eqMatch = normalized.match(/^([A-Za-z0-9_.]+)\s*==\s*(.+)$/)
   if (eqMatch) {
     const [, path, rawExpected] = eqMatch
+    validateConditionRuntimeValue(context, path)
     return getNestedRuntimeValue(context, path) === parseLiteral(rawExpected)
   }
 

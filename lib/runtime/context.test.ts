@@ -66,6 +66,15 @@ describe('runtime condition evaluation', () => {
     expect(evaluateRuntimeCondition('apollo_usage.usage_remaining == 42', context)).toBe(true)
     expect(evaluateRuntimeCondition('icp_config.sources.length == 2', context)).toBe(true)
   })
+
+  test('throws when a condition-critical runtime value has the wrong type', () => {
+    expect(() => evaluateRuntimeCondition('icp_config.sources.length == 2', {
+      icp_config: {
+        sources: 'apollo_saved,apollo_discovery',
+      },
+      first_run: true,
+    })).toThrow("Runtime context value 'icp_config.sources' must be an array of strings")
+  })
 })
 
 describe('apollo approval runtime hydration', () => {
@@ -234,5 +243,16 @@ describe('apollo approval runtime hydration', () => {
         await writeFile(globalIcpPath, previousGlobalIcp, 'utf-8')
       }
     }
+  })
+
+  test('rejects invalid apollo contract-driving runtime value types', async () => {
+    await expect(hydrateApolloApprovalRuntimeContext(tempDir, {
+      apollo_artifact_dir: 42,
+    } as any)).rejects.toThrow("Runtime context value 'apollo_artifact_dir' must be a non-empty string when provided")
+
+    await expect(hydrateApolloApprovalRuntimeContext(tempDir, {
+      apollo_artifact_dir: artifactDir,
+      resolved_stage_id: 123,
+    } as any)).rejects.toThrow("Runtime context value 'resolved_stage_id' must be a string or null when provided")
   })
 })

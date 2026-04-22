@@ -502,6 +502,46 @@ describe.serial('run route coverage — runnable mode', () => {
     expect(sequence.steps.find(step => step.id === 'skipped-by-condition')?.status).toBe('SKIPPED')
   })
 
+  test('POST with mode=runnable rejects invalid condition-driving runtime value types', async () => {
+    await mkdir(join(basePath, '.threados', 'state'), { recursive: true })
+    await writeFile(
+      join(basePath, '.threados', 'state', 'runtime-context.json'),
+      JSON.stringify({ icp_config: { sources: 'apollo_saved,apollo_discovery' } }),
+    )
+
+    await setupTestSequence({
+      version: '1.0',
+      name: 'invalid-runtime-value-seq',
+      steps: [
+        {
+          id: 'conditional-step',
+          name: 'Conditional Step',
+          type: 'base',
+          model: 'codex',
+          prompt_file: '.threados/prompts/conditional-step.md',
+          depends_on: [],
+          status: 'READY',
+          condition: 'icp_config.sources.length == 2',
+        },
+      ],
+      gates: [],
+    })
+    await writePrompt('conditional-step')
+
+    const { POST } = await import('@/app/api/run/route')
+    const res = await POST(new Request('http://localhost/api/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: confirmedBody({ mode: 'runnable' }),
+    }))
+
+    expect(res.status).toBe(500)
+    await expect(res.json()).resolves.toMatchObject({
+      code: 'INTERNAL_ERROR',
+      error: "Runtime context value 'icp_config.sources' must be an array of strings",
+    })
+  })
+
   test('POST with mode=runnable marks false-condition optional steps SKIPPED and continues downstream mandatory work', async () => {
     const dispatchOrder: string[] = []
     globalThis.__THREADOS_RUN_ROUTE_RUNTIME__ = {
