@@ -663,6 +663,8 @@ async function executeStep(
 
     if (!isStepRunnable(preRunDecisions)) {
       const gateReasons = getBlockReasons(preRunDecisions)
+      step.status = 'BLOCKED'
+      await writeSequence(basePath, sequence)
       await buildRunRecord(basePath, {
         sequence,
         step,
@@ -671,17 +673,17 @@ async function executeStep(
         policyConfig: options.policyConfig,
         compiledPrompt: preparedPrompt.promptForDispatch,
         startedAt,
-        status: 'failed',
+        status: 'pending',
         attempt,
         inputManifestRef,
         artifactManifestRef: null,
       })
-      await finalizeStepRunScope(basePath, step, stepRuntime, 'failed', []).catch(() => {})
+      await finalizeStepRunScope(basePath, step, stepRuntime, 'pending', []).catch(() => {})
       return {
         success: false,
         stepId,
         runId,
-        status: 'READY',
+        status: 'BLOCKED',
         error: gateReasons.join(', '),
         confirmationRequired: preRunDecisions.some(decision => decision.status === 'NEEDS_APPROVAL'),
         gateReasons,

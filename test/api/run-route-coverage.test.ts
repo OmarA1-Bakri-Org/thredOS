@@ -4,7 +4,7 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import YAML from 'yaml'
 import { runStep as executeProcess } from '@/lib/runner/wrapper'
-import { readApprovals } from '@/lib/approvals/repository'
+import { appendApproval, readApprovals } from '@/lib/approvals/repository'
 import { readSequence } from '@/lib/sequence/parser'
 import { readTraceEvents } from '@/lib/traces/reader'
 
@@ -840,7 +840,7 @@ describe.serial('run route coverage — error handling', () => {
     expect(data.error).toContain('not found')
   })
 
-  test('POST with stepId blocked by unresolved dependency gate returns failure before dispatch', async () => {
+  test('POST with stepId blocked by unresolved dependency gate returns BLOCKED and persists blocked status', async () => {
     await setupTestSequence({
       version: '1.0',
       name: 'blocked-by-gate-seq',
@@ -863,8 +863,71 @@ describe.serial('run route coverage — error handling', () => {
     expect(res.status).toBe(200)
     const data = await res.json()
     expect(data.success).toBe(false)
-    expect(data.status).toBe('READY')
+    expect(data.status).toBe('BLOCKED')
     expect(data.gateReasons).toContain('DEP_MISSING')
+
+    const sequence = await readSequence(basePath)
+    expect(sequence.steps.find(step => step.id === 'gated-step')?.status).toBe('BLOCKED')
+  })
+
+  test('POST with stepId does not let approved approval evidence override unresolved dependency blockers', async () => {
+    let dispatchCalls = 0
+    globalThis.__THREADOS_RUN_ROUTE_RUNTIME__ = {
+      ...createMockRuntime(),
+      dispatch: async (...args) => {
+        dispatchCalls += 1
+        return createMockRuntime().dispatch(...args)
+      },
+    }
+
+    await setupTestSequence({
+      version: '1.0',
+      name: 'approved-does-not-bypass-deps-seq',
+      steps: [
+        {
+          id: 'approved-but-still-blocked-step',
+          name: 'Approved But Still Blocked Step',
+          type: 'base',
+          model: 'codex',
+          prompt_file: '.threados/prompts/approved-but-still-blocked-step.md',
+          depends_on: ['quality-gate'],
+          status: 'BLOCKED',
+          actions: [{ id: 'native-approval', type: 'approval', description: 'Approval already granted' }],
+        },
+      ],
+      gates: [
+        { id: 'quality-gate', name: 'Quality Gate', depends_on: [], status: 'PENDING' },
+      ],
+    })
+    await writePrompt('approved-but-still-blocked-step')
+
+    await appendApproval(basePath, 'prior-approval-run', {
+      id: 'apr-approved-but-still-blocked-step',
+      action_type: 'run',
+      target_ref: 'step:approved-but-still-blocked-step',
+      requested_by: 'tester',
+      status: 'approved',
+      approved_by: 'tester',
+      approved_at: '2026-04-22T10:00:00.000Z',
+      notes: 'Approved earlier',
+    })
+
+    const { POST } = await import('@/app/api/run/route')
+    const res = await POST(new Request('http://localhost/api/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: confirmedBody({ stepId: 'approved-but-still-blocked-step' }),
+    }))
+
+    expect(res.status).toBe(200)
+    const data = await res.json()
+    expect(data.success).toBe(false)
+    expect(data.status).toBe('BLOCKED')
+    expect(data.gateReasons).toContain('DEP_MISSING')
+    expect(dispatchCalls).toBe(0)
+
+    const sequence = await readSequence(basePath)
+    expect(sequence.steps.find(step => step.id === 'approved-but-still-blocked-step')?.status).toBe('BLOCKED')
   })
 
   test('POST with stepId for step without prompt file returns failure', async () => {
