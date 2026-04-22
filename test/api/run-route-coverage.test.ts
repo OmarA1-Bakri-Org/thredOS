@@ -1056,6 +1056,48 @@ describe.serial('run route coverage — error handling', () => {
     expect(persisted.steps.find(step => step.id === 'blocked-output-step')?.status).toBe('NEEDS_REVIEW')
   })
 
+  test('POST with stepId downgrades zero-exit permission denied payloads to NEEDS_REVIEW', async () => {
+    await setupTestSequence({
+      version: '1.0',
+      name: 'permission-denied-output-seq',
+      steps: [
+        { id: 'permission-denied-step', name: 'Permission Denied Output', type: 'base', model: 'codex', prompt_file: '.threados/prompts/permission-denied-step.md', depends_on: [], status: 'READY' },
+      ],
+      gates: [],
+    })
+    await writePrompt('permission-denied-step')
+
+    globalThis.__THREADOS_RUN_ROUTE_RUNTIME__ = {
+      ...createMockRuntime(),
+      runStep: async ({ stepId, runId }: { stepId: string; runId: string }) => ({
+        stepId,
+        runId,
+        exitCode: 0,
+        status: 'SUCCESS' as const,
+        duration: 4,
+        stdout: 'Permission denied: cannot access the requested admin tool from this environment.',
+        stderr: '',
+        startTime: new Date('2026-03-10T10:00:00.000Z'),
+        endTime: new Date('2026-03-10T10:00:04.000Z'),
+      }),
+    }
+
+    const { POST } = await import('@/app/api/run/route')
+    const res = await POST(new Request('http://localhost/api/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: confirmedBody({ stepId: 'permission-denied-step' }),
+    }))
+
+    expect(res.status).toBe(200)
+    const data = await res.json()
+    expect(data.success).toBe(false)
+    expect(data.status).toBe('NEEDS_REVIEW')
+
+    const persisted = await readSequence(basePath)
+    expect(persisted.steps.find(step => step.id === 'permission-denied-step')?.status).toBe('NEEDS_REVIEW')
+  })
+
   test('POST with stepId that has nonzero exit code returns FAILED', async () => {
     await setupTestSequence({
       version: '1.0',

@@ -230,12 +230,18 @@ export interface CompletionAssessment {
 const OBVIOUS_NON_COMPLETION_PATTERNS = [
   /\bI do not have permission\b/i,
   /\bI don't have permission\b/i,
+  /(^|\n)\s*permission denied\b/i,
+  /(^|\n)\s*access denied\b/i,
   /\bthe required tool is unavailable\b/i,
   /\btool is unavailable in this environment\b/i,
   /\bI cannot access the requested\b/i,
   /\bI can't access the requested\b/i,
+  /\bI am unable to access the requested\b/i,
+  /\bI'm unable to access the requested\b/i,
   /\bI cannot complete this because\b/i,
   /\bI can't complete this because\b/i,
+  /\bI am unable to complete this because\b/i,
+  /\bI'm unable to complete this because\b/i,
   /\bI must refuse\b/i,
   /\bI refuse to\b/i,
 ] as const
