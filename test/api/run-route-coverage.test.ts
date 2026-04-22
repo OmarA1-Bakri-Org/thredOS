@@ -870,6 +870,62 @@ describe.serial('run route coverage — error handling', () => {
     expect(sequence.steps.find(step => step.id === 'gated-step')?.status).toBe('BLOCKED')
   })
 
+  test('POST with stepId returns SKIPPED when the targeted step condition resolves false', async () => {
+    let dispatchCalls = 0
+    globalThis.__THREADOS_RUN_ROUTE_RUNTIME__ = {
+      ...createMockRuntime(),
+      dispatch: async (...args) => {
+        dispatchCalls += 1
+        return createMockRuntime().dispatch(...args)
+      },
+    }
+
+    await mkdir(join(basePath, '.threados', 'state'), { recursive: true })
+    await writeFile(
+      join(basePath, '.threados', 'state', 'runtime-context.json'),
+      JSON.stringify({ icp_config: { sources: ['apollo_saved', 'apollo_discovery'] } }),
+    )
+
+    await setupTestSequence({
+      version: '1.0',
+      name: 'step-condition-false-seq',
+      steps: [
+        {
+          id: 'step-skipped-by-condition',
+          name: 'Step Skipped By Condition',
+          type: 'base',
+          model: 'codex',
+          prompt_file: '.threados/prompts/step-skipped-by-condition.md',
+          depends_on: [],
+          status: 'READY',
+          condition: 'icp_config.sources.length == 3',
+        },
+      ],
+      gates: [],
+    })
+    await writePrompt('step-skipped-by-condition')
+
+    const { POST } = await import('@/app/api/run/route')
+    const res = await POST(new Request('http://localhost/api/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: confirmedBody({ stepId: 'step-skipped-by-condition' }),
+    }))
+
+    expect(res.status).toBe(200)
+    const data = await res.json()
+    expect(data).toMatchObject({
+      success: false,
+      stepId: 'step-skipped-by-condition',
+      status: 'SKIPPED',
+    })
+    expect(data.error).toContain('condition evaluated false')
+    expect(dispatchCalls).toBe(0)
+
+    const sequence = await readSequence(basePath)
+    expect(sequence.steps.find(step => step.id === 'step-skipped-by-condition')?.status).toBe('SKIPPED')
+  })
+
   test('POST with stepId does not let approved approval evidence override unresolved dependency blockers', async () => {
     let dispatchCalls = 0
     globalThis.__THREADOS_RUN_ROUTE_RUNTIME__ = {

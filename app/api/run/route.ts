@@ -276,6 +276,45 @@ async function getRunnableSteps(basePath: string, sequence: Sequence): Promise<R
   return { steps, skippedIds }
 }
 
+async function getDirectRunPrecheckResult(basePath: string, stepId: string, runId: string): Promise<ExecuteStepResult | null> {
+  const latestSequence = await readSequence(basePath)
+  const step = latestSequence.steps.find(candidate => candidate.id === stepId)
+  if (!step) {
+    return { success: false, stepId, runId, status: 'FAILED', error: 'Step not found' }
+  }
+
+  if (step.status !== 'READY' && step.status !== 'BLOCKED') {
+    return null
+  }
+
+  const { steps: runnableSteps, skippedIds } = await getRunnableSteps(basePath, latestSequence)
+  if (runnableSteps.some(candidate => candidate.id === stepId)) {
+    return null
+  }
+
+  const refreshedSequence = await readSequence(basePath)
+  const refreshedStep = refreshedSequence.steps.find(candidate => candidate.id === stepId)
+  if (!refreshedStep) {
+    return { success: false, stepId, runId, status: 'FAILED', error: 'Step not found' }
+  }
+
+  if (skippedIds.includes(stepId)) {
+    return {
+      success: false,
+      stepId,
+      runId,
+      status: 'SKIPPED',
+      error: `Step '${stepId}' was skipped because its condition evaluated false`,
+    }
+  }
+
+  if (refreshedStep.status !== 'READY' && refreshedStep.status !== 'BLOCKED') {
+    return null
+  }
+
+  return null
+}
+
 async function resolveTargetSteps(basePath: string, sequence: Sequence, body: RunRequestBody): Promise<ResolvedTargetSteps> {
   if ('stepId' in body) {
     const step = sequence.steps.find(candidate => candidate.id === body.stepId)
@@ -958,7 +997,8 @@ export async function POST(request: Request) {
     }
 
     if ('stepId' in body) {
-      const result = await executeStep(basePath, sequence, body.stepId, runId, {
+      const precheckResult = await getDirectRunPrecheckResult(basePath, body.stepId, runId)
+      const result = precheckResult ?? await executeStep(basePath, sequence, body.stepId, runId, {
         confirmPolicy: body.confirmPolicy === true,
         policyConfig,
         approvalTargetRef,
