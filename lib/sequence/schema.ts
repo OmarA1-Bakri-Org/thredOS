@@ -2,7 +2,7 @@ import { createHash } from 'crypto'
 import { z } from 'zod'
 
 export const StepStatusSchema = z.enum([
-  'READY', 'RUNNING', 'NEEDS_REVIEW', 'DONE', 'FAILED', 'BLOCKED',
+  'READY', 'RUNNING', 'NEEDS_REVIEW', 'DONE', 'FAILED', 'BLOCKED', 'SKIPPED',
 ])
 export type StepStatus = z.infer<typeof StepStatusSchema>
 
@@ -121,6 +121,9 @@ const StepBaseSchema = z.object({
   orchestrator: z.string().optional(),
   timeout_ms: z.number().optional(),
   fail_policy: FailPolicySchema.optional(),
+  execution: z.enum(['sequential', 'parallel', 'sub_agent']).optional(),
+  condition: z.string().optional(),
+  actions: z.array(z.unknown()).default([]),
   assigned_agent_id: z.string().optional(),
   phase: z.string(),
   surface_ref: z.string().min(1),
@@ -269,6 +272,9 @@ export interface Step {
   orchestrator?: string
   timeout_ms?: number
   fail_policy?: FailPolicy
+  execution?: 'sequential' | 'parallel' | 'sub_agent'
+  condition?: string
+  actions?: unknown[]
   assigned_agent_id?: string
   phase?: string
   surface_ref?: string

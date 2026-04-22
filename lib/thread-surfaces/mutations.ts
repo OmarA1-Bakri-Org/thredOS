@@ -47,8 +47,8 @@ interface CreateReplacementRunArgs {
 
 interface CompleteRunArgs {
   runId: string
-  runStatus: Extract<RunStatus, 'successful' | 'failed'>
-  endedAt: string
+  runStatus: Extract<RunStatus, 'pending' | 'successful' | 'failed'>
+  endedAt?: string | null
   runSummary?: string
 }
 
@@ -307,7 +307,7 @@ export function completeRun(state: ThreadSurfaceState, args: CompleteRunArgs) {
   return mutateRun(state, args.runId, run => ({
     ...run,
     runStatus: args.runStatus,
-    endedAt: args.endedAt,
+    endedAt: args.endedAt ?? run.endedAt,
     ...(args.runSummary ? { runSummary: args.runSummary } : {}),
   }))
 }
