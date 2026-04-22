@@ -542,6 +542,57 @@ describe('run runnable — no runnable steps', () => {
     expect(updatedSequence.steps.find(step => step.id === 'a')?.status).toBe('SKIPPED')
   })
 
+  test('run step returns SKIPPED without dispatch when the top-level step condition is false', async () => {
+    const seq = makeSequence({
+      steps: [
+        makeStep({
+          id: 'conditional-step',
+          status: 'READY',
+          model: 'shell',
+          prompt_file: '.threados/prompts/conditional-step.md',
+          condition: "icp_config.sources contains 'apollo_discovery'",
+        } as any),
+      ],
+    })
+    await writeTestSequence(tempDir, seq)
+    await writeFile(join(tempDir, '.threados/prompts/conditional-step.md'), 'echo should-not-run')
+    await writeFile(join(tempDir, '.threados/state/runtime-context.json'), JSON.stringify({ icp_config: { sources: ['apollo_saved'] } }), 'utf-8')
+
+    let dispatchCalls = 0
+    globalThis.__THREADOS_CLI_RUN_RUNTIME__ = {
+      dispatch: async (_model, opts) => {
+        dispatchCalls += 1
+        return {
+          stepId: opts.stepId,
+          runId: opts.runId,
+          command: process.execPath,
+          args: ['-e', 'process.exit(0)'],
+          cwd: opts.cwd,
+          timeout: opts.timeout,
+        }
+      },
+      runStep: executeProcess,
+      saveRunArtifacts: async () => '.threados/runs/mock',
+    }
+
+    const logs: string[] = []
+    const origLog = console.log
+    console.log = (msg: string) => logs.push(msg)
+
+    await runCommand('step', ['conditional-step'], { ...jsonOpts, basePath: tempDir })
+
+    console.log = origLog
+
+    const output = JSON.parse(logs[0])
+    expect(output.success).toBe(false)
+    expect(output.status).toBe('SKIPPED')
+    expect(output.error).toContain("condition evaluated false")
+    expect(dispatchCalls).toBe(0)
+
+    const updatedSequence = await readSequence(tempDir)
+    expect(updatedSequence.steps.find(step => step.id === 'conditional-step')?.status).toBe('SKIPPED')
+  })
+
   test('marks false-condition optional steps as SKIPPED and continues downstream mandatory work', async () => {
     const dispatchOrder: string[] = []
     const seq = makeSequence({

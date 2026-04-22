@@ -364,10 +364,6 @@ async function getDirectRunPrecheckResult(basePath: string, stepId: string, runI
     throw new StepNotFoundError(stepId)
   }
 
-  if (refreshedStep.status !== 'READY' && refreshedStep.status !== 'BLOCKED') {
-    return null
-  }
-
   if (skippedIds.includes(stepId)) {
     return {
       success: false,
@@ -376,6 +372,10 @@ async function getDirectRunPrecheckResult(basePath: string, stepId: string, runI
       status: 'SKIPPED',
       error: `Step '${stepId}' was skipped because its condition evaluated false`,
     }
+  }
+
+  if (refreshedStep.status !== 'READY' && refreshedStep.status !== 'BLOCKED') {
+    return null
   }
 
   const completedNodes = getCompletedNodeIds(refreshedSequence)
