@@ -595,11 +595,12 @@ async function finalizeStepRunScope(
   runtimeEvents: RuntimeDelegationEvent[],
 ) {
   const currentState = await readThreadSurfaceState(basePath)
+  const finalizedAt = new Date().toISOString()
   const finalized = finalizeStepRunWithRuntimeEvents(currentState, {
     step,
     stepRun: stepRuntime.stepRun,
     runStatus,
-    endedAt: runStatus === 'pending' ? null : new Date().toISOString(),
+    endedAt: finalizedAt,
     runtimeEvents,
     nextRunId: randomUUID,
     nextEventId: randomUUID,
