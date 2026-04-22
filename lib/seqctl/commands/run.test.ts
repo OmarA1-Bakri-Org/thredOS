@@ -2073,6 +2073,70 @@ describe('run step — with mock runtime', () => {
     expect(updatedSeq.steps.find(step => step.id === 'after-approval')?.status).toBe('DONE')
   })
 
+  test('run step persists BLOCKED when a READY step is stopped by unresolved dependency blockers', async () => {
+    const seq = makeSequence({
+      steps: [
+        makeStep({
+          id: 'gated-step',
+          model: 'shell',
+          status: 'READY',
+          prompt_file: '.threados/prompts/gated-step.md',
+          depends_on: ['quality-gate'],
+        }),
+      ],
+      gates: [{ id: 'quality-gate', name: 'Quality Gate', depends_on: [], status: 'PENDING', cascade: false, childGateIds: [] }],
+    })
+    await writeTestSequence(tempDir, seq)
+    await writeFile(join(tempDir, '.threados/prompts/gated-step.md'), 'echo should-not-run')
+
+    let dispatchCalls = 0
+    globalThis.__THREADOS_CLI_RUN_RUNTIME__ = {
+      dispatch: async (_model, opts) => {
+        dispatchCalls += 1
+        return {
+          stepId: opts.stepId,
+          runId: opts.runId,
+          command: process.execPath,
+          args: ['-e', 'process.exit(0)'],
+          cwd: opts.cwd,
+          timeout: opts.timeout,
+        }
+      },
+      runStep: async config => ({
+        stepId: config.stepId,
+        runId: config.runId,
+        command: config.command,
+        args: config.args,
+        cwd: config.cwd,
+        startTime: new Date(),
+        endTime: new Date(),
+        duration: 15,
+        exitCode: 0,
+        stdout: 'should-not-run',
+        stderr: '',
+        timedOut: false,
+        status: 'SUCCESS',
+      }),
+      saveRunArtifacts: async () => '.threados/runs/mock',
+    } as any
+
+    const logs: string[] = []
+    const origLog = console.log
+    console.log = (msg: string) => logs.push(msg)
+
+    await runCommand('step', ['gated-step'], { ...jsonOpts, basePath: tempDir })
+
+    console.log = origLog
+
+    const output = JSON.parse(logs[0])
+    expect(output.success).toBe(false)
+    expect(output.status).toBe('BLOCKED')
+    expect(dispatchCalls).toBe(0)
+
+    const updatedSeq = await readSequence(tempDir)
+    expect(updatedSeq.steps.find(step => step.id === 'gated-step')?.status).toBe('BLOCKED')
+  })
+
   test('run step keeps approval-blocked steps blocked when dependencies are still unsatisfied after approval', async () => {
     const seq = makeSequence({
       steps: [
@@ -2159,6 +2223,144 @@ describe('run step — with mock runtime', () => {
 
     const updatedSeq = await readSequence(tempDir)
     expect(updatedSeq.steps.find(step => step.id === 'approval-step')?.status).toBe('BLOCKED')
+  })
+
+  test('run step blocks side-effecting write steps under SAFE approved_only when approval evidence is missing', async () => {
+    const seq = makeSequence({
+      steps: [
+        makeStep({
+          id: 'policy-blocked-write-step',
+          model: 'shell',
+          status: 'READY',
+          prompt_file: '.threados/prompts/policy-blocked-write-step.md',
+          side_effect_class: 'write',
+        } as any),
+      ],
+    })
+    await writeTestSequence(tempDir, seq)
+    await writeFile(join(tempDir, '.threados/prompts/policy-blocked-write-step.md'), 'echo should-not-run')
+    await writeFile(join(tempDir, '.threados/policy.yaml'), 'mode: SAFE\nside_effect_mode: approved_only\ncross_surface_reads: dependency_only\n')
+
+    let dispatchCalls = 0
+    globalThis.__THREADOS_CLI_RUN_RUNTIME__ = {
+      dispatch: async (_model, opts) => {
+        dispatchCalls += 1
+        return {
+          stepId: opts.stepId,
+          runId: opts.runId,
+          command: process.execPath,
+          args: ['-e', 'process.exit(0)'],
+          cwd: opts.cwd,
+          timeout: opts.timeout,
+        }
+      },
+      runStep: async config => ({
+        stepId: config.stepId,
+        runId: config.runId,
+        command: config.command,
+        args: config.args,
+        cwd: config.cwd,
+        startTime: new Date(),
+        endTime: new Date(),
+        duration: 15,
+        exitCode: 0,
+        stdout: 'should-not-run',
+        stderr: '',
+        timedOut: false,
+        status: 'SUCCESS',
+      }),
+      saveRunArtifacts: async () => '.threados/runs/mock',
+    } as any
+
+    const logs: string[] = []
+    const origLog = console.log
+    console.log = (msg: string) => logs.push(msg)
+
+    await runCommand('step', ['policy-blocked-write-step'], { ...jsonOpts, basePath: tempDir })
+
+    console.log = origLog
+
+    const output = JSON.parse(logs[0])
+    expect(output.success).toBe(false)
+    expect(output.status).toBe('BLOCKED')
+    expect(dispatchCalls).toBe(0)
+
+    const updatedSeq = await readSequence(tempDir)
+    expect(updatedSeq.steps.find(step => step.id === 'policy-blocked-write-step')?.status).toBe('BLOCKED')
+  })
+
+  test('run step reopens policy-blocked write steps when approval evidence exists', async () => {
+    const seq = makeSequence({
+      steps: [
+        makeStep({
+          id: 'step-approved-write',
+          model: 'shell',
+          status: 'BLOCKED',
+          prompt_file: '.threados/prompts/step-approved-write.md',
+          side_effect_class: 'write',
+        } as any),
+      ],
+    })
+    await writeTestSequence(tempDir, seq)
+    await writeFile(join(tempDir, '.threados/prompts/step-approved-write.md'), 'echo approved-write')
+    await writeFile(join(tempDir, '.threados/policy.yaml'), 'mode: SAFE\nside_effect_mode: approved_only\ncross_surface_reads: dependency_only\n')
+    await appendApproval(tempDir, 'run-approved-write-earlier', {
+      id: 'approval-approved-write-earlier',
+      action_type: 'run',
+      target_ref: 'step:step-approved-write',
+      requested_by: 'seqctl:run',
+      status: 'approved',
+      approved_by: 'human-reviewer',
+      approved_at: '2026-03-28T10:00:00.000Z',
+      notes: 'Approved already',
+    })
+
+    let dispatchCalls = 0
+    globalThis.__THREADOS_CLI_RUN_RUNTIME__ = {
+      dispatch: async (_model, opts) => {
+        dispatchCalls += 1
+        return {
+          stepId: opts.stepId,
+          runId: opts.runId,
+          command: process.execPath,
+          args: ['-e', 'process.exit(0)'],
+          cwd: opts.cwd,
+          timeout: opts.timeout,
+        }
+      },
+      runStep: async config => ({
+        stepId: config.stepId,
+        runId: config.runId,
+        command: config.command,
+        args: config.args,
+        cwd: config.cwd,
+        startTime: new Date(),
+        endTime: new Date(),
+        duration: 15,
+        exitCode: 0,
+        stdout: 'approved-write',
+        stderr: '',
+        timedOut: false,
+        status: 'SUCCESS',
+      }),
+      saveRunArtifacts: async () => '.threados/runs/mock',
+    } as any
+
+    const logs: string[] = []
+    const origLog = console.log
+    console.log = (msg: string) => logs.push(msg)
+
+    await runCommand('step', ['step-approved-write'], { ...jsonOpts, basePath: tempDir })
+
+    console.log = origLog
+
+    const output = JSON.parse(logs[0])
+    expect(output.success).toBe(true)
+    expect(output.status).toBe('DONE')
+    expect(dispatchCalls).toBe(1)
+
+    const updatedSeq = await readSequence(tempDir)
+    expect(updatedSeq.steps.find(step => step.id === 'step-approved-write')?.status).toBe('DONE')
   })
 
   test('run step keeps approval-blocked thread surface runs pending', async () => {

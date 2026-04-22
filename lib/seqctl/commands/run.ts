@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto'
 import { readSequence, writeSequence } from '../../sequence/parser'
 import { validateDAG, topologicalSort } from '../../sequence/dag'
-import { evaluateStepCompletionGates, isStepRunnable } from '../../gates/engine'
+import { evaluateStepCompletionGates, evaluateStepGates, getBlockReasons, isStepRunnable } from '../../gates/engine'
 import { MprocsClient } from '../../mprocs/client'
 import { updateStepProcess, readMprocsMap } from '../../mprocs/state'
 import { runStep } from '../../runner/wrapper'
@@ -29,12 +29,8 @@ import {
   buildConditionContext,
   readRuntimeContext,
 } from '../../runtime/context'
-import {
-  AbortWorkflowError,
-  assessSelectedStepEvidence,
-  executeNativeOperationalAction,
-  renderRuntimeContextTemplate,
-} from '../../runtime/native-actions'
+import { AbortWorkflowError, assessSelectedStepEvidence, executeNativeOperationalAction, renderRuntimeContextTemplate } from '../../runtime/native-actions'
+import { PolicyEngine } from '../../policy/engine'
 
 const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000 // 30 minutes
 const THREADOS_EVENT_EMITTER_COMMAND = 'thread event'
@@ -260,6 +256,14 @@ async function hasSatisfiedApprovalRequirements(basePath: string, sequence: Sequ
   return true
 }
 
+async function hasReusableRunApproval(basePath: string, sequence: Sequence, step: Step): Promise<boolean> {
+  if (await hasSatisfiedApprovalRequirements(basePath, sequence, step)) {
+    return true
+  }
+
+  return hasApprovedApproval(basePath, `step:${step.id}`, 'run')
+}
+
 async function evaluateStepCondition(basePath: string, sequence: Sequence, step: Step): Promise<boolean> {
   return evaluateSequenceCondition(basePath, sequence, (step as Step & { condition?: string }).condition)
 }
@@ -325,7 +329,7 @@ async function getRunnableSteps(basePath: string, sequence: Sequence): Promise<R
 
   const steps = (await Promise.all(sequence.steps.map(async step => {
     const eligibleStatus = step.status === 'READY'
-      || (step.status === 'BLOCKED' && await hasSatisfiedApprovalRequirements(basePath, sequence, step))
+      || (step.status === 'BLOCKED' && await hasReusableRunApproval(basePath, sequence, step))
     if (!eligibleStatus) return null
 
     const dependenciesSatisfied = step.depends_on.every(depId => completedNodes.has(depId))
@@ -376,6 +380,10 @@ async function getDirectRunPrecheckResult(basePath: string, stepId: string, runI
 
   const completedNodes = getCompletedNodeIds(refreshedSequence)
   if (!refreshedStep.depends_on.every(depId => completedNodes.has(depId))) {
+    if (refreshedStep.status !== 'BLOCKED') {
+      refreshedStep.status = 'BLOCKED'
+      await writeSequence(basePath, refreshedSequence)
+    }
     return {
       success: false,
       stepId,
@@ -451,6 +459,34 @@ async function executeSingleStep(
   }
 
   // Update status to RUNNING
+  const policyConfig = (await PolicyEngine.load(basePath)).getConfig()
+  const approvalPresent = await hasReusableRunApproval(basePath, sequence, step)
+  const currentSurfaceState = await readThreadSurfaceState(basePath)
+  const surface = currentSurfaceState.threadSurfaces.find(candidate => candidate.id === getSurfaceId(step))
+  const preRunDecisions = evaluateStepGates(step, sequence.steps, sequence.gates, {
+    policyMode: policyConfig.mode,
+    sideEffectMode: policyConfig.side_effect_mode,
+    crossSurfaceReads: policyConfig.cross_surface_reads,
+    surfaceClass: surface?.surfaceClass ?? 'shared',
+    revealState: surface?.surfaceClass === 'sealed' ? 'revealed' : (surface?.revealState ?? null),
+    isDependency: true,
+    inputManifestPresent: true,
+    approvalPresent,
+  })
+
+  if (!isStepRunnable(preRunDecisions)) {
+    step.status = 'BLOCKED'
+    await writeSequence(basePath, sequence)
+    await finalizeStepRunScope(basePath, step, stepRuntime, 'pending', []).catch(() => {})
+    return {
+      success: false,
+      stepId,
+      runId,
+      status: 'BLOCKED',
+      error: getBlockReasons(preRunDecisions).join(', '),
+    }
+  }
+
   step.status = 'RUNNING'
   await writeSequence(basePath, sequence)
 
