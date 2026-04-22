@@ -104,6 +104,8 @@ function buildConstraintsSection(opts: CompileOptions): string {
 
   lines.push('- Exit 0 on success, non-zero on failure')
   lines.push('- Exit 42 if you need human review before continuing')
+  lines.push('- Do not exit 0 if you were blocked, refused, lacked permissions, or a required tool was unavailable; explain the blocker and exit 42 instead')
+  lines.push('- Exit 0 only after the requested work is actually complete and any requested artifacts or edits have been produced')
   lines.push('- If you create files, list them as: FILES_CREATED: path1, path2, ...')
 
   if (opts.runtimeEventLogPath) {

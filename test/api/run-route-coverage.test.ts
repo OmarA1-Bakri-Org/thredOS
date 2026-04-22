@@ -1014,6 +1014,48 @@ describe.serial('run route coverage — error handling', () => {
     expect(data.status).toBe('NEEDS_REVIEW')
   })
 
+  test('POST with stepId downgrades zero-exit blocked payloads to NEEDS_REVIEW', async () => {
+    await setupTestSequence({
+      version: '1.0',
+      name: 'blocked-output-seq',
+      steps: [
+        { id: 'blocked-output-step', name: 'Blocked Output', type: 'base', model: 'codex', prompt_file: '.threados/prompts/blocked-output-step.md', depends_on: [], status: 'READY' },
+      ],
+      gates: [],
+    })
+    await writePrompt('blocked-output-step')
+
+    globalThis.__THREADOS_RUN_ROUTE_RUNTIME__ = {
+      ...createMockRuntime(),
+      runStep: async ({ stepId, runId }: { stepId: string; runId: string }) => ({
+        stepId,
+        runId,
+        exitCode: 0,
+        status: 'SUCCESS' as const,
+        duration: 4,
+        stdout: 'I cannot complete this because the required tool is unavailable in this environment.',
+        stderr: '',
+        startTime: new Date('2026-03-10T10:00:00.000Z'),
+        endTime: new Date('2026-03-10T10:00:04.000Z'),
+      }),
+    }
+
+    const { POST } = await import('@/app/api/run/route')
+    const res = await POST(new Request('http://localhost/api/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: confirmedBody({ stepId: 'blocked-output-step' }),
+    }))
+
+    expect(res.status).toBe(200)
+    const data = await res.json()
+    expect(data.success).toBe(false)
+    expect(data.status).toBe('NEEDS_REVIEW')
+
+    const persisted = await readSequence(basePath)
+    expect(persisted.steps.find(step => step.id === 'blocked-output-step')?.status).toBe('NEEDS_REVIEW')
+  })
+
   test('POST with stepId that has nonzero exit code returns FAILED', async () => {
     await setupTestSequence({
       version: '1.0',

@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto'
 import { readSequence, writeSequence } from '../../sequence/parser'
 import { validateDAG, topologicalSort } from '../../sequence/dag'
+import { evaluateStepCompletionGates, isStepRunnable } from '../../gates/engine'
 import { MprocsClient } from '../../mprocs/client'
 import { updateStepProcess, readMprocsMap } from '../../mprocs/state'
 import { runStep } from '../../runner/wrapper'
@@ -11,7 +12,7 @@ import {
   resolveStepPromptPath,
   validateStepPromptExists,
 } from '../../runner/step-preparation'
-import { dispatch, exitCodeToStatus } from '../../runner/dispatch'
+import { assessCompletionResult, dispatch } from '../../runner/dispatch'
 import { StepNotFoundError } from '../../errors'
 import type { Step, Sequence, StepStatus } from '../../sequence/schema'
 import { ROOT_THREAD_SURFACE_ID } from '../../thread-surfaces/constants'
@@ -420,8 +421,19 @@ async function executeSingleStep(
     })
     const runtimeEvents = await readRuntimeEventLog(basePath, runId, stepId)
 
-    // 6. Map exit code to step status
-    const newStatus = exitCodeToStatus(result.exitCode)
+    const completionAssessment = assessCompletionResult(result)
+    const completionDecisions = evaluateStepCompletionGates(step, {
+      artifactManifestPresent: Boolean(artifactPath),
+      outputSchemaValid: step.output_contract_ref ? result.status === 'SUCCESS' : true,
+      completionContractSatisfied: step.completion_contract ? result.status === 'SUCCESS' : true,
+    })
+    const completionPassed = isStepRunnable(completionDecisions)
+
+    // 6. Map completion to step status
+    let newStatus = completionAssessment.status
+    if (newStatus === 'DONE' && !completionPassed) {
+      newStatus = 'NEEDS_REVIEW'
+    }
     step.status = newStatus
     await writeSequence(basePath, sequence)
     await finalizeStepRunScope(basePath, step, stepRuntime, newStatus === 'DONE' ? 'successful' : 'failed', runtimeEvents.events)

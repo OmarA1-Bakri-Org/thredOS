@@ -32,7 +32,7 @@ import {
   writeRunRecord,
   type RunRecordJson,
 } from '@/lib/runner/artifacts'
-import { dispatch, exitCodeToStatus } from '@/lib/runner/dispatch'
+import { assessCompletionResult, dispatch } from '@/lib/runner/dispatch'
 import { runStep, type RunnerConfig } from '@/lib/runner/wrapper'
 import { topologicalSort, validateDAG } from '@/lib/sequence/dag'
 import { readSequence, writeSequence } from '@/lib/sequence/parser'
@@ -780,15 +780,16 @@ async function executeStep(
     })
     const runtimeEvents = await readRuntimeEventLog(basePath, runId, stepId)
 
+    const completionAssessment = assessCompletionResult(result)
     const completionDecisions = evaluateStepCompletionGates(step, {
-      artifactManifestPresent: true,
+      artifactManifestPresent: Boolean(artifactPath),
       outputSchemaValid: step.output_contract_ref ? result.status === 'SUCCESS' : true,
       completionContractSatisfied: step.completion_contract ? result.status === 'SUCCESS' : true,
     })
     await persistGateDecisions(basePath, runId, surfaceId, completionDecisions, options.policyConfig.mode)
 
     const completionPassed = isStepRunnable(completionDecisions)
-    step.status = exitCodeToStatus(result.exitCode)
+    step.status = completionAssessment.status
     if (step.status === 'DONE' && !completionPassed) {
       step.status = 'NEEDS_REVIEW'
     }
@@ -801,7 +802,7 @@ async function executeStep(
       policyConfig: options.policyConfig,
       compiledPrompt: preparedPrompt.promptForDispatch,
       startedAt,
-      status: result.status === 'SUCCESS' && completionPassed ? 'successful' : 'failed',
+      status: step.status === 'DONE' ? 'successful' : 'failed',
       attempt,
       inputManifestRef,
       artifactManifestRef,
@@ -809,13 +810,13 @@ async function executeStep(
     })
     await finalizeStepRunScope(basePath, step, stepRuntime, step.status === 'DONE' ? 'successful' : 'failed', runtimeEvents.events)
     return {
-      success: result.status === 'SUCCESS' && completionPassed,
+      success: step.status === 'DONE',
       stepId,
       runId,
       status: step.status,
       duration: result.duration,
       artifactPath,
-      gateReasons: completionPassed ? [] : getBlockReasons(completionDecisions),
+      gateReasons: completionPassed ? completionAssessment.reasons : [...completionAssessment.reasons, ...getBlockReasons(completionDecisions)],
     }
   } catch (error) {
     step.status = error instanceof ApprovalRequiredError ? 'BLOCKED' : 'FAILED'
