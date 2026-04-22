@@ -104,4 +104,20 @@ describe('approval repository', () => {
     await expect(hasApprovedApproval(tmpDir, 'step:other')).resolves.toBe(false)
     await expect(hasApprovedApproval(tmpDir, 'step:missing')).resolves.toBe(false)
   })
+
+  test('matches exact action type and target ref for plan revisions', async () => {
+    await appendApproval(tmpDir, 'run-1', makeApproval({
+      id: 'plan-rev-1',
+      action_type: 'plan_revision',
+      target_ref: 'plan_revision:seq-1:none:broaden-discovery:rev-001',
+      status: 'approved',
+      approved_by: 'human-reviewer',
+      approved_at: '2026-03-28T12:00:00.000Z',
+    }))
+
+    await expect(hasApprovedApproval(tmpDir, 'plan_revision:seq-1:none:broaden-discovery:rev-001', 'plan_revision')).resolves.toBe(true)
+    await expect(hasApprovedApproval(tmpDir, 'plan_revision:seq-1:none:broaden-discovery:rev-002', 'plan_revision')).resolves.toBe(false)
+    await expect(hasApprovedApproval(tmpDir, 'plan_revision:seq-2:none:broaden-discovery:rev-001', 'plan_revision')).resolves.toBe(false)
+    await expect(hasApprovedApproval(tmpDir, 'plan_revision:seq-1:none:broaden-discovery:rev-001', 'run')).resolves.toBe(false)
+  })
 })

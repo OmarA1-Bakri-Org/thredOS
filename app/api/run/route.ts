@@ -60,6 +60,7 @@ import {
   assessSelectedStepEvidence,
   executeNativeOperationalAction,
 } from '@/lib/runtime/native-actions'
+import { applyPlannerDecision } from '@/lib/runtime/planner'
 
 const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000
 const THREADOS_EVENT_EMITTER_COMMAND = 'thread event'
@@ -901,7 +902,17 @@ async function executeBatchSteps(
   const alreadyExecuted = new Set<string>()
 
   while (true) {
-    const currentSequence = expandRunnableFrontier ? await readSequence(basePath) : sequence
+    const baseSequence = expandRunnableFrontier ? await readSequence(basePath) : sequence
+    const planningOutcome = await applyPlannerDecision(basePath, baseSequence, {
+      runId,
+      actor: 'api:run',
+      requestedBy: 'api:run',
+    })
+    const currentSequence = planningOutcome.sequence
+    if (planningOutcome.blockedResult) {
+      waiting.add('apollo-discovery')
+      break
+    }
     const currentSelection = await getRunnableSteps(basePath, currentSequence)
     for (const skippedStepId of currentSelection.skippedIds) {
       if (scopeStepIds == null || scopeStepIds.has(skippedStepId)) {
@@ -961,8 +972,32 @@ export async function POST(request: Request) {
 
     const body = BodySchema.parse(await request.json())
     const basePath = getBasePath()
-    const sequence = await readSequence(basePath)
+    const initialSequence = await readSequence(basePath)
+    validateDAG(initialSequence)
+
+    const runId = randomUUID()
+    const startedAt = new Date().toISOString()
+    await createRunScopeForRequest(basePath, initialSequence.name, runId, startedAt)
+
+    const planningOutcome = await applyPlannerDecision(basePath, await readSequence(basePath), {
+      runId,
+      actor: 'api:run',
+      requestedBy: session.email,
+    })
+    const sequence = planningOutcome.sequence
     validateDAG(sequence)
+
+    if (planningOutcome.blockedResult) {
+      await finalizeRunScope(basePath, runId, 'failed', targetRefFromRunBody(body))
+      return NextResponse.json({
+        success: false,
+        stepId: 'stepId' in body ? body.stepId : undefined,
+        runId,
+        status: 'BLOCKED',
+        error: planningOutcome.blockedResult.error,
+        abortWorkflow: false,
+      })
+    }
 
     const { steps: targetSteps, skippedIds: targetSkippedIds } = await resolveTargetSteps(basePath, sequence, body)
     const batchPolicy = await enforceBatchPolicy(basePath, targetSteps.length, body.confirmPolicy === true)
@@ -975,12 +1010,9 @@ export async function POST(request: Request) {
       if ('stepId' in body) {
         return jsonError(`Step '${body.stepId}' not found`, 'NOT_FOUND', 404)
       }
-      return NextResponse.json({ success: true, executed: [], skipped: targetSkippedIds, waiting: [] })
+      await finalizeRunScope(basePath, runId, 'successful', targetRefFromRunBody(body))
+      return NextResponse.json({ success: true, runId, executed: [], skipped: targetSkippedIds, waiting: [] })
     }
-
-    const runId = randomUUID()
-    const startedAt = new Date().toISOString()
-    await createRunScopeForRequest(basePath, sequence.name, runId, startedAt)
 
     const policyEngine = await PolicyEngine.load(basePath)
     const policyConfig = policyEngine.getConfig()

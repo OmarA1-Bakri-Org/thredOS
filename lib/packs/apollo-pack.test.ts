@@ -6,6 +6,7 @@ import { loadPack } from './loader'
 import { compilePack } from './compiler'
 import { installPack } from './install'
 import { readSequence, writeSequence } from '@/lib/sequence/parser'
+import type { Sequence } from '@/lib/sequence/schema'
 import { readThreadSurfaceState } from '@/lib/thread-surfaces/repository'
 
 const repoBase = '/mnt/c/Users/albak/xdev/thredOS-worktrees/apollo-pack'
@@ -56,17 +57,29 @@ describe('apollo segment builder pack', () => {
         status: 'READY',
       }],
       gates: [],
-    } as any)
+    } as Sequence)
     await writeFile(join(basePath, '.threados/prompts/seed-step.md'), 'seed\n', 'utf-8')
 
     const manifest = await loadPack(basePath, 'apollo-segment-builder', '1.0.0')
     expect(manifest.steps).toHaveLength(20)
     expect(manifest.gates).toHaveLength(22)
     expect(manifest.shared_references).toHaveLength(7)
+    expect(manifest.goal).toContain('reviewable sponsor-prospect segment')
+    expect(manifest.strategy_options).toHaveLength(2)
+    expect(manifest.replan_policy).toEqual({
+      enabled: true,
+      triggers: ['empty_artifact', 'sparse_results'],
+    })
 
     const compiled = compilePack(manifest, { policyMode: 'SAFE' })
     expect(compiled.sequence.steps).toHaveLength(20)
     expect(compiled.sequence.gates).toHaveLength(22)
+    expect(compiled.sequence.goal).toContain('reviewable sponsor-prospect segment')
+    expect(compiled.sequence.strategy_options).toHaveLength(2)
+    expect(compiled.sequence.replan_policy).toEqual({
+      enabled: true,
+      triggers: ['empty_artifact', 'sparse_results'],
+    })
     expect(compiled.sequence.steps[0].execution).toBe('sequential')
     expect(compiled.sequence.steps[0].actions).toHaveLength(2)
     expect(compiled.sequence.steps[0].side_effect_class).toBe('execute')
@@ -86,6 +99,12 @@ describe('apollo segment builder pack', () => {
     expect(sequence.pack_version).toBe('1.0.0')
     expect(sequence.steps).toHaveLength(20)
     expect(sequence.gates).toHaveLength(22)
+    expect(sequence.goal).toContain('reviewable sponsor-prospect segment')
+    expect(sequence.strategy_options).toHaveLength(2)
+    expect(sequence.replan_policy).toEqual({
+      enabled: true,
+      triggers: ['empty_artifact', 'sparse_results'],
+    })
     expect(sequence.steps[0].execution).toBe('sequential')
     expect(sequence.steps[0].actions).toHaveLength(2)
     expect(sequence.steps[0].timeout_ms).toBe(30000)

@@ -27,6 +27,81 @@ afterEach(async () => {
   await cleanTempDir(tempDir)
 })
 
+describe('planner seam', () => {
+  test('legacy packs do not create a runtime plan file', async () => {
+    const seq = makeSequence({
+      name: 'legacy-seq',
+      steps: [makeStep({ id: 'legacy-step', prompt_file: '.threados/prompts/legacy-step.md' })],
+      gates: [],
+    })
+    await writeTestSequence(tempDir, seq)
+    await writeFile(join(tempDir, '.threados/prompts/legacy-step.md'), '# legacy')
+    globalThis.__THREADOS_CLI_RUN_RUNTIME__ = {
+      dispatch: async (_model, opts) => ({
+        stepId: opts.stepId,
+        runId: opts.runId,
+        command: process.execPath,
+        args: ['-e', 'process.exit(0)'],
+        cwd: opts.cwd,
+        timeout: opts.timeout,
+      }),
+      runStep: executeProcess,
+      saveRunArtifacts: async () => '.threados/runs/mock',
+    }
+
+    const logs: string[] = []
+    const origLog = console.log
+    console.log = (msg: string) => logs.push(msg)
+    await runCommand('step', ['legacy-step'], { ...jsonOpts, basePath: tempDir })
+    console.log = origLog
+
+    expect(JSON.parse(logs[0]).success).toBe(true)
+    expect(await Bun.file(join(tempDir, '.threados/state/runtime-plan.json')).exists()).toBe(false)
+  })
+
+  test('planning-enabled sparse discovery blocks on pending plan revision approval', async () => {
+    const artifactDir = join(tempDir, 'apollo-artifacts')
+    await mkdir(artifactDir, { recursive: true })
+    await writeFile(join(artifactDir, 'discovered-prospects.json'), JSON.stringify({ prospects: [] }), 'utf-8')
+    await writeFile(join(tempDir, '.threados/state/runtime-context.json'), JSON.stringify({ apollo_artifact_dir: artifactDir }), 'utf-8')
+
+    const seq = makeSequence({
+      id: 'seq-planner-cli',
+      name: 'planner-cli',
+      pack_id: 'apollo-segment-builder',
+      goal: 'Build a reviewable sponsor-prospect segment',
+      success_criteria: ['qualified_segment.total_qualified > 0'],
+      strategy_options: [
+        { id: 'standard-discovery', label: 'Standard discovery', applies_to: ['apollo-discovery'], selects_steps: ['apollo-discovery'], suppresses_steps: [], requires_approval: false },
+        { id: 'broaden-discovery', label: 'Broaden discovery', applies_to: ['apollo-discovery'], selects_steps: ['apollo-discovery'], suppresses_steps: [], requires_approval: true },
+      ],
+      replan_policy: { enabled: true, triggers: ['empty_artifact', 'sparse_results'] },
+      steps: [
+        makeStep({ id: 'apollo-discovery', prompt_file: '.threados/prompts/apollo-discovery.md', status: 'DONE' }),
+        makeStep({ id: 'merge-dedup-comply', prompt_file: '.threados/prompts/merge-dedup-comply.md', depends_on: ['apollo-discovery'], status: 'FAILED' }),
+      ],
+      gates: [],
+    } as any)
+    await writeTestSequence(tempDir, seq)
+    await writeFile(join(tempDir, '.threados/prompts/apollo-discovery.md'), '# discovery')
+    await writeFile(join(tempDir, '.threados/prompts/merge-dedup-comply.md'), '# merge')
+
+    const logs: string[] = []
+    const origLog = console.log
+    console.log = (msg: string) => logs.push(msg)
+    await runCommand('step', ['apollo-discovery'], { ...jsonOpts, basePath: tempDir })
+    console.log = origLog
+
+    const body = JSON.parse(logs[0])
+    expect(body.status).toBe('BLOCKED')
+    expect(body.error).toContain('plan revision')
+    const plan = JSON.parse(await readFile(join(tempDir, '.threados/state/runtime-plan.json'), 'utf-8'))
+    expect(plan.selected_strategy).toBe('standard-discovery')
+    expect(plan.revisions).toHaveLength(1)
+    expect(plan.revisions[0].approved).toBe(false)
+  })
+})
+
 describe('run step native action execution', () => {
   test('executes cli, write_file, sub_agent, and rube_tool actions with runtime context outputs', async () => {
     const artifactDir = join(tempDir, 'apollo-artifacts')

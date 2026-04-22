@@ -59,6 +59,87 @@ function createMockRuntime() {
   }
 }
 
+describe.serial('run route coverage — planner parity', () => {
+  beforeEach(async () => {
+    basePath = await mkdtemp(join(tmpdir(), 'threados-run-planner-'))
+    process.env.THREADOS_BASE_PATH = basePath
+    globalThis.__THREADOS_RUN_ROUTE_RUNTIME__ = createMockRuntime()
+  })
+
+  afterEach(async () => {
+    delete globalThis.__THREADOS_RUN_ROUTE_RUNTIME__
+    delete process.env.THREADOS_BASE_PATH
+    await rm(basePath, { recursive: true, force: true })
+  })
+
+  test('POST step on legacy sequence does not create runtime plan file', async () => {
+    await setupTestSequence({
+      version: '1.0',
+      name: 'legacy-seq',
+      steps: [
+        { id: 'legacy-step', name: 'Legacy Step', type: 'base', model: 'codex', prompt_file: '.threados/prompts/legacy-step.md', depends_on: [], status: 'READY' },
+      ],
+      gates: [],
+    })
+    await writePrompt('legacy-step')
+
+    const { POST } = await import('@/app/api/run/route')
+    const response = await POST(new Request('http://localhost/api/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: confirmedBody({ stepId: 'legacy-step' }),
+    }))
+    expect(response.status).toBe(200)
+    const body = await response.json()
+    expect(body.success).toBe(true)
+    expect(await Bun.file(join(basePath, '.threados/state/runtime-plan.json')).exists()).toBe(false)
+  })
+
+  test('POST step blocks on pending plan revision approval for sparse discovery', async () => {
+    const artifactDir = join(basePath, 'apollo-artifacts')
+    await mkdir(join(basePath, '.threados', 'state'), { recursive: true })
+    await mkdir(artifactDir, { recursive: true })
+    await writeFile(join(basePath, '.threados/state/runtime-context.json'), JSON.stringify({ apollo_artifact_dir: artifactDir }), 'utf-8')
+    await writeFile(join(artifactDir, 'discovered-prospects.json'), JSON.stringify({ prospects: [] }), 'utf-8')
+
+    await setupTestSequence({
+      id: 'seq-planner-api',
+      version: '1.0',
+      name: 'planner-api-seq',
+      pack_id: 'apollo-segment-builder',
+      goal: 'Build a reviewable sponsor-prospect segment',
+      success_criteria: ['qualified_segment.total_qualified > 0'],
+      strategy_options: [
+        { id: 'standard-discovery', label: 'Standard discovery', applies_to: ['apollo-discovery'], selects_steps: ['apollo-discovery'], suppresses_steps: [], requires_approval: false },
+        { id: 'broaden-discovery', label: 'Broaden discovery', applies_to: ['apollo-discovery'], selects_steps: ['apollo-discovery'], suppresses_steps: [], requires_approval: true },
+      ],
+      replan_policy: { enabled: true, triggers: ['empty_artifact', 'sparse_results'] },
+      steps: [
+        { id: 'apollo-discovery', name: 'Apollo Discovery', type: 'base', model: 'codex', prompt_file: '.threados/prompts/apollo-discovery.md', depends_on: [], status: 'DONE' },
+        { id: 'merge-dedup-comply', name: 'Merge', type: 'base', model: 'codex', prompt_file: '.threados/prompts/merge-dedup-comply.md', depends_on: ['apollo-discovery'], status: 'FAILED' },
+      ],
+      gates: [],
+    })
+    await writePrompt('apollo-discovery')
+    await writePrompt('merge-dedup-comply')
+
+    const { POST } = await import('@/app/api/run/route')
+    const response = await POST(new Request('http://localhost/api/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: confirmedBody({ stepId: 'apollo-discovery' }),
+    }))
+    expect(response.status).toBe(200)
+    const body = await response.json()
+    expect(body.success).toBe(false)
+    expect(body.status).toBe('BLOCKED')
+    expect(body.error).toContain('plan revision')
+
+    const approvals = await readApprovals(basePath, body.runId)
+    expect(approvals.some(entry => entry.action_type === 'plan_revision')).toBe(true)
+  })
+})
+
 describe.serial('run route coverage — groupId mode', () => {
   beforeEach(async () => {
     basePath = await mkdtemp(join(tmpdir(), 'threados-run-group-'))
