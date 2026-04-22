@@ -95,7 +95,7 @@ async function handleActionFailure(action: Record<string, unknown>, message: str
 
 async function storeActionOutput(basePath: string, action: Record<string, unknown>, value: unknown): Promise<void> {
   if (typeof action.output_key === 'string' && action.output_key.length > 0) {
-    await storeRuntimeContextValue(basePath, action.output_key, value)
+    await storeRuntimeContextValue(basePath, action.output_key, value, { source: 'native_action_output' })
   }
 }
 
@@ -220,7 +220,7 @@ async function executeWriteFileAction(basePath: string, action: Record<string, u
   await writeFile(targetPath, content, 'utf-8')
 
   if (APOLLO_FILE_SOURCE_KEYS[basename(targetPath)]) {
-    await storeRuntimeContextValue(basePath, 'apollo_artifact_dir', dirname(targetPath))
+    await storeRuntimeContextValue(basePath, 'apollo_artifact_dir', dirname(targetPath), { source: 'apollo_artifact_binding' })
   }
 
   await storeActionOutput(basePath, action, {

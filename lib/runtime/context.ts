@@ -4,6 +4,22 @@ import type { Sequence } from '../sequence/schema'
 
 export type RuntimeContext = Record<string, unknown>
 
+type RuntimeKeyWriteSource = 'native_action_output' | 'apollo_artifact_binding' | 'system'
+
+interface RuntimeContextWriteOptions {
+  source?: RuntimeKeyWriteSource
+}
+
+const PROTECTED_RUNTIME_KEY_GROUPS = {
+  approvalRuntimeInputs: ['apollo_artifact_dir', 'icp_config', 'resolved_stage_id'] as const,
+  approvalHydratedValues: ['saved_contacts', 'discovered_prospects', 'qualified_segment', 'enriched_segment', 'counts', 'excluded', 'stage_id_or_MISSING'] as const,
+} as const
+
+const PROTECTED_RUNTIME_KEY_ROOTS = [
+  ...PROTECTED_RUNTIME_KEY_GROUPS.approvalRuntimeInputs,
+  ...PROTECTED_RUNTIME_KEY_GROUPS.approvalHydratedValues,
+] as const
+
 const APOLLO_EXCLUDED_KEYS = ['dnc', 'recently_contacted', 'existing_pipeline', 'special_handling', 'non_omar_owned', 'duplicates'] as const
 const APOLLO_PERSONA_LANES = ['A', 'B', 'C', 'D', 'E'] as const
 
@@ -52,6 +68,58 @@ function cloneRuntimeContext<T>(value: T): T {
   return Object.fromEntries(
     Object.entries(value).map(([key, nestedValue]) => [key, cloneRuntimeContext(nestedValue)]),
   ) as T
+}
+
+function areRuntimeValuesEqual(left: unknown, right: unknown): boolean {
+  if (Array.isArray(left) && Array.isArray(right)) {
+    return left.length === right.length && left.every((value, index) => areRuntimeValuesEqual(value, right[index]))
+  }
+
+  if (isPlainObject(left) && isPlainObject(right)) {
+    const leftKeys = Object.keys(left)
+    const rightKeys = Object.keys(right)
+    if (leftKeys.length !== rightKeys.length) return false
+    return leftKeys.every(key => areRuntimeValuesEqual(left[key], right[key]))
+  }
+
+  return left === right
+}
+
+function getProtectedRuntimeKeyRoot(path: string): (typeof PROTECTED_RUNTIME_KEY_ROOTS)[number] | null {
+  const normalized = path.trim()
+  if (!normalized) return null
+
+  for (const root of PROTECTED_RUNTIME_KEY_ROOTS) {
+    if (normalized === root || normalized.startsWith(`${root}.`)) {
+      return root
+    }
+  }
+
+  return null
+}
+
+function assertWritableRuntimeKey(path: string, options?: RuntimeContextWriteOptions): void {
+  const protectedRoot = getProtectedRuntimeKeyRoot(path)
+  if (!protectedRoot) return
+
+  const source = options?.source ?? 'system'
+  if (source === 'apollo_artifact_binding' && protectedRoot === 'apollo_artifact_dir') {
+    return
+  }
+
+  throw new Error(`Protected runtime key root '${protectedRoot}' cannot be written by ${source}`)
+}
+
+function assertHydratedRuntimeConflict(target: RuntimeContext, key: string, value: unknown): void {
+  const existing = target[key]
+  if (existing === undefined) return
+  if (areRuntimeValuesEqual(existing, value)) return
+  throw new Error(`Protected runtime key '${key}' conflicts with hydrated Apollo artifact data`)
+}
+
+function mergeHydratedProtectedRuntimeValue(target: RuntimeContext, key: string, value: unknown): void {
+  assertHydratedRuntimeConflict(target, key, value)
+  mergeRuntimeContexts(target, { [key]: value })
 }
 
 function mergeRuntimeContexts(target: RuntimeContext, source: RuntimeContext): RuntimeContext {
@@ -178,24 +246,29 @@ export async function hydrateApolloApprovalRuntimeContext(basePath: string, runt
     : [null, null, null, null, null]
 
   if (savedContacts) {
-    mergeRuntimeContexts(hydrated, { saved_contacts: savedContacts })
+    mergeHydratedProtectedRuntimeValue(hydrated, 'saved_contacts', savedContacts)
   }
   if (discoveredProspects) {
-    mergeRuntimeContexts(hydrated, { discovered_prospects: discoveredProspects })
+    mergeHydratedProtectedRuntimeValue(hydrated, 'discovered_prospects', discoveredProspects)
   }
   if (qualifiedSegment) {
-    mergeRuntimeContexts(hydrated, deriveApolloApprovalFields(qualifiedSegment))
+    const derivedFields = deriveApolloApprovalFields(qualifiedSegment)
+    mergeHydratedProtectedRuntimeValue(hydrated, 'qualified_segment', derivedFields.qualified_segment)
+    mergeHydratedProtectedRuntimeValue(hydrated, 'excluded', derivedFields.excluded)
+    mergeHydratedProtectedRuntimeValue(hydrated, 'counts', derivedFields.counts)
   }
   if (enrichedSegment) {
-    mergeRuntimeContexts(hydrated, { enriched_segment: enrichedSegment })
+    mergeHydratedProtectedRuntimeValue(hydrated, 'enriched_segment', enrichedSegment)
   }
   if (icpConfig) {
-    mergeRuntimeContexts(hydrated, { icp_config: icpConfig })
+    mergeHydratedProtectedRuntimeValue(hydrated, 'icp_config', icpConfig)
   }
 
   if (hydrated.resolved_stage_id != null) {
+    assertHydratedRuntimeConflict(hydrated, 'stage_id_or_MISSING', hydrated.resolved_stage_id)
     hydrated.stage_id_or_MISSING = hydrated.resolved_stage_id
   } else if (getNestedRuntimeValue(hydrated, 'icp_config.output.tag_in_apollo') === true) {
+    assertHydratedRuntimeConflict(hydrated, 'stage_id_or_MISSING', 'MISSING')
     hydrated.stage_id_or_MISSING = 'MISSING'
   }
 
@@ -232,7 +305,13 @@ export async function writeRuntimeContext(basePath: string, context: RuntimeCont
   await writeFile(getRuntimeContextPath(basePath), `${JSON.stringify(context, null, 2)}\n`, 'utf-8')
 }
 
-export async function storeRuntimeContextValue(basePath: string, outputKey: string, value: unknown): Promise<void> {
+export async function storeRuntimeContextValue(
+  basePath: string,
+  outputKey: string,
+  value: unknown,
+  options?: RuntimeContextWriteOptions,
+): Promise<void> {
+  assertWritableRuntimeKey(outputKey, options)
   const current = await readRuntimeContext(basePath)
   setNestedRuntimeValue(current, outputKey, value)
   await writeRuntimeContext(basePath, current)

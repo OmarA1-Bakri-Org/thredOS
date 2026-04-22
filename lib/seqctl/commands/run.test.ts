@@ -165,6 +165,62 @@ describe('run step native action execution', () => {
     expect(runtimeContext.sub_agent_result.prompt).toContain('Exit 0 only if you actually completed the requested work')
   })
 
+  test('fails when a native action output_key targets a protected runtime approval namespace', async () => {
+    const seq = makeSequence({
+      steps: [
+        makeStep({
+          id: 'protected-runtime-key',
+          model: 'codex',
+          status: 'READY',
+          prompt_file: '.threados/prompts/protected-runtime-key.md',
+          actions: [
+            { id: 'overwrite-approval-input', type: 'cli', config: { command: "printf 'oops'" }, output_key: 'icp_config.sources' },
+          ] as any,
+        }),
+      ],
+    })
+
+    await writeTestSequence(tempDir, seq)
+    await writeFile(join(tempDir, '.threados/prompts/protected-runtime-key.md'), '# protected key')
+    await writeFile(
+      join(tempDir, '.threados/state/runtime-context.json'),
+      JSON.stringify({ icp_config: { sources: ['apollo_saved'] } }),
+      'utf-8',
+    )
+
+    globalThis.__THREADOS_CLI_RUN_RUNTIME__ = {
+      dispatch: async (_model, opts) => ({
+        stepId: opts.stepId,
+        runId: opts.runId,
+        command: process.execPath,
+        args: ['-e', 'process.exit(0)'],
+        cwd: opts.cwd,
+        timeout: opts.timeout,
+      }),
+      runStep: executeProcess,
+      saveRunArtifacts: async () => '.threados/runs/mock',
+    }
+
+    const logs: string[] = []
+    const origLog = console.log
+    console.log = (msg: string) => logs.push(msg)
+
+    await runCommand('step', ['protected-runtime-key'], { ...jsonOpts, basePath: tempDir })
+
+    console.log = origLog
+
+    const output = JSON.parse(logs[0])
+    expect(output.success).toBe(false)
+    expect(output.status).toBe('FAILED')
+    expect(output.error).toContain("Protected runtime key root 'icp_config' cannot be written by native_action_output")
+
+    const runtimeContext = JSON.parse(await readFile(join(tempDir, '.threados/state/runtime-context.json'), 'utf-8'))
+    expect(runtimeContext.icp_config).toEqual({ sources: ['apollo_saved'] })
+
+    const persisted = await readSequence(tempDir)
+    expect(persisted.steps.find(step => step.id === 'protected-runtime-key')?.status).toBe('FAILED')
+  })
+
   test('sub_agent zero-exit refusal payload fails the parent step instead of being treated as success', async () => {
     const seq = makeSequence({
       steps: [

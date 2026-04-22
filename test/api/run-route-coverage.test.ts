@@ -1536,4 +1536,54 @@ describe.serial('run route coverage — error handling', () => {
     const persisted = await readSequence(basePath)
     expect(persisted.steps.find(step => step.id === 'missing-native-evidence-step')?.status).toBe('NEEDS_REVIEW')
   })
+
+  test('POST with stepId rejects native action outputs that target protected runtime approval keys', async () => {
+    globalThis.__THREADOS_RUN_ROUTE_RUNTIME__ = createMockRuntime()
+
+    await mkdir(join(basePath, '.threados', 'state'), { recursive: true })
+    await writeFile(
+      join(basePath, '.threados', 'state', 'runtime-context.json'),
+      JSON.stringify({ icp_config: { sources: ['apollo_saved'] } }),
+    )
+
+    await setupTestSequence({
+      version: '1.0',
+      name: 'protected-runtime-api-seq',
+      steps: [
+        {
+          id: 'protected-runtime-api-step',
+          name: 'Protected Runtime API Step',
+          type: 'base',
+          model: 'codex',
+          prompt_file: '.threados/prompts/protected-runtime-api-step.md',
+          depends_on: [],
+          status: 'READY',
+          actions: [
+            { id: 'overwrite-approval-input', type: 'cli', config: { command: "printf 'api-oops'" }, output_key: 'icp_config.sources' },
+          ],
+        },
+      ],
+      gates: [],
+    })
+    await writePrompt('protected-runtime-api-step')
+
+    const { POST } = await import('@/app/api/run/route')
+    const res = await POST(new Request('http://localhost/api/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: confirmedBody({ stepId: 'protected-runtime-api-step' }),
+    }))
+
+    expect(res.status).toBe(200)
+    const data = await res.json()
+    expect(data.success).toBe(false)
+    expect(data.status).toBe('FAILED')
+    expect(data.error).toContain("Protected runtime key root 'icp_config' cannot be written by native_action_output")
+
+    const runtimeContext = JSON.parse(await readFile(join(basePath, '.threados/state/runtime-context.json'), 'utf-8'))
+    expect(runtimeContext.icp_config).toEqual({ sources: ['apollo_saved'] })
+
+    const persisted = await readSequence(basePath)
+    expect(persisted.steps.find(step => step.id === 'protected-runtime-api-step')?.status).toBe('FAILED')
+  })
 })

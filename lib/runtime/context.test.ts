@@ -180,6 +180,22 @@ describe('apollo approval runtime hydration', () => {
     })
   })
 
+  test('throws when Apollo artifact hydration conflicts with protected runtime approval keys', async () => {
+    await writeFile(join(artifactDir, 'icp-config.json'), JSON.stringify({
+      output: { apollo_stage_name: 'Artifact Stage', tag_in_apollo: true },
+    }), 'utf-8')
+
+    await expect(hydrateApolloApprovalRuntimeContext(tempDir, {
+      apollo_artifact_dir: artifactDir,
+      icp_config: {
+        output: {
+          apollo_stage_name: 'Runtime Stage',
+          tag_in_apollo: true,
+        },
+      },
+    })).rejects.toThrow("Protected runtime key 'icp_config' conflicts with hydrated Apollo artifact data")
+  })
+
   test('does not hydrate from a global default artifact directory when apollo_artifact_dir is unset', async () => {
     const globalArtifactDir = join(tmpdir(), 'apollo-segment')
     const globalIcpPath = join(globalArtifactDir, 'icp-config.json')
