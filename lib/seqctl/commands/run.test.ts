@@ -1883,6 +1883,77 @@ describe('run step — with mock runtime', () => {
     expect(logs.some(l => l.includes('failed'))).toBe(true)
   })
 
+  test('run step respects custom prompt_file paths and persists canonical artifacts like API', async () => {
+    const dispatchedPrompts: string[] = []
+    const savedArtifacts: Array<Record<string, unknown>> = []
+    const seq = makeSequence({
+      steps: [
+        makeStep({
+          id: 'custom-prompt-step',
+          model: 'shell',
+          status: 'READY',
+          prompt_file: '.threados/custom-prompts/runtime/custom-prompt-step.md',
+          surface_ref: 'thread-custom-prompt-step',
+          actions: [{
+            id: 'document-contract',
+            type: 'conditional',
+            config: {
+              condition: '1 == 2',
+              if_true: [],
+              if_false: [],
+            },
+          }] as any,
+        }),
+      ],
+    })
+    await writeTestSequence(tempDir, seq)
+    await mkdir(join(tempDir, '.threados/custom-prompts/runtime'), { recursive: true })
+    await writeFile(join(tempDir, '.threados/custom-prompts/runtime/custom-prompt-step.md'), 'echo custom prompt path\n')
+
+    globalThis.__THREADOS_CLI_RUN_RUNTIME__ = {
+      dispatch: async (_model, opts) => {
+        dispatchedPrompts.push(opts.compiledPrompt)
+        return {
+          stepId: opts.stepId,
+          runId: opts.runId,
+          command: process.execPath,
+          args: ['-e', 'process.exit(0)'],
+          cwd: opts.cwd,
+          timeout: opts.timeout,
+        }
+      },
+      runStep: executeProcess,
+      saveRunArtifacts: async (_basePath, result, options) => {
+        savedArtifacts.push({ result, options })
+        return '.threados/runs/mock'
+      },
+    }
+
+    const logs: string[] = []
+    const origLog = console.log
+    console.log = (msg: string) => logs.push(msg)
+
+    await runCommand('step', ['custom-prompt-step'], { ...jsonOpts, basePath: tempDir })
+
+    console.log = origLog
+
+    const output = JSON.parse(logs[0])
+    expect(output.success).toBe(true)
+    expect(dispatchedPrompts).toHaveLength(1)
+    expect(dispatchedPrompts[0]).toContain('echo custom prompt path')
+    expect(dispatchedPrompts[0]).toContain('## THREADOS ACTION CONTRACT')
+    expect(savedArtifacts).toHaveLength(1)
+    expect(savedArtifacts[0]?.options).toMatchObject({
+      surfaceId: 'thread-custom-prompt-step',
+      compiledPrompt: dispatchedPrompts[0],
+      inputManifest: {
+        stepId: 'custom-prompt-step',
+        surfaceId: 'thread-custom-prompt-step',
+        promptRef: '.threados/custom-prompts/runtime/custom-prompt-step.md',
+      },
+    })
+  })
+
   test('run step fails when prompt file is missing', async () => {
     const seq = makeSequence({
       steps: [

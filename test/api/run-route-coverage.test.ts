@@ -837,6 +837,59 @@ describe.serial('run route coverage — error handling', () => {
     expect(data.error).toContain('Prompt file not found')
   })
 
+  test('POST with stepId respects custom prompt_file paths and action-contract assembly', async () => {
+    const dispatchedPrompts: string[] = []
+    globalThis.__THREADOS_RUN_ROUTE_RUNTIME__ = {
+      ...createMockRuntime(),
+      dispatch: async (_model, opts) => {
+        dispatchedPrompts.push(opts.compiledPrompt)
+        return createMockRuntime().dispatch(_model, opts)
+      },
+    }
+
+    await setupTestSequence({
+      version: '1.0',
+      name: 'custom-prompt-path-seq',
+      steps: [
+        {
+          id: 'custom-prompt-step',
+          name: 'Custom Prompt Step',
+          type: 'base',
+          model: 'shell',
+          prompt_file: '.threados/custom-prompts/api/custom-prompt-step.md',
+          depends_on: [],
+          status: 'READY',
+          actions: [{
+            id: 'document-contract',
+            type: 'conditional',
+            config: {
+              condition: '1 == 2',
+              if_true: [],
+              if_false: [],
+            },
+          }],
+        },
+      ],
+      gates: [],
+    })
+    await mkdir(join(basePath, '.threados', 'custom-prompts', 'api'), { recursive: true })
+    await writeFile(join(basePath, '.threados', 'custom-prompts', 'api', 'custom-prompt-step.md'), 'echo api custom prompt\n')
+
+    const { POST } = await import('@/app/api/run/route')
+    const res = await POST(new Request('http://localhost/api/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: confirmedBody({ stepId: 'custom-prompt-step' }),
+    }))
+
+    expect(res.status).toBe(200)
+    const data = await res.json()
+    expect(data.success).toBe(true)
+    expect(dispatchedPrompts).toHaveLength(1)
+    expect(dispatchedPrompts[0]).toContain('echo api custom prompt')
+    expect(dispatchedPrompts[0]).toContain('## THREADOS ACTION CONTRACT')
+  })
+
   test('POST with stepId where runtime throws returns failure', async () => {
     await setupTestSequence({
       version: '1.0',

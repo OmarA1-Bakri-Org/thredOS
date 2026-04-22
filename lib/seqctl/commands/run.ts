@@ -1,13 +1,16 @@
 import { randomUUID } from 'crypto'
-import { access, readFile } from 'fs/promises'
-import { join } from 'path'
 import { readSequence, writeSequence } from '../../sequence/parser'
 import { validateDAG, topologicalSort } from '../../sequence/dag'
 import { MprocsClient } from '../../mprocs/client'
 import { updateStepProcess, readMprocsMap } from '../../mprocs/state'
 import { runStep } from '../../runner/wrapper'
 import { getRuntimeEventLogPath, saveRunArtifacts } from '../../runner/artifacts'
-import { compilePrompt } from '../../runner/prompt-compiler'
+import {
+  makeStepInputManifest,
+  prepareStepPromptForDispatch,
+  resolveStepPromptPath,
+  validateStepPromptExists,
+} from '../../runner/step-preparation'
 import { dispatch, exitCodeToStatus } from '../../runner/dispatch'
 import { StepNotFoundError } from '../../errors'
 import type { Step, Sequence, StepStatus } from '../../sequence/schema'
@@ -126,13 +129,6 @@ function getCLIRunRuntime(): CLIRunRuntime {
     saveRunArtifacts,
     runComposioTool: executeComposioTool,
   }
-}
-
-function resolvePromptPath(basePath: string, step: Step): string {
-  const promptFile = typeof step.prompt_file === 'string' && step.prompt_file.length > 0
-    ? step.prompt_file
-    : `.threados/prompts/${step.id}.md`
-  return join(basePath, promptFile)
 }
 
 async function executeStepActions(
@@ -261,11 +257,10 @@ async function evaluateStepCondition(basePath: string, sequence: Sequence, step:
   return evaluateSequenceCondition(basePath, sequence, (step as Step & { condition?: string }).condition)
 }
 
-function renderActionContract(step: Step): string {
-  const actions = (step as Step & { actions?: unknown[] }).actions
-  if (!Array.isArray(actions) || actions.length === 0) return ''
-  return `\n\n## THREADOS ACTION CONTRACT\n${JSON.stringify(actions, null, 2)}\n`
+function getSurfaceId(step: Step): string {
+  return step.surface_ref || `thread-${step.id}`
 }
+
 /**
  * Get runnable steps (READY status with all dependencies satisfied)
  */
@@ -321,10 +316,9 @@ async function executeSingleStep(
 
   const stepRuntime = await createStepRunScope(basePath, sequence, step)
 
-  const promptPath = resolvePromptPath(basePath, step)
-  try {
-    await access(promptPath)
-  } catch {
+  const promptPath = resolveStepPromptPath(basePath, step)
+  const promptExists = await validateStepPromptExists(basePath, step)
+  if (!promptExists) {
     // Bug fix: persist FAILED status so step isn't re-selected by run runnable
     step.status = 'FAILED'
     await writeSequence(basePath, sequence)
@@ -345,31 +339,25 @@ async function executeSingleStep(
   try {
     const runtime = getCLIRunRuntime()
     const runtimeEventLogPath = getRuntimeEventLogPath(basePath, runId, stepId)
+    const surfaceId = getSurfaceId(step)
+    const startedAt = stepRuntime.stepRun?.startedAt ?? new Date().toISOString()
+    const inputManifest = makeStepInputManifest(step, runId, surfaceId, startedAt)
     await executeStepActions(basePath, sequence, step, runId, runtime)
-    // 1. Read raw prompt
-    const rawPrompt = await readFile(promptPath, 'utf-8')
-    const actionContract = renderActionContract(step)
-    const promptWithActions = `${rawPrompt}${actionContract}`
-
-    // 2. Compile with context (skip for shell — shell runs raw script directly)
-    const promptForDispatch = step.model === 'shell'
-      ? promptWithActions
-      : await compilePrompt({
-          stepId,
-          step,
-          rawPrompt: promptWithActions,
-          sequence,
-          basePath,
-          maxTokens: step.model === 'claude-code' ? 8000 : 4000,
-          runtimeEventLogPath,
-          runtimeEventEmitterCommand: THREADOS_EVENT_EMITTER_COMMAND,
-        })
+    const preparedPrompt = await prepareStepPromptForDispatch({
+      stepId,
+      step,
+      sequence,
+      basePath,
+      maxTokens: step.model === 'claude-code' ? 8000 : 4000,
+      runtimeEventLogPath,
+      runtimeEventEmitterCommand: THREADOS_EVENT_EMITTER_COMMAND,
+    })
 
     // 3. Dispatch to agent (writes temp prompt, resolves CLI, checks availability)
     const runnerConfig = await runtime.dispatch(step.model, {
       stepId,
       runId,
-      compiledPrompt: promptForDispatch,
+      compiledPrompt: preparedPrompt.promptForDispatch,
       cwd: step.cwd || basePath,
       timeout: step.timeout_ms || DEFAULT_TIMEOUT_MS,
       runtimeEventLogPath,
@@ -380,7 +368,13 @@ async function executeSingleStep(
     const result = await runtime.runStep(runnerConfig)
 
     // 5. Save artifacts
-    const artifactPath = await runtime.saveRunArtifacts(basePath, result)
+    const artifactPath = await runtime.saveRunArtifacts(basePath, result, {
+      surfaceId,
+      compiledPrompt: preparedPrompt.promptForDispatch,
+      inputManifest,
+      outputContractRef: step.output_contract_ref,
+      completionContract: step.completion_contract,
+    })
     const runtimeEvents = await readRuntimeEventLog(basePath, runId, stepId)
 
     // 6. Map exit code to step status

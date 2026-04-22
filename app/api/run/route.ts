@@ -17,7 +17,12 @@ import { evaluateStepCompletionGates, evaluateStepGates, getBlockReasons, isStep
 import { allowShellModel } from '@/lib/hosted'
 import { PolicyEngine } from '@/lib/policy/engine'
 import type { PolicyConfig } from '@/lib/policy/schema'
-import { readPrompt, validatePromptExists } from '@/lib/prompts/manager'
+import {
+  makeStepInputManifest,
+  prepareStepPromptForDispatch,
+  resolveStepPromptPath,
+  validateStepPromptExists,
+} from '@/lib/runner/step-preparation'
 import { applyRateLimit } from '@/lib/rate-limit'
 import {
   getRuntimeEventLogPath,
@@ -25,11 +30,9 @@ import {
   writeCompiledPrompt,
   writeInputManifest,
   writeRunRecord,
-  type InputManifestJson,
   type RunRecordJson,
 } from '@/lib/runner/artifacts'
 import { dispatch, exitCodeToStatus } from '@/lib/runner/dispatch'
-import { compilePrompt } from '@/lib/runner/prompt-compiler'
 import { runStep, type RunnerConfig } from '@/lib/runner/wrapper'
 import { topologicalSort, validateDAG } from '@/lib/sequence/dag'
 import { readSequence, writeSequence } from '@/lib/sequence/parser'
@@ -366,18 +369,6 @@ function collectDownstreamDependents(
   return discovered
 }
 
-function makeInputManifest(step: Step, runId: string, surfaceId: string, createdAt: string): InputManifestJson {
-  return {
-    stepId: step.id,
-    runId,
-    surfaceId,
-    promptRef: step.prompt_ref?.path ?? step.prompt_file ?? null,
-    dependsOn: step.depends_on,
-    inputContractRef: step.input_contract_ref ?? null,
-    createdAt,
-  }
-}
-
 async function persistGateDecisions(
   basePath: string,
   runId: string,
@@ -552,8 +543,8 @@ async function executeStep(
   }
 
   const stepRuntime = await createStepRunScope(basePath, step)
-  const promptPath = step.prompt_file
-  const promptExists = await validatePromptExists(basePath, stepId)
+  const promptPath = resolveStepPromptPath(basePath, step)
+  const promptExists = await validateStepPromptExists(basePath, step)
 
   if (!promptExists) {
     step.status = 'FAILED'
@@ -572,28 +563,24 @@ async function executeStep(
   const surfaceId = getSurfaceId(step)
   const startedAt = stepRuntime.stepRun?.startedAt ?? new Date().toISOString()
   const attempt = stepRuntime.stepRun?.executionIndex ?? 1
-  const inputManifest = makeInputManifest(step, runId, surfaceId, startedAt)
+  const inputManifest = makeStepInputManifest(step, runId, surfaceId, startedAt)
   const inputManifestRef = getInputManifestRef(runId, surfaceId)
   const artifactManifestRef = getArtifactManifestRef(runId, surfaceId)
 
   try {
     const runtimeEventLogPath = getRuntimeEventLogPath(basePath, runId, stepId)
-    const rawPrompt = await readPrompt(basePath, stepId)
-    const promptForDispatch = step.model === 'shell'
-      ? rawPrompt
-      : await compilePrompt({
-          stepId,
-          step,
-          rawPrompt,
-          sequence,
-          basePath,
-          maxTokens: step.model === 'claude-code' ? 8000 : 4000,
-          runtimeEventLogPath,
-          runtimeEventEmitterCommand: THREADOS_EVENT_EMITTER_COMMAND,
-        })
+    const preparedPrompt = await prepareStepPromptForDispatch({
+      stepId,
+      step,
+      sequence,
+      basePath,
+      maxTokens: step.model === 'claude-code' ? 8000 : 4000,
+      runtimeEventLogPath,
+      runtimeEventEmitterCommand: THREADOS_EVENT_EMITTER_COMMAND,
+    })
 
     await writeInputManifest(basePath, runId, surfaceId, inputManifest)
-    await writeCompiledPrompt(basePath, runId, surfaceId, promptForDispatch)
+    await writeCompiledPrompt(basePath, runId, surfaceId, preparedPrompt.promptForDispatch)
 
     const approvals = await readApprovals(basePath, runId).catch(() => [])
     const approvalPresent = options.confirmPolicy
@@ -626,7 +613,7 @@ async function executeStep(
         runId,
         surfaceId,
         policyConfig: options.policyConfig,
-        compiledPrompt: promptForDispatch,
+        compiledPrompt: preparedPrompt.promptForDispatch,
         startedAt,
         status: 'failed',
         attempt,
@@ -652,7 +639,7 @@ async function executeStep(
         runId,
         surfaceId,
         policyConfig: options.policyConfig,
-        compiledPrompt: promptForDispatch,
+        compiledPrompt: preparedPrompt.promptForDispatch,
         startedAt,
         status: 'failed',
         attempt,
@@ -674,7 +661,7 @@ async function executeStep(
     const runnerConfig = await runtime.dispatch(step.model, {
       stepId,
       runId,
-      compiledPrompt: promptForDispatch,
+      compiledPrompt: preparedPrompt.promptForDispatch,
       cwd: step.cwd || basePath,
       timeout: step.timeout_ms || DEFAULT_TIMEOUT_MS,
       runtimeEventLogPath,
@@ -693,7 +680,7 @@ async function executeStep(
         runId,
         surfaceId,
         policyConfig: options.policyConfig,
-        compiledPrompt: promptForDispatch,
+        compiledPrompt: preparedPrompt.promptForDispatch,
         startedAt,
         status: 'failed',
         attempt,
@@ -717,7 +704,7 @@ async function executeStep(
       runId,
       surfaceId,
       policyConfig: options.policyConfig,
-      compiledPrompt: promptForDispatch,
+      compiledPrompt: preparedPrompt.promptForDispatch,
       startedAt,
       status: 'running',
       attempt,
@@ -731,7 +718,7 @@ async function executeStep(
     const result = await runtime.runStep(runnerConfig)
     const artifactPath = await runtime.saveRunArtifacts(basePath, result, {
       surfaceId,
-      compiledPrompt: promptForDispatch,
+      compiledPrompt: preparedPrompt.promptForDispatch,
       inputManifest,
       outputContractRef: step.output_contract_ref,
       completionContract: step.completion_contract,
@@ -757,7 +744,7 @@ async function executeStep(
       runId,
       surfaceId,
       policyConfig: options.policyConfig,
-      compiledPrompt: promptForDispatch,
+      compiledPrompt: preparedPrompt.promptForDispatch,
       startedAt,
       status: result.status === 'SUCCESS' && completionPassed ? 'successful' : 'failed',
       attempt,
