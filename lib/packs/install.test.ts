@@ -31,6 +31,7 @@ const VALID_PACK = {
       execution: 'sequential',
       timeout_ms: 30000,
       actions: [{ id: 'run-alpha', type: 'cli', config: { command: 'echo alpha' }, on_failure: 'warn' }],
+      prompt_file: 'prompts/alpha-authored.md',
       surface_class: 'shared',
       depends_on: [],
     },
@@ -60,10 +61,13 @@ const VALID_PACK = {
   gate_sets: ['default-gates'],
 }
 
+const AUTHORED_ALPHA_PROMPT = '# Alpha Authored Prompt\n\nUse the canonical authored instructions.\n'
+
 beforeEach(async () => {
   basePath = await mkdtemp(join(tmpdir(), 'threados-pack-install-'))
-  await mkdir(join(basePath, '.threados', 'packs', 'demo-pack', '1.0.0'), { recursive: true })
+  await mkdir(join(basePath, '.threados', 'packs', 'demo-pack', '1.0.0', 'prompts'), { recursive: true })
   await writeFile(join(basePath, '.threados', 'packs', 'demo-pack', '1.0.0', 'pack.yaml'), YAML.stringify(VALID_PACK), 'utf-8')
+  await writeFile(join(basePath, '.threados', 'packs', 'demo-pack', '1.0.0', 'prompts', 'alpha-authored.md'), AUTHORED_ALPHA_PROMPT, 'utf-8')
   await writeSequence(basePath, {
     version: '1.0',
     name: 'Old Sequence',
@@ -137,11 +141,29 @@ describe('installPack', () => {
     expect(await validatePromptExists(basePath, 'alpha')).toBe(true)
     expect(await validatePromptExists(basePath, 'beta')).toBe(true)
     expect(await validatePromptExists(basePath, 'old-step')).toBe(false)
-    expect(await readPrompt(basePath, 'alpha')).toContain('Pack: Demo Pack (demo-pack@1.0.0)')
+    expect(await readPrompt(basePath, 'alpha')).toBe(AUTHORED_ALPHA_PROMPT)
+    expect(await readPrompt(basePath, 'beta')).toContain('Pack: Demo Pack (demo-pack@1.0.0)')
 
     const catalog = await readLibraryCatalog(basePath)
     expect(catalog.prompts.alpha?.path).toBe('.threados/prompts/alpha.md')
     expect(catalog.prompts.beta?.path).toBe('.threados/prompts/beta.md')
     expect(catalog.prompts['old-step']).toBeUndefined()
+  })
+
+  test('reinstalls authored prompt content deterministically after installed prompt drift', async () => {
+    await installPack(basePath, {
+      packId: 'demo-pack',
+      version: '1.0.0',
+    })
+
+    await writePrompt(basePath, 'alpha', '# Drifted Installed Prompt\n\nmanual edits\n')
+    expect(await readPrompt(basePath, 'alpha')).toContain('Drifted Installed Prompt')
+
+    await installPack(basePath, {
+      packId: 'demo-pack',
+      version: '1.0.0',
+    })
+
+    expect(await readPrompt(basePath, 'alpha')).toBe(AUTHORED_ALPHA_PROMPT)
   })
 })

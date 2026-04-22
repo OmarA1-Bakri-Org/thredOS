@@ -1,3 +1,5 @@
+import { access, readFile } from 'fs/promises'
+import { isAbsolute, join } from 'path'
 import { deletePrompt, readPrompt, validatePromptExists, writePrompt } from '@/lib/prompts/manager'
 import type { LibraryCatalog } from '@/lib/library/types'
 import {
@@ -95,6 +97,34 @@ function buildPromptTemplate(manifest: PackManifest, step: Step): string {
   ].join('\n')
 }
 
+function resolvePromptSourceCandidates(basePath: string, packRoot: string, promptFile: string): string[] {
+  const candidates = new Set<string>()
+  if (isAbsolute(promptFile)) {
+    candidates.add(promptFile)
+  } else {
+    candidates.add(join(packRoot, promptFile))
+    candidates.add(join(basePath, promptFile))
+  }
+  return [...candidates]
+}
+
+async function readAuthoredPromptContent(
+  basePath: string,
+  packRoot: string,
+  step: Pick<Step, 'prompt_file'>,
+): Promise<string | null> {
+  if (!step.prompt_file) return null
+
+  for (const candidate of resolvePromptSourceCandidates(basePath, packRoot, step.prompt_file)) {
+    try {
+      await access(candidate)
+      return await readFile(candidate, 'utf-8')
+    } catch {}
+  }
+
+  return null
+}
+
 function buildInstalledSequence(input: {
   currentSequence: Sequence
   manifest: PackManifest
@@ -157,16 +187,22 @@ export async function installPack(basePath: string, input: PackInstallInput): Pr
 
   const manifest = await loadPack(basePath, input.packId, input.version)
   const compiled = compilePack(manifest)
+  const packRoot = join(basePath, '.threados', 'packs', input.packId, input.version)
+  const compiledSteps = compiled.sequence.steps as Step[]
   const currentSequence = await readSequence(basePath)
   const currentSurfaceState = await readThreadSurfaceState(basePath)
   const promptSnapshot = await snapshotPrompts(basePath, currentSequence)
+  const authoredPromptContents = new Map<string, string | null>()
+  for (const step of compiledSteps) {
+    authoredPromptContents.set(step.id, await readAuthoredPromptContent(basePath, packRoot, step))
+  }
 
   const nextSequence = buildInstalledSequence({
     currentSequence,
     manifest,
     installName: input.installName,
     overrides: input.compileOverrides,
-    steps: compiled.sequence.steps as Step[],
+    steps: compiledSteps,
     gates: compiled.sequence.gates as Sequence['gates'],
   })
   const nextSurfaceState = buildInstalledSurfaceState(currentSurfaceState, compiled.surfaces)
@@ -177,7 +213,7 @@ export async function installPack(basePath: string, input: PackInstallInput): Pr
 
   try {
     for (const step of nextSequence.steps) {
-      const promptTemplate = buildPromptTemplate(manifest, step)
+      const promptTemplate = authoredPromptContents.get(step.id) ?? buildPromptTemplate(manifest, step)
       await writePrompt(basePath, step.id, promptTemplate)
       const promptRef = await ensurePromptAssetForStep(basePath, step.id, step.name, promptTemplate)
       step.prompt_ref = promptRef
