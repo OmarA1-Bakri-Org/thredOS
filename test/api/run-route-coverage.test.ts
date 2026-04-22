@@ -1273,14 +1273,14 @@ describe.serial('run route coverage — error handling', () => {
     expect(data.success).toBe(true)
   })
 
-  test('POST executes cli, write_file, sub_agent, and rube_tool native actions with API parity', async () => {
-    const artifactDir = join(basePath, 'apollo-artifacts')
+  test('POST with stepId executes native actions end-to-end, including write_file, sub_agent, and rube_tool alias paths', async () => {
+    const artifactDir = join(basePath, 'api-artifacts')
     const icpConfigPath = join(artifactDir, 'icp-config.json')
     const qualifiedSegmentPath = join(artifactDir, 'qualified-segment.json')
     const composioCalls: Array<{ toolSlug: string; arguments: Record<string, unknown> }> = []
 
     globalThis.__THREADOS_RUN_ROUTE_RUNTIME__ = {
-      dispatch: async (_model: string, opts: { stepId: string; runId: string; cwd: string; timeout: number }) => {
+      dispatch: async (_model, opts) => {
         if (opts.stepId.endsWith('spawn-artifact-agent')) {
           const script = `const fs=require('fs');fs.mkdirSync(${JSON.stringify(artifactDir)},{recursive:true});fs.writeFileSync(${JSON.stringify(qualifiedSegmentPath)}, JSON.stringify({segment_name:'API Segment',total_qualified:2}, null, 2));`
           return {
@@ -1363,5 +1363,58 @@ describe.serial('run route coverage — error handling', () => {
     expect(JSON.parse(await readFile(icpConfigPath, 'utf-8'))).toEqual({ sources: ['apollo_saved'], output: { apollo_stage_name: 'API Review' } })
     expect(JSON.parse(await readFile(qualifiedSegmentPath, 'utf-8'))).toEqual({ segment_name: 'API Segment', total_qualified: 2 })
     expect(composioCalls).toEqual([{ toolSlug: 'APOLLO_TEST_TOOL', arguments: { query: 'segment' } }])
+  })
+
+  test('POST with stepId downgrades contract-bound composio steps when the expected persisted output is missing', async () => {
+    globalThis.__THREADOS_RUN_ROUTE_RUNTIME__ = {
+      ...createMockRuntime(),
+      runComposioTool: async () => null,
+    }
+
+    await setupTestSequence({
+      version: '1.0',
+      name: 'missing-native-evidence-seq',
+      steps: [
+        {
+          id: 'missing-native-evidence-step',
+          name: 'Missing Native Evidence Step',
+          type: 'base',
+          model: 'codex',
+          prompt_file: '.threados/prompts/missing-native-evidence-step.md',
+          depends_on: [],
+          status: 'READY',
+          output_contract_ref: 'contracts/apollo-usage.json',
+          completion_contract: 'contracts/apollo-usage-complete.json',
+          actions: [
+            {
+              id: 'apollo-usage',
+              type: 'composio_tool',
+              config: {
+                tool_slug: 'APOLLO_VIEW_API_USAGE_STATS',
+                arguments: { team: 'growth' },
+              },
+              output_key: 'apollo_usage',
+            },
+          ],
+        },
+      ],
+      gates: [],
+    })
+    await writePrompt('missing-native-evidence-step')
+
+    const { POST } = await import('@/app/api/run/route')
+    const res = await POST(new Request('http://localhost/api/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: confirmedBody({ stepId: 'missing-native-evidence-step' }),
+    }))
+
+    expect(res.status).toBe(200)
+    const data = await res.json()
+    expect(data.success).toBe(false)
+    expect(data.status).toBe('NEEDS_REVIEW')
+
+    const persisted = await readSequence(basePath)
+    expect(persisted.steps.find(step => step.id === 'missing-native-evidence-step')?.status).toBe('NEEDS_REVIEW')
   })
 })

@@ -31,6 +31,7 @@ import {
 } from '../../runtime/context'
 import {
   AbortWorkflowError,
+  assessSelectedStepEvidence,
   executeNativeOperationalAction,
   renderRuntimeContextTemplate,
 } from '../../runtime/native-actions'
@@ -422,10 +423,11 @@ async function executeSingleStep(
     const runtimeEvents = await readRuntimeEventLog(basePath, runId, stepId)
 
     const completionAssessment = assessCompletionResult(result)
+    const explicitEvidence = await assessSelectedStepEvidence(basePath, sequence, step)
     const completionDecisions = evaluateStepCompletionGates(step, {
       artifactManifestPresent: Boolean(artifactPath),
-      outputSchemaValid: step.output_contract_ref ? result.status === 'SUCCESS' : true,
-      completionContractSatisfied: step.completion_contract ? result.status === 'SUCCESS' : true,
+      outputSchemaValid: step.output_contract_ref ? explicitEvidence.outputSchemaValid : true,
+      completionContractSatisfied: step.completion_contract ? explicitEvidence.completionContractSatisfied : true,
     })
     const completionPassed = isStepRunnable(completionDecisions)
 
