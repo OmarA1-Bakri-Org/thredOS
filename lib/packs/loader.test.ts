@@ -97,6 +97,24 @@ steps:
           prompt: Do step two
           subagent_type: researcher
         on_failure: abort_workflow
+goal: Build a reviewable sponsor-prospect segment
+success_criteria:
+  - qualified_segment.total_qualified > 0
+  - discovered_prospects.prospects.length > 0
+strategy_options:
+  - id: standard-discovery
+    label: Standard discovery
+    applies_to:
+      - step-two
+    selects_steps:
+      - step-two
+    suppresses_steps: []
+    requires_approval: false
+replan_policy:
+  enabled: true
+  triggers:
+    - empty_artifact
+    - sparse_results
 gate_sets: []
 `
 
@@ -171,6 +189,25 @@ describe('loadPack', () => {
     ])
     expect(manifest.phases).toHaveLength(2)
     expect(manifest.phases[0]).toEqual({ id: 'phase-alpha', label: 'Alpha Phase', order: 0 })
+    expect(manifest.goal).toBe('Build a reviewable sponsor-prospect segment')
+    expect(manifest.success_criteria).toEqual([
+      'qualified_segment.total_qualified > 0',
+      'discovered_prospects.prospects.length > 0',
+    ])
+    expect(manifest.strategy_options).toEqual([
+      {
+        id: 'standard-discovery',
+        label: 'Standard discovery',
+        applies_to: ['step-two'],
+        selects_steps: ['step-two'],
+        suppresses_steps: [],
+        requires_approval: false,
+      },
+    ])
+    expect(manifest.replan_policy).toEqual({
+      enabled: true,
+      triggers: ['empty_artifact', 'sparse_results'],
+    })
     expect(manifest.steps).toHaveLength(2)
     expect(manifest.steps[0].id).toBe('step-one')
     expect(manifest.steps[0].execution).toBe('sequential')

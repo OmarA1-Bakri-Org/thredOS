@@ -66,6 +66,30 @@ export const PackStepSchema = z.object({
   watchdog_for: z.string().optional(),
 })
 
+export const PackStrategyOptionSchema = z.object({
+  id: packIdSchema('Strategy option'),
+  label: z.string().min(1),
+  applies_to: z.array(packIdSchema('Strategy applies_to step')).default([]),
+  selects_steps: z.array(packIdSchema('Strategy selects_steps step')).default([]),
+  suppresses_steps: z.array(packIdSchema('Strategy suppresses_steps step')).default([]),
+  requires_approval: z.boolean().default(false),
+}).superRefine((strategy, ctx) => {
+  for (const stepId of strategy.selects_steps) {
+    if (strategy.suppresses_steps.includes(stepId)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['suppresses_steps'],
+        message: `Strategy option cannot both select and suppress step \"${stepId}\"`,
+      })
+    }
+  }
+})
+
+export const PackReplanPolicySchema = z.object({
+  enabled: z.boolean(),
+  triggers: z.array(z.enum(['empty_artifact', 'sparse_results'])).default([]),
+})
+
 export const PackPrerequisiteConnectionSchema = z.object({
   name: z.string().min(1),
   type: z.enum(['composio', 'direct_api', 'local']),
@@ -132,6 +156,10 @@ const PackManifestBaseSchema = z.object({
   phases: z.array(PackPhaseSchema),
   steps: z.array(PackStepSchema),
   gate_sets: z.array(z.string()).default([]),
+  goal: z.string().min(1).optional(),
+  success_criteria: z.array(z.string().min(1)).default([]),
+  strategy_options: z.array(PackStrategyOptionSchema).default([]),
+  replan_policy: PackReplanPolicySchema.optional(),
   export_bundle_schema: z.string().optional(),
 })
 

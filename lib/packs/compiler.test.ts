@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { ZodError } from 'zod'
 import { compilePack } from './compiler'
 import type { PackManifest } from './pack-schema'
+import type { Sequence } from '../sequence/schema'
 
 const makeManifest = (overrides: Partial<PackManifest> = {}): PackManifest => ({
   id: 'my-pack',
@@ -69,12 +70,29 @@ const makeManifest = (overrides: Partial<PackManifest> = {}): PackManifest => ({
     },
   ],
   gate_sets: ['default-gates'],
+  goal: 'Build a reviewable sponsor-prospect segment',
+  success_criteria: ['qualified_segment.total_qualified > 0'],
+  strategy_options: [
+    {
+      id: 'standard-discovery',
+      label: 'Standard discovery',
+      applies_to: ['beta'],
+      selects_steps: ['beta'],
+      suppresses_steps: [],
+      requires_approval: false,
+    },
+  ],
+  replan_policy: {
+    enabled: true,
+    triggers: ['empty_artifact', 'sparse_results'],
+  },
   ...overrides,
 })
 
 describe('compilePack', () => {
   test('produces a valid sequence with correct name, pack_id, pack_version', () => {
     const result = compilePack(makeManifest())
+    const sequence = result.sequence as Sequence
     expect(result.sequence.name).toBe('My Pack')
     expect(result.sequence.pack_id).toBe('my-pack')
     expect(result.sequence.pack_version).toBe('2.0.0')
@@ -94,6 +112,22 @@ describe('compilePack', () => {
       },
     ])
     expect(result.sequence.default_policy_ref).toBe('policy:SAFE')
+    expect(sequence.goal).toBe('Build a reviewable sponsor-prospect segment')
+    expect(sequence.success_criteria).toEqual(['qualified_segment.total_qualified > 0'])
+    expect(sequence.strategy_options).toEqual([
+      {
+        id: 'standard-discovery',
+        label: 'Standard discovery',
+        applies_to: ['beta'],
+        selects_steps: ['beta'],
+        suppresses_steps: [],
+        requires_approval: false,
+      },
+    ])
+    expect(sequence.replan_policy).toEqual({
+      enabled: true,
+      triggers: ['empty_artifact', 'sparse_results'],
+    })
   })
 
   test('propagates step execution metadata into the compiled sequence', () => {
@@ -104,9 +138,9 @@ describe('compilePack', () => {
     expect(alphaStep.timeout_ms).toBe(30000)
     expect(alphaStep.gate_set_ref).toBe('default-gates')
     expect(alphaStep.side_effect_class).toBe('execute')
-    expect((alphaStep as any).execution).toBe('sequential')
-    expect((alphaStep as any).condition).toBe('first_run == true')
-    expect((alphaStep as any).actions).toEqual([
+    expect(alphaStep.execution).toBe('sequential')
+    expect(alphaStep.condition).toBe('first_run == true')
+    expect(alphaStep.actions).toEqual([
       {
         id: 'run-alpha',
         type: 'cli',
@@ -118,8 +152,8 @@ describe('compilePack', () => {
     ])
 
     expect(betaStep.side_effect_class).toBe('execute')
-    expect((betaStep as any).execution).toBe('sub_agent')
-    expect((betaStep as any).actions).toEqual([
+    expect(betaStep.execution).toBe('sub_agent')
+    expect(betaStep.actions).toEqual([
       {
         id: 'delegate-beta',
         type: 'sub_agent',

@@ -6,6 +6,7 @@ import YAML from 'yaml'
 import { readLibraryCatalog } from '../library/repository'
 import { writePrompt, validatePromptExists, readPrompt } from '../prompts/manager'
 import { readSequence, writeSequence } from '../sequence/parser'
+import type { Sequence } from '../sequence/schema'
 import { readThreadSurfaceState } from '../thread-surfaces/repository'
 // @ts-expect-error Bun query import used to isolate module cache in tests
 const { installPack } = await import('./install.ts?pack-install-suite') as { installPack: typeof import('./install').installPack }
@@ -59,6 +60,22 @@ const VALID_PACK = {
     },
   ],
   gate_sets: ['default-gates'],
+  goal: 'Build a reviewable sponsor-prospect segment',
+  success_criteria: ['qualified_segment.total_qualified > 0'],
+  strategy_options: [
+    {
+      id: 'standard-discovery',
+      label: 'Standard discovery',
+      applies_to: ['beta'],
+      selects_steps: ['beta'],
+      suppresses_steps: [],
+      requires_approval: false,
+    },
+  ],
+  replan_policy: {
+    enabled: true,
+    triggers: ['empty_artifact', 'sparse_results'],
+  },
 }
 
 const AUTHORED_ALPHA_PROMPT = '# Alpha Authored Prompt\n\nUse the canonical authored instructions.\n'
@@ -81,7 +98,7 @@ beforeEach(async () => {
       status: 'READY',
     }],
     gates: [],
-  } as any)
+  } as Sequence)
   await writePrompt(basePath, 'old-step', '# Old Step\n\nlegacy prompt\n')
 })
 
@@ -113,12 +130,28 @@ describe('installPack', () => {
     expect(sequence.pack_id).toBe('demo-pack')
     expect(sequence.pack_version).toBe('1.0.0')
     expect(sequence.default_policy_ref).toBe('POWER')
+    expect(sequence.goal).toBe('Build a reviewable sponsor-prospect segment')
+    expect(sequence.success_criteria).toEqual(['qualified_segment.total_qualified > 0'])
+    expect(sequence.strategy_options).toEqual([
+      {
+        id: 'standard-discovery',
+        label: 'Standard discovery',
+        applies_to: ['beta'],
+        selects_steps: ['beta'],
+        suppresses_steps: [],
+        requires_approval: false,
+      },
+    ])
+    expect(sequence.replan_policy).toEqual({
+      enabled: true,
+      triggers: ['empty_artifact', 'sparse_results'],
+    })
     expect(sequence.steps.map(step => step.id)).toEqual(['alpha', 'beta'])
     expect(sequence.steps[0].model).toBe('gpt-5.4')
     expect(sequence.steps[0].prompt_ref?.path).toBe('.threados/prompts/alpha.md')
     expect(sequence.steps[0].timeout_ms).toBe(30000)
     expect(sequence.steps[0].execution).toBe('sequential')
-    expect((sequence.steps[0] as any).actions).toHaveLength(1)
+    expect(sequence.steps[0].actions).toHaveLength(1)
     expect(sequence.steps[0].gate_set_ref).toBe('default-gates')
     expect(sequence.steps[0].side_effect_class).toBe('execute')
     expect(sequence.gates).toEqual([

@@ -174,6 +174,47 @@ describe('SequenceSchema', () => {
     }
   })
 
+  test('preserves planning metadata fields', () => {
+    const result = SequenceSchema.safeParse({
+      name: 'test',
+      goal: 'Build a reviewable sponsor-prospect segment',
+      success_criteria: ['qualified_segment.total_qualified > 0'],
+      strategy_options: [
+        {
+          id: 'standard-discovery',
+          label: 'Standard discovery',
+          applies_to: ['step-1'],
+          selects_steps: ['step-1'],
+          suppresses_steps: [],
+          requires_approval: false,
+        },
+      ],
+      replan_policy: {
+        enabled: true,
+        triggers: ['empty_artifact', 'sparse_results'],
+      },
+    })
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect(result.data.goal).toBe('Build a reviewable sponsor-prospect segment')
+      expect(result.data.success_criteria).toEqual(['qualified_segment.total_qualified > 0'])
+      expect(result.data.strategy_options).toEqual([
+        {
+          id: 'standard-discovery',
+          label: 'Standard discovery',
+          applies_to: ['step-1'],
+          selects_steps: ['step-1'],
+          suppresses_steps: [],
+          requires_approval: false,
+        },
+      ])
+      expect(result.data.replan_policy).toEqual({
+        enabled: true,
+        triggers: ['empty_artifact', 'sparse_results'],
+      })
+    }
+  })
+
   test('rejects missing name', () => {
     expect(SequenceSchema.safeParse({ version: '1.0' }).success).toBe(false)
   })

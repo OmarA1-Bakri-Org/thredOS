@@ -132,8 +132,23 @@ function buildInstalledSequence(input: {
   overrides?: PackInstallOverrides
   steps: Step[]
   gates: Sequence['gates']
+  compiledGoal?: string
+  compiledSuccessCriteria?: string[]
+  compiledStrategyOptions?: Sequence['strategy_options']
+  compiledReplanPolicy?: Sequence['replan_policy']
 }): Sequence {
-  const { currentSequence, manifest, installName, overrides, steps, gates } = input
+  const {
+    currentSequence,
+    manifest,
+    installName,
+    overrides,
+    steps,
+    gates,
+    compiledGoal,
+    compiledSuccessCriteria,
+    compiledStrategyOptions,
+    compiledReplanPolicy,
+  } = input
   const modelOverrides = overrides?.modelOverrides ?? {}
   const now = new Date().toISOString()
 
@@ -166,6 +181,10 @@ function buildInstalledSequence(input: {
     pack_id: manifest.id,
     pack_version: manifest.version,
     default_policy_ref: overrides?.policyMode ?? manifest.default_policy ?? null,
+    goal: compiledGoal,
+    success_criteria: compiledSuccessCriteria,
+    strategy_options: compiledStrategyOptions,
+    replan_policy: compiledReplanPolicy,
   }
 }
 
@@ -205,6 +224,10 @@ export async function installPack(basePath: string, input: PackInstallInput): Pr
     overrides: input.compileOverrides,
     steps: compiledSteps,
     gates: compiled.sequence.gates as Sequence['gates'],
+    compiledGoal: (compiled.sequence as Sequence).goal,
+    compiledSuccessCriteria: (compiled.sequence as Sequence).success_criteria,
+    compiledStrategyOptions: (compiled.sequence as Sequence).strategy_options,
+    compiledReplanPolicy: (compiled.sequence as Sequence).replan_policy,
   })
   const nextSurfaceState = buildInstalledSurfaceState(currentSurfaceState, compiled.surfaces)
   const nextStepIds = nextSequence.steps.map(step => step.id)

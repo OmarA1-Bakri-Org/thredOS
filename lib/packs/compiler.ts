@@ -49,6 +49,20 @@ export interface CompileResult {
     pack_id: string
     pack_version: string
     default_policy_ref: string | null
+    goal?: string
+    success_criteria?: string[]
+    strategy_options?: Array<{
+      id: string
+      label: string
+      applies_to: string[]
+      selects_steps: string[]
+      suppresses_steps: string[]
+      requires_approval: boolean
+    }>
+    replan_policy?: {
+      enabled: boolean
+      triggers: Array<'empty_artifact' | 'sparse_results'>
+    }
     created_at: string
     updated_at: string
     metadata: {
@@ -146,6 +160,10 @@ export function compilePack(manifest: PackManifest, options: CompilePackOptions 
     pack_id: manifest.id,
     pack_version: manifest.version,
     default_policy_ref: options.policyMode ? `policy:${options.policyMode}` : manifest.default_policy ? `policy:${manifest.default_policy}` : null,
+    goal: validatedManifest.goal,
+    success_criteria: validatedManifest.success_criteria,
+    strategy_options: validatedManifest.strategy_options,
+    replan_policy: validatedManifest.replan_policy,
     created_at: now,
     updated_at: now,
     metadata: {

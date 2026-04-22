@@ -1,6 +1,22 @@
 import { createHash } from 'crypto'
 import { z } from 'zod'
 
+export const StrategyOptionSchema = z.object({
+  id: z.string().regex(/^[a-z0-9-]+$/).min(1),
+  label: z.string().min(1),
+  applies_to: z.array(z.string().regex(/^[a-z0-9-]+$/)).default([]),
+  selects_steps: z.array(z.string().regex(/^[a-z0-9-]+$/)).default([]),
+  suppresses_steps: z.array(z.string().regex(/^[a-z0-9-]+$/)).default([]),
+  requires_approval: z.boolean().default(false),
+})
+export type StrategyOption = z.infer<typeof StrategyOptionSchema>
+
+export const ReplanPolicySchema = z.object({
+  enabled: z.boolean(),
+  triggers: z.array(z.enum(['empty_artifact', 'sparse_results'])).default([]),
+}).optional()
+export type ReplanPolicy = z.infer<typeof ReplanPolicySchema>
+
 export const StepStatusSchema = z.enum([
   'READY', 'RUNNING', 'NEEDS_REVIEW', 'DONE', 'FAILED', 'BLOCKED', 'SKIPPED',
 ])
@@ -229,6 +245,10 @@ const SequenceBaseSchema = z.object({
   pack_id: z.string().nullable().default(null),
   pack_version: z.string().nullable().default(null),
   default_policy_ref: z.string().nullable().default(null),
+  goal: z.string().min(1).optional(),
+  success_criteria: z.array(z.string().min(1)).default([]),
+  strategy_options: z.array(StrategyOptionSchema).default([]),
+  replan_policy: ReplanPolicySchema,
 })
 
 export const SequenceSchema = z.preprocess(coerceSequence, SequenceBaseSchema)
@@ -301,6 +321,10 @@ export interface Sequence {
   pack_id?: string | null
   pack_version?: string | null
   default_policy_ref?: string | null
+  goal?: string
+  success_criteria?: string[]
+  strategy_options?: StrategyOption[]
+  replan_policy?: ReplanPolicy
 }
 
 export function normalizeStep(step: StepInput): CanonicalStep {
