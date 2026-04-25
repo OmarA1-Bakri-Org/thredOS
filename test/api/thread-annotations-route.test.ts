@@ -145,7 +145,7 @@ describe.serial('thread annotation route', () => {
     const res = await POST(req)
     expect(res.status).toBe(404)
     expect(await res.json()).toMatchObject({
-      code: 'NOT_FOUND',
+      code: 'THREAD_SURFACE_NOT_FOUND',
       error: 'Thread surface thread-missing not found',
     })
   })
@@ -165,7 +165,7 @@ describe.serial('thread annotation route', () => {
     const res = await POST(req)
     expect(res.status).toBe(404)
     expect(await res.json()).toMatchObject({
-      code: 'NOT_FOUND',
+      code: 'THREAD_SURFACE_RUN_NOT_FOUND',
       error: 'Run run-missing for surface thread-research not found',
     })
   })

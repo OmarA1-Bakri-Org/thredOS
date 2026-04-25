@@ -33,11 +33,12 @@ export async function POST(request: Request) {
       if (!step) throw new StepNotFoundError(cid)
       step.fusion_candidates = true
       step.type = 'f'
+      step.kind = 'f'
     }
 
     if (!seq.steps.some(s => s.id === synthId)) {
       const synth: Step = {
-        id: synthId, name: `Fusion synth: ${synthId}`, type: 'f',
+        id: synthId, name: `Fusion synth: ${synthId}`, kind: 'f', type: 'f',
         model: 'claude-code', prompt_file: `.threados/prompts/${synthId}.md`,
         depends_on: [...candidates], status: 'READY', fusion_synth: true,
       }
@@ -46,6 +47,7 @@ export async function POST(request: Request) {
       const existing = seq.steps.find(s => s.id === synthId)!
       existing.fusion_synth = true
       existing.type = 'f'
+      existing.kind = 'f'
       for (const cid of candidates) {
         if (!existing.depends_on.includes(cid)) existing.depends_on.push(cid)
       }

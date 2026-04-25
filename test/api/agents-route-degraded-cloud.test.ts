@@ -96,7 +96,7 @@ describe.serial('POST /api/agents degraded cloud', () => {
     }
     const persistedAgent = agentStateRaw.agents.find(agent => agent.id === 'agent-a')
     expect(persistedAgent).toBeDefined()
-    expect(persistedAgent?.model).toBe('codex')
+    expect(persistedAgent?.model).toBe('claude-code')
     expect(persistedAgent?.role).toBe('reviewer')
     expect('registrationNumber' in (persistedAgent ?? {})).toBe(false)
     expect('cloudSyncedAt' in (persistedAgent ?? {})).toBe(false)

@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test'
-import { chmod, mkdir, mkdtemp, readFile, rm } from 'fs/promises'
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { assessCompletionResult, dispatch, checkAgentAvailable, exitCodeToStatus, getSupportedModels } from './dispatch'
@@ -96,6 +96,30 @@ describe('checkAgentAvailable', () => {
   test('shell is always available', async () => {
     const available = await checkAgentAvailable('shell')
     expect(available).toBe(true)
+  })
+
+  test('finds agent binaries even when Bun.spawn is unavailable', async () => {
+    const fakeBinDir = await mkdtemp(join(tmpdir(), 'threados-agent-bin-'))
+    const fakeClaude = join(fakeBinDir, 'claude')
+    await writeFile(fakeClaude, '#!/bin/sh\nexit 0\n', 'utf-8')
+    await chmod(fakeClaude, 0o755)
+
+    const originalPath = process.env.PATH
+    const originalBunSpawn = Bun.spawn
+    process.env.PATH = `${fakeBinDir}:/usr/bin:/bin`
+    Bun.spawn = (() => {
+      throw new Error('Bun.spawn unavailable in Node runtime')
+    }) as typeof Bun.spawn
+
+    try {
+      const available = await checkAgentAvailable('claude-code')
+      expect(available).toBe(true)
+    } finally {
+      if (originalPath === undefined) delete process.env.PATH
+      else process.env.PATH = originalPath
+      Bun.spawn = originalBunSpawn
+      await rm(fakeBinDir, { recursive: true, force: true })
+    }
   })
 })
 
@@ -194,6 +218,24 @@ describe('dispatch', () => {
     })
 
     expect(config.env?.THREADOS_EVENT_EMITTER).toBe('thread event')
+  })
+
+  test('codex dispatch uses non-interactive exec syntax supported by the installed CLI', async () => {
+    const config = await dispatch('codex', {
+      stepId: 'codex-step',
+      runId: 'run-codex',
+      compiledPrompt: 'Do the work',
+      cwd: process.cwd(),
+      timeout: 5000,
+    })
+
+    expect(config.command).toBe('codex')
+    expect(config.args).toEqual([
+      'exec',
+      '--full-auto',
+      '--skip-git-repo-check',
+      expect.stringContaining('Execute the task described in'),
+    ])
   })
 
   test('rejects unsupported model', async () => {
