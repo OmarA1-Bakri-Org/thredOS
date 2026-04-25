@@ -114,7 +114,7 @@ export type ApprovalStatus = z.infer<typeof ApprovalStatusSchema>
 
 export const ApprovalSchema = z.object({
   id: z.string().min(1),
-  action_type: z.enum(['run', 'reveal', 'side_effect', 'gate_override']),
+  action_type: z.enum(['run', 'reveal', 'side_effect', 'gate_override', 'plan_revision']),
   target_ref: z.string().min(1),
   requested_by: z.string().min(1),
   status: ApprovalStatusSchema,

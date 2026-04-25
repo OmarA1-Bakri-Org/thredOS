@@ -31,6 +31,7 @@ import {
   readRuntimeContext,
 } from '../../runtime/context'
 import { AbortWorkflowError, assessSelectedStepEvidence, executeNativeOperationalAction, renderRuntimeContextTemplate } from '../../runtime/native-actions'
+import { applyPlannerDecision } from '../../runtime/planner'
 import { PolicyEngine } from '../../policy/engine'
 
 const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000 // 30 minutes
@@ -313,12 +314,6 @@ async function reconcileSkippedSteps(basePath: string, sequence: Sequence): Prom
   }
 
   return skippedIds
-}
-
-function renderActionContract(step: Step): string {
-  const actions = (step as Step & { actions?: unknown[] }).actions
-  if (!Array.isArray(actions) || actions.length === 0) return ''
-  return `\n\n## THREADOS ACTION CONTRACT\n${JSON.stringify(actions, null, 2)}\n`
 }
 
 /**
@@ -692,7 +687,28 @@ async function handleRunStep(
   await createRootRunScopeForCommand(basePath, sequence.name, runId, startedAt)
 
   const precheckResult = await getDirectRunPrecheckResult(basePath, stepId, runId)
-  const result = precheckResult ?? await executeSingleStep(basePath, sequence, stepId, runId, mprocsClient)
+  const plannerOutcome = await applyPlannerDecision(basePath, await readSequence(basePath), {
+    runId,
+    actor: 'seqctl:run',
+    requestedBy: 'seqctl:run',
+  })
+  if (plannerOutcome.blockedResult) {
+    const result = {
+      success: false,
+      stepId,
+      runId,
+      status: 'BLOCKED' as const,
+      error: plannerOutcome.blockedResult.error,
+    }
+    await finalizeRootRunScopeForCommand(basePath, runId, false, `step:${stepId}`)
+    if (options.json) {
+      console.log(JSON.stringify(result))
+      return
+    }
+    console.log(`Step '${stepId}' blocked: ${result.error}`)
+    return
+  }
+  const result = precheckResult ?? await executeSingleStep(basePath, plannerOutcome.sequence, stepId, runId, mprocsClient)
   await finalizeRootRunScopeForCommand(basePath, runId, result.success, `step:${stepId}`)
 
   const mprocsMap = await readMprocsMap(basePath)
@@ -734,7 +750,16 @@ async function handleRunRunnable(
 
   while (true) {
     const latestSequence = await readSequence(basePath)
-    const { steps: latestRunnableSteps, skippedIds: latestSkippedIds } = await getRunnableSteps(basePath, latestSequence)
+    const planningOutcome = await applyPlannerDecision(basePath, latestSequence, {
+      runId,
+      actor: 'seqctl:run',
+      requestedBy: 'seqctl:run',
+    })
+    if (planningOutcome.blockedResult) {
+      waiting.add('apollo-discovery')
+      break
+    }
+    const { steps: latestRunnableSteps, skippedIds: latestSkippedIds } = await getRunnableSteps(basePath, planningOutcome.sequence)
     for (const skippedStepId of latestSkippedIds) {
       if (!alreadyExecuted.has(skippedStepId)) {
         skipped.add(skippedStepId)

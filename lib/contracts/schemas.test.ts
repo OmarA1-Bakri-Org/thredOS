@@ -197,10 +197,26 @@ describe('ApprovalSchema', () => {
       target_ref: 'surface-001',
       requested_by: 'orchestrator',
       status: 'approved',
-      approved_by: 'user-alice',
-      approved_at: '2026-03-28T11:00:00Z',
-      notes: 'Reviewed and approved.',
+      approved_by: 'reviewer',
+      approved_at: '2026-03-10T10:00:00Z',
+      notes: 'Looks safe',
     })
+
+    expect(result.success).toBe(true)
+  })
+
+  it('validates a plan revision Approval', () => {
+    const result = ApprovalSchema.safeParse({
+      id: 'approval-003',
+      action_type: 'plan_revision',
+      target_ref: 'plan_revision:seq-1:none:broaden-discovery:rev-001',
+      requested_by: 'orchestrator',
+      status: 'pending',
+      approved_by: null,
+      approved_at: null,
+      notes: 'Revise strategy',
+    })
+
     expect(result.success).toBe(true)
   })
 })
