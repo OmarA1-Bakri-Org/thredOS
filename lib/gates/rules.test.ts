@@ -49,6 +49,12 @@ describe('checkDepsSatisfied', () => {
     expect(result.reason_codes).toContain(GateReasonCode.DEP_MISSING)
   })
 
+  it('treats skipped dependencies as satisfied', () => {
+    const dep = makeStep({ id: 'dep1', status: 'SKIPPED' as Step['status'] })
+    const result = checkDepsSatisfied(makeStep({ depends_on: ['dep1'] }), [dep], [])
+    expect(result.status).toBe('PASS')
+  })
+
   it('returns BLOCK when a dependency gate is pending', () => {
     const gate = { id: 'g1', status: 'PENDING' } as unknown as Gate
     const result = checkDepsSatisfied(makeStep({ depends_on: ['g1'] }), [], [gate])
@@ -70,13 +76,18 @@ describe('checkRequiredInputsPresent', () => {
 
 describe('checkPolicyPass', () => {
   it('passes when sideEffectClass is undefined', () => {
-    expect(checkPolicyPass(undefined, 'SAFE', 'manual_only').status).toBe('PASS')
+    expect(checkPolicyPass(undefined, 'SAFE', 'manual_only', false).status).toBe('PASS')
   })
 
-  it('returns NEEDS_APPROVAL for gated write side effects', () => {
-    const result = checkPolicyPass('write', 'SAFE', 'approved_only')
+  it('returns NEEDS_APPROVAL for gated write side effects without approval evidence', () => {
+    const result = checkPolicyPass('write', 'SAFE', 'approved_only', false)
     expect(result.status).toBe('NEEDS_APPROVAL')
     expect(result.reason_codes).toContain(GateReasonCode.POLICY_BLOCKED)
+  })
+
+  it('passes gated write side effects when approval evidence is present', () => {
+    const result = checkPolicyPass('write', 'SAFE', 'approved_only', true)
+    expect(result.status).toBe('PASS')
   })
 })
 

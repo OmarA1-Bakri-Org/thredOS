@@ -4,6 +4,7 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import YAML from 'yaml'
 import { readApprovals } from '@/lib/approvals/repository'
+import { recordApprovedApprovalLifecycle } from '@/lib/approvals/runtime'
 import { readTraceEvents } from '@/lib/traces/reader'
 
 let basePath = ''
@@ -89,11 +90,139 @@ describe.serial('run route approval proof', () => {
     })
 
     const traces = await readTraceEvents(basePath, body.runId)
-    expect(traces.map(entry => entry.event_type)).toEqual(['approval-requested', 'approval-resolved'])
+    expect(traces.map(entry => entry.event_type)).toEqual([
+      'approval-requested',
+      'approval-resolved',
+      'gate-evaluated',
+      'gate-evaluated',
+      'gate-evaluated',
+      'gate-evaluated',
+      'gate-evaluated',
+      'gate-evaluated',
+      'gate-evaluated',
+      'gate-evaluated',
+    ])
     expect(traces[0]).toMatchObject({
       actor: 'api:run',
       surface_id: 'step:step-safe',
     })
+  })
+
+  test('approval action hydrates Apollo artifact fields into pending approval notes', async () => {
+    const artifactDir = join(basePath, 'apollo-segment-artifacts')
+    await mkdir(join(basePath, '.threados', 'state'), { recursive: true })
+    await mkdir(artifactDir, { recursive: true })
+    await writeFile(join(basePath, '.threados', 'state', 'runtime-context.json'), JSON.stringify({
+      apollo_artifact_dir: artifactDir,
+      icp_config: {
+        enrichment: { max_apollo_credits: 30 },
+        output: { apollo_stage_name: 'Review Stage', tag_in_apollo: true },
+      },
+      resolved_stage_id: 'stage-789',
+    }))
+    await writeFile(join(artifactDir, 'qualified-segment.json'), JSON.stringify({
+      segment_name: 'Mid-Market',
+      total_qualified: 2,
+      contacts: [
+        { source: 'apollo_saved', persona_lane: 'A' },
+        { source: 'both', persona_lane: 'B' },
+      ],
+      excluded: { duplicates: 1 },
+    }))
+    await writeFile(join(artifactDir, 'enriched-segment.json'), JSON.stringify({ credits_used: 7 }))
+
+    await setupSequence({
+      version: '1.0',
+      name: 'approval-hydration-seq',
+      steps: [
+        {
+          id: 'step-review',
+          name: 'Review Step',
+          type: 'base',
+          model: 'codex',
+          prompt_file: '.threados/prompts/step-review.md',
+          depends_on: [],
+          status: 'READY',
+          actions: [{
+            id: 'review-before-send',
+            type: 'approval',
+            config: {
+              approval_prompt: 'Review {{qualified_segment.segment_name}} | saved {{counts.saved}} | both {{counts.both}} | dupes {{excluded.duplicates}} | credits {{enriched_segment.credits_used}}/{{icp_config.enrichment.max_apollo_credits}} | stage {{stage_id_or_MISSING}}',
+            },
+          }],
+        },
+      ],
+      gates: [],
+    })
+    await writePrompt('step-review')
+
+    const { POST } = await import('@/app/api/run/route')
+    const response = await POST(new Request('http://localhost/api/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ stepId: 'step-review', confirmPolicy: true }),
+    }))
+
+    expect(response.status).toBe(200)
+    const body = await response.json()
+    expect(body.success).toBe(false)
+    expect(body.status).toBe('BLOCKED')
+    const approvals = await readApprovals(basePath, body.runId)
+    expect(approvals.at(-1)?.notes).toBe('Review Mid-Market | saved 1 | both 1 | dupes 1 | credits 7/30 | stage stage-789')
+  })
+
+  test('blocked approval-gated write step reopens once approval evidence exists without bypassing other authority checks', async () => {
+    await mkdir(join(basePath, '.threados'), { recursive: true })
+    await writeFile(join(basePath, '.threados', 'policy.yaml'), YAML.stringify({
+      mode: 'SAFE',
+      side_effect_mode: 'approved_only',
+      cross_surface_reads: 'dependency_only',
+    }))
+    await setupSequence({
+      version: '1.0',
+      name: 'approval-reopen-seq',
+      steps: [
+        {
+          id: 'step-approved-write',
+          name: 'Approved Write Step',
+          type: 'base',
+          model: 'codex',
+          prompt_file: '.threados/prompts/step-approved-write.md',
+          depends_on: [],
+          status: 'BLOCKED',
+          side_effect_class: 'write',
+        },
+      ],
+      gates: [],
+    })
+    await writePrompt('step-approved-write')
+    await recordApprovedApprovalLifecycle({
+      basePath,
+      runId: 'seed-approval-run',
+      actionType: 'run',
+      targetRef: 'step:step-approved-write',
+      requestedBy: 'tester@thredos',
+      resolvedBy: 'tester@thredos',
+      actor: 'test:seed',
+      notes: 'seed approval',
+    })
+
+    const { POST } = await import('@/app/api/run/route')
+    const response = await POST(new Request('http://localhost/api/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ stepId: 'step-approved-write', confirmPolicy: true }),
+    }))
+
+    expect(response.status).toBe(200)
+    const body = await response.json()
+    expect(body.success).toBe(true)
+
+    const persistedSequence = YAML.parse(await Bun.file(join(basePath, '.threados', 'sequence.yaml')).text())
+    expect(persistedSequence.steps.find((step: { id: string; status: string }) => step.id === 'step-approved-write')?.status).toBe('DONE')
+
+    const traces = await readTraceEvents(basePath, body.runId)
+    expect(traces.some(entry => entry.event_type === 'gate-blocked')).toBe(false)
   })
 
   test('POWER mode run skips SAFE approval recording', async () => {
@@ -120,6 +249,6 @@ describe.serial('run route approval proof', () => {
     const body = await response.json()
     expect(body.success).toBe(true)
     await expect(readApprovals(basePath, body.runId)).resolves.toEqual([])
-    await expect(readTraceEvents(basePath, body.runId)).resolves.toEqual([])
+    await expect(readTraceEvents(basePath, body.runId)).resolves.toHaveLength(8)
   })
 })

@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
 import { createTempDir, cleanTempDir } from '../../test/helpers/setup'
-import { appendApproval, readApprovals } from './repository'
+import { appendApproval, hasApprovedApproval, readApprovals } from './repository'
 import type { Approval } from '@/lib/contracts/schemas'
 
 function makeApproval(overrides: Partial<Approval> = {}): Approval {
@@ -79,5 +79,29 @@ describe('approval repository', () => {
     expect(results[1].approved_by).toBe('admin')
     expect(results[2].id).toBe('approval-3')
     expect(results[2].status).toBe('rejected')
+  })
+
+  test('hasApprovedApproval reuses approved records across runs after folding repeated ids', async () => {
+    await appendApproval(tmpDir, 'run-1', makeApproval({
+      id: 'approval-shared',
+      target_ref: 'step:review',
+      status: 'pending',
+    }))
+    await appendApproval(tmpDir, 'run-1', makeApproval({
+      id: 'approval-shared',
+      target_ref: 'step:review',
+      status: 'approved',
+      approved_by: 'human-reviewer',
+      approved_at: '2026-03-28T12:00:00.000Z',
+    }))
+    await appendApproval(tmpDir, 'run-2', makeApproval({
+      id: 'approval-other',
+      target_ref: 'step:other',
+      status: 'pending',
+    }))
+
+    await expect(hasApprovedApproval(tmpDir, 'step:review')).resolves.toBe(true)
+    await expect(hasApprovedApproval(tmpDir, 'step:other')).resolves.toBe(false)
+    await expect(hasApprovedApproval(tmpDir, 'step:missing')).resolves.toBe(false)
   })
 })

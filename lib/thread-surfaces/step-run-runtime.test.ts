@@ -162,7 +162,7 @@ describe('step run runtime helpers', () => {
     const result = finalizeStepRunWithRuntimeEvents(started, {
       step: buildStep(),
       stepRun: null,
-      success: true,
+      runStatus: 'successful',
       endedAt: '2026-03-09T10:01:10.000Z',
       runtimeEvents,
       nextRunId: () => 'run-generated',
@@ -254,7 +254,7 @@ describe('step run runtime helpers', () => {
     const result = finalizeStepRunWithRuntimeEvents(withCandidateB, {
       step: buildStep({ id: 'fusion-synth', name: 'Fusion Synth', type: 'f' }),
       stepRun: null,
-      success: true,
+      runStatus: 'successful',
       endedAt: '2026-03-09T10:02:10.000Z',
       runtimeEvents,
       nextRunId: () => 'run-fusion',
@@ -313,7 +313,7 @@ describe('step run runtime helpers', () => {
     const result = finalizeStepRunWithRuntimeEvents(started, {
       step: buildStep(),
       stepRun: null,
-      success: true,
+      runStatus: 'successful',
       endedAt: '2026-03-09T10:01:10.000Z',
       runtimeEvents,
       nextRunId: () => 'run-generated',
@@ -333,6 +333,53 @@ describe('step run runtime helpers', () => {
         }),
       ]),
     )
+  })
+
+  test('finalizeStepRunWithRuntimeEvents keeps blocked runs pending instead of failed', () => {
+    const started = createRootThreadSurfaceRun(emptyThreadSurfaceState, {
+      surfaceId: 'thread-root',
+      surfaceLabel: 'Sequence',
+      createdAt: '2026-03-09T10:00:00.000Z',
+      runId: 'run-root',
+      startedAt: '2026-03-09T10:00:00.000Z',
+      executionIndex: 1,
+    }).state
+    const withChild = createChildThreadSurfaceRun(started, {
+      parentSurfaceId: 'thread-root',
+      parentAgentNodeId: 'step-a',
+      childSurfaceId: 'thread-step-a',
+      childSurfaceLabel: 'Step A',
+      createdAt: '2026-03-09T10:00:05.000Z',
+      runId: 'run-step-seed',
+      startedAt: '2026-03-09T10:00:05.000Z',
+      executionIndex: 2,
+    }).state
+    const active = beginStepRunIfSurfaceExists(withChild, buildStep(), {
+      now: '2026-03-09T10:01:00.000Z',
+      nextRunId: 'run-step-blocked',
+      executionIndex: 3,
+    })
+
+    const result = finalizeStepRunWithRuntimeEvents(active.state, {
+      step: buildStep(),
+      stepRun: active.stepRun,
+      runStatus: 'pending',
+      endedAt: '2026-03-09T10:01:10.000Z',
+      runtimeEvents: [],
+      nextRunId: () => 'run-unused',
+      nextEventId: () => 'event-unused',
+      nextMergeId: () => 'merge-unused',
+    })
+
+    expect(result.state.runs.find(run => run.id === 'run-step-blocked')).toEqual(
+      expect.objectContaining({
+        threadSurfaceId: 'thread-step-a',
+        runStatus: 'pending',
+        endedAt: null,
+        runSummary: 'step:step-a:blocked',
+      }),
+    )
+    expect(result.pendingChildSequences).toEqual([])
   })
 
   test('finalizeStepRunWithRuntimeEvents uses threadType from spawn event', () => {
@@ -357,7 +404,7 @@ describe('step run runtime helpers', () => {
     const result = finalizeStepRunWithRuntimeEvents(started, {
       step: buildStep(),
       stepRun: null,
-      success: true,
+      runStatus: 'successful',
       endedAt: '2026-03-09T10:01:10.000Z',
       runtimeEvents,
       nextRunId: () => 'run-generated',

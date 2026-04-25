@@ -1,5 +1,8 @@
 import { describe, test, expect } from 'bun:test'
-import { dispatch, checkAgentAvailable, exitCodeToStatus, getSupportedModels } from './dispatch'
+import { chmod, mkdir, mkdtemp, readFile, rm } from 'fs/promises'
+import { tmpdir } from 'os'
+import { join } from 'path'
+import { assessCompletionResult, dispatch, checkAgentAvailable, exitCodeToStatus, getSupportedModels } from './dispatch'
 import type { ModelType } from '../sequence/schema'
 
 const unsupportedModel = 'unknown-model' as ModelType
@@ -27,6 +30,55 @@ describe('exitCodeToStatus', () => {
 
   test('maps 137 (SIGKILL) to FAILED', () => {
     expect(exitCodeToStatus(137)).toBe('FAILED')
+  })
+})
+
+describe('assessCompletionResult', () => {
+  test('keeps successful zero-exit runs as DONE when output looks complete', () => {
+    expect(assessCompletionResult({ exitCode: 0, stdout: 'Work complete. FILES_CREATED: dist/out.json', stderr: '' }).status).toBe('DONE')
+  })
+
+  test('does not downgrade incidental troubleshooting text that is not a first-person blocker', () => {
+    expect(
+      assessCompletionResult({
+        exitCode: 0,
+        stdout: 'Updated docs with troubleshooting text about permission denied and access denied errors.',
+        stderr: '',
+      }).status,
+    ).toBe('DONE')
+  })
+
+  test('downgrades zero-exit refusals to NEEDS_REVIEW', () => {
+    const result = assessCompletionResult({
+      exitCode: 0,
+      stdout: 'I cannot access the requested system because I do not have permission to use that tool.',
+      stderr: '',
+    })
+
+    expect(result.status).toBe('NEEDS_REVIEW')
+    expect(result.reasons).toContain('OBVIOUS_NON_COMPLETION_PAYLOAD')
+  })
+
+  test('downgrades zero-exit line-start permission denied payloads to NEEDS_REVIEW', () => {
+    const result = assessCompletionResult({
+      exitCode: 0,
+      stdout: 'Permission denied: cannot access the requested admin tool from this environment.',
+      stderr: '',
+    })
+
+    expect(result.status).toBe('NEEDS_REVIEW')
+    expect(result.reasons).toContain('OBVIOUS_NON_COMPLETION_PAYLOAD')
+  })
+
+  test('downgrades zero-exit unable-to-complete payloads to NEEDS_REVIEW', () => {
+    const result = assessCompletionResult({
+      exitCode: 0,
+      stdout: "I'm unable to complete this because the billing console is unavailable in this environment.",
+      stderr: '',
+    })
+
+    expect(result.status).toBe('NEEDS_REVIEW')
+    expect(result.reasons).toContain('OBVIOUS_NON_COMPLETION_PAYLOAD')
   })
 })
 
@@ -66,18 +118,55 @@ describe('dispatch', () => {
     expect(config.env?.THREADOS_RUN_ID).toBe('run-123')
   })
 
-  test('shell dispatch writes prompt to temp file', async () => {
+  test('shell dispatch writes prompt to workspace-local temp file', async () => {
+    const cwd = process.cwd()
     const config = await dispatch('shell', {
       stepId: 'test',
       runId: 'run-456',
       compiledPrompt: 'echo "test"',
-      cwd: process.cwd(),
+      cwd,
       timeout: 5000,
     })
 
-    // args[0] should be the temp file path
     expect(config.args).toBeDefined()
-    expect(config.args![0]).toContain('threados-prompt-test-')
+    expect(config.args![0]).toContain('.threados/tmp-prompts/threados-prompt-test-')
+    expect(config.args![0].startsWith(cwd)).toBe(true)
+    await expect(readFile(config.args![0], 'utf-8')).resolves.toContain('echo "test"')
+  })
+
+  test('dispatch sanitizes nested step ids when writing prompt files', async () => {
+    const cwd = process.cwd()
+    const config = await dispatch('shell', {
+      stepId: 'merge-dedup-comply::spawn_merge_agent',
+      runId: 'run-789',
+      compiledPrompt: 'echo nested',
+      cwd,
+      timeout: 5000,
+    })
+
+    expect(config.args).toBeDefined()
+    expect(config.args![0]).toContain('threados-prompt-merge-dedup-comply-spawn_merge_agent-')
+    expect(config.args![0]).not.toContain('::')
+  })
+
+  test('fails fast when the workspace-local temp prompt root is not writable', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'threados-dispatch-preflight-'))
+    const promptRoot = join(cwd, '.threados', 'tmp-prompts')
+    await mkdir(promptRoot, { recursive: true })
+    await chmod(promptRoot, 0o555)
+
+    try {
+      await expect(dispatch('shell', {
+        stepId: 'blocked-write',
+        runId: 'run-preflight',
+        compiledPrompt: 'echo blocked',
+        cwd,
+        timeout: 5000,
+      })).rejects.toThrow(`Runtime preflight failed: prompt temp root is not writable: ${promptRoot}`)
+    } finally {
+      await chmod(promptRoot, 0o755)
+      await rm(cwd, { recursive: true, force: true })
+    }
   })
 
   test('dispatch exposes THREADOS_EVENT_LOG to the child process', async () => {

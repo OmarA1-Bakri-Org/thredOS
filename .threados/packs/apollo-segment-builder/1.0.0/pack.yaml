@@ -1,0 +1,974 @@
+id: apollo-segment-builder
+version: 1.0.0
+name: Apollo Segment Builder
+thread_types:
+- base
+default_policy: SAFE
+agents:
+- apollo-orchestrator
+- apollo-research-worker
+- apollo-state-worker
+- apollo-review-worker
+prerequisites:
+  connections:
+  - name: apollo
+    type: composio
+    required: true
+    health_check: APOLLO_VIEW_API_USAGE_STATS
+    on_unavailable: abort
+  - name: telegram
+    type: composio
+    required: false
+    health_check: TELEGRAM_SEND_MESSAGE
+    on_unavailable: warn
+  env_vars:
+  - APOLLO_API_KEY
+  key_ids:
+    telegram_chat_id: '1778273779'
+shared_references:
+- id: compliance_rules
+  path: shared_references/compliance-rules.md
+  load_when: before_merge
+  required: true
+- id: persona_routing
+  path: shared_references/persona-routing.md
+  load_when: during_merge
+  required: true
+- id: state_management
+  path: shared_references/state-management.md
+  load_when: setup
+  required: false
+- id: prospect_selection
+  path: shared_references/prospect-selection.md
+  load_when: during_merge
+  required: true
+- id: cross_channel_intel
+  path: shared_references/cross-channel-intel.md
+  load_when: during_output
+  required: false
+- id: thegent_company_info
+  path: shared_references/thegent-company-info.md
+  load_when: during_merge
+  required: true
+- id: context7_docs
+  path: shared_references/context7-documentation.md
+  load_when: setup
+  required: true
+surface_classes:
+- shared
+- private
+- control
+phases:
+- id: phase-0-setup
+  label: Setup
+  order: 0
+- id: phase-1-discovery
+  label: Discovery
+  order: 1
+- id: phase-2-qualification
+  label: Qualification
+  order: 2
+- id: phase-3-enrichment
+  label: Enrichment
+  order: 3
+- id: phase-4-approval
+  label: Approval
+  order: 4
+- id: phase-5-persistence
+  label: Persistence
+  order: 5
+- id: phase-6-summary
+  label: Summary
+  order: 6
+steps:
+- id: context7-review
+  name: Context7 Documentation Review
+  type: base
+  model: claude-code
+  phase: phase-0-setup
+  surface_class: shared
+  depends_on: []
+  prompt_file: .threados/prompts/context7-review.md
+  execution: sequential
+  timeout_ms: 30000
+  actions:
+  - id: resolve_falkordb
+    type: cli
+    description: Resolve FalkorDB library ID in Context7
+    config:
+      command: resolve-library-id("FalkorDB")
+    output_key: falkordb_library_id
+    on_failure: warn
+  - id: query_falkordb_docs
+    type: cli
+    description: Query FalkorDB docs for contact/company graph patterns
+    config:
+      command: query-docs("/falkordb/falkordb-py", "graph queries MERGE upsert contact
+        company relationship")
+    on_failure: warn
+- id: health-check
+  name: Health Check
+  type: base
+  model: claude-code
+  phase: phase-0-setup
+  surface_class: shared
+  depends_on: []
+  prompt_file: .threados/prompts/health-check.md
+  execution: sequential
+  timeout_ms: 15000
+  actions:
+  - id: run_health_check
+    type: cli
+    config:
+      command: python C:/Users/OmarAl-Bakri/Claude_Code_Automations/scripts/state_manager.py
+        health-check
+    output_key: health
+    retry:
+      max_attempts: 2
+      delay_ms: 3000
+      retry_on:
+      - timeout
+      - connection_error
+    on_failure: warn
+- id: register-agent
+  name: Register Agent
+  type: base
+  model: claude-code
+  phase: phase-0-setup
+  surface_class: shared
+  depends_on: []
+  prompt_file: .threados/prompts/register-agent.md
+  execution: sequential
+  timeout_ms: 10000
+  condition: first_run == true
+  actions:
+  - id: register
+    type: cli
+    config:
+      command: python C:/Users/OmarAl-Bakri/Claude_Code_Automations/scripts/state_manager.py
+        register-agent --name "apollo_segment_builder" --channels "multi_platform"
+        --capabilities "segment_building,apollo_discovery,contact_enrichment,apollo_stage_tagging"
+    on_failure: warn
+- id: pre-session
+  name: Pre-Session State Load
+  type: base
+  model: claude-code
+  phase: phase-0-setup
+  surface_class: private
+  depends_on:
+  - health-check
+  prompt_file: .threados/prompts/pre-session.md
+  execution: sequential
+  timeout_ms: 30000
+  actions:
+  - id: pre_session_check
+    type: cli
+    config:
+      command: python C:/Users/OmarAl-Bakri/Claude_Code_Automations/scripts/state_manager.py
+        pre-session-check --agent "apollo_segment_builder"
+    output_key: session_state
+    on_failure: warn
+  - id: get_messages
+    type: cli
+    config:
+      command: python C:/Users/OmarAl-Bakri/Claude_Code_Automations/scripts/state_manager.py
+        get-messages --agent "apollo_segment_builder"
+    output_key: agent_messages
+    on_failure: warn
+  - id: recall_memories
+    type: cli
+    config:
+      command: python C:/Users/OmarAl-Bakri/Claude_Code_Automations/scripts/state_manager.py
+        recall --agent "apollo_segment_builder" --limit 20
+    output_key: memories
+    on_failure: skip
+  - id: load_knowledge
+    type: cli
+    config:
+      command: python C:/Users/OmarAl-Bakri/Claude_Code_Automations/scripts/state_manager.py
+        query-knowledge --category "outreach" --tags "segment,icp"
+    output_key: knowledge
+    on_failure: skip
+- id: setup-workspace
+  name: Setup Workspace
+  type: base
+  model: claude-code
+  phase: phase-0-setup
+  surface_class: shared
+  depends_on: []
+  prompt_file: .threados/prompts/setup-workspace.md
+  execution: sequential
+  timeout_ms: 15000
+  actions:
+  - id: create_dirs
+    type: cli
+    config:
+      command: mkdir -p /tmp/apollo-segment && mkdir -p /tmp/shared-intel
+    on_failure: abort_step
+- id: input-collection
+  name: ICP Input Collection
+  type: base
+  model: claude-code
+  phase: phase-0-setup
+  surface_class: private
+  depends_on:
+  - setup-workspace
+  - pre-session
+  prompt_file: .threados/prompts/input-collection.md
+  execution: sequential
+  timeout_ms: 600000
+  actions:
+  - id: detect_mode
+    type: conditional
+    description: Detect JSON config vs Q&A mode from Omar's input
+    config:
+      condition: user_input.contains_json_block == true
+      if_true:
+      - id: parse_json
+        type: cli
+        description: Parse JSON config and validate schema
+        config:
+          command: echo parse_json_config
+        output_key: icp_config
+        on_failure: abort_workflow
+      if_false:
+      - id: run_qa
+        type: approval
+        description: Walk Omar through 10-question ICP Q&A (name, titles, industries,
+          geographies, size, sources, pipeline exclusion, enrichment, Apollo stage
+          tagging, agent signals)
+        config:
+          approval_prompt: Answer 10 Q&A questions to build ICP config (segment_name,
+            titles, industries, geographies, size range, sources [apollo_saved|apollo_discovery|both],
+            exclude existing pipeline?, enrich missing emails? max credits?, tag in
+            Apollo? stage name?, signal agents [outlook_bd,linkedin_bd]?)
+        output_key: icp_config
+        on_failure: abort_workflow
+  - id: write_icp_config
+    type: write_file
+    description: Persist ICP config to /tmp/apollo-segment/icp-config.json
+    config:
+      file_path: /tmp/apollo-segment/icp-config.json
+    on_failure: abort_workflow
+- id: apollo-saved-contacts-search
+  name: Apollo Saved Contacts Search
+  type: base
+  model: claude-code
+  phase: phase-1-discovery
+  surface_class: shared
+  depends_on:
+  - input-collection
+  prompt_file: .threados/prompts/apollo-saved-contacts-search.md
+  execution: sub_agent
+  timeout_ms: 600000
+  condition: icp_config.sources contains 'apollo_saved'
+  actions:
+  - id: spawn_saved_contacts_agent
+    type: sub_agent
+    description: Spawn sub-agent to search Apollo saved contacts — runs in PARALLEL
+      with Apollo Discovery
+    config:
+      subagent_type: general-purpose
+      prompt: "Execute Apollo Segment Builder Phase 1a: Apollo Saved Contacts Search.\
+        \ You have access to Rube Apollo tools.\n\nINPUT: Read /tmp/apollo-segment/icp-config.json\
+        \ for filters.\n\n1. List available contact stages (segment tags):\n   Use\
+        \ APOLLO_LIST_CONTACT_STAGES. Capture all { id, name } pairs.\n\n2. Check\
+        \ Apollo API credits (soft gate):\n   Use APOLLO_VIEW_API_USAGE_STATS. If\
+        \ remaining is critically low, flag in the report but proceed (saved-contact\
+        \ search is cheap).\n\n3. Search existing Apollo contacts — one query per\
+        \ target title to OR across titles:\n   Use APOLLO_SEARCH_CONTACTS with q_keywords\
+        \ set to the title, per_page: 100, page: 1. Paginate up to 5 pages per title\
+        \ (hard cap 500 contacts per title).\n   Collect: contact_id, email, title,\
+        \ organization_name, organization_id, stage_id, stage_name, owner_id.\n\n\
+        4. Filter locally against ICP criteria (Apollo's server-side filtering is\
+        \ limited):\n   - Title token match (case-insensitive)\n   - Seniority match\n\
+        \   - Company domain / industry match\n   - Geography match (if location data\
+        \ available)\n\n5. OWNERSHIP CHECK (MANDATORY): Keep only contacts where owner_id\
+        \ matches Omar's Apollo user id OR owner is blank. Drop records owned by others.\n\
+        \n6. Write /tmp/apollo-segment/saved-contacts.json with structure:\n   { generated_at,\
+        \ stages_available: [{ id, name }], total_contacts, contacts: [{ source: 'apollo_saved',\
+        \ apollo_contact_id, apollo_person_id, name, email, title, company, company_domain,\
+        \ organization_id, phone, current_stage_id, current_stage_name, owner_id }]\
+        \ }\n\nDo NOT spend enrichment credits in this phase."
+    output_key: saved_contacts
+    on_failure: warn
+- id: apollo-discovery
+  name: Apollo Prospect Discovery
+  type: base
+  model: claude-code
+  phase: phase-1-discovery
+  surface_class: shared
+  depends_on:
+  - input-collection
+  prompt_file: .threados/prompts/apollo-discovery.md
+  execution: sub_agent
+  timeout_ms: 600000
+  condition: icp_config.sources contains 'apollo_discovery'
+  actions:
+  - id: spawn_discovery_agent
+    type: sub_agent
+    description: Spawn sub-agent for Apollo prospect discovery — runs in PARALLEL
+      with Saved Contacts Search
+    config:
+      subagent_type: general-purpose
+      prompt: "Execute Apollo Segment Builder Phase 1b: Apollo Prospect Discovery.\
+        \ You have access to Rube Apollo tools.\n\nINPUT: Read /tmp/apollo-segment/icp-config.json\
+        \ for filters (titles, industry_keywords, geographies, company_size_min/max,\
+        \ email_status).\n\n1. CHECK APOLLO API CREDITS FIRST (hard gate):\n   Use\
+        \ APOLLO_VIEW_API_USAGE_STATS. If credits critically low, flag to orchestrator\
+        \ and proceed with reduced scope (smaller per_page, fewer pages).\n\n2. Search\
+        \ for target organisations:\n   Use APOLLO_ORGANIZATION_SEARCH with q_organization_keyword_tags\
+        \ from icp_config.filters.industry_keywords, organization_num_employees_ranges:\
+        \ [\"{min},{max}\"], organization_locations: icp_config.filters.geographies,\
+        \ per_page: 25.\n   Collect organization_ids and primary_domain. If any org\
+        \ has empty domain field, call APOLLO_ORGANIZATION_ENRICHMENT to get it.\n\
+        \n3. Search for prospects within discovered organisations. Run per persona-lane\
+        \ title bundle:\n   Use APOLLO_PEOPLE_SEARCH with q_organization_domains (bare\
+        \ hostnames, no protocol, no www.), person_titles (from icp_config), person_seniorities:\
+        \ icp_config.filters.seniorities, contact_email_status: icp_config.filters.email_status,\
+        \ per_page: 25.\n   Persona lane title guidance:\n   - Lane A (Treasury):\
+        \ Treasury, Cash Management, Liquidity, CFO, Finance Director\n   - Lane B\
+        \ (Payments): Payments, Settlement, Transaction Banking, COO, CSO\n   - Lane\
+        \ C (Partnerships): Partnerships, Business Development, Strategy, Co-Founder\n\
+        \   - Lane D (Technical): CTO, Engineering, Platform, Infrastructure\n   -\
+        \ Lane E (Compliance): Compliance, Risk, Regulatory\n\n4. PRE-ENRICHMENT DEDUP\
+        \ (CRITICAL — prevents double-spend). For each prospect, check FalkorDB:\n\
+        \   python C:/Users/OmarAl-Bakri/Claude_Code_Automations/scripts/state_manager.py\
+        \ check-contact --email \"prospect@company.com\" --name \"Name\" --company-name\
+        \ \"Company\"\n   Tag prospect with already_enriched: true if FalkorDB returns\
+        \ existing email/phone — Phase 3 will skip these.\n\n5. Do NOT spend enrichment\
+        \ credits in this phase. Collect has_email / has_direct_phone flags from APOLLO_PEOPLE_SEARCH\
+        \ and record them on each prospect.\n\n6. Write /tmp/apollo-segment/discovered-prospects.json\
+        \ with structure:\n   { generated_at, credits_used: 0, credits_remaining,\
+        \ organizations_searched, prospects: [{ source: 'apollo_discovery', apollo_person_id,\
+        \ name, title, email (nullable), has_email, has_direct_phone, phone (nullable),\
+        \ company, company_domain, organization_id, linkedin_url, seniority, persona_lane,\
+        \ already_enriched, relevance_notes }] }"
+    output_key: discovered_prospects
+    on_failure: warn
+- id: merge-dedup-comply
+  name: Merge Dedup and Compliance
+  type: base
+  model: claude-code
+  phase: phase-2-qualification
+  surface_class: private
+  depends_on:
+  - apollo-saved-contacts-search
+  - apollo-discovery
+  prompt_file: .threados/prompts/merge-dedup-comply.md
+  execution: sub_agent
+  timeout_ms: 600000
+  actions:
+  - id: spawn_merge_agent
+    type: sub_agent
+    description: Spawn sub-agent to merge, dedup, and compliance-check the segment
+    config:
+      subagent_type: general-purpose
+      prompt: "Execute Apollo Segment Builder Phase 2: Merge, Dedup & Compliance.\
+        \ You have access to the state_manager.py CLI.\n\nINPUTS (read these files;\
+        \ any may be missing):\n- /tmp/apollo-segment/saved-contacts.json (from Phase\
+        \ 1a)\n- /tmp/apollo-segment/discovered-prospects.json (from Phase 1b)\n-\
+        \ /tmp/apollo-segment/icp-config.json\n\nSHARED REFERENCES (read for context):\n\
+        - shared_references/compliance-rules.md\n- shared_references/persona-routing.md\n\
+        - shared_references/prospect-selection.md\n- shared_references/thegent-company-info.md\n\
+        \nSTEPS:\n\n1. MERGE saved-contact and discovery results into a single list.\n\
+        \n2. DEDUP by: (a) exact email (case-insensitive), (b) apollo_person_id match,\
+        \ (c) fuzzy name+company. When both sources have the same contact, merge (prefer\
+        \ saved record for CRM fields, prefer discovery for firmographics). Mark source:\
+        \ 'both'.\n\n3. COMPLIANCE CHECK for each contact (prefer pre-session-check\
+        \ cache first, fall back to check-contact for cache misses):\n   python C:/Users/OmarAl-Bakri/Claude_Code_Automations/scripts/state_manager.py\
+        \ check-contact --email \"{email}\" --name \"{name}\" --company-name \"{company}\"\
+        \n   DO_NOT_CONTACT: exclude. CAUTION: include with flag. CLEAR: include.\n\
+        \n4. PERSONA LANE assignment (A-E) using persona-routing.md title matching:\n\
+        \   - A (Treasury): CFO, Treasurer, Finance Director, Head of Treasury\n \
+        \  - B (Payments): Head of Payments, Ops Director, COO, CSO, Settlement Manager\n\
+        \   - C (Partnerships): BD Director, Partnerships Manager, Co-Founder\n  \
+        \ - D (Technical): CTO, VP Engineering, Technical Lead\n   - E (Compliance):\
+        \ CCO, Head of Compliance, Risk Officer\n\n5. MOTION TYPE: FC if company holds\
+        \ PSP/EMI/banking license or is licensed exchange; Participant if network-only;\
+        \ default FC.\n\n6. PIPELINE EXCLUSION if icp_config.filters.exclude_existing_pipeline:\
+        \ true — drop contacts with active pipeline motion in FalkorDB.\n\n7. RECENTLY\
+        \ CONTACTED EXCLUSION if icp_config.filters.exclude_recently_contacted_days\
+        \ is set — drop contacts contacted within N days (from FalkorDB interaction\
+        \ history / pre-session cache).\n\n8. SPECIAL-HANDLING EXCLUSION: always drop\
+        \ known large incumbents / tier-1 banks / SentBe-style special accounts unless\
+        \ config explicitly opts them in.\n\n9. FIT SCORING: High (exact title + target\
+        \ industry + target geo), Medium (partial title OR adjacent industry), Low\
+        \ (weak single-criterion match).\n\n10. FLAG needs_enrichment: true when email\
+        \ is null or phone is null AND already_enriched is false.\n    FLAG needs_create_in_apollo:\
+        \ true for discovery-only contacts with no apollo_contact_id.\n\n11. HARD\
+        \ GATE: at least 1 contact must pass. If empty, abort with exclusion breakdown.\n\
+        \n12. WRITE /tmp/apollo-segment/qualified-segment.json with structure:\n \
+        \   { generated_at, segment_name, total_qualified, excluded: { dnc, recently_contacted,\
+        \ existing_pipeline, special_handling, non_omar_owned, duplicates }, contacts:\
+        \ [{ name, email, title, company, company_domain, phone, source, apollo_contact_id,\
+        \ apollo_person_id, organization_id, current_stage_id, persona_lane, motion_type,\
+        \ dedup_status, fit_score, needs_enrichment, needs_create_in_apollo, flags,\
+        \ relevance_notes }] }"
+    output_key: qualified_segment
+    on_failure: abort_workflow
+- id: enrichment
+  name: Apollo Enrichment
+  type: base
+  model: claude-code
+  phase: phase-3-enrichment
+  surface_class: private
+  depends_on:
+  - merge-dedup-comply
+  prompt_file: .threados/prompts/enrichment.md
+  execution: sub_agent
+  timeout_ms: 600000
+  condition: icp_config.enrichment.enrich_missing_emails == true AND qualified_segment.contacts
+    has any needs_enrichment == true
+  actions:
+  - id: spawn_enrichment_agent
+    type: sub_agent
+    description: Spawn sub-agent to enrich contacts missing email/phone
+    config:
+      subagent_type: general-purpose
+      prompt: "Execute Apollo Segment Builder Phase 3: Apollo Enrichment. You have\
+        \ access to Rube Apollo tools.\n\nINPUTS:\n- /tmp/apollo-segment/qualified-segment.json\n\
+        - /tmp/apollo-segment/icp-config.json (icp_config.enrichment.max_apollo_credits\
+        \ caps spend, default 20)\n\nSTEPS:\n\n1. HARD CREDIT GATE: Check APOLLO_VIEW_API_USAGE_STATS.\
+        \ If remaining < 10 OR icp_config.enrichment.max_apollo_credits already consumed,\
+        \ abort with a partial enrichment report. When credits are tight, prioritise\
+        \ High fit_score contacts.\n\n2. PRE-ENRICHMENT DEDUP (re-check FalkorDB —\
+        \ data may have updated since Phase 1b):\n   python C:/Users/OmarAl-Bakri/Claude_Code_Automations/scripts/state_manager.py\
+        \ check-contact --email \"{email_if_any}\" --name \"{name}\" --company-name\
+        \ \"{company}\"\n   Skip any contact that now has an email in FalkorDB.\n\n\
+        3. BULK ENRICH in batches of 10 using apollo_person_id when available (best\
+        \ hit rate):\n   Use APOLLO_BULK_PEOPLE_ENRICHMENT with details: [{id: PERSON_ID},\
+        \ ...] (max 10 per call).\n   Map matches[] back to request order. Treat missing_records\
+        \ > 0 as partial success — retry missing records individually via APOLLO_PEOPLE_ENRICHMENT.\n\
+        \n4. FALLBACK individual enrichment for records without apollo_person_id OR\
+        \ bulk failures:\n   Use APOLLO_PEOPLE_ENRICHMENT with first_name, last_name,\
+        \ organization_name, domain (bare hostname, no protocol, no www.).\n\n5. RATE\
+        \ LIMIT: Stop at icp_config.enrichment.max_apollo_credits. Tag remaining contacts\
+        \ enrichment_skipped: 'credit_cap'.\n\n6. HANDLE 403 responses as hard stop\
+        \ — do NOT retry. Flag to orchestrator with error context.\n\n7. WRITE /tmp/apollo-segment/enriched-segment.json\
+        \ — same schema as qualified-segment.json with enriched email/phone filled\
+        \ in. Record actual credits_used and credits_remaining at the top of the file."
+    output_key: enriched_segment
+    on_failure: warn
+- id: review-approval
+  name: Segment Review and Approval
+  type: base
+  model: claude-code
+  phase: phase-4-approval
+  surface_class: private
+  depends_on:
+  - merge-dedup-comply
+  prompt_file: .threados/prompts/review-approval.md
+  execution: sequential
+  timeout_ms: 0
+  actions:
+  - id: present_segment
+    type: approval
+    description: Display segment table with name, title, company, email, source, persona,
+      fit, flag columns. Include exclusion breakdown, credit usage, and resolved target
+      stage.
+    config:
+      approval_prompt: 'Segment ''{{qualified_segment.segment_name}}'' ready for review:
+
+
+        Total qualified: {{qualified_segment.total_qualified}}
+
+        Sources: Saved [{{counts.saved}}] | Discovery [{{counts.discovery}}] | Both
+        [{{counts.both}}]
+
+        Persona split: A:[{{counts.A}}] B:[{{counts.B}}] C:[{{counts.C}}] D:[{{counts.D}}]
+        E:[{{counts.E}}]
+
+
+        Excluded: DNC {{excluded.dnc}} | Recent {{excluded.recently_contacted}} |
+        Pipeline {{excluded.existing_pipeline}} | Special {{excluded.special_handling}}
+        | Non-Omar {{excluded.non_omar_owned}} | Dupes {{excluded.duplicates}}
+
+
+        Apollo credits used: {{enriched_segment.credits_used}} / {{icp_config.enrichment.max_apollo_credits}}
+
+        Target Apollo stage: {{icp_config.output.apollo_stage_name}} (resolved id:
+        {{stage_id_or_MISSING}})
+
+
+        Approve all | Remove #N | Add notes | Reject'
+    output_key: approved_segment
+    on_failure: abort_workflow
+- id: resolve-apollo-stage
+  name: Resolve Apollo Target Stage
+  type: base
+  model: claude-code
+  phase: phase-5-persistence
+  surface_class: private
+  depends_on:
+  - review-approval
+  prompt_file: .threados/prompts/resolve-apollo-stage.md
+  execution: sequential
+  timeout_ms: 30000
+  condition: icp_config.output.tag_in_apollo == true
+  actions:
+  - id: lookup_stage
+    type: cli
+    description: Match icp_config.output.apollo_stage_name against saved_contacts.stages_available
+    config:
+      command: echo lookup_stage_id
+    output_key: resolved_stage_id
+    on_failure: warn
+  - id: ask_if_missing
+    type: conditional
+    description: If stage not found, ask Omar whether to proceed without tagging
+    config:
+      condition: resolved_stage_id == null
+      if_true:
+      - id: missing_stage_approval
+        type: approval
+        config:
+          approval_prompt: Stage '{{icp_config.output.apollo_stage_name}}' not found
+            in Apollo. Rube cannot create stages — create it in Apollo UI and re-run,
+            OR proceed without tagging for this run?
+        output_key: missing_stage_decision
+        on_failure: abort_workflow
+      if_false: []
+- id: create-missing-apollo-contacts
+  name: Create Missing Apollo Contacts
+  type: base
+  model: claude-code
+  phase: phase-5-persistence
+  surface_class: private
+  depends_on:
+  - review-approval
+  prompt_file: .threados/prompts/create-missing-apollo-contacts.md
+  execution: sequential
+  timeout_ms: 600000
+  condition: icp_config.output.create_missing_contacts == true
+  actions:
+  - id: search_for_duplicate
+    type: composio_tool
+    description: 'Pre-create dedup: APOLLO_CREATE_CONTACT does not dedup automatically'
+    config:
+      tool_slug: APOLLO_SEARCH_CONTACTS
+      arguments:
+        q_keywords: '{{item.email}}'
+        per_page: 5
+    output_key: existing_apollo_match
+    on_failure: warn
+  - id: create_contact
+    type: conditional
+    description: Only create when no existing Apollo contact matches the email
+    config:
+      condition: existing_apollo_match.contacts.length == 0
+      if_true:
+      - id: apollo_create
+        type: rube_tool
+        config:
+          tool_slug: APOLLO_CREATE_CONTACT
+          arguments:
+            first_name: '{{item.first_name}}'
+            last_name: '{{item.last_name}}'
+            email: '{{item.email}}'
+            title: '{{item.title}}'
+            organization_name: '{{item.company}}'
+            account_id: '{{item.organization_id}}'
+        output_key: new_contact_id
+        retry:
+          max_attempts: 2
+          delay_ms: 2000
+          backoff: linear
+          retry_on:
+          - timeout
+          - connection_error
+        on_failure: warn
+      if_false:
+      - id: reuse_existing_id
+        type: cli
+        description: Reuse the first matching existing Apollo contact_id
+        config:
+          command: echo reuse_existing_apollo_id
+        output_key: new_contact_id
+        on_failure: warn
+- id: update-apollo-stages
+  name: Update Apollo Stages
+  type: base
+  model: claude-code
+  phase: phase-5-persistence
+  surface_class: private
+  depends_on:
+  - review-approval
+  prompt_file: .threados/prompts/update-apollo-stages.md
+  execution: sequential
+  timeout_ms: 300000
+  condition: icp_config.output.tag_in_apollo == true AND resolved_stage_id != null
+  actions:
+  - id: batch_update_stage
+    type: composio_tool
+    description: APOLLO_UPDATE_CONTACT_STAGE accepts contact_ids array for batch tagging
+    config:
+      tool_slug: APOLLO_UPDATE_CONTACT_STAGE
+      arguments:
+        contact_ids: '{{approved_segment.contacts.apollo_contact_id_array}}'
+        contact_stage_id: '{{resolved_stage_id}}'
+    output_key: stage_update_result
+    retry:
+      max_attempts: 2
+      delay_ms: 2000
+      backoff: linear
+      retry_on:
+      - timeout
+      - connection_error
+    on_failure: warn
+- id: falkordb-upsert-and-signal
+  name: FalkorDB Upsert and Signal
+  type: base
+  model: claude-code
+  phase: phase-5-persistence
+  surface_class: private
+  depends_on:
+  - review-approval
+  prompt_file: .threados/prompts/falkordb-upsert-and-signal.md
+  execution: sequential
+  timeout_ms: 300000
+  actions:
+  - id: upsert_contact
+    type: cli
+    description: Upsert contact node + WORKS_AT company relationship in FalkorDB
+    config:
+      command: python C:/Users/OmarAl-Bakri/Claude_Code_Automations/scripts/state_manager.py
+        upsert-contact --email "{{item.email}}" --name "{{item.name}}" --title "{{item.title}}"
+        --company-name "{{item.company}}" --persona-lane "{{item.persona_lane}}" --classification
+        "{{item.classification_or_COOL}}"
+    on_failure: warn
+- id: signal-agents
+  name: Signal Downstream Agents
+  type: base
+  model: claude-code
+  phase: phase-5-persistence
+  surface_class: private
+  depends_on:
+  - falkordb-upsert-and-signal
+  prompt_file: .threados/prompts/signal-agents.md
+  execution: sequential
+  timeout_ms: 60000
+  condition: icp_config.output.signal_to_agents.length > 0
+  actions:
+  - id: post_signal
+    type: cli
+    config:
+      command: python C:/Users/OmarAl-Bakri/Claude_Code_Automations/scripts/state_manager.py
+        post-message --from-agent "apollo_segment_builder" --to-agent "{{item}}" --type
+        "SEGMENT_BUILT" --payload '{"segment_name":"{{icp_config.segment_name}}","apollo_stage_name":"{{icp_config.output.apollo_stage_name}}","apollo_stage_id":"{{resolved_stage_id}}","contacts":{{approved_segment.contacts.length}},"persona_split":{{counts.persona_split}}}'
+    on_failure: warn
+- id: remember-learnings
+  name: Remember Segment Learnings
+  type: base
+  model: claude-code
+  phase: phase-5-persistence
+  surface_class: private
+  depends_on:
+  - falkordb-upsert-and-signal
+  prompt_file: .threados/prompts/remember-learnings.md
+  execution: sequential
+  timeout_ms: 15000
+  actions:
+  - id: remember_cmd
+    type: cli
+    config:
+      command: 'python C:/Users/OmarAl-Bakri/Claude_Code_Automations/scripts/state_manager.py
+        remember --key "segment_{{icp_config.segment_name}}" --content "Built segment
+        with {{approved_segment.contacts.length}} contacts. Sources: saved {{counts.saved}},
+        discovery {{counts.discovery}}. Top industries: {{counts.industries}}. Top
+        geographies: {{counts.geographies}}. Apollo stage: {{icp_config.output.apollo_stage_name}}."
+        --tags "segment,icp,apollo" --agent "apollo_segment_builder"'
+    on_failure: skip
+- id: display-summary
+  name: Display Summary
+  type: base
+  model: claude-code
+  phase: phase-6-summary
+  surface_class: shared
+  depends_on:
+  - remember-learnings
+  prompt_file: .threados/prompts/display-summary.md
+  execution: sequential
+  timeout_ms: 15000
+  actions:
+  - id: compile_summary
+    type: cli
+    config:
+      command: "echo '=== APOLLO SEGMENT BUILT ===\nTime: {{timestamp}}\nSegment:\
+        \ {{icp_config.segment_name}}\n\nSOURCES:\n  - Saved contacts: {{counts.saved}}\n\
+        \  - Discovery: {{counts.discovery}}\n  - Both: {{counts.both}}\n\nQUALIFIED:\
+        \ {{qualified_segment.total_qualified}}\nAPPROVED: {{approved_segment.contacts.length}}\n\
+        \nEXCLUDED:\n  - DNC: {{excluded.dnc}}\n  - Recently contacted: {{excluded.recently_contacted}}\n\
+        \  - Existing pipeline: {{excluded.existing_pipeline}}\n  - Special handling:\
+        \ {{excluded.special_handling}}\n  - Non-Omar owned: {{excluded.non_omar_owned}}\n\
+        \  - Duplicates: {{excluded.duplicates}}\n\nAPOLLO:\n  - Credits used: {{enriched_segment.credits_used}}\n\
+        \  - Credits remaining: {{enriched_segment.credits_remaining}}\n  - Stage\
+        \ tagged: {{icp_config.output.apollo_stage_name}} ({{counts.stage_updates}})\n\
+        \  - New contacts created: {{counts.created}}\n\nSIGNALED: {{icp_config.output.signal_to_agents}}\n\
+        ==='"
+    on_failure: warn
+- id: telegram-summary
+  name: Telegram Alert
+  type: base
+  model: claude-code
+  phase: phase-6-summary
+  surface_class: private
+  depends_on:
+  - display-summary
+  prompt_file: .threados/prompts/telegram-summary.md
+  execution: sequential
+  timeout_ms: 15000
+  actions:
+  - id: send_telegram
+    type: composio_tool
+    config:
+      tool_slug: TELEGRAM_SEND_MESSAGE
+      arguments:
+        chat_id: '1778273779'
+        text: 'Apollo Segment Built: {{icp_config.segment_name}}
+
+
+          Qualified: {{qualified_segment.total_qualified}}
+
+          Approved: {{approved_segment.contacts.length}}
+
+          Saved: {{counts.saved}} | Discovery: {{counts.discovery}}
+
+          Credits: {{enriched_segment.credits_used}}
+
+          Tagged in Apollo: {{counts.stage_updates}} (stage: {{icp_config.output.apollo_stage_name}})
+
+          Signaled: {{counts.agents_signaled}}'
+    on_failure: warn
+- id: log-session
+  name: Log Session and Cleanup
+  type: base
+  model: claude-code
+  phase: phase-6-summary
+  surface_class: private
+  depends_on:
+  - telegram-summary
+  prompt_file: .threados/prompts/log-session.md
+  execution: sequential
+  timeout_ms: 15000
+  actions:
+  - id: log_session_cmd
+    type: cli
+    config:
+      command: 'python C:/Users/OmarAl-Bakri/Claude_Code_Automations/scripts/state_manager.py
+        log-session --session-id "apollo-segment-{{date}}-{{time}}" --agent-name "apollo_segment_builder"
+        --skills-run "segment_building,apollo_saved_search,apollo_discovery,apollo_enrichment,apollo_stage_tagging"
+        --contacts-processed {{qualified_segment.total_qualified}} --interactions-logged
+        0 --follow-ups-created 0 --summary "Built segment ''{{icp_config.segment_name}}'':
+        {{approved_segment.contacts.length}} contacts approved from {{qualified_segment.total_qualified}}
+        qualified (saved: {{counts.saved}}, discovery: {{counts.discovery}}). Credits
+        used: {{enriched_segment.credits_used}}."'
+    on_failure: warn
+  - id: cleanup
+    type: cli
+    description: Remove temp working directory (NOT shared-intel)
+    config:
+      command: rm -rf /tmp/apollo-segment/
+    on_failure: skip
+gate_sets:
+- apollo-preflight
+- apollo-data-quality
+- apollo-approval
+- apollo-persistence
+export_bundle_schema: apollo-segment-builder.bundle.v1
+rate_limits:
+  apollo_enrichment_credits:
+    max: 20
+    per: session
+    enforce: soft
+    current_check: APOLLO_VIEW_API_USAGE_STATS
+    on_breach: skip_remaining
+  apollo_search_calls:
+    max: 50
+    per: session
+    enforce: soft
+    on_breach: warn
+  apollo_people_search_per_page:
+    max: 100
+    per: call
+    enforce: hard
+    on_breach: abort
+  apollo_bulk_enrichment_batch:
+    max: 10
+    per: call
+    enforce: hard
+    on_breach: abort
+  total_contacts_processed:
+    max: 1000
+    per: session
+    enforce: hard
+    on_breach: abort
+timeouts:
+  workflow_max_ms: 1800000
+  step_default_ms: 300000
+  api_call_ms: 30000
+  apollo_poll_ms: 30000
+  approval_wait_ms: 0
+gates:
+- id: context7-loaded
+  step_id: context7-review
+  when: post
+  type: soft
+  check: context7.falkordb_docs_loaded == true
+  on_fail: warn
+  message: Context7 FalkorDB docs not loaded — proceeding with cached knowledge
+- id: not-stateless
+  step_id: health-check
+  when: post
+  type: hard
+  check: health.mode != 'stateless'
+  on_fail: abort
+  message: State manager is stateless — cannot proceed. Send Telegram alert.
+- id: degraded-warning
+  step_id: health-check
+  when: post
+  type: soft
+  check: health.mode == 'normal'
+  on_fail: warn
+  message: State manager is degraded — SQLite fallback active. Proceeding with caution.
+- id: icp-has-filters
+  step_id: input-collection
+  when: post
+  type: hard
+  check: icp_config.filters.titles.length > 0 OR icp_config.filters.industry_keywords.length
+    > 0 OR icp_config.filters.geographies.length > 0
+  on_fail: abort
+  message: ICP config must have at least one filter criterion (titles OR industry_keywords
+    OR geographies)
+- id: icp-has-segment-name
+  step_id: input-collection
+  when: post
+  type: hard
+  check: icp_config.segment_name is string AND icp_config.segment_name.length > 0
+  on_fail: abort
+  message: ICP config must include a segment_name
+- id: icp-has-sources
+  step_id: input-collection
+  when: post
+  type: hard
+  check: icp_config.sources is array AND icp_config.sources.length > 0
+  on_fail: abort
+  message: ICP config must specify sources (apollo_saved and/or apollo_discovery)
+- id: saved-contacts-exists
+  step_id: apollo-saved-contacts-search
+  when: post
+  type: soft
+  check: file_exists('/tmp/apollo-segment/saved-contacts.json')
+  on_fail: warn
+  message: Saved Contacts sub-agent did not produce saved-contacts.json — merge will
+    use discovery data only
+- id: saved-contacts-valid-json
+  step_id: apollo-saved-contacts-search
+  when: post
+  type: soft
+  check: json_valid(saved_contacts)
+  on_fail: warn
+  message: Saved contacts report is not valid JSON
+- id: stages-available-captured
+  step_id: apollo-saved-contacts-search
+  when: post
+  type: hard
+  check: saved_contacts.stages_available is array
+  on_fail: abort
+  message: Stage list not captured — cannot tag segment later
+- id: discovered-exists
+  step_id: apollo-discovery
+  when: post
+  type: soft
+  check: file_exists('/tmp/apollo-segment/discovered-prospects.json')
+  on_fail: warn
+  message: Discovery sub-agent did not produce discovered-prospects.json — merge will
+    use saved-contacts only
+- id: discovered-valid-json
+  step_id: apollo-discovery
+  when: post
+  type: soft
+  check: json_valid(discovered_prospects)
+  on_fail: warn
+  message: Discovered prospects report is not valid JSON
+- id: no-credits-spent-in-discovery
+  step_id: apollo-discovery
+  when: post
+  type: hard
+  check: discovered_prospects.credits_used == 0
+  on_fail: abort
+  message: 'CRITICAL: Discovery phase must not spend enrichment credits — enrichment
+    is Phase 3 only'
+- id: qualified-exists
+  step_id: merge-dedup-comply
+  when: post
+  type: hard
+  check: file_exists('/tmp/apollo-segment/qualified-segment.json')
+  on_fail: abort
+  message: Merge sub-agent did not produce qualified-segment.json
+- id: qualified-valid-json
+  step_id: merge-dedup-comply
+  when: post
+  type: hard
+  check: json_valid(qualified_segment)
+  on_fail: abort
+  message: Qualified segment is not valid JSON
+- id: qualified-non-empty
+  step_id: merge-dedup-comply
+  when: post
+  type: hard
+  check: qualified_segment.total_qualified > 0
+  on_fail: abort
+  message: Segment is empty after filtering — aborting. Review exclusion breakdown.
+- id: qualified-has-required-fields
+  step_id: merge-dedup-comply
+  when: post
+  type: hard
+  check: qualified_segment.segment_name AND qualified_segment.contacts is array AND
+    qualified_segment.excluded
+  on_fail: abort
+  message: Qualified segment missing required fields
+- id: enriched-exists
+  step_id: enrichment
+  when: post
+  type: soft
+  check: file_exists('/tmp/apollo-segment/enriched-segment.json')
+  on_fail: warn
+  message: Enrichment sub-agent did not produce enriched-segment.json — proceeding
+    with qualified-segment.json
+- id: enrichment-credit-budget-respected
+  step_id: enrichment
+  when: post
+  type: hard
+  check: enriched_segment.credits_used <= icp_config.enrichment.max_apollo_credits
+  on_fail: abort
+  message: 'CRITICAL: Enrichment exceeded configured credit cap'
+- id: enrichment-credit-budget-hard-ceiling
+  step_id: enrichment
+  when: post
+  type: hard
+  check: enriched_segment.credits_used <= 20
+  on_fail: abort
+  message: 'CRITICAL: Enrichment exceeded 20-credit session ceiling regardless of
+    config'
+- id: at-least-one-approved
+  step_id: review-approval
+  when: post
+  type: hard
+  check: approved_segment.contacts.length > 0
+  on_fail: abort
+  message: No contacts approved — aborting segment build
+- id: no-403-on-create
+  step_id: create-missing-apollo-contacts
+  when: post
+  type: hard
+  check: last_response.status != 403
+  on_fail: abort
+  message: Apollo returned 403 on create — API key / plan problem. Do not retry.
+- id: no-403-on-stage-update
+  step_id: update-apollo-stages
+  when: post
+  type: hard
+  check: stage_update_result.status != 403
+  on_fail: abort
+  message: Apollo returned 403 on stage update — API key / plan problem. Do not retry.

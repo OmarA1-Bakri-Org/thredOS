@@ -1,8 +1,29 @@
-import { appendFile, readFile, mkdir } from 'fs/promises'
+import { appendFile, readFile, mkdir, readdir } from 'fs/promises'
 import { join } from 'path'
 import { ApprovalSchema, type Approval } from '@/lib/contracts/schemas'
 
 const RUNS_PATH = '.threados/runs'
+
+function foldApprovals(entries: Approval[]): Approval[] {
+  const indexById = new Map<string, number>()
+  const folded: Approval[] = []
+
+  for (const entry of entries) {
+    const existingIndex = indexById.get(entry.id)
+    if (existingIndex == null) {
+      indexById.set(entry.id, folded.length)
+      folded.push(entry)
+      continue
+    }
+
+    folded[existingIndex] = {
+      ...folded[existingIndex],
+      ...entry,
+    }
+  }
+
+  return folded
+}
 
 export async function appendApproval(
   basePath: string,
@@ -30,4 +51,28 @@ export async function readApprovals(
   }
   const lines = content.trim().split('\n').filter(Boolean)
   return lines.map(line => ApprovalSchema.parse(JSON.parse(line)))
+}
+
+export async function hasApprovedApproval(
+  basePath: string,
+  targetRef: string,
+  actionType: Approval['action_type'] = 'run',
+): Promise<boolean> {
+  const runsPath = join(basePath, RUNS_PATH)
+  let runEntries: string[]
+  try {
+    runEntries = await readdir(runsPath)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false
+    throw error
+  }
+
+  for (const runId of runEntries) {
+    const approvals = foldApprovals(await readApprovals(basePath, runId))
+    if (approvals.some(approval => approval.action_type === actionType && approval.target_ref === targetRef && approval.status === 'approved')) {
+      return true
+    }
+  }
+
+  return false
 }

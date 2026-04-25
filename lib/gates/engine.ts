@@ -54,7 +54,7 @@ export function evaluateStepGates(step: Step, allSteps: Step[], allGates: Gate[]
   const decisions: GateDecision[] = []
   decisions.push(toDecision(step.id, 'deps_satisfied', checkDepsSatisfied(step, allSteps, allGates)))
   decisions.push(toDecision(step.id, 'required_inputs_present', checkRequiredInputsPresent(step, ctx.inputManifestPresent ?? false)))
-  decisions.push(toDecision(step.id, 'policy_pass', checkPolicyPass(step.side_effect_class, ctx.policyMode, ctx.sideEffectMode)))
+  decisions.push(toDecision(step.id, 'policy_pass', checkPolicyPass(step.side_effect_class, ctx.policyMode, ctx.sideEffectMode, ctx.approvalPresent ?? false)))
   decisions.push(toDecision(step.id, 'approval_present', checkApprovalPresent(step, ctx.sideEffectMode, ctx.approvalPresent ?? false)))
   decisions.push(toDecision(step.id, 'surface_access_pass', checkSurfaceAccessPass(ctx.surfaceClass, ctx.crossSurfaceReads, ctx.isDependency)))
   if (ctx.surfaceClass === 'sealed') {

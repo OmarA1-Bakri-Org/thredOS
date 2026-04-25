@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto'
 import type { Approval } from '@/lib/contracts/schemas'
 import { appendApproval } from '@/lib/approvals/repository'
+import { getNestedRuntimeValue, hydrateApolloApprovalRuntimeContext, type RuntimeContext } from '@/lib/runtime/context'
 import { appendTraceEvent } from '@/lib/traces/writer'
 
 interface RecordApprovedApprovalLifecycleInput {
@@ -15,6 +16,81 @@ interface RecordApprovedApprovalLifecycleInput {
   payloadRef?: string | null
   policyRef?: string | null
   approvalId?: string
+}
+
+interface RecordPendingApprovalRequestInput {
+  basePath: string
+  runId: string
+  actionType: Approval['action_type']
+  targetRef: string
+  requestedBy: string
+  actor: string
+  notes?: string | null
+  payloadRef?: string | null
+  policyRef?: string | null
+  approvalId?: string
+}
+
+export async function recordPendingApprovalRequest({
+  basePath,
+  runId,
+  actionType,
+  targetRef,
+  requestedBy,
+  actor,
+  notes = null,
+  payloadRef = null,
+  policyRef = null,
+  approvalId = `apr-${randomUUID()}`,
+}: RecordPendingApprovalRequestInput): Promise<Approval> {
+  const requestedAt = new Date().toISOString()
+  const pendingApproval: Approval = {
+    id: approvalId,
+    action_type: actionType,
+    target_ref: targetRef,
+    requested_by: requestedBy,
+    status: 'pending',
+    approved_by: null,
+    approved_at: null,
+    notes,
+  }
+
+  await appendApproval(basePath, runId, pendingApproval)
+  await appendTraceEvent(basePath, runId, {
+    ts: requestedAt,
+    run_id: runId,
+    surface_id: targetRef,
+    actor,
+    event_type: 'approval-requested',
+    payload_ref: payloadRef ?? approvalId,
+    policy_ref: policyRef,
+  })
+
+  return pendingApproval
+}
+
+export async function interpolateApprovalNote(
+  basePath: string,
+  template: string | null | undefined,
+  runtimeContext: RuntimeContext,
+): Promise<string | null> {
+  if (typeof template !== 'string' || template.length === 0) return null
+
+  const hydratedContext = await hydrateApolloApprovalRuntimeContext(basePath, runtimeContext)
+
+  return template.replace(/\{\{\s*([A-Za-z0-9_.]+)\s*\}\}/g, (match, path) => {
+    const value = getNestedRuntimeValue(hydratedContext, path)
+    if (value == null) return match
+    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+      return String(value)
+    }
+
+    try {
+      return JSON.stringify(value)
+    } catch {
+      return match
+    }
+  })
 }
 
 export async function recordApprovedApprovalLifecycle({

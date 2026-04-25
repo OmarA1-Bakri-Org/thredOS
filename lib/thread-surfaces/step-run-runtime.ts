@@ -7,6 +7,7 @@ import { deriveStepThreadSurfaceId, ROOT_THREAD_SURFACE_ID } from '@/lib/thread-
 import { deriveChildSequenceRef, type PendingChildSequence } from '@/lib/thread-surfaces/provision-child-sequence'
 import type { AgentRegistration } from '@/lib/agents/types'
 import { hasSpawnSkill } from '@/lib/thread-surfaces/projections'
+import type { RunStatus } from '@/lib/thread-surfaces/types'
 
 export interface StepRunScope {
   runId: string
@@ -25,7 +26,7 @@ interface BeginStepRunOptions {
 interface FinalizeStepRunOptions {
   step: Step
   stepRun: StepRunScope | null
-  success: boolean
+  runStatus: Extract<RunStatus, 'pending' | 'successful' | 'failed'>
   endedAt: string
   runtimeEvents: RuntimeDelegationEvent[]
   nextRunId: () => string
@@ -102,8 +103,9 @@ export function finalizeStepRunWithRuntimeEvents(
 ): { state: ThreadSurfaceState; stepRun: StepRunScope | null; pendingChildSequences: PendingChildSequence[] } {
   let nextState = state
   let effectiveStepRun = opts.stepRun
+  const isSuccessful = opts.runStatus === 'successful'
 
-  if (effectiveStepRun == null && opts.success && opts.runtimeEvents.length > 0) {
+  if (effectiveStepRun == null && isSuccessful && opts.runtimeEvents.length > 0) {
     const materialized = materializeStepRunForRuntimeEvents(nextState, opts.step, {
       now: opts.endedAt,
       nextRunId: opts.nextRunId(),
@@ -118,13 +120,17 @@ export function finalizeStepRunWithRuntimeEvents(
 
   nextState = completeRun(nextState, {
     runId: effectiveStepRun.runId,
-    runStatus: opts.success ? 'successful' : 'failed',
-    endedAt: opts.endedAt,
-    runSummary: opts.success ? `step:${opts.step.id}` : `step:${opts.step.id}:failed`,
+    runStatus: opts.runStatus,
+    endedAt: opts.runStatus === 'pending' ? null : opts.endedAt,
+    runSummary: opts.runStatus === 'successful'
+      ? `step:${opts.step.id}`
+      : opts.runStatus === 'pending'
+        ? `step:${opts.step.id}:blocked`
+        : `step:${opts.step.id}:failed`,
   }).state
 
   let pendingChildSequences: PendingChildSequence[] = []
-  if (opts.success && opts.runtimeEvents.length > 0) {
+  if (isSuccessful && opts.runtimeEvents.length > 0) {
     const result = persistRuntimeDelegationEvents(nextState, effectiveStepRun, opts.step, opts.runtimeEvents, {
       nextRunId: opts.nextRunId,
       nextEventId: opts.nextEventId,

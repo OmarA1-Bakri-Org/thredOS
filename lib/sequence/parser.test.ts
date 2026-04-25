@@ -1,5 +1,6 @@
 import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
 import { readSequence, writeSequence } from './parser'
+import type { Sequence } from './schema'
 import { createTempDir, cleanTempDir, makeSequence, makeStep, writeTestSequence } from '../../test/helpers/setup'
 import { SequenceValidationError } from '../errors'
 import { mkdir, readFile, writeFile } from 'fs/promises'
@@ -27,6 +28,50 @@ describe('readSequence / writeSequence', () => {
     expect(result.name).toBe('test-sequence')
     expect(result.steps).toHaveLength(2)
     expect(result.steps[1].depends_on).toEqual(['a'])
+  })
+
+  test('roundtrip preserves planning metadata', async () => {
+    const seq = makeSequence({
+      name: 'planner-seq',
+      steps: [makeStep({ id: 'a' })],
+      gates: [],
+    }) as Sequence
+    seq.goal = 'Build a reviewable sponsor-prospect segment'
+    seq.success_criteria = ['qualified_segment.total_qualified > 0']
+    seq.strategy_options = [
+      {
+        id: 'standard-discovery',
+        label: 'Standard discovery',
+        applies_to: ['a'],
+        selects_steps: ['a'],
+        suppresses_steps: [],
+        requires_approval: false,
+      },
+    ]
+    seq.replan_policy = {
+      enabled: true,
+      triggers: ['empty_artifact', 'sparse_results'],
+    }
+
+    await writeSequence(tempDir, seq)
+    const result = await readSequence(tempDir)
+
+    expect(result.goal).toBe('Build a reviewable sponsor-prospect segment')
+    expect(result.success_criteria).toEqual(['qualified_segment.total_qualified > 0'])
+    expect(result.strategy_options).toEqual([
+      {
+        id: 'standard-discovery',
+        label: 'Standard discovery',
+        applies_to: ['a'],
+        selects_steps: ['a'],
+        suppresses_steps: [],
+        requires_approval: false,
+      },
+    ])
+    expect(result.replan_policy).toEqual({
+      enabled: true,
+      triggers: ['empty_artifact', 'sparse_results'],
+    })
   })
 
   test('throws on malformed YAML', async () => {

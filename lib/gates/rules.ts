@@ -25,7 +25,7 @@ export function checkDepsSatisfied(
       if (depStep.status === 'FAILED') {
         reason_codes.push(GateReasonCode.DEP_FAILED)
         evidence_refs.push(`step:${depId}:status=${depStep.status}`)
-      } else if (depStep.status !== 'DONE') {
+      } else if (depStep.status !== 'DONE' && depStep.status !== 'SKIPPED') {
         reason_codes.push(GateReasonCode.DEP_MISSING)
         evidence_refs.push(`step:${depId}:status=${depStep.status}`)
       }
@@ -75,6 +75,7 @@ export function checkPolicyPass(
   sideEffectClass: Step['side_effect_class'],
   policyMode: PolicyConfig['mode'],
   sideEffectMode: PolicyConfig['side_effect_mode'],
+  approvalPresent: boolean,
 ): RuleResult {
   if (!sideEffectClass || sideEffectClass === 'none') {
     return PASS
@@ -88,6 +89,19 @@ export function checkPolicyPass(
     (sideEffectClass === 'write' || sideEffectClass === 'execute') &&
     (sideEffectMode === 'manual_only' || sideEffectMode === 'approved_only')
   ) {
+    if (approvalPresent) {
+      return {
+        status: 'PASS',
+        reason_codes: [],
+        evidence_refs: [
+          `policy:mode=${policyMode}`,
+          `policy:side_effect_mode=${sideEffectMode}`,
+          `step:side_effect_class=${sideEffectClass}`,
+          'approval:present',
+        ],
+      }
+    }
+
     return {
       status: 'NEEDS_APPROVAL',
       reason_codes: [GateReasonCode.POLICY_BLOCKED],
