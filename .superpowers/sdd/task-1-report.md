@@ -348,3 +348,64 @@ Exit code: 0
 - `prompt_file` is now synchronously constrained to a portable relative path. The current runner still selects prompt content by step ID; when direct `prompt_file` consumption is introduced, the final existing file must be resolved under the verified prompt root immediately before its no-follow read.
 - The API regression group passed 54 of 55 tests. The remaining `agents-route.test.ts` unassign failure is inherited: sequence normalization restores `assigned_agent_id` from the still-populated `agent_ref`; it is unrelated to filesystem containment.
 - The previously documented inherited pack-install surface-order assertion remains unchanged.
+
+## Final safe-I/O re-review fix
+
+The final re-review in `task-1-rereview.md` identified a pathname-swap window in the portable safe-I/O fallback. A third strict RED/GREEN pass closed it at the opened-handle boundary.
+
+### Safe-I/O RED
+
+The focused contract suite was added before changing `safe-io.ts`:
+
+```text
+bun test lib/security/safe-io.test.ts
+SyntaxError: Export named 'setSafeIoBeforeOpenHookForTests' not found
+0 pass
+1 fail
+1 error
+```
+
+This established the missing deterministic race seam before production implementation. The suite covers direct final-component symlinks for read, truncate/write, append, copy source, and copy destination; new and existing regular destinations; append preservation; and a destination changed to a symlink immediately before open.
+
+### Safe-I/O fix
+
+- New writable destinations are opened with exclusive-create modes (`O_EXCL` with `O_NOFOLLOW` where exposed, portable `wx`/`ax` otherwise) and mode `0600`.
+- Existing destinations are opened without truncation, then the opened handle's `stat()` identity is compared with a fresh `lstat(path)`. Final symbolic links and device/inode mismatches are rejected before any bytes are read, truncated, appended, or written.
+- Truncation now occurs on the verified handle. Reads, writes, appends, and copies continue through that same handle, so a later final-path replacement cannot redirect I/O.
+- Append flags remain append-capable, and both new-file and existing-file behavior are covered by focused tests.
+
+### Safe-I/O GREEN
+
+Focused contract suite:
+
+```text
+bun test lib/security/safe-io.test.ts
+8 pass
+0 fail
+18 expect() calls
+Ran 8 tests across 1 file.
+```
+
+Required Task 1 re-review regression suite:
+
+```text
+bun test lib/security/safe-path.test.ts lib/security/file-boundaries.test.ts lib/runner/artifacts.test.ts lib/runner/prompt-compiler-paths.test.ts lib/exports/bundler.test.ts lib/thread-surfaces/repository.test.ts test/api/step-path-validation.test.ts test/api/surface-proof-routes.test.ts lib/packs/loader.test.ts lib/packs/compiler.test.ts
+
+75 pass
+0 fail
+268 expect() calls
+Ran 75 tests across 10 files.
+```
+
+Static checks:
+
+```text
+bun run typecheck
+$ tsc --noEmit
+Exit code: 0
+
+bunx eslint lib/security/safe-io.ts lib/security/safe-io.test.ts
+Exit code: 0
+0 errors
+0 warnings
+```

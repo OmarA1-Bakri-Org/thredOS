@@ -1,17 +1,98 @@
 import { constants } from 'fs'
-import { open } from 'fs/promises'
+import { lstat, open, type FileHandle } from 'fs/promises'
+
+type SafeIoOperation = 'append' | 'copy-destination' | 'copy-source' | 'read' | 'write'
+type BeforeOpenHook = (context: {
+  operation: SafeIoOperation
+  filePath: string
+}) => Promise<void> | void
+
+let beforeOpenHookForTests: BeforeOpenHook | null = null
+
+export function setSafeIoBeforeOpenHookForTests(hook: BeforeOpenHook | null): void {
+  beforeOpenHookForTests = hook
+}
 
 function withNoFollow(flags: number, fallback: string): number | string {
-  return typeof constants.O_NOFOLLOW === 'number'
-    ? flags | constants.O_NOFOLLOW
-    : fallback
+  return typeof constants.O_NOFOLLOW === 'number' ? flags | constants.O_NOFOLLOW : fallback
+}
+
+async function openPath(
+  filePath: string,
+  flags: number | string,
+  operation: SafeIoOperation,
+  mode?: number,
+): Promise<FileHandle> {
+  await beforeOpenHookForTests?.({ operation, filePath })
+  return open(filePath, flags, mode)
+}
+
+function isErrorWithCode(error: unknown, code: string): boolean {
+  return error instanceof Error && 'code' in error && error.code === code
+}
+
+async function verifyOpenedIdentity(filePath: string, handle: FileHandle): Promise<void> {
+  const opened = await handle.stat()
+  const current = await lstat(filePath)
+
+  if (
+    current.isSymbolicLink()
+    || opened.dev !== current.dev
+    || opened.ino !== current.ino
+  ) {
+    throw new Error(`Refusing unsafe final file path: ${filePath}`)
+  }
+}
+
+async function openExistingVerified(
+  filePath: string,
+  flags: number,
+  fallbackFlags: string,
+  operation: SafeIoOperation,
+): Promise<FileHandle> {
+  const handle = await openPath(filePath, withNoFollow(flags, fallbackFlags), operation)
+  try {
+    await verifyOpenedIdentity(filePath, handle)
+    return handle
+  } catch (error) {
+    await handle.close()
+    throw error
+  }
+}
+
+async function openWritableVerified(
+  filePath: string,
+  existingFlags: number,
+  existingFallbackFlags: string,
+  createFallbackFlags: string,
+  operation: 'append' | 'copy-destination' | 'write',
+): Promise<FileHandle> {
+  try {
+    return await openPath(
+      filePath,
+      withNoFollow(
+        existingFlags | constants.O_CREAT | constants.O_EXCL,
+        createFallbackFlags,
+      ),
+      operation,
+      0o600,
+    )
+  } catch (error) {
+    if (!isErrorWithCode(error, 'EEXIST')) {
+      throw error
+    }
+  }
+
+  return openExistingVerified(filePath, existingFlags, existingFallbackFlags, operation)
 }
 
 export async function appendFileNoFollow(filePath: string, content: string): Promise<void> {
-  const handle = await open(
+  const handle = await openWritableVerified(
     filePath,
-    withNoFollow(constants.O_WRONLY | constants.O_CREAT | constants.O_APPEND, 'a'),
-    0o600,
+    constants.O_WRONLY | constants.O_APPEND,
+    'a',
+    'ax',
+    'append',
   )
   try {
     await handle.writeFile(content, 'utf-8')
@@ -21,7 +102,7 @@ export async function appendFileNoFollow(filePath: string, content: string): Pro
 }
 
 export async function readTextFileNoFollow(filePath: string): Promise<string> {
-  const handle = await open(filePath, withNoFollow(constants.O_RDONLY, 'r'))
+  const handle = await openExistingVerified(filePath, constants.O_RDONLY, 'r', 'read')
   try {
     return await handle.readFile('utf-8')
   } finally {
@@ -30,12 +111,9 @@ export async function readTextFileNoFollow(filePath: string): Promise<string> {
 }
 
 export async function writeFileNoFollow(filePath: string, content: string): Promise<void> {
-  const handle = await open(
-    filePath,
-    withNoFollow(constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC, 'w'),
-    0o600,
-  )
+  const handle = await openWritableVerified(filePath, constants.O_WRONLY, 'r+', 'wx', 'write')
   try {
+    await handle.truncate(0)
     await handle.writeFile(content, 'utf-8')
   } finally {
     await handle.close()
@@ -43,15 +121,19 @@ export async function writeFileNoFollow(filePath: string, content: string): Prom
 }
 
 export async function copyFileNoFollow(sourcePath: string, destinationPath: string): Promise<void> {
-  const source = await open(sourcePath, withNoFollow(constants.O_RDONLY, 'r'))
+  const source = await openExistingVerified(sourcePath, constants.O_RDONLY, 'r', 'copy-source')
   try {
-    const destination = await open(
+    const content = await source.readFile()
+    const destination = await openWritableVerified(
       destinationPath,
-      withNoFollow(constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC, 'w'),
-      0o600,
+      constants.O_WRONLY,
+      'r+',
+      'wx',
+      'copy-destination',
     )
     try {
-      await destination.writeFile(await source.readFile())
+      await destination.truncate(0)
+      await destination.writeFile(content)
     } finally {
       await destination.close()
     }
