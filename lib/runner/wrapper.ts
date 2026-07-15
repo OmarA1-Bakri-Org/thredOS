@@ -27,25 +27,62 @@ export interface RunResult {
 
 const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000 // 30 minutes
 
-/** Environment variables safe to pass to child processes */
-const SAFE_ENV_KEYS = new Set([
+/** Exact parent environment keys required for portable child execution. */
+const INHERITED_ENV_KEYS = [
   'PATH', 'HOME', 'USER', 'SHELL', 'LANG', 'LC_ALL', 'LC_CTYPE',
   'TERM', 'TMPDIR', 'TMP', 'TEMP', 'NODE_ENV', 'BUN_INSTALL',
-  'THREADOS_BASE_PATH', 'THREADOS_MPROCS_PATH',
-])
+  'SystemRoot', 'windir', 'ComSpec', 'PATHEXT', 'USERPROFILE',
+  'APPDATA', 'LOCALAPPDATA',
+] as const
 
-function getSafeEnv(extra: Record<string, string>): NodeJS.ProcessEnv {
-  const safe: Record<string, string> = {}
-  for (const key of Object.keys(process.env)) {
-    if (SAFE_ENV_KEYS.has(key) || key.startsWith('THREADOS_')) {
-      safe[key] = process.env[key]!
+const WINDOWS_ENVIRONMENT = process.platform === 'win32'
+
+function environmentKeyIdentity(key: string): string {
+  return WINDOWS_ENVIRONMENT ? key.toUpperCase() : key
+}
+
+const INHERITED_ENV_KEY_IDENTITIES = new Set(
+  INHERITED_ENV_KEYS.map(environmentKeyIdentity),
+)
+
+/**
+ * Build the environment for an agent process.
+ *
+ * Parent values cross the process boundary only through the exact portable
+ * allowlist. Callers may add trusted, attempt-scoped grants explicitly; those
+ * grants replace inherited values using the host platform's key semantics.
+ */
+export function buildExecutionEnv(
+  inherited: NodeJS.ProcessEnv,
+  granted: Record<string, string | undefined>,
+): NodeJS.ProcessEnv {
+  const result: NodeJS.ProcessEnv = Object.create(null) as NodeJS.ProcessEnv
+  const outputKeys = new Map<string, string>()
+
+  const replace = (key: string, value: string | undefined): void => {
+    const identity = environmentKeyIdentity(key)
+    const previousKey = outputKeys.get(identity)
+    if (previousKey !== undefined) {
+      delete result[previousKey]
+      outputKeys.delete(identity)
+    }
+    if (value !== undefined) {
+      result[key] = value
+      outputKeys.set(identity, key)
     }
   }
-  // User-provided env vars are explicitly requested — pass them all through
-  for (const key of Object.keys(extra)) {
-    safe[key] = extra[key]
+
+  for (const [key, value] of Object.entries(inherited)) {
+    if (INHERITED_ENV_KEY_IDENTITIES.has(environmentKeyIdentity(key)) && value !== undefined) {
+      replace(key, value)
+    }
   }
-  return safe as NodeJS.ProcessEnv
+
+  for (const [key, value] of Object.entries(granted)) {
+    replace(key, value)
+  }
+
+  return result
 }
 
 /**
@@ -76,7 +113,7 @@ export async function runStep(config: RunnerConfig): Promise<RunResult> {
     const proc: ChildProcess = spawn(command, args, {
       cwd,
       shell: false,
-      env: getSafeEnv(env),
+      env: buildExecutionEnv(process.env, env),
     })
 
     // Set up timeout
