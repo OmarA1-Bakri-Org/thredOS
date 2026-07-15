@@ -62,4 +62,10 @@ describe.serial('traces API route', () => {
       error: 'runId query parameter required',
     })
   })
+
+  test('GET rejects unsafe run IDs', async () => {
+    const { GET } = await import('@/app/api/traces/route')
+    const res = await GET(new Request('http://localhost/api/traces?runId=..%2Fescape'))
+    expect(res.status).toBe(400)
+  })
 })

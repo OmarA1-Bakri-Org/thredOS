@@ -85,4 +85,19 @@ describe('POST /api/packs/install', () => {
     const res = await POST(req)
     expect(res.status).toBe(400)
   })
+
+  test('rejects traversal in pack ID and version', async () => {
+    const { POST } = await import('@/app/api/packs/install/route')
+    for (const body of [
+      { packId: '../outside', version: '1.0.0' },
+      { packId: 'safe-pack', version: '..' },
+    ]) {
+      const res = await POST(new Request('http://localhost/api/packs/install', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      }))
+      expect(res.status).toBe(400)
+    }
+  })
 })

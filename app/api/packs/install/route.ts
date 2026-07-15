@@ -4,10 +4,20 @@ import { getBasePath } from '@/lib/config'
 import { handleError, requireRequestSession } from '@/lib/api-helpers'
 import { applyRateLimit } from '@/lib/rate-limit'
 import { installPack, type PackInstallInput } from '@/lib/packs/install'
+import { assertSafePathSegment } from '@/lib/security/safe-path'
+
+function isSafePathSegment(value: string): boolean {
+  try {
+    assertSafePathSegment(value)
+    return true
+  } catch {
+    return false
+  }
+}
 
 const BodySchema = z.object({
-  packId: z.string().min(1),
-  version: z.string().min(1),
+  packId: z.string().min(1).refine(isSafePathSegment, 'packId must be a file-safe identifier'),
+  version: z.string().min(1).refine(isSafePathSegment, 'version must be a file-safe identifier'),
   installName: z.string().min(1).optional(),
   compileOverrides: z.object({
     sourceAssetRef: z.string().optional(),

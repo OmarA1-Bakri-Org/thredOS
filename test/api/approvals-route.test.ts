@@ -112,4 +112,17 @@ describe.serial('approvals API route', () => {
       error: 'runId required',
     })
   })
+
+  test('rejects unsafe run IDs before repository access', async () => {
+    const { GET, POST } = await import('@/app/api/approvals/route')
+    const getRes = await GET(new Request('http://localhost/api/approvals?runId=..%2Fescape'))
+    expect(getRes.status).toBe(400)
+
+    const postRes = await POST(new Request('http://localhost/api/approvals', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'request', runId: '../escape', target_ref: 'step-a' }),
+    }))
+    expect(postRes.status).toBe(400)
+  })
 })

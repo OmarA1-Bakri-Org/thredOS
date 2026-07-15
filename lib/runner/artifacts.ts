@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from 'fs/promises'
 import { join } from 'path'
 import { writeFileAtomic } from '../fs/atomic'
+import { assertSafePathSegment, resolvePathWithinRoot } from '../security/safe-path'
 import type { RunResult, RunStatus } from './wrapper'
 
 const RUNS_PATH = '.threados/runs'
@@ -78,7 +79,9 @@ export async function createRunDirectory(
   runId: string,
   stepId: string,
 ): Promise<string> {
-  const dirPath = join(basePath, RUNS_PATH, runId, stepId)
+  assertSafePathSegment(runId, 'run id')
+  assertSafePathSegment(stepId, 'step id')
+  const dirPath = await resolvePathWithinRoot(basePath, RUNS_PATH, runId, stepId)
   await mkdir(dirPath, { recursive: true })
   return dirPath
 }
@@ -88,19 +91,23 @@ export function getRuntimeEventLogPath(
   runId: string,
   stepId: string,
 ): string {
+  assertSafePathSegment(runId, 'run id')
+  assertSafePathSegment(stepId, 'step id')
   return join(basePath, RUNS_PATH, runId, stepId, EVENTS_LOG_FILE)
 }
 
 export function getCanonicalRunDir(basePath: string, runId: string): string {
+  assertSafePathSegment(runId, 'run id')
   return join(basePath, RUNS_PATH, runId)
 }
 
 export function getCanonicalSurfaceRunDir(basePath: string, runId: string, surfaceId: string): string {
+  assertSafePathSegment(surfaceId, 'surface id')
   return join(getCanonicalRunDir(basePath, runId), 'surfaces', surfaceId)
 }
 
 async function ensureCanonicalSurfaceDirs(basePath: string, runId: string, surfaceId: string) {
-  const surfaceDir = getCanonicalSurfaceRunDir(basePath, runId, surfaceId)
+  const surfaceDir = await resolvePathWithinRoot(basePath, getCanonicalSurfaceRunDir(basePath, runId, surfaceId))
   await mkdir(join(surfaceDir, 'outputs'), { recursive: true })
   await mkdir(join(surfaceDir, 'logs'), { recursive: true })
   await mkdir(join(surfaceDir, 'private'), { recursive: true })
@@ -124,7 +131,7 @@ export async function writeStatus(artifactPath: string, status: StatusJson): Pro
 }
 
 export async function writeRunRecord(basePath: string, record: RunRecordJson): Promise<void> {
-  const runDir = getCanonicalRunDir(basePath, record.id)
+  const runDir = await resolvePathWithinRoot(basePath, getCanonicalRunDir(basePath, record.id))
   const filePath = join(runDir, 'run.json')
   await mkdir(runDir, { recursive: true })
   await writeFileAtomic(filePath, JSON.stringify(record, null, 2))

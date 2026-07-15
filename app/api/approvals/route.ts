@@ -6,6 +6,16 @@ import { handleError, requireRequestSession } from '@/lib/api-helpers'
 import { applyRateLimit } from '@/lib/rate-limit'
 import { appendTraceEvent } from '@/lib/traces/writer'
 import type { Approval } from '@/lib/contracts/schemas'
+import { assertSafePathSegment } from '@/lib/security/safe-path'
+
+function isSafeRunId(runId: string): boolean {
+  try {
+    assertSafePathSegment(runId, 'runId')
+    return true
+  } catch {
+    return false
+  }
+}
 
 function foldApprovals(entries: Approval[]): Approval[] {
   const indexById = new Map<string, number>()
@@ -37,6 +47,9 @@ export async function GET(request: Request) {
     if (!runId) {
       return NextResponse.json({ error: 'runId required', code: 'MISSING_PARAM' }, { status: 400 })
     }
+    if (!isSafeRunId(runId)) {
+      return NextResponse.json({ error: 'runId must be a file-safe identifier', code: 'VALIDATION_ERROR' }, { status: 400 })
+    }
 
     const approvals = foldApprovals(await readApprovals(getBasePath(), runId))
     return NextResponse.json({ approvals })
@@ -60,6 +73,9 @@ export async function POST(request: Request) {
     const { action, runId } = body
     if (!runId) {
       return NextResponse.json({ error: 'runId required', code: 'MISSING_PARAM' }, { status: 400 })
+    }
+    if (typeof runId !== 'string' || !isSafeRunId(runId)) {
+      return NextResponse.json({ error: 'runId must be a file-safe identifier', code: 'VALIDATION_ERROR' }, { status: 400 })
     }
 
     const bp = getBasePath()

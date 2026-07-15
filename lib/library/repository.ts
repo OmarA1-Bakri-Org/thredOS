@@ -3,6 +3,11 @@ import { mkdir, readFile, unlink } from 'fs/promises'
 import { basename, dirname, extname, join } from 'path'
 import YAML from 'yaml'
 import { writeFileAtomic } from '@/lib/fs/atomic'
+import {
+  assertSafePathSegment,
+  resolveExistingPathWithinRoot,
+  resolvePathWithinRoot,
+} from '@/lib/security/safe-path'
 import type { AgentRegistration } from '@/lib/agents/types'
 import type { PromptRef, LibraryAssetEntry, LibraryAssetKind, LibraryCatalog, SkillRef } from './types'
 
@@ -74,6 +79,7 @@ async function ensureLibraryDirectories(basePath: string): Promise<void> {
 }
 
 export function getLibraryAssetPath(basePath: string, kind: LibraryAssetKind, id: string): string {
+  assertSafePathSegment(id, `${kind} asset id`)
   if (kind === 'prompt') return join(basePath, PROMPTS_DIR, `${id}.md`)
   if (kind === 'skill') return join(basePath, SKILLS_DIR, id, 'SKILL.md')
   return join(basePath, AGENTS_DIR, id, 'AGENT.md')
@@ -191,7 +197,9 @@ export async function readLibraryAsset(basePath: string, kind: LibraryAssetKind,
   const catalog = await readLibraryCatalog(basePath)
   const entry = catalog[catalogKey(kind)][id] ?? null
   if (!entry) return { entry: null, content: null }
-  const content = await readFile(join(basePath, entry.path), 'utf-8')
+  assertSafePathSegment(id, `${kind} asset id`)
+  const fullPath = await resolveExistingPathWithinRoot(basePath, entry.path)
+  const content = await readFile(fullPath, 'utf-8')
   return { entry, content }
 }
 
@@ -215,8 +223,9 @@ export async function upsertLibraryAsset(basePath: string, args: {
   const previous = bucket[args.id]
   const nextVersion = previous ? previous.version + 1 : 1
   const path = getLibraryAssetPath(basePath, args.kind, args.id)
-  await mkdir(dirname(path), { recursive: true })
-  await writeFileAtomic(path, args.content.endsWith('\n') ? args.content : `${args.content}\n`)
+  const containedPath = await resolvePathWithinRoot(basePath, path)
+  await mkdir(dirname(containedPath), { recursive: true })
+  await writeFileAtomic(containedPath, args.content.endsWith('\n') ? args.content : `${args.content}\n`)
 
   const entry = buildEntry({
     kind: args.kind,
@@ -242,19 +251,21 @@ function joinRelativePath(basePath: string, fullPath: string): string {
 }
 
 export async function deleteLibraryAsset(basePath: string, kind: LibraryAssetKind, id: string): Promise<boolean> {
+  assertSafePathSegment(id, `${kind} asset id`)
   await ensureLibraryStructure(basePath)
   const catalog = await readLibraryCatalog(basePath)
   const bucket = catalog[catalogKey(kind)]
   const entry = bucket[id]
   if (!entry) return false
 
-  delete bucket[id]
-  await writeLibraryCatalog(basePath, catalog)
-
-  const fullPath = join(basePath, entry.path)
+  const fullPath = existsSync(join(basePath, entry.path))
+    ? await resolveExistingPathWithinRoot(basePath, entry.path)
+    : await resolvePathWithinRoot(basePath, entry.path)
   if (existsSync(fullPath)) {
     await unlink(fullPath)
   }
+  delete bucket[id]
+  await writeLibraryCatalog(basePath, catalog)
   return true
 }
 

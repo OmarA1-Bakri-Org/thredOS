@@ -1,4 +1,14 @@
 import { z } from 'zod'
+import { assertSafePathSegment } from '@/lib/security/safe-path'
+
+const SafePathSegmentSchema = z.string().min(1).refine(value => {
+  try {
+    assertSafePathSegment(value)
+    return true
+  } catch {
+    return false
+  }
+}, 'must be a portable file-safe identifier')
 
 export const PackPhaseSchema = z.object({
   id: z.string().min(1),
@@ -7,7 +17,7 @@ export const PackPhaseSchema = z.object({
 })
 
 export const PackStepSchema = z.object({
-  id: z.string().min(1),
+  id: SafePathSegmentSchema,
   name: z.string().min(1),
   type: z.enum(['base', 'p', 'c', 'f', 'b', 'l']),
   model: z.string().min(1),
@@ -22,8 +32,8 @@ export const PackStepSchema = z.object({
 })
 
 export const PackManifestSchema = z.object({
-  id: z.string().min(1),
-  version: z.string().min(1),
+  id: SafePathSegmentSchema,
+  version: SafePathSegmentSchema,
   name: z.string().min(1),
   thread_types: z.array(z.enum(['base', 'p', 'c', 'f', 'b', 'l'])),
   default_policy: z.enum(['SAFE', 'POWER']).default('SAFE'),

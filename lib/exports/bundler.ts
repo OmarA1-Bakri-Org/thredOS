@@ -1,25 +1,18 @@
 import { readdir, readFile } from 'fs/promises'
-import { join, relative } from 'path'
+import { join, relative, sep } from 'path'
 import { readTraceEvents } from '@/lib/traces/reader'
 import { readGateDecisions } from '@/lib/gates/repository'
 import { readApprovals } from '@/lib/approvals/repository'
 import { readThreadSurfaceState } from '@/lib/thread-surfaces/repository'
 import type { StatusJson } from '@/lib/runner/artifacts'
 import type { ExportBundle } from './schema'
-
-const FILE_SAFE_RUN_ID = /^[A-Za-z0-9._-]+$/
-
-function assertSafeRunId(runId: string) {
-  if (!FILE_SAFE_RUN_ID.test(runId)) {
-    throw new Error('runId must be a file-safe identifier')
-  }
-}
+import { assertSafePathSegment, resolvePathWithinRoot } from '@/lib/security/safe-path'
 
 async function collectArtifactManifests(runDir: string): Promise<string[]> {
   try {
     const entries = await readdir(runDir, { withFileTypes: true })
     const manifests = await Promise.all(entries.map(async entry => {
-      const entryPath = join(runDir, entry.name)
+      const entryPath = await resolvePathWithinRoot(runDir, entry.name)
       if (entry.isDirectory()) {
         return await collectArtifactManifests(entryPath)
       }
@@ -63,7 +56,7 @@ function summarizeTiming(statuses: StatusJson[]) {
 }
 
 export async function generateExportBundle(basePath: string, runId: string): Promise<ExportBundle> {
-  assertSafeRunId(runId)
+  assertSafePathSegment(runId, 'runId')
 
   // Read sequence snapshot
   let sequenceSnapshot = ''
@@ -74,7 +67,7 @@ export async function generateExportBundle(basePath: string, runId: string): Pro
   try { policySnapshot = await readFile(join(basePath, '.threados/policy.yaml'), 'utf-8') } catch { /* empty */ }
 
   // Read run artifacts
-  const runDir = join(basePath, '.threados/runs', runId)
+  const runDir = await resolvePathWithinRoot(basePath, '.threados/runs', runId)
   const traceEvents = await readTraceEvents(basePath, runId)
   const gateDecisions = await readGateDecisions(basePath, runId)
   const approvals = await readApprovals(basePath, runId)
@@ -92,7 +85,7 @@ export async function generateExportBundle(basePath: string, runId: string): Pro
     trace_events: traceEvents,
     gate_decisions: gateDecisions,
     approvals,
-    artifact_manifests: artifactManifestPaths.map(path => relative(basePath, path)),
+    artifact_manifests: artifactManifestPaths.map(path => relative(basePath, path).split(sep).join('/')),
     timing_summary: summarizeTiming(stepStatuses),
     cost_summary: null,
     exported_at: new Date().toISOString(),

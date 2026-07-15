@@ -11,18 +11,27 @@ import {
   readLibraryCatalog,
   upsertLibraryAsset,
 } from '@/lib/library/repository'
+import { assertSafePathSegment } from '@/lib/security/safe-path'
 
 const KindSchema = z.enum(['prompt', 'skill', 'agent'])
+const AssetIdSchema = z.string().min(1).refine(value => {
+  try {
+    assertSafePathSegment(value, 'asset id')
+    return true
+  } catch {
+    return false
+  }
+}, 'asset id must be a file-safe identifier')
 
 const QuerySchema = z.object({
   kind: KindSchema.optional(),
-  id: z.string().optional(),
+  id: AssetIdSchema.optional(),
 })
 
 const WriteSchema = z.object({
   action: z.enum(['upsert', 'delete']),
   kind: KindSchema,
-  id: z.string().min(1),
+  id: AssetIdSchema,
   title: z.string().min(1).optional(),
   content: z.string().optional(),
   description: z.string().optional(),

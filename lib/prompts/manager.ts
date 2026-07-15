@@ -1,6 +1,11 @@
 import { readFile, readdir, access } from 'fs/promises'
 import { join, basename, extname } from 'path'
 import { writeFileAtomic } from '../fs/atomic'
+import {
+  assertSafePathSegment,
+  resolveExistingPathWithinRoot,
+  resolvePathWithinRoot,
+} from '../security/safe-path'
 
 const PROMPTS_PATH = '.threados/prompts'
 
@@ -15,7 +20,8 @@ export async function readPrompt(
   basePath: string,
   stepId: string
 ): Promise<string> {
-  const filePath = join(basePath, PROMPTS_PATH, `${stepId}.md`)
+  assertSafePathSegment(stepId, 'step id')
+  const filePath = await resolveExistingPathWithinRoot(basePath, PROMPTS_PATH, `${stepId}.md`)
   return readFile(filePath, 'utf-8')
 }
 
@@ -31,7 +37,8 @@ export async function writePrompt(
   stepId: string,
   content: string
 ): Promise<void> {
-  const filePath = join(basePath, PROMPTS_PATH, `${stepId}.md`)
+  assertSafePathSegment(stepId, 'step id')
+  const filePath = await resolvePathWithinRoot(basePath, PROMPTS_PATH, `${stepId}.md`)
   await writeFileAtomic(filePath, content)
 }
 
@@ -68,7 +75,8 @@ export async function validatePromptExists(
   basePath: string,
   stepId: string
 ): Promise<boolean> {
-  const filePath = join(basePath, PROMPTS_PATH, `${stepId}.md`)
+  assertSafePathSegment(stepId, 'step id')
+  const filePath = await resolvePathWithinRoot(basePath, PROMPTS_PATH, `${stepId}.md`)
 
   try {
     await access(filePath)
@@ -89,7 +97,8 @@ export async function deletePrompt(
   stepId: string
 ): Promise<void> {
   const { unlink } = await import('fs/promises')
-  const filePath = join(basePath, PROMPTS_PATH, `${stepId}.md`)
+  assertSafePathSegment(stepId, 'step id')
+  const filePath = await resolveExistingPathWithinRoot(basePath, PROMPTS_PATH, `${stepId}.md`)
   await unlink(filePath)
 }
 
@@ -101,5 +110,6 @@ export async function deletePrompt(
  * @returns The full path to the prompt file
  */
 export function getPromptPath(basePath: string, stepId: string): string {
+  assertSafePathSegment(stepId, 'step id')
   return join(basePath, PROMPTS_PATH, `${stepId}.md`)
 }

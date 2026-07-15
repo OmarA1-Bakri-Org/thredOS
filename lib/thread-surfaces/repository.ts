@@ -4,6 +4,11 @@ import { join } from 'path'
 import { writeFileAtomic } from '@/lib/fs/atomic'
 import { ThreadSurfaceStateConflictError } from '@/lib/errors'
 import {
+  assertSafePathSegment,
+  resolveExistingPathWithinRoot,
+  resolvePathWithinRoot,
+} from '@/lib/security/safe-path'
+import {
   normalizeThreadSurface,
   type MergeEvent,
   type NormalizedThreadSurface,
@@ -92,14 +97,6 @@ function getRevision(state: ThreadSurfaceState): string | null | undefined {
   return (state as ThreadSurfaceStateWithRevision)[THREAD_SURFACE_STATE_REVISION]
 }
 
-function getThreadSurfaceRecordsRootPath(basePath: string): string {
-  return join(basePath, THREAD_SURFACE_RECORDS_PATH)
-}
-
-function getThreadSurfaceRecordDirectory(basePath: string, surfaceId: string): string {
-  return join(getThreadSurfaceRecordsRootPath(basePath), surfaceId)
-}
-
 async function readCurrentRevision(fullPath: string): Promise<string | null> {
   if (!existsSync(fullPath)) {
     return null
@@ -120,10 +117,11 @@ export function getThreadSurfaceStatePath(basePath: string): string {
 
 async function listCanonicalSurfaceIds(basePath: string): Promise<string[]> {
   try {
-    const entries = await readdir(getThreadSurfaceRecordsRootPath(basePath), { withFileTypes: true })
+    const rootPath = await resolvePathWithinRoot(basePath, THREAD_SURFACE_RECORDS_PATH)
+    const entries = await readdir(rootPath, { withFileTypes: true })
     return entries
       .filter(entry => entry.isDirectory())
-      .map(entry => entry.name)
+      .map(entry => assertSafePathSegment(entry.name, 'surface id'))
       .sort((left, right) => left.localeCompare(right))
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
@@ -140,8 +138,14 @@ async function readCanonicalThreadSurfaces(basePath: string): Promise<Normalized
   }
 
   const surfaces = await Promise.all(surfaceIds.map(async surfaceId => {
+    const surfacePath = await resolvePathWithinRoot(
+      basePath,
+      THREAD_SURFACE_RECORDS_PATH,
+      surfaceId,
+      'surface.json',
+    )
     try {
-      const content = await readFile(join(getThreadSurfaceRecordDirectory(basePath, surfaceId), 'surface.json'), 'utf-8')
+      const content = await readFile(surfacePath, 'utf-8')
       const raw = JSON.parse(content) as SurfaceRecordJson | NormalizedThreadSurface
       const surface = 'surface' in raw ? raw.surface : raw
       return normalizeThreadSurface(surface as ThreadSurface)
@@ -231,15 +235,16 @@ function buildSurfaceStateRecord(state: ThreadSurfaceState, surface: NormalizedT
 }
 
 async function writeCanonicalThreadSurfaceRecords(basePath: string, state: ThreadSurfaceState): Promise<void> {
-  const rootPath = getThreadSurfaceRecordsRootPath(basePath)
+  const rootPath = await resolvePathWithinRoot(basePath, THREAD_SURFACE_RECORDS_PATH)
   await mkdir(rootPath, { recursive: true })
 
   const existingSurfaceIds = new Set(await listCanonicalSurfaceIds(basePath))
   const normalizedSurfaces = state.threadSurfaces.map(normalizeThreadSurface)
 
   await Promise.all(normalizedSurfaces.map(async surface => {
+    assertSafePathSegment(surface.id, 'surface id')
     existingSurfaceIds.delete(surface.id)
-    const directoryPath = getThreadSurfaceRecordDirectory(basePath, surface.id)
+    const directoryPath = await resolvePathWithinRoot(basePath, THREAD_SURFACE_RECORDS_PATH, surface.id)
 
     await Promise.all([
       writeFileAtomic(join(directoryPath, 'surface.json'), toJson(buildSurfaceRecord(surface))),
@@ -250,12 +255,13 @@ async function writeCanonicalThreadSurfaceRecords(basePath: string, state: Threa
   }))
 
   await Promise.all(Array.from(existingSurfaceIds).map(async surfaceId => {
-    await rm(getThreadSurfaceRecordDirectory(basePath, surfaceId), { recursive: true, force: true })
+    const directoryPath = await resolveExistingPathWithinRoot(basePath, THREAD_SURFACE_RECORDS_PATH, surfaceId)
+    await rm(directoryPath, { recursive: true, force: true })
   }))
 }
 
 export async function readThreadSurfaceState(basePath: string): Promise<ThreadSurfaceState> {
-  const fullPath = getThreadSurfaceStatePath(basePath)
+  const fullPath = await resolvePathWithinRoot(basePath, THREAD_SURFACE_STATE_PATH)
   const canonicalThreadSurfaces = await readCanonicalThreadSurfaces(basePath)
 
   if (!existsSync(fullPath)) {
@@ -283,7 +289,7 @@ export async function readThreadSurfaceState(basePath: string): Promise<ThreadSu
 }
 
 export async function writeThreadSurfaceState(basePath: string, state: ThreadSurfaceState): Promise<void> {
-  const fullPath = getThreadSurfaceStatePath(basePath)
+  const fullPath = await resolvePathWithinRoot(basePath, THREAD_SURFACE_STATE_PATH)
   const currentRevision = await readCurrentRevision(fullPath)
   const expectedRevision = getRevision(state)
 
@@ -291,7 +297,7 @@ export async function writeThreadSurfaceState(basePath: string, state: ThreadSur
     throw new ThreadSurfaceStateConflictError()
   }
 
-  await mkdir(join(basePath, '.threados/state'), { recursive: true })
+  await mkdir(await resolvePathWithinRoot(basePath, '.threados/state'), { recursive: true })
   const nextState: ThreadSurfaceState = { ...state, version: 1 }
   const content = toJson(nextState)
   await writeFileAtomic(fullPath, content)

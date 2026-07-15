@@ -8,9 +8,19 @@ import { PolicyEngine } from '@/lib/policy/engine'
 import { getBasePath } from '@/lib/config'
 import { handleError, requireRequestSession } from '@/lib/api-helpers'
 import { applyRateLimit } from '@/lib/rate-limit'
+import { assertSafePathSegment, resolvePathWithinRoot } from '@/lib/security/safe-path'
+
+function isSafeRunId(value: string): boolean {
+  try {
+    assertSafePathSegment(value, 'runId')
+    return true
+  } catch {
+    return false
+  }
+}
 
 const BodySchema = z.object({
-  runId: z.string().regex(/^[A-Za-z0-9._-]+$/, 'runId must be a file-safe identifier'),
+  runId: z.string().refine(isSafeRunId, 'runId must be a file-safe identifier'),
 })
 
 async function copyIfPresent(sourcePath: string, destinationPath: string): Promise<void> {
@@ -25,7 +35,7 @@ async function copyIfPresent(sourcePath: string, destinationPath: string): Promi
 }
 
 async function copyRuntimeExportRecords(basePath: string, runId: string, exportDir: string): Promise<void> {
-  const runDir = join(basePath, '.threados/runs', runId)
+  const runDir = await resolvePathWithinRoot(basePath, '.threados/runs', runId)
   await Promise.all([
     copyIfPresent(join(runDir, 'trace.ndjson'), join(exportDir, 'trace.ndjson')),
     copyIfPresent(join(runDir, 'approvals.ndjson'), join(exportDir, 'approvals.ndjson')),
@@ -64,7 +74,7 @@ export async function POST(request: Request) {
 
     const bundle = await generateExportBundle(bp, runId)
     const validatedBundle = ExportBundleSchema.parse(bundle)
-    const exportDir = join(bp, '.threados/exports', runId)
+    const exportDir = await resolvePathWithinRoot(bp, '.threados/exports', runId)
     await mkdir(exportDir, { recursive: true })
     await writeFile(join(exportDir, 'bundle.json'), JSON.stringify(validatedBundle, null, 2), 'utf-8')
     await copyRuntimeExportRecords(bp, runId, exportDir)
