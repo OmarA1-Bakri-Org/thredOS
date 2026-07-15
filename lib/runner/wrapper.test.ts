@@ -143,6 +143,29 @@ describe('runStep', () => {
     }
   })
 
+  test('runner rejects a script interpreter that differs from the payload command', async () => {
+    const { runStep } = await importActualWrapper()
+    const content = 'process.stdout.write("must-not-run")\n'
+    const sha256 = `sha256:${createHash('sha256').update(content).digest('hex')}`
+
+    await expect(runStep({
+      stepId: 'interpreter-mismatch',
+      runId: 'run-interpreter-mismatch',
+      command: process.execPath,
+      args: [],
+      executablePayload: {
+        command: process.execPath,
+        args: [],
+        cwd: process.cwd(),
+        script: {
+          interpreter: 'threados-mismatched-interpreter-sentinel',
+          content,
+          sha256,
+        },
+      },
+    })).rejects.toThrow('interpreter')
+  })
+
   test('custom env vars', async () => {
     const { runStep } = await importActualWrapper()
     const result = await runStep({

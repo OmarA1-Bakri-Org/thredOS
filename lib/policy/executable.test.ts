@@ -48,4 +48,22 @@ describe('executable policy binding', () => {
     expect(ordinaryAgentPrompt).toContain('THREADOS_FORBIDDEN_SENTINEL')
     expect(evaluateExecutablePayload(payload, policy).allowed).toBe(true)
   })
+
+  test('rejects a script interpreter that differs from the authorized command', () => {
+    const policy = PolicyConfigSchema.parse({
+      mode: 'POWER',
+      command_allowlist: ['sh'],
+    })
+    const payload: ExecutablePayload = {
+      command: 'sh',
+      args: [],
+      cwd: '/workspace',
+      script: {
+        interpreter: 'powershell.exe',
+        content: 'Write-Output mismatch',
+      },
+    }
+
+    expect(() => evaluateExecutablePayload(payload, policy)).toThrow('interpreter')
+  })
 })

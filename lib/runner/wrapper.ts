@@ -4,7 +4,7 @@ import { readFile, unlink, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { ProcessTimeoutError } from '../errors'
-import { sha256Bytes } from '../policy/executable'
+import { assertValidExecutablePayload, sha256Bytes } from '../policy/executable'
 import type { ExecutablePayload } from '../policy/schema'
 
 export interface RunnerConfig {
@@ -54,6 +54,7 @@ async function materializeLaunch(config: RunnerConfig): Promise<MaterializedLaun
     args: config.args ?? [],
     cwd: config.cwd ?? process.cwd(),
   }
+  assertValidExecutablePayload(payload)
   if (!payload.script) {
     return { ...payload, cleanup: async () => {} }
   }
@@ -76,7 +77,7 @@ async function materializeLaunch(config: RunnerConfig): Promise<MaterializedLaun
       throw new Error('Executable script hash mismatch immediately before spawn')
     }
     return {
-      command: payload.script.interpreter,
+      command: payload.command,
       args: [scriptPath, ...payload.args],
       cwd: payload.cwd,
       cleanup,

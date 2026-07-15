@@ -92,18 +92,18 @@ Received: no subject_digest
 
 ```text
 bun test lib/policy/engine.test.ts lib/policy/executable.test.ts
-17 pass
+18 pass
 0 fail
-29 expect() calls
+30 expect() calls
 ```
 
 ### Dispatch and wrapper
 
 ```text
 bun test lib/runner/dispatch.test.ts lib/runner/wrapper.test.ts
-31 pass
+32 pass
 0 fail
-85 expect() calls
+86 expect() calls
 ```
 
 ### API and approval lifecycle
@@ -179,3 +179,39 @@ Exit code: 0
 - The re-hash is immediately before pathname-based interpreter spawn. Node does not expose a portable descriptor-based script execution API, so a privileged actor capable of replacing the temp path in the tiny hash-to-interpreter-open window remains outside the guarantee. Exclusive randomized creation, mode `0600`, and the immediate verification substantially narrow that window.
 - CLI SAFE confirmation is bound to the explicit local operator invocation; CLI does not persist an API-style approval lifecycle in this task.
 - Existing approval records remain backward compatible through an optional digest field. They deliberately do not authorize exact executable subjects until re-approved with a digest.
+
+## Canonical interpreter review fix
+
+Review identified that policy authorized `payload.command` while scripted launch materialization selected `payload.script.interpreter`. A structurally valid but mismatched payload could therefore authorize one executable and spawn another.
+
+The fix establishes `payload.command` as the sole executable authority:
+
+- scripted payloads are rejected unless `script.interpreter === command`;
+- validation runs before policy evaluation and subject-digest calculation, so neither policy nor approval can accept a split executable identity;
+- runner materialization independently validates the payload before writing a script; and
+- spawn now selects `payload.command`, preserving existing behavior for matching payloads.
+
+### Strict TDD evidence
+
+The mismatch tests were added before the production change:
+
+```text
+bun test lib/policy/executable.test.ts lib/runner/wrapper.test.ts --test-name-pattern "interpreter that differs"
+0 pass
+2 fail
+20 filtered out
+```
+
+The policy test showed the mismatch was allowed, and the runner-defense test showed the launch promise resolved rather than rejecting.
+
+After the validation and runner changes, the identical command passed:
+
+```text
+bun test lib/policy/executable.test.ts lib/runner/wrapper.test.ts --test-name-pattern "interpreter that differs"
+2 pass
+0 fail
+20 filtered out
+2 expect() calls
+```
+
+All Task 3 focused suites were then re-run successfully: policy/digest 18/18, dispatch/wrapper 32/32, API/approval 18/18, CLI 22/22, and approval/contracts 24/24. Typecheck, affected-file lint, and `git diff --check` also passed.

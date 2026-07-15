@@ -19,10 +19,19 @@ export function sha256Bytes(content: string | Buffer): string {
   return `sha256:${createHash('sha256').update(content).digest('hex')}`
 }
 
+export function assertValidExecutablePayload(payload: ExecutablePayload): void {
+  if (payload.script && payload.script.interpreter !== payload.command) {
+    throw new Error(
+      `Executable script interpreter '${payload.script.interpreter}' must match command '${payload.command}'`,
+    )
+  }
+}
+
 export function evaluateExecutablePayload(
   payload: ExecutablePayload,
   policy: PolicyConfig,
 ): PolicyResult {
+  assertValidExecutablePayload(payload)
   return new PolicyEngine(policy).validate({
     type: 'run_command',
     command: payload.command,
@@ -53,6 +62,7 @@ export function executableSubjectDigest(
   basePath: string,
   policy: PolicyConfig,
 ): string {
+  assertValidExecutablePayload(payload)
   const cwdContext = relative(basePath, payload.cwd).replaceAll('\\', '/') || '.'
   const scriptHash = payload.script ? sha256Bytes(payload.script.content) : null
   const policyIdentity = sha256Bytes(canonicalize(policy))
