@@ -18,9 +18,32 @@ export const PolicyConfigSchema = z.object({
   cross_surface_reads: z.enum(['deny', 'dependency_only']).default('dependency_only'),
   sealed_surface_projection: z.enum(['manifest_only', 'full']).default('manifest_only'),
   export_mode: z.enum(['off', 'local_bundle']).default('local_bundle'),
+}).superRefine((config, context) => {
+  config.forbidden_patterns.forEach((pattern, index) => {
+    try {
+      new RegExp(pattern, 'm')
+    } catch {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['forbidden_patterns', index],
+        message: `Invalid forbidden pattern: ${pattern}`,
+      })
+    }
+  })
 })
 
 export type PolicyConfig = z.infer<typeof PolicyConfigSchema>
+
+export interface ExecutablePayload {
+  command: string
+  args: string[]
+  cwd: string
+  script?: {
+    interpreter: string
+    content: string
+    sha256?: string
+  }
+}
 
 export interface PolicyAction {
   type: 'run_command' | 'fanout' | 'concurrent'
@@ -28,6 +51,7 @@ export interface PolicyAction {
   cwd?: string
   fanout_count?: number
   concurrent_count?: number
+  executable_payload?: ExecutablePayload
 }
 
 export interface PolicyResult {

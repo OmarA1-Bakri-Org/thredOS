@@ -86,13 +86,16 @@ describe.serial('run route approval proof', () => {
       requested_by: 'local@thredos',
       approved_by: 'local@thredos',
       status: 'approved',
+      subject_digest: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
     })
 
     const traces = await readTraceEvents(basePath, body.runId)
-    expect(traces.map(entry => entry.event_type)).toEqual(['approval-requested', 'approval-resolved'])
-    expect(traces[0]).toMatchObject({
+    const approvalTraces = traces.filter(entry => entry.event_type.startsWith('approval-'))
+    expect(approvalTraces.map(entry => entry.event_type)).toEqual(['approval-requested', 'approval-resolved'])
+    expect(approvalTraces[0]).toMatchObject({
       actor: 'api:run',
       surface_id: 'step:step-safe',
+      payload_ref: approvals[1].subject_digest,
     })
   })
 
@@ -120,6 +123,7 @@ describe.serial('run route approval proof', () => {
     const body = await response.json()
     expect(body.success).toBe(true)
     await expect(readApprovals(basePath, body.runId)).resolves.toEqual([])
-    await expect(readTraceEvents(basePath, body.runId)).resolves.toEqual([])
+    const traces = await readTraceEvents(basePath, body.runId)
+    expect(traces.filter(entry => entry.event_type.startsWith('approval-'))).toEqual([])
   })
 })

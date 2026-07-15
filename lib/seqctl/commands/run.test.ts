@@ -4,6 +4,7 @@ import { join } from 'path'
 import { createTempDir, cleanTempDir, makeSequence, makeStep, writeTestSequence } from '../../../test/helpers/setup'
 import { runCommand } from './run'
 import { readSequence } from '../../sequence/parser'
+import YAML from 'yaml'
 
 let tempDir: string
 const jsonOpts = { json: true, help: false, watch: false }
@@ -13,6 +14,71 @@ beforeEach(async () => {
   // Ensure state directory exists for thread surface operations
   await mkdir(join(tempDir, '.threados/state'), { recursive: true })
   await mkdir(join(tempDir, '.threados/prompts'), { recursive: true })
+})
+
+describe('run command executable policy parity', () => {
+  test('CLI denies forbidden shell bytes before runStep', async () => {
+    const seq = makeSequence({
+      steps: [makeStep({
+        id: 'cli-forbidden-shell',
+        model: 'shell',
+        status: 'READY',
+        prompt_file: '.threados/prompts/cli-forbidden-shell.md',
+      })],
+    })
+    await writeTestSequence(tempDir, seq)
+    await writeFile(join(tempDir, '.threados/prompts/cli-forbidden-shell.md'), 'echo THREADOS_FORBIDDEN_SENTINEL')
+    await writeFile(join(tempDir, '.threados/policy.yaml'), YAML.stringify({
+      mode: 'POWER',
+      command_allowlist: ['sh'],
+      forbidden_patterns: ['THREADOS_FORBIDDEN_SENTINEL'],
+    }))
+
+    let runStepCalls = 0
+    globalThis.__THREADOS_CLI_RUN_RUNTIME__ = {
+      dispatch: async (_model, opts) => ({
+        stepId: opts.stepId,
+        runId: opts.runId,
+        command: 'sh',
+        args: [],
+        cwd: opts.cwd,
+        timeout: opts.timeout,
+        executablePayload: {
+          command: 'sh',
+          args: [],
+          cwd: opts.cwd,
+          script: {
+            interpreter: 'sh',
+            content: opts.compiledPrompt,
+            sha256: 'sha256:sentinel',
+          },
+        },
+      }),
+      runStep: async config => {
+        runStepCalls += 1
+        return {
+          stepId: config.stepId, runId: config.runId, exitCode: 0,
+          status: 'SUCCESS', duration: 1, stdout: '', stderr: '',
+          startTime: new Date(), endTime: new Date(),
+        }
+      },
+      saveRunArtifacts: async () => '.threados/runs/mock',
+    }
+
+    const logs: string[] = []
+    const originalLog = console.log
+    console.log = (message: string) => logs.push(message)
+    try {
+      await runCommand('step', ['cli-forbidden-shell'], { ...jsonOpts, basePath: tempDir })
+    } finally {
+      console.log = originalLog
+    }
+
+    expect(runStepCalls).toBe(0)
+    const output = JSON.parse(logs.find(line => line.startsWith('{')) ?? '{}')
+    expect(output.success).toBe(false)
+    expect(output.error).toContain('forbidden')
+  })
 })
 
 afterEach(async () => {

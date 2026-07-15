@@ -15,6 +15,7 @@ interface RecordApprovedApprovalLifecycleInput {
   payloadRef?: string | null
   policyRef?: string | null
   approvalId?: string
+  subjectDigest?: string | null
 }
 
 export async function recordApprovedApprovalLifecycle({
@@ -29,6 +30,7 @@ export async function recordApprovedApprovalLifecycle({
   payloadRef = null,
   policyRef = null,
   approvalId = `apr-${randomUUID()}`,
+  subjectDigest = null,
 }: RecordApprovedApprovalLifecycleInput): Promise<Approval> {
   const requestedAt = new Date().toISOString()
   const resolvedAt = new Date().toISOString()
@@ -42,6 +44,7 @@ export async function recordApprovedApprovalLifecycle({
     approved_by: null,
     approved_at: null,
     notes: null,
+    subject_digest: subjectDigest,
   }
 
   const approvedApproval: Approval = {

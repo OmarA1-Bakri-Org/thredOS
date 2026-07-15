@@ -16,6 +16,8 @@ import { completeRun, createReplacementRun, createRootThreadSurfaceRun } from '.
 import { beginStepRunIfSurfaceExists, finalizeStepRunWithRuntimeEvents, type StepRunScope } from '../../thread-surfaces/step-run-runtime'
 import { readRuntimeEventLog, type RuntimeDelegationEvent } from '../../thread-surfaces/runtime-event-log'
 import { provisionAllChildSequences } from '../../thread-surfaces/provision-child-sequence'
+import { PolicyEngine } from '../../policy/engine'
+import { enforceExecutablePayload } from '../../policy/executable'
 
 const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000 // 30 minutes
 const THREADOS_EVENT_EMITTER_COMMAND = 'thread event'
@@ -163,6 +165,17 @@ async function executeSingleStep(
       runtimeEventLogPath,
       runtimeEventEmitterCommand: THREADOS_EVENT_EMITTER_COMMAND,
     })
+
+    const policy = (await PolicyEngine.load(basePath)).getConfig()
+    const executablePayload = runnerConfig.executablePayload ?? {
+      command: runnerConfig.command,
+      args: runnerConfig.args ?? [],
+      cwd: runnerConfig.cwd ?? basePath,
+    }
+    const policyDecision = enforceExecutablePayload(executablePayload, policy, true)
+    if (!policyDecision.allowed) {
+      throw new Error(policyDecision.reason ?? 'Policy denied executable payload')
+    }
 
     // 4. Execute via runner
     const result = await runtime.runStep(runnerConfig)

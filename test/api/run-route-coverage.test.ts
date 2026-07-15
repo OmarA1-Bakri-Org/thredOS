@@ -508,4 +508,62 @@ describe.serial('run route coverage — error handling', () => {
     const data = await res.json()
     expect(data.success).toBe(true)
   })
+
+  test('forbidden shell bytes are denied before runStep', async () => {
+    await mkdir(join(basePath, '.threados'), { recursive: true })
+    await writeFile(join(basePath, '.threados', 'policy.yaml'), YAML.stringify({
+      mode: 'POWER',
+      command_allowlist: ['threados', 'sh'],
+      forbidden_patterns: ['THREADOS_FORBIDDEN_SENTINEL'],
+    }))
+    await setupTestSequence({
+      version: '1.0',
+      name: 'forbidden-shell-seq',
+      steps: [
+        { id: 'forbidden-shell', name: 'Forbidden Shell', type: 'base', model: 'shell', prompt_file: '.threados/prompts/forbidden-shell.md', depends_on: [], status: 'READY' },
+      ],
+      gates: [],
+    })
+    await writePrompt('forbidden-shell', 'echo THREADOS_FORBIDDEN_SENTINEL')
+
+    let runStepCalls = 0
+    globalThis.__THREADOS_RUN_ROUTE_RUNTIME__ = {
+      ...createMockRuntime(),
+      dispatch: async (_model, opts) => ({
+        stepId: opts.stepId,
+        runId: opts.runId,
+        command: 'sh',
+        args: [],
+        cwd: opts.cwd,
+        timeout: opts.timeout,
+        executablePayload: {
+          command: 'sh',
+          args: [],
+          cwd: opts.cwd,
+          script: {
+            interpreter: 'sh',
+            content: opts.compiledPrompt,
+            sha256: 'sha256:sentinel',
+          },
+        },
+      }),
+      runStep: async ({ stepId, runId }) => {
+        runStepCalls += 1
+        return {
+          stepId, runId, exitCode: 0, status: 'SUCCESS' as const, duration: 1,
+          stdout: '', stderr: '', startTime: new Date(), endTime: new Date(),
+        }
+      },
+    }
+
+    const { POST } = await import('@/app/api/run/route')
+    const response = await POST(new Request('http://localhost/api/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: confirmedBody({ stepId: 'forbidden-shell' }),
+    }))
+
+    expect(response.status).toBe(403)
+    expect(runStepCalls).toBe(0)
+  })
 })

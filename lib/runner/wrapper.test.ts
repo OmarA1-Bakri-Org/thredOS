@@ -1,5 +1,7 @@
 import { describe, test, expect } from 'bun:test'
 import { ProcessTimeoutError } from '../errors'
+import { createHash } from 'crypto'
+import { writeFile } from 'fs/promises'
 
 async function importActualWrapper() {
   return import(new URL(`./wrapper.ts?cacheBust=${Date.now()}-${Math.random()}`, import.meta.url).href) as Promise<typeof import('./wrapper')>
@@ -92,6 +94,53 @@ describe('runStep', () => {
     })
     expect(result.status).toBe('ERROR')
     expect(result.exitCode).toBe(null)
+  })
+
+  test('materialized script preserves exact UTF-8 bytes and argv boundaries', async () => {
+    const { runStep } = await importActualWrapper()
+    const content = 'process.stdout.write(JSON.stringify(process.argv.slice(2)))\n'
+    const sha256 = `sha256:${createHash('sha256').update(content).digest('hex')}`
+    const result = await runStep({
+      stepId: 'script-bytes',
+      runId: 'run-script-bytes',
+      command: process.execPath,
+      args: ['-e', 'process.stdout.write("legacy")'],
+      executablePayload: {
+        command: process.execPath,
+        args: ['--', 'quoted value', 'é'],
+        cwd: process.cwd(),
+        script: { interpreter: process.execPath, content, sha256 },
+      },
+    })
+
+    expect(result.stdout).toBe(JSON.stringify(['quoted value', 'é']))
+  })
+
+  test('temp script tampering is rejected immediately before spawn', async () => {
+    const wrapper = await importActualWrapper()
+    const content = 'process.stdout.write("approved")\n'
+    const sha256 = `sha256:${createHash('sha256').update(content).digest('hex')}`
+    expect(typeof wrapper.setBeforeExecutableSpawnHookForTests).toBe('function')
+    wrapper.setBeforeExecutableSpawnHookForTests(async ({ scriptPath }) => {
+      await writeFile(scriptPath, 'process.stdout.write("tampered")\n')
+    })
+
+    try {
+      await expect(wrapper.runStep({
+        stepId: 'script-tamper',
+        runId: 'run-script-tamper',
+        command: process.execPath,
+        args: [],
+        executablePayload: {
+          command: process.execPath,
+          args: [],
+          cwd: process.cwd(),
+          script: { interpreter: process.execPath, content, sha256 },
+        },
+      })).rejects.toThrow('hash')
+    } finally {
+      wrapper.setBeforeExecutableSpawnHookForTests(null)
+    }
   })
 
   test('custom env vars', async () => {

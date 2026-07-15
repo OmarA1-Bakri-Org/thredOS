@@ -121,6 +121,7 @@ export const ApprovalSchema = z.object({
   approved_by: z.string().nullable(),
   approved_at: z.string().nullable(),
   notes: z.string().nullable(),
+  subject_digest: z.string().regex(/^sha256:[a-f0-9]{64}$/).nullable().optional(),
 })
 export type Approval = z.infer<typeof ApprovalSchema>
 

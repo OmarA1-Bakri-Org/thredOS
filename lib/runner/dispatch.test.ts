@@ -66,18 +66,22 @@ describe('dispatch', () => {
     expect(config.env?.THREADOS_RUN_ID).toBe('run-123')
   })
 
-  test('shell dispatch writes prompt to temp file', async () => {
+  test('shell dispatch preserves exact script bytes without materializing a temp file', async () => {
+    const content = 'printf "%s\\n" "quoted value"\n'
     const config = await dispatch('shell', {
       stepId: 'test',
       runId: 'run-456',
-      compiledPrompt: 'echo "test"',
+      compiledPrompt: content,
       cwd: process.cwd(),
       timeout: 5000,
     })
 
-    // args[0] should be the temp file path
-    expect(config.args).toBeDefined()
-    expect(config.args![0]).toContain('threados-prompt-test-')
+    expect(config.args).toEqual([])
+    expect(config.executablePayload?.script).toMatchObject({
+      interpreter: 'sh',
+      content,
+    })
+    expect(config.executablePayload?.script?.sha256).toMatch(/^sha256:[a-f0-9]{64}$/)
   })
 
   test('dispatch exposes THREADOS_EVENT_LOG to the child process', async () => {

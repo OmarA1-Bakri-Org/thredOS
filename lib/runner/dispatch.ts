@@ -5,6 +5,7 @@ import { randomUUID } from 'crypto'
 import { AgentNotFoundError } from '../errors'
 import type { RunnerConfig } from './wrapper'
 import type { ModelType } from '../sequence/schema'
+import { sha256Bytes } from '../policy/executable'
 
 export interface DispatchOptions {
   stepId: string
@@ -127,13 +128,12 @@ const dispatchers: Record<string, AgentDispatcher> = {
   shell: {
     binary: 'sh',
     installHint: 'sh should be available on all Unix systems',
-    buildConfig(opts, promptFilePath) {
-      // For shell steps, the prompt content IS the command to execute
+    buildConfig(opts) {
       return {
         stepId: opts.stepId,
         runId: opts.runId,
         command: 'sh',
-        args: [promptFilePath],
+        args: [],
         cwd: opts.cwd,
         timeout: opts.timeout,
         env: {
@@ -142,6 +142,16 @@ const dispatchers: Record<string, AgentDispatcher> = {
           THREADOS_RUN_ID: opts.runId,
           ...(opts.runtimeEventLogPath ? { THREADOS_EVENT_LOG: opts.runtimeEventLogPath } : {}),
           ...(opts.runtimeEventEmitterCommand ? { THREADOS_EVENT_EMITTER: opts.runtimeEventEmitterCommand } : {}),
+        },
+        executablePayload: {
+          command: 'sh',
+          args: [],
+          cwd: opts.cwd,
+          script: {
+            interpreter: 'sh',
+            content: opts.compiledPrompt,
+            sha256: sha256Bytes(opts.compiledPrompt),
+          },
         },
       }
     },
@@ -197,11 +207,19 @@ export async function dispatch(
     throw new AgentNotFoundError(model, dispatcher.installHint)
   }
 
-  // Write prompt to temp file
+  if (model === 'shell') {
+    return dispatcher.buildConfig(opts, '')
+  }
+
   const promptFilePath = await writeTempPrompt(opts.compiledPrompt, opts.stepId)
 
-  // Build the runner config
-  return dispatcher.buildConfig(opts, promptFilePath)
+  const config = dispatcher.buildConfig(opts, promptFilePath)
+  config.executablePayload = {
+    command: config.command,
+    args: config.args ?? [],
+    cwd: config.cwd ?? opts.cwd,
+  }
+  return config
 }
 
 /**

@@ -5,6 +5,7 @@ import YAML from 'yaml'
 import { createTempDir, cleanTempDir } from '../../test/helpers/setup'
 import { PolicyEngine } from './engine'
 import { PolicyConfigSchema } from './schema'
+import type { PolicyAction } from './schema'
 
 describe('PolicyEngine', () => {
   let tmpDir: string
@@ -116,5 +117,40 @@ describe('PolicyEngine', () => {
     expect(engine.validate({ type: 'run_command', command: 'rm -rf /' }).allowed).toBe(false)
     expect(engine.validate({ type: 'run_command', command: 'sudo apt install' }).allowed).toBe(false)
     expect(engine.validate({ type: 'run_command', command: 'echo safe' }).allowed).toBe(true)
+  })
+
+  test.each([
+    ['sh', []],
+    ['bash', []],
+    ['cmd', ['/d', '/s', '/c']],
+    ['powershell.exe', ['-NoProfile', '-File']],
+  ])('forbidden content hidden behind %s is denied', async (command, args) => {
+    await writeFile(join(tmpDir, '.threados/policy.yaml'), YAML.stringify({
+      mode: 'POWER',
+      command_allowlist: [command],
+      forbidden_patterns: ['THREADOS_FORBIDDEN_SENTINEL'],
+    }))
+    const engine = await PolicyEngine.load(tmpDir)
+    const action = {
+      type: 'run_command',
+      command,
+      executable_payload: {
+        command,
+        args,
+        cwd: tmpDir,
+        script: { interpreter: command, content: 'echo THREADOS_FORBIDDEN_SENTINEL' },
+      },
+    } as unknown as PolicyAction
+
+    expect(engine.validate(action).allowed).toBe(false)
+  })
+
+  test('invalid forbidden regex is rejected safely while loading policy', async () => {
+    await writeFile(join(tmpDir, '.threados/policy.yaml'), YAML.stringify({
+      mode: 'POWER',
+      forbidden_patterns: ['[unterminated'],
+    }))
+
+    await expect(PolicyEngine.load(tmpDir)).rejects.toThrow('Invalid forbidden pattern')
   })
 })

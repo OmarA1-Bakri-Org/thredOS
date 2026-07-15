@@ -16,6 +16,11 @@ import { appendGateDecision } from '@/lib/gates/repository'
 import { evaluateStepCompletionGates, evaluateStepGates, getBlockReasons, isStepRunnable } from '@/lib/gates/engine'
 import { allowShellModel } from '@/lib/hosted'
 import { PolicyEngine } from '@/lib/policy/engine'
+import {
+  approvalMatchesExecutableSubject,
+  enforceExecutablePayload,
+  executableSubjectDigest,
+} from '@/lib/policy/executable'
 import type { PolicyConfig } from '@/lib/policy/schema'
 import { readPrompt, validatePromptExists } from '@/lib/prompts/manager'
 import { applyRateLimit } from '@/lib/rate-limit'
@@ -30,7 +35,7 @@ import {
 } from '@/lib/runner/artifacts'
 import { dispatch, exitCodeToStatus } from '@/lib/runner/dispatch'
 import { compilePrompt } from '@/lib/runner/prompt-compiler'
-import { runStep, type RunnerConfig } from '@/lib/runner/wrapper'
+import { runStep } from '@/lib/runner/wrapper'
 import { topologicalSort, validateDAG } from '@/lib/sequence/dag'
 import { readSequence, writeSequence } from '@/lib/sequence/parser'
 import type { Sequence, Step } from '@/lib/sequence/schema'
@@ -67,6 +72,7 @@ interface ExecuteStepOptions {
   confirmPolicy: boolean
   policyConfig: PolicyConfig
   approvalTargetRef: string
+  approvalActor: string
 }
 
 type ExecuteStepResult = {
@@ -79,6 +85,7 @@ type ExecuteStepResult = {
   artifactPath?: string
   confirmationRequired?: boolean
   gateReasons?: string[]
+  policyDenied?: boolean
 }
 
 declare global {
@@ -128,10 +135,6 @@ function targetRefFromRunBody(body: RunRequestBody): string {
   if ('stepId' in body) return `step:${body.stepId}`
   if ('groupId' in body) return `group:${body.groupId}`
   return 'mode:runnable'
-}
-
-function commandLineFromRunnerConfig(runnerConfig: RunnerConfig): string {
-  return [runnerConfig.command, ...(runnerConfig.args ?? [])].join(' ').trim()
 }
 
 function sha256(value: string): string {
@@ -461,11 +464,22 @@ async function executeStep(
       runtimeEventEmitterCommand: THREADOS_EVENT_EMITTER_COMMAND,
     })
 
-    const policyResult = await checkPolicy('run_command', {
-      command: commandLineFromRunnerConfig(runnerConfig),
-      cwd: runnerConfig.cwd,
-      confirmed: options.confirmPolicy,
-    })
+    const executablePayload = runnerConfig.executablePayload ?? {
+      command: runnerConfig.command,
+      args: runnerConfig.args ?? [],
+      cwd: runnerConfig.cwd ?? basePath,
+    }
+    const subjectDigest = executableSubjectDigest(executablePayload, basePath, options.policyConfig)
+    const matchingApproval = approvals.some(approval => approvalMatchesExecutableSubject(
+      approval,
+      [`step:${step.id}`, options.approvalTargetRef],
+      subjectDigest,
+    ))
+    const policyResult = enforceExecutablePayload(
+      executablePayload,
+      options.policyConfig,
+      options.confirmPolicy || matchingApproval,
+    )
     if (!policyResult.allowed) {
       await buildRunRecord(basePath, {
         sequence,
@@ -487,8 +501,25 @@ async function executeStep(
         runId,
         status: step.status,
         error: policyResult.reason ?? 'Policy denied',
-        confirmationRequired: policyResult.confirmationRequired,
+        confirmationRequired: policyResult.confirmation_required,
+        policyDenied: !policyResult.confirmation_required,
       }
+    }
+
+    if (options.confirmPolicy && options.policyConfig.mode === 'SAFE' && !matchingApproval) {
+      await recordApprovedApprovalLifecycle({
+        basePath,
+        runId,
+        actionType: 'run',
+        targetRef: `step:${step.id}`,
+        requestedBy: options.approvalActor,
+        resolvedBy: options.approvalActor,
+        actor: 'api:run',
+        notes: 'SAFE mode confirmation bound to the exact executable subject.',
+        payloadRef: subjectDigest,
+        policyRef: executableSubjectDigest(executablePayload, basePath, options.policyConfig),
+        subjectDigest,
+      })
     }
 
     await buildRunRecord(basePath, {
@@ -607,30 +638,20 @@ export async function POST(request: Request) {
     const policyEngine = await PolicyEngine.load(basePath)
     const policyConfig = policyEngine.getConfig()
     const approvalTargetRef = targetRefFromRunBody(body)
-    if (body.confirmPolicy === true && policyConfig.mode === 'SAFE') {
-      await recordApprovedApprovalLifecycle({
-        basePath,
-        runId,
-        actionType: 'run',
-        targetRef: approvalTargetRef,
-        requestedBy: session.email,
-        resolvedBy: session.email,
-        actor: 'api:run',
-        notes: 'SAFE mode confirmation acknowledged before dispatch.',
-        policyRef: 'SAFE',
-      })
-    }
-
     if ('stepId' in body) {
       const result = await executeStep(basePath, sequence, body.stepId, runId, {
         confirmPolicy: body.confirmPolicy === true,
         policyConfig,
         approvalTargetRef,
+        approvalActor: session.email,
       })
       await finalizeRunScope(basePath, runId, result.success, `step:${body.stepId}`)
       await auditLog('run.step', body.stepId, { runId }, result.success ? 'ok' : 'failed')
       if (!result.success && result.confirmationRequired) {
         return jsonError(result.error ?? 'Policy confirmation required', 'POLICY_CONFIRMATION_REQUIRED', 409)
+      }
+      if (!result.success && result.policyDenied) {
+        return jsonError(result.error ?? 'Policy denied', 'POLICY_DENIED', 403)
       }
       return NextResponse.json(result)
     }
@@ -642,6 +663,7 @@ export async function POST(request: Request) {
           confirmPolicy: body.confirmPolicy === true,
           policyConfig,
           approvalTargetRef,
+          approvalActor: session.email,
         }))
       }
       const success = results.every(result => result.success)
@@ -656,6 +678,7 @@ export async function POST(request: Request) {
         confirmPolicy: body.confirmPolicy === true,
         policyConfig,
         approvalTargetRef,
+        approvalActor: session.email,
       }))
     }
     const success = results.every(result => result.success)

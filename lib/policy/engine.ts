@@ -61,9 +61,16 @@ export class PolicyEngine {
   }
 
   private checkForbiddenPatterns(action: PolicyAction): PolicyResult | null {
-    if (!action.command) return null
+    const subjects = action.executable_payload
+      ? [
+          action.executable_payload.command,
+          ...action.executable_payload.args,
+          ...(action.executable_payload.script ? [action.executable_payload.script.content] : []),
+        ]
+      : action.command ? [action.command] : []
     for (const pattern of this.config.forbidden_patterns) {
-      if (new RegExp(pattern).test(action.command)) {
+      const expression = new RegExp(pattern, 'm')
+      if (subjects.some(subject => expression.test(subject))) {
         return { allowed: false, reason: `Command matches forbidden pattern: ${pattern}`, confirmation_required: false }
       }
     }
@@ -71,23 +78,25 @@ export class PolicyEngine {
   }
 
   private checkCommandAllowlist(action: PolicyAction): PolicyResult | null {
-    if (!action.command || this.config.command_allowlist.length === 0) return null
-    const allowed = this.config.command_allowlist.some(prefix => action.command!.startsWith(prefix))
+    const command = action.executable_payload?.command ?? action.command
+    if (!command || this.config.command_allowlist.length === 0) return null
+    const allowed = this.config.command_allowlist.some(prefix => command.startsWith(prefix))
     if (!allowed) {
-      return { allowed: false, reason: `Command not in allowlist: ${action.command}`, confirmation_required: false }
+      return { allowed: false, reason: `Command not in allowlist: ${command}`, confirmation_required: false }
     }
     return null
   }
 
   private checkCwdRestriction(action: PolicyAction): PolicyResult | null {
-    if (!action.cwd || this.config.cwd_patterns.length === 0) return null
+    const cwd = action.executable_payload?.cwd ?? action.cwd
+    if (!cwd || this.config.cwd_patterns.length === 0) return null
     const cwdAllowed = this.config.cwd_patterns.some(pattern => {
       if (pattern === '**') return true
       const prefix = pattern.replace(/\*+$/, '')
-      return action.cwd!.startsWith(prefix)
+      return cwd.startsWith(prefix)
     })
     if (!cwdAllowed) {
-      return { allowed: false, reason: `CWD not allowed: ${action.cwd}`, confirmation_required: false }
+      return { allowed: false, reason: `CWD not allowed: ${cwd}`, confirmation_required: false }
     }
     return null
   }

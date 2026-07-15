@@ -1,5 +1,11 @@
 import { spawn, type ChildProcess } from 'child_process'
+import { randomUUID } from 'crypto'
+import { readFile, unlink, writeFile } from 'fs/promises'
+import { tmpdir } from 'os'
+import { join } from 'path'
 import { ProcessTimeoutError } from '../errors'
+import { sha256Bytes } from '../policy/executable'
+import type { ExecutablePayload } from '../policy/schema'
 
 export interface RunnerConfig {
   stepId: string
@@ -9,6 +15,7 @@ export interface RunnerConfig {
   cwd?: string
   timeout?: number // in milliseconds, default 30 minutes
   env?: Record<string, string>
+  executablePayload?: ExecutablePayload
 }
 
 export type RunStatus = 'SUCCESS' | 'FAILED' | 'TIMEOUT' | 'ERROR'
@@ -26,6 +33,59 @@ export interface RunResult {
 }
 
 const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000 // 30 minutes
+
+type BeforeExecutableSpawnHook = (context: { scriptPath: string }) => Promise<void> | void
+let beforeExecutableSpawnHookForTests: BeforeExecutableSpawnHook | null = null
+
+export function setBeforeExecutableSpawnHookForTests(hook: BeforeExecutableSpawnHook | null): void {
+  beforeExecutableSpawnHookForTests = hook
+}
+
+interface MaterializedLaunch {
+  command: string
+  args: string[]
+  cwd: string
+  cleanup: () => Promise<void>
+}
+
+async function materializeLaunch(config: RunnerConfig): Promise<MaterializedLaunch> {
+  const payload = config.executablePayload ?? {
+    command: config.command,
+    args: config.args ?? [],
+    cwd: config.cwd ?? process.cwd(),
+  }
+  if (!payload.script) {
+    return { ...payload, cleanup: async () => {} }
+  }
+
+  const expectedHash = sha256Bytes(payload.script.content)
+  if (payload.script.sha256 !== undefined && payload.script.sha256 !== expectedHash) {
+    throw new Error('Executable script hash does not match approved bytes')
+  }
+
+  const scriptPath = join(tmpdir(), `threados-script-${config.stepId}-${randomUUID()}.tmp`)
+  await writeFile(scriptPath, payload.script.content, { encoding: 'utf-8', flag: 'wx', mode: 0o600 })
+  const cleanup = async (): Promise<void> => {
+    await unlink(scriptPath).catch(() => {})
+  }
+
+  try {
+    await beforeExecutableSpawnHookForTests?.({ scriptPath })
+    const actualHash = sha256Bytes(await readFile(scriptPath))
+    if (actualHash !== expectedHash) {
+      throw new Error('Executable script hash mismatch immediately before spawn')
+    }
+    return {
+      command: payload.script.interpreter,
+      args: [scriptPath, ...payload.args],
+      cwd: payload.cwd,
+      cleanup,
+    }
+  } catch (error) {
+    await cleanup()
+    throw error
+  }
+}
 
 /** Exact parent environment keys required for portable child execution. */
 const INHERITED_ENV_KEYS = [
@@ -93,12 +153,10 @@ export function buildExecutionEnv(
  * @throws ProcessTimeoutError if the process exceeds the timeout
  */
 export async function runStep(config: RunnerConfig): Promise<RunResult> {
+  const launch = await materializeLaunch(config)
   const {
     stepId,
     runId,
-    command,
-    args = [],
-    cwd = process.cwd(),
     timeout = DEFAULT_TIMEOUT_MS,
     env = {},
   } = config
@@ -110,8 +168,8 @@ export async function runStep(config: RunnerConfig): Promise<RunResult> {
   let timedOut = false
 
   return new Promise((resolve, reject) => {
-    const proc: ChildProcess = spawn(command, args, {
-      cwd,
+    const proc: ChildProcess = spawn(launch.command, launch.args, {
+      cwd: launch.cwd,
       shell: false,
       env: buildExecutionEnv(process.env, env),
     })
@@ -128,6 +186,7 @@ export async function runStep(config: RunnerConfig): Promise<RunResult> {
       }, 5000)
 
       reject(new ProcessTimeoutError(stepId, timeout))
+      void launch.cleanup()
     }, timeout)
 
     proc.stdout?.on('data', (data: Buffer) => {
@@ -144,6 +203,7 @@ export async function runStep(config: RunnerConfig): Promise<RunResult> {
         clearTimeout(graceTimer)
       }
       if (timedOut) return
+      void launch.cleanup()
       const endTime = new Date()
       const duration = endTime.getTime() - startTime.getTime()
 
@@ -175,6 +235,7 @@ export async function runStep(config: RunnerConfig): Promise<RunResult> {
         clearTimeout(graceTimer)
       }
       if (timedOut) return
+      void launch.cleanup()
       const endTime = new Date()
       const duration = endTime.getTime() - startTime.getTime()
 
