@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { assertSafePathSegment } from '@/lib/security/safe-path'
+import { assertPortableRelativePath, assertSafePathSegment } from '@/lib/security/safe-path'
 
 const SafePathSegmentSchema = z.string().min(1).refine(value => {
   try {
@@ -9,6 +9,15 @@ const SafePathSegmentSchema = z.string().min(1).refine(value => {
     return false
   }
 }, 'must be a portable file-safe identifier')
+
+const PortableRelativePathSchema = z.string().min(1).refine(value => {
+  try {
+    assertPortableRelativePath(value, 'prompt_file')
+    return true
+  } catch {
+    return false
+  }
+}, 'prompt_file must be a portable relative path')
 
 export const PackPhaseSchema = z.object({
   id: z.string().min(1),
@@ -24,7 +33,7 @@ export const PackStepSchema = z.object({
   phase: z.string().min(1),
   surface_class: z.enum(['shared', 'private', 'sealed', 'control']).default('shared'),
   depends_on: z.array(z.string()).default([]),
-  prompt_file: z.string().optional(),
+  prompt_file: PortableRelativePathSchema.optional(),
   orchestrator: z.string().optional(),
   fusion_candidates: z.boolean().optional(),
   fusion_synth: z.boolean().optional(),

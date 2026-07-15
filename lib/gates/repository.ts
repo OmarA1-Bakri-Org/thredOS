@@ -1,21 +1,30 @@
-import { appendFile, readFile, mkdir } from 'fs/promises'
-import { join } from 'path'
+import { mkdir } from 'fs/promises'
 import { GateDecisionSchema, type GateDecision } from '@/lib/contracts/schemas'
 import {
   assertSafePathSegment,
   resolveExistingPathWithinRoot,
   resolvePathWithinRoot,
 } from '@/lib/security/safe-path'
+import { appendFileNoFollow, readTextFileNoFollow } from '@/lib/security/safe-io'
 
-const RUNS_PATH = '.threados/runs'
+async function ensureRunsRoot(basePath: string): Promise<string> {
+  const threadosPath = await resolvePathWithinRoot(basePath, '.threados')
+  await mkdir(threadosPath, { recursive: true })
+  const threadosRoot = await resolveExistingPathWithinRoot(basePath, '.threados')
+  const runsRoot = await resolvePathWithinRoot(threadosRoot, 'runs')
+  await mkdir(runsRoot, { recursive: true })
+  return await resolveExistingPathWithinRoot(threadosRoot, 'runs')
+}
 
 export async function appendGateDecision(basePath: string, runId: string, decision: GateDecision): Promise<void> {
   assertSafePathSegment(runId, 'run id')
   const validated = GateDecisionSchema.parse(decision)
-  const dirPath = await resolvePathWithinRoot(basePath, RUNS_PATH, runId)
+  const runsRoot = await ensureRunsRoot(basePath)
+  const dirPath = await resolvePathWithinRoot(runsRoot, runId)
   await mkdir(dirPath, { recursive: true })
-  const filePath = join(dirPath, 'gate-decisions.ndjson')
-  await appendFile(filePath, JSON.stringify(validated) + '\n', 'utf-8')
+  const verifiedRunDir = await resolveExistingPathWithinRoot(runsRoot, runId)
+  const filePath = await resolvePathWithinRoot(verifiedRunDir, 'gate-decisions.ndjson')
+  await appendFileNoFollow(filePath, JSON.stringify(validated) + '\n')
 }
 
 export async function readGateDecisions(basePath: string, runId: string): Promise<GateDecision[]> {
@@ -23,8 +32,10 @@ export async function readGateDecisions(basePath: string, runId: string): Promis
   let filePath: string
   let content: string
   try {
-    filePath = await resolveExistingPathWithinRoot(basePath, RUNS_PATH, runId, 'gate-decisions.ndjson')
-    content = await readFile(filePath, 'utf-8')
+    const threadosRoot = await resolveExistingPathWithinRoot(basePath, '.threados')
+    const runsRoot = await resolveExistingPathWithinRoot(threadosRoot, 'runs')
+    filePath = await resolveExistingPathWithinRoot(runsRoot, runId, 'gate-decisions.ndjson')
+    content = await readTextFileNoFollow(filePath)
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
     throw error

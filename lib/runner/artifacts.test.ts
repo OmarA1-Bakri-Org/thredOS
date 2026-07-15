@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
-import { readFile } from 'fs/promises'
+import { mkdir, readFile, symlink, writeFile } from 'fs/promises'
 import { join } from 'path'
 import { createTempDir, cleanTempDir } from '../../test/helpers/setup'
 import type { RunResult } from './wrapper'
@@ -124,5 +124,63 @@ describe('artifacts', () => {
     expect(getRuntimeEventLogPath(tmpDir, 'run-2', 'step-9')).toBe(
       join(tmpDir, '.threados', 'runs', 'run-2', 'step-9', 'events.jsonl'),
     )
+  })
+
+  test('writeStdout rejects an existing final-file symlink', async () => {
+    const { createRunDirectory, writeStdout } = await importActualArtifacts()
+    const artifactDir = await createRunDirectory(tmpDir, 'run-link', 'step-link')
+    const outsideFile = join(tmpDir, 'outside-stdout.log')
+    await writeFile(outsideFile, 'outside sentinel')
+    await symlink(outsideFile, join(artifactDir, 'stdout.log'), 'file')
+
+    await expect(writeStdout(artifactDir, 'escaped write')).rejects.toThrow()
+    expect(await readFile(outsideFile, 'utf-8')).toBe('outside sentinel')
+  })
+
+  test('writeStatus rejects an existing final-file symlink', async () => {
+    const { createRunDirectory, writeStatus } = await importActualArtifacts()
+    const artifactDir = await createRunDirectory(tmpDir, 'run-link', 'step-link')
+    const outsideFile = join(tmpDir, 'outside-status.json')
+    await writeFile(outsideFile, 'outside sentinel')
+    await symlink(outsideFile, join(artifactDir, 'status.json'), 'file')
+
+    await expect(writeStatus(artifactDir, {
+      stepId: 'step-link', runId: 'run-link', startTime: '2026-01-01T00:00:00.000Z',
+      endTime: '2026-01-01T00:00:01.000Z', duration: 1000, exitCode: 0, status: 'SUCCESS',
+    })).rejects.toThrow()
+    expect(await readFile(outsideFile, 'utf-8')).toBe('outside sentinel')
+  })
+
+  test('writeRunRecord rejects an existing final-file symlink', async () => {
+    const { writeRunRecord } = await importActualArtifacts()
+    const runDir = join(tmpDir, '.threados', 'runs', 'run-link')
+    await mkdir(runDir, { recursive: true })
+    const outsideFile = join(tmpDir, 'outside-run.json')
+    await writeFile(outsideFile, 'outside sentinel')
+    await symlink(outsideFile, join(runDir, 'run.json'), 'file')
+
+    await expect(writeRunRecord(tmpDir, {
+      id: 'run-link', sequence_id: 'sequence-a', step_id: 'step-link', surface_id: 'surface-a',
+      attempt: 1, status: 'pending', executor: 'tester', model: 'test', policy_snapshot_hash: 'hash',
+      compiled_prompt_hash: 'hash', input_manifest_ref: null, artifact_manifest_ref: null,
+      started_at: '2026-01-01T00:00:00.000Z', ended_at: null, timing_summary: null, cost_summary: null,
+    })).rejects.toThrow()
+    expect(await readFile(outsideFile, 'utf-8')).toBe('outside sentinel')
+  })
+
+  test('saveRunArtifacts rejects a final surface-log symlink', async () => {
+    const { saveRunArtifacts } = await importActualArtifacts()
+    const surfaceLogs = join(tmpDir, '.threados', 'runs', 'run-surface-link', 'surfaces', 'surface-link', 'logs')
+    await mkdir(surfaceLogs, { recursive: true })
+    const outsideFile = join(tmpDir, 'outside-surface-stdout.log')
+    await writeFile(outsideFile, 'outside sentinel')
+    await symlink(outsideFile, join(surfaceLogs, 'stdout.log'), 'file')
+    const now = new Date('2026-01-01T00:00:00.000Z')
+
+    await expect(saveRunArtifacts(tmpDir, {
+      stepId: 'step-link', runId: 'run-surface-link', exitCode: 0, status: 'SUCCESS', duration: 1,
+      stdout: 'escaped write', stderr: '', startTime: now, endTime: now,
+    }, { surfaceId: 'surface-link' })).rejects.toThrow()
+    expect(await readFile(outsideFile, 'utf-8')).toBe('outside sentinel')
   })
 })

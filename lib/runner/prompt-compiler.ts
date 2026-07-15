@@ -1,6 +1,10 @@
-import { readFile, readdir, stat } from 'fs/promises'
-import { join } from 'path'
+import { readdir, stat } from 'fs/promises'
 import type { Step, Sequence } from '../sequence/schema'
+import {
+  assertSafePathSegment,
+  resolveExistingPathWithinRoot,
+} from '../security/safe-path'
+import { readTextFileNoFollow } from '../security/safe-io'
 
 export interface CompileOptions {
   stepId: string
@@ -220,7 +224,14 @@ async function loadDependencyArtifacts(
   basePath: string
 ): Promise<DependencyArtifact[]> {
   const artifacts: DependencyArtifact[] = []
-  const runsDir = join(basePath, '.threados', 'runs')
+  let runsDir: string
+  try {
+    const threadosRoot = await resolveExistingPathWithinRoot(basePath, '.threados')
+    runsDir = await resolveExistingPathWithinRoot(threadosRoot, 'runs')
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return artifacts
+    throw error
+  }
 
   for (const depId of step.depends_on) {
     // Skip gate dependencies
@@ -228,6 +239,7 @@ async function loadDependencyArtifacts(
 
     const depStep = sequence.steps.find(s => s.id === depId)
     if (!depStep || depStep.status !== 'DONE') continue
+    assertSafePathSegment(depId, 'dependency id')
 
     const artifact = await loadSingleArtifact(runsDir, depId)
     if (artifact) artifacts.push(artifact)
@@ -242,8 +254,8 @@ async function loadSingleArtifact(runsDir: string, depId: string): Promise<Depen
     const runDirsWithTime = await collectRunDirsWithTime(runsDir, runDirNames, depId)
     runDirsWithTime.sort((a, b) => b.mtime - a.mtime)
 
-    for (const { name: runId } of runDirsWithTime) {
-      const result = await readArtifactFromRun(runsDir, runId, depId)
+    for (const { artifactDir } of runDirsWithTime) {
+      const result = await readArtifactFromRun(artifactDir, depId)
       if (result) return result
     }
   } catch { /* no artifacts for this dep */ }
@@ -251,27 +263,29 @@ async function loadSingleArtifact(runsDir: string, depId: string): Promise<Depen
 }
 
 async function collectRunDirsWithTime(runsDir: string, runDirNames: string[], depId: string) {
-  const results: { name: string; mtime: number }[] = []
+  const results: { name: string; mtime: number; artifactDir: string }[] = []
   for (const name of runDirNames) {
-    const stepArtifactDir = join(runsDir, name, depId)
     try {
+      assertSafePathSegment(name, 'run directory id')
+      const runDir = await resolveExistingPathWithinRoot(runsDir, name)
+      const stepArtifactDir = await resolveExistingPathWithinRoot(runDir, depId)
       const s = await stat(stepArtifactDir)
-      results.push({ name, mtime: s.mtimeMs })
+      results.push({ name, mtime: s.mtimeMs, artifactDir: stepArtifactDir })
     } catch { /* no artifacts for this dep in this run */ }
   }
   return results
 }
 
-async function readArtifactFromRun(runsDir: string, runId: string, depId: string): Promise<DependencyArtifact | null> {
-  const stdoutPath = join(runsDir, runId, depId, 'stdout.log')
-  const statusPath = join(runsDir, runId, depId, 'status.json')
+async function readArtifactFromRun(artifactDir: string, depId: string): Promise<DependencyArtifact | null> {
   try {
-    const stdout = await readFile(stdoutPath, 'utf-8')
+    const stdoutPath = await resolveExistingPathWithinRoot(artifactDir, 'stdout.log')
+    const stdout = await readTextFileNoFollow(stdoutPath)
     if (!stdout.trim()) return null
 
     let duration: number | undefined
     try {
-      const statusJson = JSON.parse(await readFile(statusPath, 'utf-8'))
+      const statusPath = await resolveExistingPathWithinRoot(artifactDir, 'status.json')
+      const statusJson = JSON.parse(await readTextFileNoFollow(statusPath))
       duration = statusJson.duration
     } catch { /* no status file */ }
 

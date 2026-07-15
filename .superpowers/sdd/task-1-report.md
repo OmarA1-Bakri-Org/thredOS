@@ -252,3 +252,99 @@ A single large 17-file Bun invocation produced six route-test timeouts while tho
 - `test/api/traces-route.test.ts`
 - `test/api/packs-install-route.test.ts`
 - `.superpowers/sdd/task-1-report.md`
+
+## Blocking review fix pass
+
+The blocking review in `task-1-review.md` was addressed with a second strict RED/GREEN pass.
+
+### Review RED
+
+Portable nested-path validation was specified before its implementation:
+
+```text
+bun test lib/security/safe-path.test.ts
+SyntaxError: Export named 'assertPortableRelativePath' not found
+0 pass
+1 fail
+1 error
+```
+
+All reviewed sinks were then exercised together before production changes:
+
+```text
+bun test lib/security/file-boundaries.test.ts lib/runner/artifacts.test.ts lib/runner/prompt-compiler-paths.test.ts lib/exports/bundler.test.ts lib/thread-surfaces/repository.test.ts test/api/step-path-validation.test.ts test/api/surface-proof-routes.test.ts lib/packs/loader.test.ts lib/packs/compiler.test.ts
+
+46 pass
+23 fail
+209 expect() calls
+Ran 69 tests across 9 files.
+```
+
+The 23 failures proved that existing final-file links were followed by append/artifact/export operations; library entries could redirect to an unrelated in-workspace file; an escaping `.threados` junction was accepted; prompt compilation read traversal, run-junction, stdout-link, and status-link artifacts; sequence/policy snapshot links were read; `prompt_file` accepted traversal and backslashes; invalid surface state replaced aggregate state before rejection; and edit/remove/clone path identifiers returned 404/500 or mutated state instead of returning 400.
+
+### Review fixes
+
+- Added portable relative-path validation that rejects backslashes consistently on every host while allowing canonical paths such as `.threados/prompts/step-a.md`.
+- Added safe file I/O wrappers. They use `O_NOFOLLOW` when the host exposes it and portable string flags otherwise; every caller still performs an immediate lexical/real-path verification before opening.
+- Revalidated actual final files immediately before repository append, artifact write, snapshot read, policy read, export write, and runtime-record copy.
+- Narrowed containment roots from the whole project to verified `.threados` sub-stores (`runs`, `prompts`, `skills`, `agents`, `state`, `surfaces`, `sequences`, `packs`, and `exports`).
+- Removed catalog path authority: library reads/deletes require exact canonical `kind + id` path equality and derive the filesystem path independently.
+- Contained every prompt-compiler run/dependency/status/stdout lookup and ignored escaping run entries or linked files.
+- Validated pack `prompt_file` values in both schema parsing and synchronous compilation.
+- Validated surface IDs and references before the first state write, then revalidated aggregate/canonical final targets.
+- Added deterministic file-safe schemas for step add/edit/remove/clone identifiers and portable prompt/dependency inputs.
+
+### Review GREEN
+
+The exact former-RED set passed after the production fixes:
+
+```text
+bun test lib/security/safe-path.test.ts lib/security/file-boundaries.test.ts lib/runner/artifacts.test.ts lib/runner/prompt-compiler-paths.test.ts lib/exports/bundler.test.ts lib/thread-surfaces/repository.test.ts test/api/step-path-validation.test.ts test/api/surface-proof-routes.test.ts lib/packs/loader.test.ts lib/packs/compiler.test.ts
+
+75 pass
+0 fail
+268 expect() calls
+Ran 75 tests across 10 files.
+```
+
+Core Task 1 regressions:
+
+```text
+bun test lib/library/repository.test.ts lib/prompts/manager.test.ts lib/packs/loader.test.ts lib/packs/compiler.test.ts lib/approvals/repository.test.ts lib/traces/writer.test.ts lib/gates/repository.test.ts lib/runner/artifacts.test.ts lib/runner/prompt-compiler.test.ts lib/runner/prompt-compiler-paths.test.ts lib/thread-surfaces/repository.test.ts lib/exports/bundler.test.ts lib/security/safe-path.test.ts lib/security/file-boundaries.test.ts
+
+95 pass
+0 fail
+312 expect() calls
+Ran 95 tests across 14 files.
+```
+
+The final artifact/export/surface proof rerun after the portable `O_NOFOLLOW` fallback correction:
+
+```text
+bun test lib/runner/artifacts.test.ts test/api/surface-proof-routes.test.ts lib/thread-surfaces/repository.test.ts
+
+29 pass
+0 fail
+91 expect() calls
+Ran 29 tests across 3 files.
+```
+
+Final static checks:
+
+```text
+bun run typecheck
+$ tsc --noEmit
+Exit code: 0
+
+bunx eslint <29 affected Task 1 fix files>
+Exit code: 0
+0 errors
+0 warnings
+```
+
+### Review residual risk and unrelated failures
+
+- Descriptor-relative parent-directory traversal is not exposed portably by the current Node/Bun APIs. The implementation verifies real parents and final targets immediately before I/O and uses final-component `O_NOFOLLOW` where available, but a privileged concurrent actor can still race parent-directory replacement on platforms without descriptor-relative primitives.
+- `prompt_file` is now synchronously constrained to a portable relative path. The current runner still selects prompt content by step ID; when direct `prompt_file` consumption is introduced, the final existing file must be resolved under the verified prompt root immediately before its no-follow read.
+- The API regression group passed 54 of 55 tests. The remaining `agents-route.test.ts` unassign failure is inherited: sequence normalization restores `assigned_agent_id` from the still-populated `agent_ref`; it is unrelated to filesystem containment.
+- The previously documented inherited pack-install surface-order assertion remains unchanged.

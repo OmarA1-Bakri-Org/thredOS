@@ -1,8 +1,6 @@
-import { readFile } from 'fs/promises'
 import { TraceEventSchema, type TraceEvent } from '@/lib/contracts/schemas'
 import { assertSafePathSegment, resolveExistingPathWithinRoot } from '@/lib/security/safe-path'
-
-const RUNS_PATH = '.threados/runs'
+import { readTextFileNoFollow } from '@/lib/security/safe-io'
 
 export async function readTraceEvents(
   basePath: string,
@@ -12,8 +10,10 @@ export async function readTraceEvents(
   let filePath: string
   let content: string
   try {
-    filePath = await resolveExistingPathWithinRoot(basePath, RUNS_PATH, runId, 'trace.ndjson')
-    content = await readFile(filePath, 'utf-8')
+    const threadosRoot = await resolveExistingPathWithinRoot(basePath, '.threados')
+    const runsRoot = await resolveExistingPathWithinRoot(threadosRoot, 'runs')
+    filePath = await resolveExistingPathWithinRoot(runsRoot, runId, 'trace.ndjson')
+    content = await readTextFileNoFollow(filePath)
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
     throw error

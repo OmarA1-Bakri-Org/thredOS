@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { access, mkdir, mkdtemp, rm, writeFile } from 'fs/promises'
+import { access, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'fs/promises'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import { appendApproval, readApprovals } from '@/lib/approvals/repository'
@@ -80,6 +80,44 @@ describe('file-backed boundary containment', () => {
     expect(await Bun.file(join(outside, 'secret.md')).text()).toBe('outside secret')
   })
 
+  test('library catalog paths cannot redirect an asset to another in-workspace file', async () => {
+    await mkdir(join(basePath, '.threados'), { recursive: true })
+    const sentinelPath = join(basePath, 'sentinel.txt')
+    await writeFile(sentinelPath, 'workspace sentinel')
+    await writeFile(join(basePath, '.threados', 'library.yaml'), [
+      'version: 1',
+      'prompts:',
+      '  poisoned:',
+      '    id: poisoned',
+      '    kind: prompt',
+      '    title: Poisoned',
+      '    version: 1',
+      '    path: sentinel.txt',
+      '    updatedAt: 2026-07-16T00:00:00.000Z',
+      '    lastEditor: null',
+      '    capabilities: []',
+      '    links: { agentIds: [], nodeIds: [] }',
+      'skills: {}',
+      'agents: {}',
+    ].join('\n'))
+
+    await expect(readLibraryAsset(basePath, 'prompt', 'poisoned')).rejects.toThrow()
+    await expect(deleteLibraryAsset(basePath, 'prompt', 'poisoned')).rejects.toThrow()
+    expect(await readFile(sentinelPath, 'utf-8')).toBe('workspace sentinel')
+  })
+
+  test('library writes reject an escaping .threados junction', async () => {
+    const redirectedRoot = join(outside, 'redirected-threados')
+    await mkdir(redirectedRoot)
+    await symlink(redirectedRoot, join(basePath, '.threados'), process.platform === 'win32' ? 'junction' : 'dir')
+
+    await expect(upsertLibraryAsset(basePath, {
+      kind: 'prompt', id: 'safe-id', title: 'Unsafe root', content: 'must not escape',
+    })).rejects.toThrow()
+    await expect(access(join(redirectedRoot, 'library.yaml'))).rejects.toThrow()
+    await expect(access(join(redirectedRoot, 'prompts', 'safe-id.md'))).rejects.toThrow()
+  })
+
   test('prompt IDs cannot escape for read, write, or delete', async () => {
     const unsafeId = '../../../outside/prompt-pwn'
     await expect(writePrompt(basePath, unsafeId, 'pwned')).rejects.toThrow()
@@ -126,6 +164,23 @@ describe('file-backed boundary containment', () => {
     await expect(readTraceEvents(basePath, unsafeRunId)).rejects.toThrow()
     await expect(appendGateDecision(basePath, unsafeRunId, gateDecision)).rejects.toThrow()
     await expect(readGateDecisions(basePath, unsafeRunId)).rejects.toThrow()
+  })
+
+  test('append repositories reject existing final-file symlinks', async () => {
+    const runDir = join(basePath, '.threados', 'runs', 'run-1')
+    await mkdir(runDir, { recursive: true })
+
+    for (const [fileName, append] of [
+      ['approvals.ndjson', () => appendApproval(basePath, 'run-1', approval)],
+      ['trace.ndjson', () => appendTraceEvent(basePath, 'run-1', traceEvent)],
+      ['gate-decisions.ndjson', () => appendGateDecision(basePath, 'run-1', gateDecision)],
+    ] as const) {
+      const target = join(outside, fileName)
+      await writeFile(target, 'outside sentinel\n')
+      await symlink(target, join(runDir, fileName), 'file')
+      await expect(append()).rejects.toThrow()
+      expect(await readFile(target, 'utf-8')).toBe('outside sentinel\n')
+    }
   })
 
   test('run artifact identifiers cannot escape the run store', async () => {

@@ -79,4 +79,16 @@ describe('loadPack', () => {
   test('throws for missing pack file', async () => {
     await expect(loadPack(basePath, 'nonexistent-pack', '1.0.0')).rejects.toThrow()
   })
+
+  test('rejects a manifest prompt_file that is not a portable relative path', async () => {
+    const packDir = join(basePath, '.threados/packs/test-pack/1.0.0')
+    await mkdir(packDir, { recursive: true })
+    await writeFile(
+      join(packDir, 'pack.yaml'),
+      VALID_PACK_YAML.replace('    phase: phase-alpha', '    phase: phase-alpha\n    prompt_file: ..\\\\outside.md'),
+      'utf-8',
+    )
+
+    await expect(loadPack(basePath, 'test-pack', '1.0.0')).rejects.toThrow('portable')
+  })
 })

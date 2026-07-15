@@ -1,6 +1,7 @@
 import { createHash } from 'crypto'
 import type { PackManifest } from './pack-schema'
 import type { ThreadSurface } from '@/lib/thread-surfaces/types'
+import { assertPortableRelativePath } from '@/lib/security/safe-path'
 
 export interface CompilePackOptions {
   installName?: string
@@ -72,6 +73,7 @@ export function compilePack(manifest: PackManifest, options: CompilePackOptions 
 
   const steps = manifest.steps.map(ps => {
     const promptFile = ps.prompt_file ?? `.threados/prompts/${ps.id}.md`
+    assertPortableRelativePath(promptFile, `prompt_file for step ${ps.id}`)
     return {
       id: ps.id,
       name: ps.name,

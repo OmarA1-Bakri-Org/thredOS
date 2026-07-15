@@ -1,4 +1,4 @@
-import { readFile, readdir, access } from 'fs/promises'
+import { readdir, access, mkdir } from 'fs/promises'
 import { join, basename, extname } from 'path'
 import { writeFileAtomic } from '../fs/atomic'
 import {
@@ -6,8 +6,23 @@ import {
   resolveExistingPathWithinRoot,
   resolvePathWithinRoot,
 } from '../security/safe-path'
+import { readTextFileNoFollow } from '../security/safe-io'
 
 const PROMPTS_PATH = '.threados/prompts'
+
+async function getPromptsRoot(basePath: string, create: boolean): Promise<string> {
+  if (!create) {
+    const threadosRoot = await resolveExistingPathWithinRoot(basePath, '.threados')
+    return await resolveExistingPathWithinRoot(threadosRoot, 'prompts')
+  }
+
+  const threadosPath = await resolvePathWithinRoot(basePath, '.threados')
+  await mkdir(threadosPath, { recursive: true })
+  const threadosRoot = await resolveExistingPathWithinRoot(basePath, '.threados')
+  const promptsPath = await resolvePathWithinRoot(threadosRoot, 'prompts')
+  await mkdir(promptsPath, { recursive: true })
+  return await resolveExistingPathWithinRoot(threadosRoot, 'prompts')
+}
 
 /**
  * Read a prompt file for a step
@@ -21,8 +36,9 @@ export async function readPrompt(
   stepId: string
 ): Promise<string> {
   assertSafePathSegment(stepId, 'step id')
-  const filePath = await resolveExistingPathWithinRoot(basePath, PROMPTS_PATH, `${stepId}.md`)
-  return readFile(filePath, 'utf-8')
+  const promptsRoot = await getPromptsRoot(basePath, false)
+  const filePath = await resolveExistingPathWithinRoot(promptsRoot, `${stepId}.md`)
+  return readTextFileNoFollow(filePath)
 }
 
 /**
@@ -38,7 +54,8 @@ export async function writePrompt(
   content: string
 ): Promise<void> {
   assertSafePathSegment(stepId, 'step id')
-  const filePath = await resolvePathWithinRoot(basePath, PROMPTS_PATH, `${stepId}.md`)
+  const promptsRoot = await getPromptsRoot(basePath, true)
+  const filePath = await resolvePathWithinRoot(promptsRoot, `${stepId}.md`)
   await writeFileAtomic(filePath, content)
 }
 
@@ -49,13 +66,20 @@ export async function writePrompt(
  * @returns Array of step IDs that have prompt files
  */
 export async function listPrompts(basePath: string): Promise<string[]> {
-  const promptsDir = join(basePath, PROMPTS_PATH)
-
   try {
+    const promptsDir = await getPromptsRoot(basePath, false)
     const files = await readdir(promptsDir)
     return files
       .filter(file => extname(file) === '.md')
       .map(file => basename(file, '.md'))
+      .filter(file => {
+        try {
+          assertSafePathSegment(file, 'step id')
+          return true
+        } catch {
+          return false
+        }
+      })
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
       return []
@@ -76,9 +100,10 @@ export async function validatePromptExists(
   stepId: string
 ): Promise<boolean> {
   assertSafePathSegment(stepId, 'step id')
-  const filePath = await resolvePathWithinRoot(basePath, PROMPTS_PATH, `${stepId}.md`)
 
   try {
+    const promptsRoot = await getPromptsRoot(basePath, false)
+    const filePath = await resolveExistingPathWithinRoot(promptsRoot, `${stepId}.md`)
     await access(filePath)
     return true
   } catch {
@@ -98,7 +123,8 @@ export async function deletePrompt(
 ): Promise<void> {
   const { unlink } = await import('fs/promises')
   assertSafePathSegment(stepId, 'step id')
-  const filePath = await resolveExistingPathWithinRoot(basePath, PROMPTS_PATH, `${stepId}.md`)
+  const promptsRoot = await getPromptsRoot(basePath, false)
+  const filePath = await resolveExistingPathWithinRoot(promptsRoot, `${stepId}.md`)
   await unlink(filePath)
 }
 

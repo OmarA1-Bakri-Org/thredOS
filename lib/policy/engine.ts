@@ -1,9 +1,7 @@
-import { readFile } from 'fs/promises'
-import { join } from 'path'
 import YAML from 'yaml'
 import { PolicyConfigSchema, type PolicyConfig, type PolicyAction, type PolicyResult } from './schema'
-
-const POLICY_PATH = '.threados/policy.yaml'
+import { resolveExistingPathWithinRoot } from '@/lib/security/safe-path'
+import { readTextFileNoFollow } from '@/lib/security/safe-io'
 
 const SAFE_DEFAULTS: PolicyConfig = PolicyConfigSchema.parse({})
 
@@ -17,9 +15,10 @@ export class PolicyEngine {
    * Load policy from .threados/policy.yaml, falling back to safe defaults
    */
   static async load(basePath: string): Promise<PolicyEngine> {
-    const filePath = join(basePath, POLICY_PATH)
     try {
-      const content = await readFile(filePath, 'utf-8')
+      const threadosRoot = await resolveExistingPathWithinRoot(basePath, '.threados')
+      const filePath = await resolveExistingPathWithinRoot(threadosRoot, 'policy.yaml')
+      const content = await readTextFileNoFollow(filePath)
       const raw = YAML.parse(content)
       const config = PolicyConfigSchema.parse(raw)
       return new PolicyEngine(config)

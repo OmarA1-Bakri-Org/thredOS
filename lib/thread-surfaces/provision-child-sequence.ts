@@ -1,4 +1,3 @@
-import { dirname } from 'path'
 import { mkdir } from 'fs/promises'
 import YAML from 'yaml'
 import { writeFileAtomic } from '@/lib/fs/atomic'
@@ -10,7 +9,11 @@ import { generateFusion } from '@/lib/templates/fusion'
 import { generateOrchestrated } from '@/lib/templates/orchestrated'
 import { generateLongAutonomy } from '@/lib/templates/long-autonomy'
 import type { Sequence } from '@/lib/sequence/schema'
-import { assertSafePathSegment, resolvePathWithinRoot } from '@/lib/security/safe-path'
+import {
+  assertSafePathSegment,
+  resolveExistingPathWithinRoot,
+  resolvePathWithinRoot,
+} from '@/lib/security/safe-path'
 
 export interface PendingChildSequence {
   surfaceId: string
@@ -72,8 +75,16 @@ export async function provisionChildSequence(
   if (pending.sequenceRef !== expectedRef) {
     throw new Error('sequence ref must match the canonical child sequence path')
   }
-  const fullPath = await resolvePathWithinRoot(basePath, expectedRef)
-  await mkdir(dirname(fullPath), { recursive: true })
+  const threadosPath = await resolvePathWithinRoot(basePath, '.threados')
+  await mkdir(threadosPath, { recursive: true })
+  const threadosRoot = await resolveExistingPathWithinRoot(basePath, '.threados')
+  const sequencesPath = await resolvePathWithinRoot(threadosRoot, 'sequences')
+  await mkdir(sequencesPath, { recursive: true })
+  const sequencesRoot = await resolveExistingPathWithinRoot(threadosRoot, 'sequences')
+  const surfaceDirectory = await resolvePathWithinRoot(sequencesRoot, pending.surfaceId)
+  await mkdir(surfaceDirectory, { recursive: true })
+  const verifiedSurfaceDirectory = await resolveExistingPathWithinRoot(sequencesRoot, pending.surfaceId)
+  const fullPath = await resolvePathWithinRoot(verifiedSurfaceDirectory, 'sequence.yaml')
   await writeFileAtomic(fullPath, YAML.stringify(sequence, { indent: 2 }))
 }
 

@@ -1,5 +1,5 @@
 import { lstat, realpath } from 'fs/promises'
-import { dirname, isAbsolute, relative, resolve, sep } from 'path'
+import { dirname, isAbsolute, posix, relative, resolve, sep, win32 } from 'path'
 
 const PORTABLE_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
 const WINDOWS_DEVICE_NAME = /^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)/i
@@ -30,6 +30,31 @@ export function assertSafePathSegment(value: string, label = 'path segment'): st
     || !PORTABLE_SEGMENT.test(value)
   ) {
     throw new Error(`${label} must be a file-safe identifier`)
+  }
+  return value
+}
+
+export function assertPortableRelativePath(value: string, label = 'relative path'): string {
+  const segments = typeof value === 'string' ? value.split('/') : []
+  if (
+    typeof value !== 'string'
+    || value.length === 0
+    || value.includes('\\')
+    || posix.isAbsolute(value)
+    || win32.isAbsolute(value)
+    || /[\0-\x1F\x7F]/.test(value)
+    || value.includes(':')
+    || segments.some(segment => (
+      segment.length === 0
+      || segment === '.'
+      || segment === '..'
+      || segment.length > 255
+      || /[. ]$/.test(segment)
+      || WINDOWS_DEVICE_NAME.test(segment)
+      || !/^\.?[A-Za-z0-9][A-Za-z0-9._-]*$/.test(segment)
+    ))
+  ) {
+    throw new Error(`${label} must be a portable relative path`)
   }
   return value
 }

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { mkdtemp, mkdir, rm, writeFile } from 'fs/promises'
+import { mkdtemp, mkdir, rm, symlink, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { generateExportBundle } from './bundler'
@@ -155,5 +155,26 @@ describe('generateExportBundle', () => {
 
   test('rejects run ids that are not file-safe identifiers', async () => {
     await expect(generateExportBundle(basePath, '../escape')).rejects.toThrow('runId must be a file-safe identifier')
+  })
+
+  test('rejects an escaping sequence snapshot symlink', async () => {
+    const threadosDir = join(basePath, '.threados')
+    await mkdir(threadosDir, { recursive: true })
+    const outsideSequence = join(basePath, 'outside-sequence.yaml')
+    await writeFile(outsideSequence, 'id: EXTERNAL_SEQUENCE\nsteps: []\n')
+    await symlink(outsideSequence, join(threadosDir, 'sequence.yaml'), 'file')
+
+    await expect(generateExportBundle(basePath, 'run-safe')).rejects.toThrow()
+  })
+
+  test('rejects an escaping policy snapshot symlink', async () => {
+    const threadosDir = join(basePath, '.threados')
+    await mkdir(threadosDir, { recursive: true })
+    await writeFile(join(threadosDir, 'sequence.yaml'), 'id: safe\nsteps: []\n')
+    const outsidePolicy = join(basePath, 'outside-policy.yaml')
+    await writeFile(outsidePolicy, 'export_mode: local_bundle\nsecret: EXTERNAL_POLICY\n')
+    await symlink(outsidePolicy, join(threadosDir, 'policy.yaml'), 'file')
+
+    await expect(generateExportBundle(basePath, 'run-safe')).rejects.toThrow()
   })
 })

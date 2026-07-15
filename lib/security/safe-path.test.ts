@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, rm, symlink, writeFile } from 'fs/promises'
 import { join, relative } from 'path'
 import { tmpdir } from 'os'
 import {
+  assertPortableRelativePath,
   assertSafePathSegment,
   resolveExistingPathWithinRoot,
   resolvePathWithinRoot,
@@ -30,6 +31,18 @@ describe('safe path containment', () => {
   test('accepts portable opaque identifiers', () => {
     for (const value of ['step-a', '1.0.0', '550e8400-e29b-41d4-a716-446655440000']) {
       expect(assertSafePathSegment(value)).toBe(value)
+    }
+  })
+
+  test('accepts canonical relative paths and rejects backslash or mixed-separator forms', () => {
+    expect(assertPortableRelativePath('.threados/prompts/step-a.md')).toBe('.threados/prompts/step-a.md')
+    expect(assertPortableRelativePath('custom/nested/step-a.md')).toBe('custom/nested/step-a.md')
+
+    for (const value of [
+      '', '.', '..', '../escape.md', 'custom/../escape.md', '/absolute.md',
+      'C:\\absolute.md', '\\\\server\\share.md', 'custom\\step.md', 'custom/dir\\step.md',
+    ]) {
+      expect(() => assertPortableRelativePath(value, 'prompt_file')).toThrow()
     }
   })
 

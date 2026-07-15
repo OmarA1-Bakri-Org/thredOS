@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server'
-import { copyFile, mkdir, writeFile } from 'fs/promises'
-import { join } from 'path'
+import { mkdir } from 'fs/promises'
 import { z } from 'zod'
 import { generateExportBundle } from '@/lib/exports/bundler'
 import { ExportBundleSchema } from '@/lib/exports/schema'
@@ -8,7 +7,12 @@ import { PolicyEngine } from '@/lib/policy/engine'
 import { getBasePath } from '@/lib/config'
 import { handleError, requireRequestSession } from '@/lib/api-helpers'
 import { applyRateLimit } from '@/lib/rate-limit'
-import { assertSafePathSegment, resolvePathWithinRoot } from '@/lib/security/safe-path'
+import {
+  assertSafePathSegment,
+  resolveExistingPathWithinRoot,
+  resolvePathWithinRoot,
+} from '@/lib/security/safe-path'
+import { copyFileNoFollow, writeFileNoFollow } from '@/lib/security/safe-io'
 
 function isSafeRunId(value: string): boolean {
   try {
@@ -23,9 +27,11 @@ const BodySchema = z.object({
   runId: z.string().refine(isSafeRunId, 'runId must be a file-safe identifier'),
 })
 
-async function copyIfPresent(sourcePath: string, destinationPath: string): Promise<void> {
+async function copyIfPresent(sourceRoot: string, destinationRoot: string, fileName: string): Promise<void> {
   try {
-    await copyFile(sourcePath, destinationPath)
+    const sourcePath = await resolveExistingPathWithinRoot(sourceRoot, fileName)
+    const destinationPath = await resolvePathWithinRoot(destinationRoot, fileName)
+    await copyFileNoFollow(sourcePath, destinationPath)
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
       return
@@ -35,11 +41,20 @@ async function copyIfPresent(sourcePath: string, destinationPath: string): Promi
 }
 
 async function copyRuntimeExportRecords(basePath: string, runId: string, exportDir: string): Promise<void> {
-  const runDir = await resolvePathWithinRoot(basePath, '.threados/runs', runId)
+  let runDir: string
+  try {
+    const threadosRoot = await resolveExistingPathWithinRoot(basePath, '.threados')
+    const runsRoot = await resolveExistingPathWithinRoot(threadosRoot, 'runs')
+    runDir = await resolveExistingPathWithinRoot(runsRoot, runId)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return
+    throw error
+  }
+  const verifiedExportDir = await resolveExistingPathWithinRoot(exportDir)
   await Promise.all([
-    copyIfPresent(join(runDir, 'trace.ndjson'), join(exportDir, 'trace.ndjson')),
-    copyIfPresent(join(runDir, 'approvals.ndjson'), join(exportDir, 'approvals.ndjson')),
-    copyIfPresent(join(runDir, 'gate-decisions.ndjson'), join(exportDir, 'gate-decisions.ndjson')),
+    copyIfPresent(runDir, verifiedExportDir, 'trace.ndjson'),
+    copyIfPresent(runDir, verifiedExportDir, 'approvals.ndjson'),
+    copyIfPresent(runDir, verifiedExportDir, 'gate-decisions.ndjson'),
   ])
 }
 
@@ -74,10 +89,16 @@ export async function POST(request: Request) {
 
     const bundle = await generateExportBundle(bp, runId)
     const validatedBundle = ExportBundleSchema.parse(bundle)
-    const exportDir = await resolvePathWithinRoot(bp, '.threados/exports', runId)
+    const threadosRoot = await resolveExistingPathWithinRoot(bp, '.threados')
+    const exportsRoot = await resolvePathWithinRoot(threadosRoot, 'exports')
+    await mkdir(exportsRoot, { recursive: true })
+    const verifiedExportsRoot = await resolveExistingPathWithinRoot(threadosRoot, 'exports')
+    const exportDir = await resolvePathWithinRoot(verifiedExportsRoot, runId)
     await mkdir(exportDir, { recursive: true })
-    await writeFile(join(exportDir, 'bundle.json'), JSON.stringify(validatedBundle, null, 2), 'utf-8')
-    await copyRuntimeExportRecords(bp, runId, exportDir)
+    const verifiedExportDir = await resolveExistingPathWithinRoot(verifiedExportsRoot, runId)
+    const bundlePath = await resolvePathWithinRoot(verifiedExportDir, 'bundle.json')
+    await writeFileNoFollow(bundlePath, JSON.stringify(validatedBundle, null, 2))
+    await copyRuntimeExportRecords(bp, runId, verifiedExportDir)
 
     return NextResponse.json({ bundle: validatedBundle, exportPath: `.threados/exports/${runId}/bundle.json` })
   } catch (err) {

@@ -1,7 +1,12 @@
-import { mkdir, writeFile } from 'fs/promises'
+import { mkdir } from 'fs/promises'
 import { join } from 'path'
 import { writeFileAtomic } from '../fs/atomic'
-import { assertSafePathSegment, resolvePathWithinRoot } from '../security/safe-path'
+import {
+  assertSafePathSegment,
+  resolveExistingPathWithinRoot,
+  resolvePathWithinRoot,
+} from '../security/safe-path'
+import { writeFileNoFollow } from '../security/safe-io'
 import type { RunResult, RunStatus } from './wrapper'
 
 const RUNS_PATH = '.threados/runs'
@@ -74,6 +79,21 @@ export interface SaveRunArtifactsOptions {
   completionContract?: string | null
 }
 
+async function ensureRunsRoot(basePath: string): Promise<string> {
+  const threadosPath = await resolvePathWithinRoot(basePath, '.threados')
+  await mkdir(threadosPath, { recursive: true })
+  const threadosRoot = await resolveExistingPathWithinRoot(basePath, '.threados')
+  const runsRoot = await resolvePathWithinRoot(threadosRoot, 'runs')
+  await mkdir(runsRoot, { recursive: true })
+  return await resolveExistingPathWithinRoot(threadosRoot, 'runs')
+}
+
+async function ensureDirectoryWithin(root: string, ...segments: string[]): Promise<string> {
+  const directoryPath = await resolvePathWithinRoot(root, ...segments)
+  await mkdir(directoryPath, { recursive: true })
+  return await resolveExistingPathWithinRoot(root, ...segments)
+}
+
 export async function createRunDirectory(
   basePath: string,
   runId: string,
@@ -81,9 +101,8 @@ export async function createRunDirectory(
 ): Promise<string> {
   assertSafePathSegment(runId, 'run id')
   assertSafePathSegment(stepId, 'step id')
-  const dirPath = await resolvePathWithinRoot(basePath, RUNS_PATH, runId, stepId)
-  await mkdir(dirPath, { recursive: true })
-  return dirPath
+  const runsRoot = await ensureRunsRoot(basePath)
+  return await ensureDirectoryWithin(runsRoot, runId, stepId)
 }
 
 export function getRuntimeEventLogPath(
@@ -107,33 +126,37 @@ export function getCanonicalSurfaceRunDir(basePath: string, runId: string, surfa
 }
 
 async function ensureCanonicalSurfaceDirs(basePath: string, runId: string, surfaceId: string) {
-  const surfaceDir = await resolvePathWithinRoot(basePath, getCanonicalSurfaceRunDir(basePath, runId, surfaceId))
-  await mkdir(join(surfaceDir, 'outputs'), { recursive: true })
-  await mkdir(join(surfaceDir, 'logs'), { recursive: true })
-  await mkdir(join(surfaceDir, 'private'), { recursive: true })
+  assertSafePathSegment(runId, 'run id')
+  assertSafePathSegment(surfaceId, 'surface id')
+  const runsRoot = await ensureRunsRoot(basePath)
+  const surfaceDir = await ensureDirectoryWithin(runsRoot, runId, 'surfaces', surfaceId)
+  await ensureDirectoryWithin(surfaceDir, 'outputs')
+  await ensureDirectoryWithin(surfaceDir, 'logs')
+  await ensureDirectoryWithin(surfaceDir, 'private')
   return surfaceDir
 }
 
 export async function writeStdout(artifactPath: string, content: string): Promise<void> {
-  const filePath = join(artifactPath, 'stdout.log')
-  await writeFile(filePath, content, 'utf-8')
+  const filePath = await resolvePathWithinRoot(artifactPath, 'stdout.log')
+  await writeFileNoFollow(filePath, content)
 }
 
 export async function writeStderr(artifactPath: string, content: string): Promise<void> {
-  const filePath = join(artifactPath, 'stderr.log')
-  await writeFile(filePath, content, 'utf-8')
+  const filePath = await resolvePathWithinRoot(artifactPath, 'stderr.log')
+  await writeFileNoFollow(filePath, content)
 }
 
 export async function writeStatus(artifactPath: string, status: StatusJson): Promise<void> {
-  const filePath = join(artifactPath, 'status.json')
+  const filePath = await resolvePathWithinRoot(artifactPath, 'status.json')
   const content = JSON.stringify(status, null, 2)
   await writeFileAtomic(filePath, content)
 }
 
 export async function writeRunRecord(basePath: string, record: RunRecordJson): Promise<void> {
-  const runDir = await resolvePathWithinRoot(basePath, getCanonicalRunDir(basePath, record.id))
-  const filePath = join(runDir, 'run.json')
-  await mkdir(runDir, { recursive: true })
+  assertSafePathSegment(record.id, 'run id')
+  const runsRoot = await ensureRunsRoot(basePath)
+  const runDir = await ensureDirectoryWithin(runsRoot, record.id)
+  const filePath = await resolvePathWithinRoot(runDir, 'run.json')
   await writeFileAtomic(filePath, JSON.stringify(record, null, 2))
 }
 
@@ -144,7 +167,7 @@ export async function writeCompiledPrompt(
   compiledPrompt: string,
 ): Promise<string> {
   const surfaceDir = await ensureCanonicalSurfaceDirs(basePath, runId, surfaceId)
-  const filePath = join(surfaceDir, 'compiled-prompt.md')
+  const filePath = await resolvePathWithinRoot(surfaceDir, 'compiled-prompt.md')
   await writeFileAtomic(filePath, compiledPrompt)
   return filePath
 }
@@ -156,7 +179,7 @@ export async function writeInputManifest(
   manifest: InputManifestJson,
 ): Promise<string> {
   const surfaceDir = await ensureCanonicalSurfaceDirs(basePath, runId, surfaceId)
-  const filePath = join(surfaceDir, 'input.manifest.json')
+  const filePath = await resolvePathWithinRoot(surfaceDir, 'input.manifest.json')
   await writeFileAtomic(filePath, JSON.stringify(manifest, null, 2))
   return filePath
 }
@@ -168,7 +191,7 @@ export async function writeArtifactManifest(
   manifest: ArtifactManifestJson,
 ): Promise<string> {
   const surfaceDir = await ensureCanonicalSurfaceDirs(basePath, runId, surfaceId)
-  const filePath = join(surfaceDir, 'artifact.manifest.json')
+  const filePath = await resolvePathWithinRoot(surfaceDir, 'artifact.manifest.json')
   await writeFileAtomic(filePath, JSON.stringify(manifest, null, 2))
   return filePath
 }
@@ -196,11 +219,12 @@ export async function saveRunArtifacts(
 
   if (options.surfaceId) {
     const surfaceDir = await ensureCanonicalSurfaceDirs(basePath, result.runId, options.surfaceId)
-    const stdoutPath = join(surfaceDir, 'logs', 'stdout.log')
-    const stderrPath = join(surfaceDir, 'logs', 'stderr.log')
-    const statusPath = join(surfaceDir, 'logs', 'status.json')
-    await writeFile(stdoutPath, result.stdout, 'utf-8')
-    await writeFile(stderrPath, result.stderr, 'utf-8')
+    const logsDir = await resolveExistingPathWithinRoot(surfaceDir, 'logs')
+    const stdoutPath = await resolvePathWithinRoot(logsDir, 'stdout.log')
+    const stderrPath = await resolvePathWithinRoot(logsDir, 'stderr.log')
+    const statusPath = await resolvePathWithinRoot(logsDir, 'status.json')
+    await writeFileNoFollow(stdoutPath, result.stdout)
+    await writeFileNoFollow(stderrPath, result.stderr)
     await writeFileAtomic(statusPath, JSON.stringify(status, null, 2))
 
     if (options.compiledPrompt) {

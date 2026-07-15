@@ -1,12 +1,27 @@
-import { readdir, readFile } from 'fs/promises'
-import { join, relative, sep } from 'path'
+import { readdir } from 'fs/promises'
+import { relative, sep } from 'path'
 import { readTraceEvents } from '@/lib/traces/reader'
 import { readGateDecisions } from '@/lib/gates/repository'
 import { readApprovals } from '@/lib/approvals/repository'
 import { readThreadSurfaceState } from '@/lib/thread-surfaces/repository'
 import type { StatusJson } from '@/lib/runner/artifacts'
 import type { ExportBundle } from './schema'
-import { assertSafePathSegment, resolvePathWithinRoot } from '@/lib/security/safe-path'
+import {
+  assertSafePathSegment,
+  resolveExistingPathWithinRoot,
+  resolvePathWithinRoot,
+} from '@/lib/security/safe-path'
+import { readTextFileNoFollow } from '@/lib/security/safe-io'
+
+async function readOptionalContainedFile(root: string, fileName: string): Promise<string | null> {
+  try {
+    const filePath = await resolveExistingPathWithinRoot(root, fileName)
+    return await readTextFileNoFollow(filePath)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
+    throw error
+  }
+}
 
 async function collectArtifactManifests(runDir: string): Promise<string[]> {
   try {
@@ -29,7 +44,7 @@ async function collectStepStatuses(runDir: string): Promise<StatusJson[]> {
   const statusPaths = manifests.filter(path => path.endsWith('status.json'))
   const statuses = await Promise.all(statusPaths.map(async path => {
     try {
-      return JSON.parse(await readFile(path, 'utf-8')) as StatusJson
+      return JSON.parse(await readTextFileNoFollow(path)) as StatusJson
     } catch {
       return null
     }
@@ -58,13 +73,22 @@ function summarizeTiming(statuses: StatusJson[]) {
 export async function generateExportBundle(basePath: string, runId: string): Promise<ExportBundle> {
   assertSafePathSegment(runId, 'runId')
 
+  let threadosRoot: string | null = null
+  try {
+    threadosRoot = await resolveExistingPathWithinRoot(basePath, '.threados')
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+  }
+
   // Read sequence snapshot
-  let sequenceSnapshot = ''
-  try { sequenceSnapshot = await readFile(join(basePath, '.threados/sequence.yaml'), 'utf-8') } catch { /* empty */ }
+  const sequenceSnapshot = threadosRoot
+    ? await readOptionalContainedFile(threadosRoot, 'sequence.yaml') ?? ''
+    : ''
 
   // Read policy snapshot
-  let policySnapshot: string | null = null
-  try { policySnapshot = await readFile(join(basePath, '.threados/policy.yaml'), 'utf-8') } catch { /* empty */ }
+  const policySnapshot = threadosRoot
+    ? await readOptionalContainedFile(threadosRoot, 'policy.yaml')
+    : null
 
   // Read run artifacts
   const runDir = await resolvePathWithinRoot(basePath, '.threados/runs', runId)

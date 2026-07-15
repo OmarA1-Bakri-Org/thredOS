@@ -111,6 +111,14 @@ describe('compilePack', () => {
     expect(alphaStep.prompt_file).toBe('custom/path/alpha.md')
   })
 
+  test('rejects unsafe explicit prompt_file paths synchronously', () => {
+    for (const promptFile of ['../escape.md', '/absolute.md', 'custom\\alpha.md', 'custom/dir\\alpha.md']) {
+      const manifest = makeManifest()
+      manifest.steps[0] = { ...manifest.steps[0], prompt_file: promptFile }
+      expect(() => compilePack(manifest)).toThrow('prompt_file')
+    }
+  })
+
   test('step surfaces have correct parent linkage and depth', () => {
     const result = compilePack(makeManifest())
     for (const surface of result.surfaces.slice(1)) {

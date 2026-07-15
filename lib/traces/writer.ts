@@ -1,9 +1,11 @@
-import { appendFile, mkdir } from 'fs/promises'
-import { join } from 'path'
+import { mkdir } from 'fs/promises'
 import { TraceEventSchema, type TraceEvent } from '@/lib/contracts/schemas'
-import { assertSafePathSegment, resolvePathWithinRoot } from '@/lib/security/safe-path'
-
-const RUNS_PATH = '.threados/runs'
+import {
+  assertSafePathSegment,
+  resolveExistingPathWithinRoot,
+  resolvePathWithinRoot,
+} from '@/lib/security/safe-path'
+import { appendFileNoFollow } from '@/lib/security/safe-io'
 
 export async function appendTraceEvent(
   basePath: string,
@@ -12,8 +14,15 @@ export async function appendTraceEvent(
 ): Promise<void> {
   assertSafePathSegment(runId, 'run id')
   const validated = TraceEventSchema.parse(event)
-  const dirPath = await resolvePathWithinRoot(basePath, RUNS_PATH, runId)
+  const threadosPath = await resolvePathWithinRoot(basePath, '.threados')
+  await mkdir(threadosPath, { recursive: true })
+  const threadosRoot = await resolveExistingPathWithinRoot(basePath, '.threados')
+  const runsRoot = await resolvePathWithinRoot(threadosRoot, 'runs')
+  await mkdir(runsRoot, { recursive: true })
+  const verifiedRunsRoot = await resolveExistingPathWithinRoot(threadosRoot, 'runs')
+  const dirPath = await resolvePathWithinRoot(verifiedRunsRoot, runId)
   await mkdir(dirPath, { recursive: true })
-  const filePath = join(dirPath, 'trace.ndjson')
-  await appendFile(filePath, JSON.stringify(validated) + '\n', 'utf-8')
+  const verifiedRunDir = await resolveExistingPathWithinRoot(verifiedRunsRoot, runId)
+  const filePath = await resolvePathWithinRoot(verifiedRunDir, 'trace.ndjson')
+  await appendFileNoFollow(filePath, JSON.stringify(validated) + '\n')
 }

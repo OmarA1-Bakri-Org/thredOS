@@ -268,4 +268,21 @@ describe('thread surface repository', () => {
       code: 'THREAD_SURFACE_STATE_CONFLICT',
     })
   })
+
+  test('validates all file-backed surface IDs before replacing aggregate state', async () => {
+    await writeThreadSurfaceState(basePath, {
+      version: 1,
+      threadSurfaces: [threadSurface],
+      runs: [run],
+      mergeEvents: [mergeEvent],
+      runEvents: [runEvent],
+    })
+    const statePath = getThreadSurfaceStatePath(basePath)
+    const before = await readFile(statePath, 'utf-8')
+    const current = await readThreadSurfaceState(basePath)
+    current.threadSurfaces[0] = { ...current.threadSurfaces[0], id: '../../../escape' }
+
+    await expect(writeThreadSurfaceState(basePath, current)).rejects.toThrow('surface id')
+    expect(await readFile(statePath, 'utf-8')).toBe(before)
+  })
 })

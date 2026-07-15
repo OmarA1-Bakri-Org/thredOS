@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'fs/promises'
+import { mkdir, mkdtemp, readFile, rm, symlink, unlink, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { ExportBundleSchema } from '@/lib/exports/schema'
@@ -318,5 +318,67 @@ describe.serial('surface proof routes', () => {
     const data = await res.json()
     expect(data.code).toBe('VALIDATION_ERROR')
     expect(data.error).toContain('file-safe identifier')
+  })
+
+  test('POST /api/exports/run-bundle rejects an escaping runtime-record source symlink', async () => {
+    await writePolicy('export_mode: local_bundle\n')
+    await writeSequence()
+    await writeRunArtifacts('run-source-link')
+    const tracePath = join(basePath, '.threados', 'runs', 'run-source-link', 'trace.ndjson')
+    const outsideTrace = join(basePath, 'outside-trace.ndjson')
+    await writeFile(outsideTrace, `${JSON.stringify({
+      ts: timestamp, run_id: 'run-source-link', surface_id: 'surface-a', actor: 'external-secret',
+      event_type: 'step-started', payload_ref: null, policy_ref: null,
+    })}\n`)
+    await unlink(tracePath)
+    await symlink(outsideTrace, tracePath, 'file')
+
+    const { POST } = await import('@/app/api/exports/run-bundle/route')
+    const response = await POST(new Request('http://localhost/api/exports/run-bundle', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ runId: 'run-source-link' }),
+    }))
+
+    expect(response.status).toBe(500)
+  })
+
+  test('POST /api/exports/run-bundle rejects an escaping bundle destination symlink', async () => {
+    await writePolicy('export_mode: local_bundle\n')
+    await writeSequence()
+    await writeRunArtifacts('run-bundle-link')
+    const exportDir = join(basePath, '.threados', 'exports', 'run-bundle-link')
+    await mkdir(exportDir, { recursive: true })
+    const outsideBundle = join(basePath, 'outside-bundle.json')
+    await writeFile(outsideBundle, 'outside sentinel')
+    await symlink(outsideBundle, join(exportDir, 'bundle.json'), 'file')
+
+    const { POST } = await import('@/app/api/exports/run-bundle/route')
+    const response = await POST(new Request('http://localhost/api/exports/run-bundle', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ runId: 'run-bundle-link' }),
+    }))
+
+    expect(response.status).toBe(500)
+    expect(await readFile(outsideBundle, 'utf-8')).toBe('outside sentinel')
+  })
+
+  test('POST /api/exports/run-bundle rejects an escaping copied-record destination symlink', async () => {
+    await writePolicy('export_mode: local_bundle\n')
+    await writeSequence()
+    await writeRunArtifacts('run-copy-link')
+    const exportDir = join(basePath, '.threados', 'exports', 'run-copy-link')
+    await mkdir(exportDir, { recursive: true })
+    const outsideTrace = join(basePath, 'outside-export-trace.ndjson')
+    await writeFile(outsideTrace, 'outside sentinel')
+    await symlink(outsideTrace, join(exportDir, 'trace.ndjson'), 'file')
+
+    const { POST } = await import('@/app/api/exports/run-bundle/route')
+    const response = await POST(new Request('http://localhost/api/exports/run-bundle', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ runId: 'run-copy-link' }),
+    }))
+
+    expect(response.status).toBe(500)
+    expect(await readFile(outsideTrace, 'utf-8')).toBe('outside sentinel')
   })
 })

@@ -13,40 +13,62 @@ import type { Sequence } from '@/lib/sequence/schema'
 import { deriveStepThreadSurfaceId } from '@/lib/thread-surfaces/constants'
 import {
   readThreadSurfaceState,
-  updateThreadSurfaceState,
   withThreadSurfaceStateRevision,
   writeThreadSurfaceState,
   type ThreadSurfaceState,
 } from '@/lib/thread-surfaces/repository'
 import { materializeStepSurface, removeStepSurface } from '@/lib/thread-surfaces/materializer'
 import { deleteLibraryAsset, ensurePromptAssetForStep } from '@/lib/library/repository'
+import { assertPortableRelativePath, assertSafePathSegment } from '@/lib/security/safe-path'
+
+const FileSafeStepIdSchema = z.string().min(1).refine(value => {
+  try {
+    assertSafePathSegment(value, 'stepId')
+    return true
+  } catch {
+    return false
+  }
+}, 'step identifier must be file-safe')
+
+const PortablePromptPathSchema = z.string().min(1).refine(value => {
+  try {
+    assertPortableRelativePath(value, 'prompt path')
+    return true
+  } catch {
+    return false
+  }
+}, 'prompt path must be a portable relative path')
 
 const AddSchema = z.object({
   action: z.literal('add'),
-  stepId: z.string(),
+  stepId: FileSafeStepIdSchema,
   name: z.string().optional(),
   type: z.string().optional(),
   model: z.string().optional(),
-  prompt: z.string().optional(),
-  dependsOn: z.array(z.string()).optional(),
+  prompt: PortablePromptPathSchema.optional(),
+  dependsOn: z.array(FileSafeStepIdSchema).optional(),
   cwd: z.string().optional(),
 })
 
 const EditSchema = z.object({
   action: z.literal('edit'),
-  stepId: z.string(),
+  stepId: FileSafeStepIdSchema,
   name: z.string().optional(),
   type: z.string().optional(),
   model: z.string().optional(),
-  prompt: z.string().optional(),
+  prompt: PortablePromptPathSchema.optional(),
   status: z.string().optional(),
-  dependsOn: z.array(z.string()).optional(),
+  dependsOn: z.array(FileSafeStepIdSchema).optional(),
   cwd: z.string().optional(),
   assignedAgentId: z.string().trim().min(1).nullable().optional(),
 })
 
-const RmSchema = z.object({ action: z.literal('rm'), stepId: z.string() })
-const CloneSchema = z.object({ action: z.literal('clone'), sourceId: z.string(), newId: z.string() })
+const RmSchema = z.object({ action: z.literal('rm'), stepId: FileSafeStepIdSchema })
+const CloneSchema = z.object({
+  action: z.literal('clone'),
+  sourceId: FileSafeStepIdSchema,
+  newId: FileSafeStepIdSchema,
+})
 
 const BodySchema = z.union([AddSchema, EditSchema, RmSchema, CloneSchema])
 

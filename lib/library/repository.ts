@@ -1,5 +1,5 @@
 import { existsSync } from 'fs'
-import { mkdir, readFile, unlink } from 'fs/promises'
+import { mkdir, unlink } from 'fs/promises'
 import { basename, dirname, extname, join } from 'path'
 import YAML from 'yaml'
 import { writeFileAtomic } from '@/lib/fs/atomic'
@@ -8,10 +8,10 @@ import {
   resolveExistingPathWithinRoot,
   resolvePathWithinRoot,
 } from '@/lib/security/safe-path'
+import { readTextFileNoFollow } from '@/lib/security/safe-io'
 import type { AgentRegistration } from '@/lib/agents/types'
 import type { PromptRef, LibraryAssetEntry, LibraryAssetKind, LibraryCatalog, SkillRef } from './types'
 
-const LIBRARY_CATALOG_PATH = '.threados/library.yaml'
 const PROMPTS_DIR = '.threados/prompts'
 const SKILLS_DIR = '.threados/skills'
 const AGENTS_DIR = '.threados/agents'
@@ -65,17 +65,20 @@ function catalogKey(kind: LibraryAssetKind): 'prompts' | 'skills' | 'agents' {
   return kind === 'prompt' ? 'prompts' : kind === 'skill' ? 'skills' : 'agents'
 }
 
-function getCatalogPath(basePath: string): string {
-  return join(basePath, LIBRARY_CATALOG_PATH)
+async function ensureContainedDirectory(root: string, ...segments: string[]): Promise<string> {
+  const directoryPath = await resolvePathWithinRoot(root, ...segments)
+  await mkdir(directoryPath, { recursive: true })
+  return await resolveExistingPathWithinRoot(root, ...segments)
 }
 
-async function ensureLibraryDirectories(basePath: string): Promise<void> {
-  await mkdir(join(basePath, '.threados'), { recursive: true })
-  await mkdir(join(basePath, '.threados/runs'), { recursive: true })
-  await mkdir(join(basePath, '.threados/state'), { recursive: true })
-  await mkdir(join(basePath, PROMPTS_DIR), { recursive: true })
-  await mkdir(join(basePath, SKILLS_DIR), { recursive: true })
-  await mkdir(join(basePath, AGENTS_DIR), { recursive: true })
+async function ensureLibraryDirectories(basePath: string): Promise<string> {
+  const threadosRoot = await ensureContainedDirectory(basePath, '.threados')
+  await ensureContainedDirectory(threadosRoot, 'runs')
+  await ensureContainedDirectory(threadosRoot, 'state')
+  await ensureContainedDirectory(threadosRoot, 'prompts')
+  await ensureContainedDirectory(threadosRoot, 'skills')
+  await ensureContainedDirectory(threadosRoot, 'agents')
+  return threadosRoot
 }
 
 export function getLibraryAssetPath(basePath: string, kind: LibraryAssetKind, id: string): string {
@@ -83,6 +86,42 @@ export function getLibraryAssetPath(basePath: string, kind: LibraryAssetKind, id
   if (kind === 'prompt') return join(basePath, PROMPTS_DIR, `${id}.md`)
   if (kind === 'skill') return join(basePath, SKILLS_DIR, id, 'SKILL.md')
   return join(basePath, AGENTS_DIR, id, 'AGENT.md')
+}
+
+function getCanonicalAssetRelativePath(kind: LibraryAssetKind, id: string): string {
+  assertSafePathSegment(id, `${kind} asset id`)
+  if (kind === 'prompt') return `${PROMPTS_DIR}/${id}.md`
+  if (kind === 'skill') return `${SKILLS_DIR}/${id}/SKILL.md`
+  return `${AGENTS_DIR}/${id}/AGENT.md`
+}
+
+async function resolveCanonicalAssetPath(
+  basePath: string,
+  kind: LibraryAssetKind,
+  id: string,
+  requireExisting: boolean,
+): Promise<string> {
+  const threadosRoot = await ensureLibraryDirectories(basePath)
+  const kindDirectory = kind === 'prompt' ? 'prompts' : kind === 'skill' ? 'skills' : 'agents'
+  const kindRoot = await resolveExistingPathWithinRoot(threadosRoot, kindDirectory)
+  const segments = kind === 'prompt' ? [`${id}.md`] : [id, kind === 'skill' ? 'SKILL.md' : 'AGENT.md']
+  return requireExisting
+    ? await resolveExistingPathWithinRoot(kindRoot, ...segments)
+    : await resolvePathWithinRoot(kindRoot, ...segments)
+}
+
+async function resolveCatalogPath(basePath: string, requireExisting: boolean): Promise<string> {
+  const threadosRoot = await ensureLibraryDirectories(basePath)
+  return requireExisting
+    ? await resolveExistingPathWithinRoot(threadosRoot, 'library.yaml')
+    : await resolvePathWithinRoot(threadosRoot, 'library.yaml')
+}
+
+function assertCanonicalCatalogEntryPath(entry: LibraryAssetEntry, kind: LibraryAssetKind, id: string): void {
+  const expectedPath = getCanonicalAssetRelativePath(kind, id)
+  if (entry.id !== id || entry.kind !== kind || entry.path !== expectedPath) {
+    throw new Error(`${kind} asset catalog path must match its canonical id-derived path`)
+  }
 }
 
 function emptyLinks() {
@@ -117,18 +156,18 @@ function buildEntry(args: {
 export async function ensureLibraryStructure(basePath: string): Promise<void> {
   await ensureLibraryDirectories(basePath)
 
-  const catalogPath = getCatalogPath(basePath)
+  const catalogPath = await resolveCatalogPath(basePath, false)
   if (!existsSync(catalogPath)) {
-    await writeFileAtomic(catalogPath, YAML.stringify(DEFAULT_LIBRARY, { indent: 2 }))
+    await writeFileAtomic(await resolveCatalogPath(basePath, false), YAML.stringify(DEFAULT_LIBRARY, { indent: 2 }))
   }
 
   const catalog = await readLibraryCatalog(basePath)
   let dirty = false
   for (const skill of DEFAULT_SYSTEM_SKILLS) {
     if (!catalog.skills[skill.id]) {
-      const path = getLibraryAssetPath(basePath, 'skill', skill.id)
+      const path = await resolveCanonicalAssetPath(basePath, 'skill', skill.id, false)
       await mkdir(dirname(path), { recursive: true })
-      await writeFileAtomic(path, [
+      await writeFileAtomic(await resolveCanonicalAssetPath(basePath, 'skill', skill.id, false), [
         '---',
         `id: ${skill.id}`,
         `title: ${skill.title}`,
@@ -164,12 +203,13 @@ export async function ensureLibraryStructure(basePath: string): Promise<void> {
 }
 
 export async function readLibraryCatalog(basePath: string): Promise<LibraryCatalog> {
-  const fullPath = getCatalogPath(basePath)
+  let fullPath = await resolveCatalogPath(basePath, false)
   if (!existsSync(fullPath)) {
-    await ensureLibraryStructure(basePath)
+    await writeFileAtomic(await resolveCatalogPath(basePath, false), YAML.stringify(DEFAULT_LIBRARY, { indent: 2 }))
   }
+  fullPath = await resolveCatalogPath(basePath, true)
 
-  const raw = YAML.parse(await readFile(fullPath, 'utf-8')) as Partial<LibraryCatalog> | null
+  const raw = YAML.parse(await readTextFileNoFollow(fullPath)) as Partial<LibraryCatalog> | null
   return {
     version: 1,
     prompts: raw?.prompts ?? {},
@@ -179,7 +219,10 @@ export async function readLibraryCatalog(basePath: string): Promise<LibraryCatal
 }
 
 export async function writeLibraryCatalog(basePath: string, catalog: LibraryCatalog): Promise<void> {
-  await writeFileAtomic(getCatalogPath(basePath), YAML.stringify({ ...catalog, version: 1 }, { indent: 2 }))
+  await writeFileAtomic(
+    await resolveCatalogPath(basePath, false),
+    YAML.stringify({ ...catalog, version: 1 }, { indent: 2 }),
+  )
 }
 
 export async function listLibraryAssets(basePath: string, kind?: LibraryAssetKind): Promise<LibraryAssetEntry[]> {
@@ -194,12 +237,13 @@ export async function readLibraryAsset(basePath: string, kind: LibraryAssetKind,
   entry: LibraryAssetEntry | null
   content: string | null
 }> {
+  assertSafePathSegment(id, `${kind} asset id`)
   const catalog = await readLibraryCatalog(basePath)
   const entry = catalog[catalogKey(kind)][id] ?? null
   if (!entry) return { entry: null, content: null }
-  assertSafePathSegment(id, `${kind} asset id`)
-  const fullPath = await resolveExistingPathWithinRoot(basePath, entry.path)
-  const content = await readFile(fullPath, 'utf-8')
+  assertCanonicalCatalogEntryPath(entry, kind, id)
+  const fullPath = await resolveCanonicalAssetPath(basePath, kind, id, true)
+  const content = await readTextFileNoFollow(fullPath)
   return { entry, content }
 }
 
@@ -214,18 +258,21 @@ export async function upsertLibraryAsset(basePath: string, args: {
   versionBump?: 'major' | 'minor' | 'patch' | 'replace'
 }): Promise<LibraryAssetEntry> {
   await ensureLibraryDirectories(basePath)
-  const catalogPath = getCatalogPath(basePath)
+  const catalogPath = await resolveCatalogPath(basePath, false)
   if (!existsSync(catalogPath)) {
-    await writeFileAtomic(catalogPath, YAML.stringify(DEFAULT_LIBRARY, { indent: 2 }))
+    await writeFileAtomic(await resolveCatalogPath(basePath, false), YAML.stringify(DEFAULT_LIBRARY, { indent: 2 }))
   }
   const catalog = await readLibraryCatalog(basePath)
   const bucket = catalog[catalogKey(args.kind)]
   const previous = bucket[args.id]
   const nextVersion = previous ? previous.version + 1 : 1
   const path = getLibraryAssetPath(basePath, args.kind, args.id)
-  const containedPath = await resolvePathWithinRoot(basePath, path)
+  const containedPath = await resolveCanonicalAssetPath(basePath, args.kind, args.id, false)
   await mkdir(dirname(containedPath), { recursive: true })
-  await writeFileAtomic(containedPath, args.content.endsWith('\n') ? args.content : `${args.content}\n`)
+  await writeFileAtomic(
+    await resolveCanonicalAssetPath(basePath, args.kind, args.id, false),
+    args.content.endsWith('\n') ? args.content : `${args.content}\n`,
+  )
 
   const entry = buildEntry({
     kind: args.kind,
@@ -257,10 +304,12 @@ export async function deleteLibraryAsset(basePath: string, kind: LibraryAssetKin
   const bucket = catalog[catalogKey(kind)]
   const entry = bucket[id]
   if (!entry) return false
+  assertCanonicalCatalogEntryPath(entry, kind, id)
 
-  const fullPath = existsSync(join(basePath, entry.path))
-    ? await resolveExistingPathWithinRoot(basePath, entry.path)
-    : await resolvePathWithinRoot(basePath, entry.path)
+  const canonicalPath = await resolveCanonicalAssetPath(basePath, kind, id, false)
+  const fullPath = existsSync(canonicalPath)
+    ? await resolveCanonicalAssetPath(basePath, kind, id, true)
+    : canonicalPath
   if (existsSync(fullPath)) {
     await unlink(fullPath)
   }
