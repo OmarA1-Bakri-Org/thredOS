@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'fs/promises'
+import { access, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import {
@@ -132,5 +132,24 @@ describe('safe file I/O', () => {
     await expect(writeFileNoFollow(destination, 'pwned')).rejects.toThrow()
     expect(swapped).toBe(true)
     expect(await readFile(external, 'utf-8')).toBe('outside sentinel')
+  })
+
+  test('append does not recreate an existing destination removed before its second open', async () => {
+    const destination = join(inside, 'removed-before-existing-open.txt')
+    await writeFile(destination, 'existing content')
+
+    let openCount = 0
+    setSafeIoBeforeOpenHookForTests(async ({ operation, filePath }) => {
+      if (operation === 'append' && filePath === destination) {
+        openCount += 1
+        if (openCount === 2) {
+          await rm(destination)
+        }
+      }
+    })
+
+    await expect(appendFileNoFollow(destination, '-must-not-be-written')).rejects.toThrow()
+    expect(openCount).toBe(2)
+    await expect(access(destination)).rejects.toThrow()
   })
 })

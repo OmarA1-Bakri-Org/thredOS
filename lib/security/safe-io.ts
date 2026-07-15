@@ -13,8 +13,14 @@ export function setSafeIoBeforeOpenHookForTests(hook: BeforeOpenHook | null): vo
   beforeOpenHookForTests = hook
 }
 
-function withNoFollow(flags: number, fallback: string): number | string {
-  return typeof constants.O_NOFOLLOW === 'number' ? flags | constants.O_NOFOLLOW : fallback
+function withNoFollow(flags: number): number {
+  return typeof constants.O_NOFOLLOW === 'number' ? flags | constants.O_NOFOLLOW : flags
+}
+
+function exclusiveCreateFlags(flags: number, fallback: string): number | string {
+  return typeof constants.O_NOFOLLOW === 'number'
+    ? flags | constants.O_NOFOLLOW
+    : fallback
 }
 
 async function openPath(
@@ -47,10 +53,9 @@ async function verifyOpenedIdentity(filePath: string, handle: FileHandle): Promi
 async function openExistingVerified(
   filePath: string,
   flags: number,
-  fallbackFlags: string,
   operation: SafeIoOperation,
 ): Promise<FileHandle> {
-  const handle = await openPath(filePath, withNoFollow(flags, fallbackFlags), operation)
+  const handle = await openPath(filePath, withNoFollow(flags), operation)
   try {
     await verifyOpenedIdentity(filePath, handle)
     return handle
@@ -63,14 +68,13 @@ async function openExistingVerified(
 async function openWritableVerified(
   filePath: string,
   existingFlags: number,
-  existingFallbackFlags: string,
   createFallbackFlags: string,
   operation: 'append' | 'copy-destination' | 'write',
 ): Promise<FileHandle> {
   try {
     return await openPath(
       filePath,
-      withNoFollow(
+      exclusiveCreateFlags(
         existingFlags | constants.O_CREAT | constants.O_EXCL,
         createFallbackFlags,
       ),
@@ -83,26 +87,26 @@ async function openWritableVerified(
     }
   }
 
-  return openExistingVerified(filePath, existingFlags, existingFallbackFlags, operation)
+  return openExistingVerified(filePath, existingFlags, operation)
 }
 
 export async function appendFileNoFollow(filePath: string, content: string): Promise<void> {
   const handle = await openWritableVerified(
     filePath,
     constants.O_WRONLY | constants.O_APPEND,
-    'a',
     'ax',
     'append',
   )
   try {
-    await handle.writeFile(content, 'utf-8')
+    const current = await handle.stat()
+    await handle.write(content, current.size, 'utf-8')
   } finally {
     await handle.close()
   }
 }
 
 export async function readTextFileNoFollow(filePath: string): Promise<string> {
-  const handle = await openExistingVerified(filePath, constants.O_RDONLY, 'r', 'read')
+  const handle = await openExistingVerified(filePath, constants.O_RDONLY, 'read')
   try {
     return await handle.readFile('utf-8')
   } finally {
@@ -111,7 +115,7 @@ export async function readTextFileNoFollow(filePath: string): Promise<string> {
 }
 
 export async function writeFileNoFollow(filePath: string, content: string): Promise<void> {
-  const handle = await openWritableVerified(filePath, constants.O_WRONLY, 'r+', 'wx', 'write')
+  const handle = await openWritableVerified(filePath, constants.O_WRONLY, 'wx', 'write')
   try {
     await handle.truncate(0)
     await handle.writeFile(content, 'utf-8')
@@ -121,13 +125,12 @@ export async function writeFileNoFollow(filePath: string, content: string): Prom
 }
 
 export async function copyFileNoFollow(sourcePath: string, destinationPath: string): Promise<void> {
-  const source = await openExistingVerified(sourcePath, constants.O_RDONLY, 'r', 'copy-source')
+  const source = await openExistingVerified(sourcePath, constants.O_RDONLY, 'copy-source')
   try {
     const content = await source.readFile()
     const destination = await openWritableVerified(
       destinationPath,
       constants.O_WRONLY,
-      'r+',
       'wx',
       'copy-destination',
     )

@@ -409,3 +409,56 @@ Exit code: 0
 0 errors
 0 warnings
 ```
+
+## Existing-append disappearance micro-fix
+
+The final safe-I/O review found that the Windows string fallback for an existing append used `a`, whose implicit `O_CREAT` could recreate a destination that disappeared after the exclusive-create probe returned `EEXIST`.
+
+### Micro-fix RED
+
+A deterministic hook removed an existing append destination immediately before its second open:
+
+```text
+bun test lib/security/safe-io.test.ts
+Expected promise that rejects
+Received promise that resolved
+8 pass
+1 fail
+19 expect() calls
+Ran 9 tests across 1 file.
+```
+
+The failure proved that the existing-file fallback recreated and appended to the vanished path non-exclusively.
+
+### Micro-fix implementation
+
+- Exclusive creation alone selects portable `ax`/`wx` when `O_NOFOLLOW` is unavailable.
+- Existing read, write/copy, and append opens always use numeric, non-creating flags (`O_RDONLY`, `O_WRONLY`, and `O_WRONLY | O_APPEND`), adding `O_NOFOLLOW` when the host exposes it.
+- Existing write/copy no longer require read permission.
+- Bun on Windows does not advance writes to EOF for the numeric append flag, so append writes use the verified handle's current size as their position. POSIX `O_APPEND` continues to control the final write position.
+- Identity verification and all I/O through the already-open handle remain unchanged.
+
+### Micro-fix GREEN
+
+```text
+bun test lib/security/safe-io.test.ts
+9 pass
+0 fail
+21 expect() calls
+Ran 9 tests across 1 file.
+
+bun test lib/security/safe-path.test.ts lib/security/file-boundaries.test.ts lib/runner/artifacts.test.ts lib/runner/prompt-compiler-paths.test.ts lib/exports/bundler.test.ts lib/thread-surfaces/repository.test.ts test/api/step-path-validation.test.ts test/api/surface-proof-routes.test.ts lib/packs/loader.test.ts lib/packs/compiler.test.ts
+75 pass
+0 fail
+268 expect() calls
+Ran 75 tests across 10 files.
+
+bun run typecheck
+$ tsc --noEmit
+Exit code: 0
+
+bunx eslint lib/security/safe-io.ts lib/security/safe-io.test.ts
+Exit code: 0
+0 errors
+0 warnings
+```
