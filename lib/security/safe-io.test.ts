@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { access, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'fs/promises'
+import { access, mkdir, mkdtemp, open, readFile, rm, symlink, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import {
@@ -9,6 +9,33 @@ import {
   setSafeIoBeforeOpenHookForTests,
   writeFileNoFollow,
 } from './safe-io'
+
+type WriteResult = { bytesWritten: number; buffer: unknown }
+type WriteMethod = (this: unknown, ...args: unknown[]) => Promise<WriteResult>
+
+async function withWriteInterceptor(
+  filePath: string,
+  interceptor: (
+    originalWrite: WriteMethod,
+    receiver: unknown,
+    args: unknown[],
+  ) => Promise<WriteResult>,
+  operation: () => Promise<void>,
+): Promise<void> {
+  const probe = await open(filePath, 'r')
+  const prototype = Object.getPrototypeOf(probe) as { write: WriteMethod }
+  const originalWrite = prototype.write
+  await probe.close()
+
+  prototype.write = function (this: unknown, ...args: unknown[]): Promise<WriteResult> {
+    return interceptor(originalWrite, this, args)
+  }
+  try {
+    await operation()
+  } finally {
+    prototype.write = originalWrite
+  }
+}
 
 describe('safe file I/O', () => {
   let root: string
@@ -151,5 +178,43 @@ describe('safe file I/O', () => {
     await expect(appendFileNoFollow(destination, '-must-not-be-written')).rejects.toThrow()
     expect(openCount).toBe(2)
     await expect(access(destination)).rejects.toThrow()
+  })
+
+  test('append retries partial low-level writes until the full encoded payload is stored', async () => {
+    const destination = join(inside, 'partial-append.txt')
+    const payload = 'é🙂abc'
+    await writeFile(destination, 'prefix:')
+
+    let writeCalls = 0
+    await withWriteInterceptor(destination, async (originalWrite, receiver, args) => {
+      writeCalls += 1
+      const [data, second, third, fourth] = args
+      if (typeof data === 'string') {
+        const partial = Buffer.from(data).subarray(0, 2)
+        return originalWrite.call(receiver, partial, 0, partial.byteLength, second)
+      }
+      if (ArrayBuffer.isView(data) && typeof second === 'number' && typeof third === 'number') {
+        return originalWrite.call(receiver, data, second, Math.min(third, 2), fourth)
+      }
+      return originalWrite.call(receiver, ...args)
+    }, async () => {
+      await appendFileNoFollow(destination, payload)
+    })
+
+    expect(await readFile(destination, 'utf-8')).toBe(`prefix:${payload}`)
+    expect(writeCalls).toBeGreaterThan(1)
+  })
+
+  test('append rejects a zero-progress low-level write', async () => {
+    const destination = join(inside, 'zero-progress-append.txt')
+    await writeFile(destination, 'prefix:')
+
+    await expect(withWriteInterceptor(destination, async (_originalWrite, _receiver, args) => ({
+      bytesWritten: 0,
+      buffer: args[0],
+    }), async () => {
+      await appendFileNoFollow(destination, 'payload')
+    })).rejects.toThrow()
+    expect(await readFile(destination, 'utf-8')).toBe('prefix:')
   })
 })

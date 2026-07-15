@@ -410,6 +410,66 @@ Exit code: 0
 0 warnings
 ```
 
+## Partial-append completion micro-fix
+
+The final correctness review found that append performed one low-level `FileHandle.write` and ignored `bytesWritten`, allowing a short successful write to persist only a prefix of the payload.
+
+### Partial-write RED
+
+The test harness temporarily intercepts the low-level file-handle writer and caps each write to two bytes. This deterministically proved the one-shot implementation returned after storing only the first encoded chunk:
+
+```text
+bun test lib/security/safe-io.test.ts
+Expected: "prefix:é🙂abc"
+Received: "prefix:é"
+9 pass
+1 fail
+22 expect() calls
+Ran 10 tests across 1 file.
+```
+
+A zero-progress case was then locked before implementation; the old code also resolved when `bytesWritten` was zero:
+
+```text
+9 pass
+2 fail
+23 expect() calls
+Ran 11 tests across 1 file.
+```
+
+### Partial-write implementation
+
+- Append content is encoded to UTF-8 once.
+- A byte-oriented loop retries until the entire buffer is written, advancing the buffer offset by the actual `bytesWritten` result.
+- Windows advances its explicit single-writer file position by the same actual byte count; POSIX passes a null position so kernel `O_APPEND` behavior remains authoritative.
+- Zero progress and impossible over-reported progress are rejected instead of looping or silently succeeding.
+- The existing Bun/Windows single-writer caveat remains: positioned fallback append is not claimed to provide POSIX concurrent-append atomicity.
+
+### Partial-write GREEN
+
+```text
+bun test lib/security/safe-io.test.ts
+11 pass
+0 fail
+25 expect() calls
+Ran 11 tests across 1 file.
+
+bun test lib/security/safe-path.test.ts lib/security/file-boundaries.test.ts lib/runner/artifacts.test.ts lib/runner/prompt-compiler-paths.test.ts lib/exports/bundler.test.ts lib/thread-surfaces/repository.test.ts test/api/step-path-validation.test.ts test/api/surface-proof-routes.test.ts lib/packs/loader.test.ts lib/packs/compiler.test.ts
+75 pass
+0 fail
+268 expect() calls
+Ran 75 tests across 10 files.
+
+bun run typecheck
+$ tsc --noEmit
+Exit code: 0
+
+bunx eslint lib/security/safe-io.ts lib/security/safe-io.test.ts
+Exit code: 0
+0 errors
+0 warnings
+```
+
 ## Existing-append disappearance micro-fix
 
 The final safe-I/O review found that the Windows string fallback for an existing append used `a`, whose implicit `O_CREAT` could recreate a destination that disappeared after the exclusive-create probe returned `EEXIST`.

@@ -90,6 +90,25 @@ async function openWritableVerified(
   return openExistingVerified(filePath, existingFlags, operation)
 }
 
+async function writeAll(
+  handle: FileHandle,
+  content: string,
+  windowsStartPosition: number,
+): Promise<void> {
+  const encoded = Buffer.from(content, 'utf-8')
+  let offset = 0
+
+  while (offset < encoded.byteLength) {
+    const remaining = encoded.byteLength - offset
+    const position = process.platform === 'win32' ? windowsStartPosition + offset : null
+    const { bytesWritten } = await handle.write(encoded, offset, remaining, position)
+    if (bytesWritten <= 0 || bytesWritten > remaining) {
+      throw new Error('Unable to complete safe file write: writer made no valid progress')
+    }
+    offset += bytesWritten
+  }
+}
+
 export async function appendFileNoFollow(filePath: string, content: string): Promise<void> {
   const handle = await openWritableVerified(
     filePath,
@@ -99,7 +118,7 @@ export async function appendFileNoFollow(filePath: string, content: string): Pro
   )
   try {
     const current = await handle.stat()
-    await handle.write(content, current.size, 'utf-8')
+    await writeAll(handle, content, current.size)
   } finally {
     await handle.close()
   }
