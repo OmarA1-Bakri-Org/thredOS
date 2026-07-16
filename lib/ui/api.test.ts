@@ -2,11 +2,14 @@ import { describe, expect, test, afterEach } from 'bun:test'
 import type { MergeEvent, RunScope, ThreadSurface } from '@/lib/thread-surfaces/types'
 import {
   fetchJson,
+  hasActiveRuntimeRuns,
   postJson,
+  RuntimeApiError,
   unwrapThreadMergesResponse,
   unwrapThreadRunsResponse,
   unwrapThreadSurfacesResponse,
 } from './api'
+import type { RunProjection } from '@/lib/runtime/service-types'
 
 describe('thread surface api response unwrappers', () => {
   test('unwrapThreadSurfacesResponse returns the surface list from the route payload', () => {
@@ -253,6 +256,32 @@ describe('fetchJson', () => {
     await expect(fetchJson('/api/fake')).rejects.toThrow('Step not found')
   })
 
+  test('preserves typed runtime error metadata for operator controls', async () => {
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({ error: 'attempt attempt-1 is interrupted', code: 'ATTEMPT_NOT_RUNNING' }),
+        {
+          status: 409,
+          statusText: 'Conflict',
+          headers: { 'Idempotency-Key': 'cancel-attempt-1' },
+        },
+      )
+    ) as unknown as typeof fetch
+
+    try {
+      await fetchJson('/api/attempts/attempt-1/cancel')
+      throw new Error('expected fetchJson to reject')
+    } catch (error) {
+      expect(error).toBeInstanceOf(RuntimeApiError)
+      expect(error).toMatchObject({
+        message: 'attempt attempt-1 is interrupted',
+        code: 'ATTEMPT_NOT_RUNNING',
+        status: 409,
+        idempotencyKey: 'cancel-attempt-1',
+      })
+    }
+  })
+
   test('throws with statusText when response is not ok and body.error is empty', async () => {
     globalThis.fetch = (async () =>
       new Response(JSON.stringify({ error: '' }), { status: 500, statusText: 'Internal Server Error' })
@@ -279,6 +308,48 @@ describe('fetchJson', () => {
     await fetchJson('/api/fake', { method: 'DELETE', headers: { 'X-Custom': 'yes' } })
     expect(capturedInit?.method).toBe('DELETE')
     expect((capturedInit?.headers as Record<string, string>)['X-Custom']).toBe('yes')
+  })
+})
+
+describe('runtime query polling', () => {
+  const projection = (status: RunProjection['run']['status']): RunProjection => ({
+    source: 'v2',
+    schemaVersion: 2,
+    run: {
+      schema_version: 2,
+      id: `run-${status}`,
+      revision: 0,
+      sequence_id: 'sequence-1',
+      sequence_snapshot_hash: 'sha256:sequence',
+      target: { kind: 'runnable' },
+      strategy: 'sequential',
+      status,
+      max_concurrency: 1,
+      policy_snapshot_hash: 'sha256:policy',
+      baseline_snapshot_id: null,
+      attempt_ids: [],
+      created_by: 'operator',
+      created_via: 'api',
+      created_at: '2026-07-16T00:00:00.000Z',
+      started_at: null,
+      ended_at: null,
+      cancellation_requested_at: null,
+      summary: null,
+      error_code: null,
+      error_message: null,
+    },
+    attempts: [],
+  })
+
+  test('polls only while at least one canonical run is active', () => {
+    expect(hasActiveRuntimeRuns([
+      projection('successful'),
+      projection('interrupted'),
+    ])).toBe(false)
+    expect(hasActiveRuntimeRuns([
+      projection('successful'),
+      projection('running'),
+    ])).toBe(true)
   })
 })
 

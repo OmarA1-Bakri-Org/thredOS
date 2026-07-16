@@ -11,6 +11,8 @@ import type { PromptRef, SkillRef } from '@/lib/library/types'
 import type { ActivationSession } from '@/lib/local-first/types'
 import type { LocalWorkspace } from '@/lib/local-first/types'
 import { resolveSkillsForAgent } from '@/lib/thread-surfaces/projections'
+import type { WorkflowRunStatus } from '@/lib/runtime/schema'
+import type { AttemptProjection, RunProjection, RuntimeRunQuery } from '@/lib/runtime/service-types'
 
 interface ThreadSurfacesResponse {
   threadSurfaces: ThreadSurface[]
@@ -24,6 +26,29 @@ interface ThreadMergesResponse {
   mergeEvents: MergeEvent[]
 }
 
+interface RunsResponse {
+  runs: RunProjection[]
+}
+
+export interface RunAttemptsResponse {
+  runId: string
+  source: RunProjection['source']
+  schemaVersion: RunProjection['schemaVersion']
+  attempts: AttemptProjection[]
+}
+
+export class RuntimeApiError extends Error {
+  constructor(
+    message: string,
+    public readonly code: string,
+    public readonly status: number,
+    public readonly idempotencyKey: string | null,
+  ) {
+    super(message)
+    this.name = 'RuntimeApiError'
+  }
+}
+
 export async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, init)
   if (res.status === 401 && typeof window !== 'undefined') {
@@ -32,8 +57,16 @@ export async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> 
     throw new Error('Authentication required')
   }
   if (!res.ok) {
-    const body = await res.json().catch(() => ({ error: res.statusText }))
-    throw new Error(body.error || res.statusText)
+    const body = await res.json().catch(() => ({ error: res.statusText, code: 'HTTP_ERROR' })) as {
+      error?: string
+      code?: string
+    }
+    throw new RuntimeApiError(
+      body.error || res.statusText,
+      body.code || 'HTTP_ERROR',
+      res.status,
+      res.headers.get('idempotency-key'),
+    )
   }
   return res.json()
 }
@@ -128,6 +161,10 @@ export function registerAgentCloud(agentId: string): Promise<CloudAgentRegistrat
 }
 
 function invalidateRuntimeQueries(qc: ReturnType<typeof useQueryClient>) {
+  qc.invalidateQueries({ queryKey: ['runs'] })
+  qc.invalidateQueries({ queryKey: ['run'] })
+  qc.invalidateQueries({ queryKey: ['run-attempts'] })
+  qc.invalidateQueries({ queryKey: ['attempt'] })
   qc.invalidateQueries({ queryKey: ['status'] })
   qc.invalidateQueries({ queryKey: ['sequence'] })
   qc.invalidateQueries({ queryKey: ['thread-surfaces'] })
@@ -155,6 +192,108 @@ export function useSequence() {
 
 export function useStatus() {
   return useQuery<SequenceStatus>({ queryKey: ['status'], queryFn: () => fetchJson('/api/status'), refetchInterval: 2000 })
+}
+
+const ACTIVE_RUN_STATUSES = new Set<WorkflowRunStatus>([
+  'pending',
+  'provisioning',
+  'running',
+  'awaiting_review',
+  'applying',
+])
+
+export function hasActiveRuntimeRuns(projections: RunProjection[] | undefined): boolean {
+  return projections?.some(projection => ACTIVE_RUN_STATUSES.has(projection.run.status)) ?? false
+}
+
+export function useRuns(query: RuntimeRunQuery = {}) {
+  const search = new URLSearchParams()
+  if (query.sequenceId) search.set('sequence_id', query.sequenceId)
+  if (query.status) search.set('status', query.status)
+  const suffix = search.size > 0 ? `?${search.toString()}` : ''
+  return useQuery<RunProjection[]>({
+    queryKey: ['runs', query],
+    queryFn: async () => (await fetchJson<RunsResponse>(`/api/runs${suffix}`)).runs,
+    refetchInterval: current => hasActiveRuntimeRuns(current.state.data) ? 2000 : false,
+    staleTime: 5_000,
+  })
+}
+
+export function useRun(runId: string | null) {
+  return useQuery<RunProjection>({
+    queryKey: ['run', runId],
+    queryFn: () => fetchJson<RunProjection>(`/api/runs/${encodeURIComponent(runId!)}`),
+    enabled: Boolean(runId),
+    refetchInterval: current => {
+      const projection = current.state.data
+      return projection && ACTIVE_RUN_STATUSES.has(projection.run.status) ? 2000 : false
+    },
+    staleTime: 5_000,
+  })
+}
+
+export function useRunAttempts(runId: string | null) {
+  return useQuery<AttemptProjection[]>({
+    queryKey: ['run-attempts', runId],
+    queryFn: async () => (
+      await fetchJson<RunAttemptsResponse>(
+        `/api/runs/${encodeURIComponent(runId!)}/attempts`,
+      )
+    ).attempts,
+    enabled: Boolean(runId),
+    refetchInterval: current => current.state.data?.some(item =>
+      ['pending', 'provisioning', 'running'].includes(item.attempt.status),
+    ) ? 2000 : false,
+    staleTime: 5_000,
+  })
+}
+
+export function useAttempt(attemptId: string | null) {
+  return useQuery<AttemptProjection>({
+    queryKey: ['attempt', attemptId],
+    queryFn: () => fetchJson<AttemptProjection>(
+      `/api/attempts/${encodeURIComponent(attemptId!)}`,
+    ),
+    enabled: Boolean(attemptId),
+    refetchInterval: current => {
+      const status = current.state.data?.attempt.status
+      return status && ['pending', 'provisioning', 'running'].includes(status) ? 2000 : false
+    },
+    staleTime: 5_000,
+  })
+}
+
+export function useCancelRun() {
+  const qc = useQueryClient()
+  return useMutation<RunProjection, RuntimeApiError, string>({
+    mutationFn: runId => fetchJson<RunProjection>(
+      `/api/runs/${encodeURIComponent(runId)}/cancel`,
+      { method: 'POST' },
+    ),
+    onSuccess: () => invalidateRuntimeQueries(qc),
+  })
+}
+
+export function useCancelAttempt() {
+  const qc = useQueryClient()
+  return useMutation<AttemptProjection, RuntimeApiError, string>({
+    mutationFn: attemptId => fetchJson<AttemptProjection>(
+      `/api/attempts/${encodeURIComponent(attemptId)}/cancel`,
+      { method: 'POST' },
+    ),
+    onSuccess: () => invalidateRuntimeQueries(qc),
+  })
+}
+
+export function useRetryAttempt() {
+  const qc = useQueryClient()
+  return useMutation<AttemptProjection, RuntimeApiError, string>({
+    mutationFn: attemptId => fetchJson<AttemptProjection>(
+      `/api/attempts/${encodeURIComponent(attemptId)}/retry`,
+      { method: 'POST' },
+    ),
+    onSuccess: () => invalidateRuntimeQueries(qc),
+  })
 }
 
 export function useThreadSurfaces() {
