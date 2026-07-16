@@ -1,31 +1,209 @@
 import { describe, test, expect } from 'bun:test'
-import { ProcessTimeoutError } from '../errors'
+import { spawn, type ChildProcess } from 'child_process'
 import { createHash } from 'crypto'
-import { writeFile } from 'fs/promises'
+import { existsSync, realpathSync } from 'fs'
+import { access, writeFile } from 'fs/promises'
+import { delimiter, isAbsolute, resolve, win32 } from 'path'
+import { fileURLToPath } from 'url'
 
-async function importActualWrapper() {
-  return import(new URL(`./wrapper.ts?cacheBust=${Date.now()}-${Math.random()}`, import.meta.url).href) as Promise<typeof import('./wrapper')>
+function processFixture(name: string): string {
+  return fileURLToPath(new URL(`../../test/fixtures/process/${name}`, import.meta.url))
 }
 
-async function expectParentEnvKeyFiltered(key: string): Promise<void> {
+function resolveNodeFixtureCommand(): string {
+  const executableName = process.platform === 'win32' ? 'node.exe' : 'node'
+  for (const directory of (process.env.PATH ?? '').split(delimiter)) {
+    if (!directory) continue
+    const candidate = resolve(directory, executableName)
+    if (!existsSync(candidate)) continue
+    const absolute = realpathSync(candidate)
+    if (isAbsolute(absolute)) return absolute
+  }
+  throw new Error('Unable to resolve an absolute Node executable for process fixtures')
+}
+
+const NODE_FIXTURE_COMMAND = resolveNodeFixtureCommand()
+const COORDINATOR_TIMEOUT_MS = 55_000
+const MAX_COORDINATOR_OUTPUT_BYTES = 1024 * 1024
+
+interface ProcessProofResults {
+  cancel: object
+  timeout: object
+  singleCancel: object
+  singleTimeout: object
+  failedCancel: object
+  failedTaskkill: object
+  timedOutTaskkill: {
+    control?: {
+      success: boolean
+      code?: string
+      message?: string
+      signal?: string
+    }
+    hookAborted?: boolean
+    elapsedMs?: number
+    aliveAfterFailure?: boolean
+    skipped?: boolean
+  }
+  deathBeforeEscalationSignal: object
+  failedTimeout: object
+  spawnError: object
+  callbackBounded: {
+    status: string
+    outputBytes: number
+    outputCallbacks: number
+    heartbeatCallbacks: number
+  }
+  callbackSerialized: {
+    status: string
+    maxActiveCallbacks: number
+    completedCallbacks: number
+    activeCallbacks: number
+  }
+  callbackFailed: object
+  nonzeroExit: object
+  naturalExitBeforeCancel: object
+}
+
+async function terminateFixtureTree(child: ChildProcess): Promise<void> {
+  if (child.pid === undefined || child.exitCode !== null) return
+  if (process.platform === 'win32') {
+    const systemRoot = process.env.SystemRoot ?? process.env.windir
+    if (!systemRoot || !win32.isAbsolute(systemRoot)) {
+      child.kill('SIGKILL')
+      return
+    }
+    const command = win32.join(win32.resolve(systemRoot), 'System32', 'taskkill.exe')
+    await access(command)
+    await new Promise<void>(resolveKill => {
+      const killer = spawn(command, ['/PID', String(child.pid), '/T', '/F'], {
+        shell: false,
+        windowsHide: true,
+        stdio: 'ignore',
+      })
+      const timer = setTimeout(() => {
+        killer.kill('SIGKILL')
+        resolveKill()
+      }, 5_000)
+      killer.once('error', () => {
+        clearTimeout(timer)
+        resolveKill()
+      })
+      killer.once('close', () => {
+        clearTimeout(timer)
+        resolveKill()
+      })
+    })
+    return
+  }
+  try {
+    process.kill(-child.pid, 'SIGTERM')
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error
+    return
+  }
+  await new Promise(resolveDelay => setTimeout(resolveDelay, 1_000))
+  try {
+    process.kill(-child.pid, 'SIGKILL')
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error
+  }
+}
+
+function appendBounded(current: string, chunk: Buffer | string): string {
+  if (current.length >= MAX_COORDINATOR_OUTPUT_BYTES) return current
+  return current + chunk.toString().slice(0, MAX_COORDINATOR_OUTPUT_BYTES - current.length)
+}
+
+async function runProcessProofCoordinator(): Promise<ProcessProofResults> {
+  const child = spawn(NODE_FIXTURE_COMMAND, [
+    processFixture('verify-tree-control-coordinator.mjs'),
+    process.execPath,
+  ], {
+    detached: process.platform !== 'win32',
+    shell: false,
+    windowsHide: true,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  let stdout = ''
+  let stderr = ''
+  child.stdout?.on('data', chunk => {
+    stdout = appendBounded(stdout, chunk)
+  })
+  child.stderr?.on('data', chunk => {
+    stderr = appendBounded(stderr, chunk)
+  })
+
+  return new Promise((resolveProof, rejectProof) => {
+    let settled = false
+    let timedOut = false
+    const finish = (error: Error | null, value?: ProcessProofResults): void => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      if (error) rejectProof(error)
+      else if (value) resolveProof(value)
+      else rejectProof(new Error('Process proof coordinator completed without a result'))
+    }
+    const timer = setTimeout(() => {
+      timedOut = true
+      void terminateFixtureTree(child).then(
+        () => finish(new Error(`Process proof coordinator timed out after ${COORDINATOR_TIMEOUT_MS}ms${stderr ? `: ${stderr}` : ''}`)),
+        error => finish(new Error(`Process proof coordinator timed out and cleanup failed: ${error.message}`)),
+      )
+    }, COORDINATOR_TIMEOUT_MS)
+
+    child.once('error', error => {
+      void terminateFixtureTree(child).finally(() => {
+        finish(new Error(`Process proof coordinator failed to spawn: ${error.message}`))
+      })
+    })
+    child.once('close', code => {
+      if (timedOut) return
+      if (code !== 0) {
+        finish(new Error(stderr || `Process proof coordinator exited ${code}`))
+        return
+      }
+      try {
+        finish(null, JSON.parse(stdout.trim()) as ProcessProofResults)
+      } catch (error) {
+        finish(new Error(`Process proof coordinator returned invalid JSON: ${(error as Error).message}; stdout=${stdout}; stderr=${stderr}`))
+      }
+    })
+  })
+}
+
+async function importActualWrapper() {
+  return import('./wrapper')
+}
+
+async function expectParentEnvKeysFiltered(keys: string[]): Promise<void> {
   const { runStep } = await importActualWrapper()
-  const previous = process.env[key]
-  const sentinel = `sentinel-${key}-${Date.now()}-${Math.random()}`
-  process.env[key] = sentinel
+  const previous = new Map(keys.map(key => [key, process.env[key]]))
+  const sentinels = Object.fromEntries(keys.map(key => [
+    key,
+    `sentinel-${key}-${Date.now()}-${Math.random()}`,
+  ]))
+  for (const [key, sentinel] of Object.entries(sentinels)) {
+    process.env[key] = sentinel
+  }
 
   try {
     const result = await runStep({
-      stepId: `filter-${key.toLowerCase()}`,
+      stepId: 'filter-sensitive-environment',
       runId: 'run-filter',
-      command: process.execPath,
-      args: ['-e', `process.stdout.write(process.env[${JSON.stringify(key)}] === ${JSON.stringify(sentinel)} ? "LEAKED" : "FILTERED")`],
+      command: NODE_FIXTURE_COMMAND,
+      args: ['-e', `const sentinels=${JSON.stringify(sentinels)}; process.stdout.write(process.env.MY_VAR === "test-value" && Object.entries(sentinels).every(([key,value]) => process.env[key] !== value) ? "FILTERED" : "LEAKED")`],
+      env: { MY_VAR: 'test-value' },
     })
     expect(result.stdout).toBe('FILTERED')
   } finally {
-    if (previous === undefined) {
-      delete process.env[key]
-    } else {
-      process.env[key] = previous
+    for (const [key, value] of previous) {
+      if (value === undefined) {
+        delete process.env[key]
+      } else {
+        process.env[key] = value
+      }
     }
   }
 }
@@ -36,7 +214,7 @@ describe.serial('runStep', () => {
     const result = await runStep({
       stepId: 'test-step',
       runId: 'run-1',
-      command: process.execPath,
+      command: NODE_FIXTURE_COMMAND,
       args: ['-e', 'process.stdout.write("hello\\n")'],
     })
     expect(result.status).toBe('SUCCESS')
@@ -49,40 +227,19 @@ describe.serial('runStep', () => {
     expect(result.endTime).toBeInstanceOf(Date)
   })
 
-  test('failed command', async () => {
+  test('preserves nonzero exit, stderr, and bounded output evidence', async () => {
     const { runStep } = await importActualWrapper()
     const result = await runStep({
       stepId: 'fail-step',
       runId: 'run-2',
-      command: process.execPath,
-      args: ['-e', 'process.exit(1)'],
+      command: NODE_FIXTURE_COMMAND,
+      args: [processFixture('exit-with-code.mjs'), '17', '8192'],
+      maxOutputBytes: 128,
     })
     expect(result.status).toBe('FAILED')
-    expect(result.exitCode).toBe(1)
-  })
-
-  test('command with stderr', async () => {
-    const { runStep } = await importActualWrapper()
-    const result = await runStep({
-      stepId: 'stderr-step',
-      runId: 'run-3',
-      command: process.execPath,
-      args: ['-e', 'process.stderr.write("error\\n")'],
-    })
-    expect(result.stderr.trim()).toBe('error')
-  })
-
-  test('timeout kills process', async () => {
-    const { runStep } = await importActualWrapper()
-    await expect(
-      runStep({
-        stepId: 'timeout-step',
-        runId: 'run-4',
-        command: process.execPath,
-        args: ['-e', 'setTimeout(() => {}, 60000)'],
-        timeout: 100,
-      })
-    ).rejects.toThrow(ProcessTimeoutError)
+    expect(result.exitCode).toBe(17)
+    expect(Buffer.byteLength(result.stdout)).toBe(128)
+    expect(Buffer.byteLength(result.stderr)).toBe(128)
   })
 
   test('nonexistent command returns ERROR', async () => {
@@ -104,13 +261,13 @@ describe.serial('runStep', () => {
     const result = await runStep({
       stepId: 'script-bytes',
       runId: 'run-script-bytes',
-      command: process.execPath,
+      command: NODE_FIXTURE_COMMAND,
       args: ['-e', 'process.stdout.write("legacy")'],
       executablePayload: {
-        command: process.execPath,
-        args: ['--', 'quoted value', 'é'],
+        command: NODE_FIXTURE_COMMAND,
+        args: ['quoted value', 'é'],
         cwd: process.cwd(),
-        script: { interpreter: process.execPath, content, sha256 },
+        script: { interpreter: NODE_FIXTURE_COMMAND, content, sha256 },
       },
     })
 
@@ -130,13 +287,13 @@ describe.serial('runStep', () => {
       await expect(wrapper.runStep({
         stepId: 'script-tamper',
         runId: 'run-script-tamper',
-        command: process.execPath,
+        command: NODE_FIXTURE_COMMAND,
         args: [],
         executablePayload: {
-          command: process.execPath,
+          command: NODE_FIXTURE_COMMAND,
           args: [],
           cwd: process.cwd(),
-          script: { interpreter: process.execPath, content, sha256 },
+          script: { interpreter: NODE_FIXTURE_COMMAND, content, sha256 },
         },
       })).rejects.toThrow('hash')
     } finally {
@@ -152,10 +309,10 @@ describe.serial('runStep', () => {
     await expect(runStep({
       stepId: 'interpreter-mismatch',
       runId: 'run-interpreter-mismatch',
-      command: process.execPath,
+      command: 'node',
       args: [],
       executablePayload: {
-        command: process.execPath,
+        command: NODE_FIXTURE_COMMAND,
         args: [],
         cwd: process.cwd(),
         script: {
@@ -167,56 +324,130 @@ describe.serial('runStep', () => {
     })).rejects.toThrow('interpreter')
   })
 
-  test('custom env vars', async () => {
-    const { runStep } = await importActualWrapper()
-    const result = await runStep({
-      stepId: 'env-step',
-      runId: 'run-6',
-      command: process.execPath,
-      args: ['-e', 'process.stdout.write(process.env.MY_VAR ?? "")'],
-      env: { MY_VAR: 'test-value' },
+  test('grants explicit env while filtering sensitive and prefix-matching variables', async () => {
+    await expectParentEnvKeysFiltered([
+      'AWS_SECRET_ACCESS_KEY',
+      'THREADOS_SESSION_SECRET',
+      'THREADOS_ACTIVATION_SECRET',
+      'THREADOS_BASE_PATH',
+      'THREADOS_UNRELATED_SENTINEL',
+      'THREDOS_UNRELATED_SENTINEL',
+    ])
+  })
+})
+
+describe.serial('startProcess', () => {
+  test('uses a verified absolute System32 taskkill path on Windows', async () => {
+    const wrapper = await importActualWrapper()
+    expect(typeof wrapper.resolveWindowsTaskkillPath).toBe('function')
+    expect(wrapper.resolveWindowsTaskkillPath({ SystemRoot: 'C:\\Windows' }))
+      .toBe('C:\\Windows\\System32\\taskkill.exe')
+    expect(() => wrapper.resolveWindowsTaskkillPath({ SystemRoot: 'relative-root' }))
+      .toThrow('absolute')
+  })
+
+  test('proves handle lifecycle, callbacks, cancellation, timeout, and truthful failures in isolated workers', async () => {
+    const result = await runProcessProofCoordinator()
+    expect(result.cancel).toMatchObject({
+      control: { success: true, signal: 'SIGTERM', escalated: true },
+      status: 'CANCELLED',
+      alive: [false, false, false],
     })
-    expect(result.stdout.trim()).toBe('test-value')
-  })
-
-  test('inherited env vars filtered through allowlist', async () => {
-    const { runStep } = await importActualWrapper()
-    const originalSensitive = process.env.AWS_SECRET_ACCESS_KEY
-    process.env.AWS_SECRET_ACCESS_KEY = 'super-secret'
-
-    try {
-      const result = await runStep({
-        stepId: 'env-filter-step',
-        runId: 'run-7',
-        command: process.execPath,
-        args: ['-e', 'process.stdout.write(process.env.AWS_SECRET_ACCESS_KEY ?? "FILTERED")'],
+    expect(result.timeout).toEqual({
+      timedOut: true,
+      alive: [false, false, false],
+    })
+    expect(result.singleCancel).toMatchObject({
+      control: { success: true, signal: 'SIGTERM' },
+      status: 'CANCELLED',
+      alive: false,
+    })
+    expect(result.singleTimeout).toEqual({
+      timedOut: true,
+      alive: false,
+    })
+    expect(result.failedCancel).toEqual({
+      control: {
+        success: false,
+        code: 'PROCESS_CONTROL_FAILED',
+        message: 'simulated tree termination failure',
+        signal: 'SIGTERM',
+      },
+      aliveAfterFailure: true,
+    })
+    if (process.platform === 'win32') {
+      expect(result.failedTaskkill).toEqual({
+        control: {
+          success: false,
+          code: 'PROCESS_CONTROL_FAILED',
+          message: 'simulated nonzero taskkill',
+          signal: 'SIGKILL',
+        },
       })
-      expect(result.stdout.trim()).toBe('FILTERED')
-    } finally {
-      if (originalSensitive !== undefined) {
-        process.env.AWS_SECRET_ACCESS_KEY = originalSensitive
-      } else {
-        delete process.env.AWS_SECRET_ACCESS_KEY
-      }
+      expect(result.timedOutTaskkill).toMatchObject({
+        control: {
+          success: false,
+          code: 'PROCESS_CONTROL_FAILED',
+          message: 'taskkill timed out after 50ms',
+          signal: 'SIGKILL',
+        },
+        hookAborted: true,
+        aliveAfterFailure: true,
+      })
+      expect(result.timedOutTaskkill.elapsedMs).toBeLessThan(1_000)
     }
-  })
-
-  test('does not inherit THREADOS_SESSION_SECRET', async () => {
-    await expectParentEnvKeyFiltered('THREADOS_SESSION_SECRET')
-  })
-
-  test('does not inherit THREADOS_ACTIVATION_SECRET', async () => {
-    await expectParentEnvKeyFiltered('THREADOS_ACTIVATION_SECRET')
-  })
-
-  test('does not inherit THREADOS_BASE_PATH without an explicit grant', async () => {
-    await expectParentEnvKeyFiltered('THREADOS_BASE_PATH')
-  })
-
-  test('does not prefix-inherit unrelated THREADOS or THREDOS variables', async () => {
-    await expectParentEnvKeyFiltered('THREADOS_UNRELATED_SENTINEL')
-    await expectParentEnvKeyFiltered('THREDOS_UNRELATED_SENTINEL')
-  })
+    expect(result.deathBeforeEscalationSignal).toEqual({
+      control: {
+        success: true,
+        signal: 'SIGTERM',
+        escalated: true,
+      },
+      status: 'CANCELLED',
+      signalCalls: 2,
+      alive: false,
+    })
+    expect(result.failedTimeout).toEqual({
+      error: {
+        code: 'PROCESS_CONTROL_FAILED',
+        message: 'simulated timeout termination failure',
+      },
+      aliveAfterFailure: true,
+    })
+    expect(result.spawnError).toEqual({
+      code: 'PROCESS_SPAWN_FAILED',
+    })
+    expect(result.callbackBounded).toMatchObject({
+      status: 'SUCCESS',
+      outputBytes: 96,
+    })
+    expect(result.callbackBounded.outputCallbacks).toBeGreaterThan(0)
+    expect(result.callbackBounded.outputCallbacks).toBeLessThan(40)
+    expect(result.callbackBounded.heartbeatCallbacks).toBeGreaterThan(0)
+    expect(result.callbackBounded.heartbeatCallbacks).toBeLessThan(20)
+    expect(result.callbackSerialized).toMatchObject({
+      status: 'SUCCESS',
+      maxActiveCallbacks: 1,
+      activeCallbacks: 0,
+    })
+    expect(result.callbackSerialized.completedCallbacks).toBeGreaterThan(0)
+    expect(result.callbackFailed).toEqual({
+      code: 'PROCESS_CALLBACK_FAILED',
+      message: 'persist output failed',
+    })
+    expect(result.nonzeroExit).toEqual({
+      status: 'FAILED',
+      exitCode: 17,
+    })
+    expect(result.naturalExitBeforeCancel).toEqual({
+      control: {
+        success: true,
+        signal: 'SIGTERM',
+        escalated: false,
+      },
+      status: 'FAILED',
+      exitCode: 17,
+    })
+  }, 65_000)
 })
 
 describe('buildExecutionEnv', () => {

@@ -1,4 +1,3 @@
-import { spawn, type ChildProcess } from 'child_process'
 import { randomUUID } from 'crypto'
 import { readFile, unlink, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
@@ -6,6 +5,29 @@ import { join } from 'path'
 import { ProcessTimeoutError } from '../errors'
 import { assertValidExecutablePayload, sha256Bytes } from '../policy/executable'
 import type { ExecutablePayload } from '../policy/schema'
+import {
+  createRunningProcessHandle,
+  ProcessSpawnError,
+  type ProcessHeartbeatEvent,
+  type ProcessOutputEvent,
+  type RawProcessResult,
+  type RunningProcessHandle,
+} from './process-handle'
+
+export {
+  ProcessCallbackError,
+  ProcessControlError,
+  ProcessSpawnError,
+  resolveWindowsTaskkillPath,
+  setProcessTerminationHookForTests,
+  setWindowsTaskkillCommandHookForTests,
+  type ProcessControlResult,
+  type ProcessHeartbeatEvent,
+  type ProcessOutputEvent,
+  type ProcessSignal,
+  type RawProcessResult,
+  type RunningProcessHandle,
+} from './process-handle'
 
 export interface RunnerConfig {
   stepId: string
@@ -16,16 +38,23 @@ export interface RunnerConfig {
   timeout?: number // in milliseconds, default 30 minutes
   env?: Record<string, string>
   executablePayload?: ExecutablePayload
+  processId?: string
+  cancellationGraceMs?: number
+  forceKillWaitMs?: number
+  maxOutputBytes?: number
+  callbackThrottleMs?: number
+  heartbeatIntervalMs?: number
+  onOutput?: (event: ProcessOutputEvent) => Promise<void> | void
+  onHeartbeat?: (event: ProcessHeartbeatEvent) => Promise<void> | void
 }
 
 export type RunStatus = 'SUCCESS' | 'FAILED' | 'TIMEOUT' | 'ERROR'
-
 export interface RunResult {
   stepId: string
   runId: string
   exitCode: number | null
   status: RunStatus
-  duration: number // in milliseconds
+  duration: number
   stdout: string
   stderr: string
   startTime: Date
@@ -33,6 +62,19 @@ export interface RunResult {
 }
 
 const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000 // 30 minutes
+const DEFAULT_CANCELLATION_GRACE_MS = 5_000
+const DEFAULT_FORCE_KILL_WAIT_MS = 5_000
+const DEFAULT_MAX_OUTPUT_BYTES = 1024 * 1024
+const DEFAULT_CALLBACK_THROTTLE_MS = 250
+const DEFAULT_HEARTBEAT_INTERVAL_MS = 1_000
+
+function toCompatibilityResult(result: RawProcessResult): RunResult {
+  const { signal: _signal, status, ...compatibilityResult } = result
+  return {
+    ...compatibilityResult,
+    status: status === 'CANCELLED' ? 'ERROR' : status,
+  }
+}
 
 type BeforeExecutableSpawnHook = (context: { scriptPath: string }) => Promise<void> | void
 let beforeExecutableSpawnHookForTests: BeforeExecutableSpawnHook | null = null
@@ -146,111 +188,48 @@ export function buildExecutionEnv(
   return result
 }
 
+export async function startProcess(config: RunnerConfig): Promise<RunningProcessHandle> {
+  const launch = await materializeLaunch(config)
+  try {
+    return await createRunningProcessHandle({
+      processId: config.processId ?? randomUUID(),
+      stepId: config.stepId,
+      runId: config.runId,
+      command: launch.command,
+      args: launch.args,
+      cwd: launch.cwd,
+      env: buildExecutionEnv(process.env, config.env ?? {}),
+      timeoutMs: config.timeout ?? DEFAULT_TIMEOUT_MS,
+      cancellationGraceMs: config.cancellationGraceMs ?? DEFAULT_CANCELLATION_GRACE_MS,
+      forceKillWaitMs: config.forceKillWaitMs ?? DEFAULT_FORCE_KILL_WAIT_MS,
+      maxOutputBytes: config.maxOutputBytes ?? DEFAULT_MAX_OUTPUT_BYTES,
+      callbackThrottleMs: config.callbackThrottleMs ?? DEFAULT_CALLBACK_THROTTLE_MS,
+      heartbeatIntervalMs: config.heartbeatIntervalMs ?? DEFAULT_HEARTBEAT_INTERVAL_MS,
+      onOutput: config.onOutput,
+      onHeartbeat: config.onHeartbeat,
+      cleanup: launch.cleanup,
+    })
+  } catch (error) {
+    await launch.cleanup()
+    throw error
+  }
+}
+
 /**
- * Execute a step command with stdout/stderr capture and timeout handling
- *
- * @param config - The runner configuration
- * @returns The run result with captured output
- * @throws ProcessTimeoutError if the process exceeds the timeout
+ * Compatibility wrapper for callers that still await one terminal result.
+ * Timeout is reported only after the process tree has been observed dead.
  */
 export async function runStep(config: RunnerConfig): Promise<RunResult> {
-  const launch = await materializeLaunch(config)
-  const {
-    stepId,
-    runId,
-    timeout = DEFAULT_TIMEOUT_MS,
-    env = {},
-  } = config
-
-  const startTime = new Date()
-  let stdout = ''
-  let stderr = ''
-  let graceTimer: NodeJS.Timeout | undefined
-  let timedOut = false
-
-  return new Promise((resolve, reject) => {
-    const proc: ChildProcess = spawn(launch.command, launch.args, {
-      cwd: launch.cwd,
-      shell: false,
-      env: buildExecutionEnv(process.env, env),
-    })
-
-    // Set up timeout
-    const timeoutId = setTimeout(() => {
-      timedOut = true
-      proc.kill('SIGTERM')
-      // Give it a moment to terminate gracefully
-      graceTimer = setTimeout(() => {
-        if (!proc.killed) {
-          proc.kill('SIGKILL')
-        }
-      }, 5000)
-
-      reject(new ProcessTimeoutError(stepId, timeout))
-      void launch.cleanup()
-    }, timeout)
-
-    proc.stdout?.on('data', (data: Buffer) => {
-      stdout += data.toString()
-    })
-
-    proc.stderr?.on('data', (data: Buffer) => {
-      stderr += data.toString()
-    })
-
-    proc.on('close', (code) => {
-      clearTimeout(timeoutId)
-      if (graceTimer) {
-        clearTimeout(graceTimer)
-      }
-      if (timedOut) return
-      void launch.cleanup()
-      const endTime = new Date()
-      const duration = endTime.getTime() - startTime.getTime()
-
-      let status: RunStatus
-      if (code === 0) {
-        status = 'SUCCESS'
-      } else if (code === null) {
-        status = 'ERROR'
-      } else {
-        status = 'FAILED'
-      }
-
-      resolve({
-        stepId,
-        runId,
-        exitCode: code,
-        status,
-        duration,
-        stdout,
-        stderr,
-        startTime,
-        endTime,
-      })
-    })
-
-    proc.on('error', (error) => {
-      clearTimeout(timeoutId)
-      if (graceTimer) {
-        clearTimeout(graceTimer)
-      }
-      if (timedOut) return
-      void launch.cleanup()
-      const endTime = new Date()
-      const duration = endTime.getTime() - startTime.getTime()
-
-      resolve({
-        stepId,
-        runId,
-        exitCode: null,
-        status: 'ERROR',
-        duration,
-        stdout,
-        stderr: stderr + '\n' + error.message,
-        startTime,
-        endTime,
-      })
-    })
-  })
+  let handle: RunningProcessHandle
+  try {
+    handle = await startProcess(config)
+  } catch (error) {
+    if (error instanceof ProcessSpawnError) return toCompatibilityResult(error.result)
+    throw error
+  }
+  const result = await handle.result
+  if (result.status === 'TIMEOUT') {
+    throw new ProcessTimeoutError(config.stepId, config.timeout ?? DEFAULT_TIMEOUT_MS)
+  }
+  return toCompatibilityResult(result)
 }
