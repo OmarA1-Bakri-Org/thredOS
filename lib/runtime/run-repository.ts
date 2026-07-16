@@ -2,9 +2,9 @@ import { readdir } from 'fs/promises'
 import { withExclusiveFileLock, writeFileAtomic } from '../fs/atomic'
 import { assertSafePathSegment, resolveExistingPathWithinRoot } from '../security/safe-path'
 import { readTextFileNoFollow } from '../security/safe-io'
-import { ensureRunsRoot, runRecordPath } from './paths'
+import { lookupRunRecordPath, lookupRunsRoot, runRecordPath } from './paths'
 import { WorkflowRunSchema, type WorkflowRun, type WorkflowRunStatus } from './schema'
-import { rebuildRuntimeIndex } from './runtime-index'
+import { refreshRuntimeIndexBestEffort } from './runtime-index'
 
 export type RunMutation = (current: WorkflowRun) => WorkflowRun
 export interface RunQuery {
@@ -41,14 +41,15 @@ export class RunRepository {
       } catch (error) {
         if (!isMissing(error)) throw error
       }
-      await writeFileAtomic(path, `${JSON.stringify(run, null, 2)}\n`)
-    })
-    await rebuildRuntimeIndex(this.basePath)
+      await writeFileAtomic(path, `${JSON.stringify(run, null, 2)}\n`, { allowedRoot: this.basePath })
+    }, { allowedRoot: this.basePath })
+    await refreshRuntimeIndexBestEffort(this.basePath)
   }
 
   async get(runId: string): Promise<WorkflowRun | null> {
     assertSafePathSegment(runId, 'run id')
-    const path = await runRecordPath(this.basePath, runId)
+    const path = await lookupRunRecordPath(this.basePath, runId)
+    if (!path) return null
     try {
       const run = await readWorkflowRunFile(path)
       if (run.id !== runId) throw new Error('run record identity does not match its path')
@@ -79,15 +80,16 @@ export class RunRepository {
       }
       const candidate = mutate(structuredClone(current))
       const next = WorkflowRunSchema.parse({ ...candidate, id: current.id, revision: current.revision + 1 })
-      await writeFileAtomic(path, `${JSON.stringify(next, null, 2)}\n`)
+      await writeFileAtomic(path, `${JSON.stringify(next, null, 2)}\n`, { allowedRoot: this.basePath })
       return next
-    })
-    await rebuildRuntimeIndex(this.basePath)
+    }, { allowedRoot: this.basePath })
+    await refreshRuntimeIndexBestEffort(this.basePath)
     return updated
   }
 
   async list(query: RunQuery = {}): Promise<WorkflowRun[]> {
-    const root = await ensureRunsRoot(this.basePath)
+    const root = await lookupRunsRoot(this.basePath)
+    if (!root) return []
     const runs: WorkflowRun[] = []
     for (const entry of await readdir(root, { withFileTypes: true })) {
       if (!entry.isDirectory()) continue

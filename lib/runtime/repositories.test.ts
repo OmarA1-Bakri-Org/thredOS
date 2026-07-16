@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rename, rm, stat, symlink, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import type { ProcessRecord, RuntimeCommandReceipt, StepAttempt, WorkflowRun } from './schema'
@@ -8,7 +8,11 @@ import { AttemptRepository } from './attempt-repository'
 import { CommandRepository } from './command-repository'
 import { ProcessRepository } from './process-repository'
 import { rebuildRuntimeIndex } from './runtime-index'
-import { setAtomicBeforeRenameHookForTests } from '../fs/atomic'
+import {
+  setAtomicBeforeRenameHookForTests,
+  setAtomicBoundaryHookForTests,
+  withExclusiveFileLock,
+} from '../fs/atomic'
 
 const timestamp = '2026-07-16T00:00:00.000Z'
 
@@ -127,6 +131,7 @@ describe('atomic runtime repositories', () => {
 
   afterEach(async () => {
     setAtomicBeforeRenameHookForTests(null)
+    setAtomicBoundaryHookForTests(null)
     await rm(basePath, { recursive: true, force: true })
   })
 
@@ -141,6 +146,18 @@ describe('atomic runtime repositories', () => {
       'attempt-01',
       'attempt-02',
     ])
+  })
+
+  test('read APIs do not create runtime roots or phantom entity directories', async () => {
+    expect(await new RunRepository(basePath).get('missing-run')).toBeNull()
+    expect(await new RunRepository(basePath).list()).toEqual([])
+    expect(await new AttemptRepository(basePath).get('missing-attempt')).toBeNull()
+    expect(await new AttemptRepository(basePath).listForRun('missing-run')).toEqual([])
+    expect(await new ProcessRepository(basePath).get('missing-process')).toBeNull()
+    expect(await new ProcessRepository(basePath).list()).toEqual([])
+    expect(await new CommandRepository(basePath).get('missing-command')).toBeNull()
+    expect(await new CommandRepository(basePath).list()).toEqual([])
+    await expect(stat(join(basePath, '.threados'))).rejects.toMatchObject({ code: 'ENOENT' })
   })
 
   test('duplicate create never overwrites the canonical record', async () => {
@@ -277,5 +294,126 @@ describe('atomic runtime repositories', () => {
     }), 'utf-8')
     expect((await new AttemptRepository(basePath).get('attempt-01'))?.id).toBe('attempt-01')
     expect((await rebuildRuntimeIndex(basePath)).attempts['attempt-01']).toContain('attempt.json')
+  })
+
+  test('stale syntactically valid attempt and process index entries always rebuild once', async () => {
+    await new RunRepository(basePath).create(run())
+    const attempts = new AttemptRepository(basePath)
+    await attempts.create(attempt('attempt-01', 1))
+    await attempts.create(attempt('attempt-02', 2))
+    await new ProcessRepository(basePath).create(processRecord())
+    const indexPath = join(basePath, '.threados/state/runtime-index.json')
+    const baseIndex = {
+      schema_version: 1,
+      runs: {},
+      attempts: {},
+      processes: {},
+      commands: {},
+      idempotency: {},
+    }
+
+    await writeFile(indexPath, JSON.stringify({
+      ...baseIndex,
+      attempts: { 'attempt-01': '.threados/runs/run-01/attempts/attempt-02/attempt.json' },
+    }))
+    expect((await new AttemptRepository(basePath).get('attempt-01'))?.id).toBe('attempt-01')
+
+    await writeFile(indexPath, JSON.stringify({
+      ...baseIndex,
+      attempts: { 'attempt-01': '.threados/runs/run-01/run.json' },
+    }))
+    expect((await new AttemptRepository(basePath).get('attempt-01'))?.id).toBe('attempt-01')
+
+    await writeFile(indexPath, JSON.stringify({
+      ...baseIndex,
+      processes: { 'process-01': '.threados/runs/run-01/attempts/attempt-02/attempt.json' },
+    }))
+    expect((await new ProcessRepository(basePath).get('process-01'))?.id).toBe('process-01')
+  })
+
+  test('live locks fail closed while dead and expired owners are recovered', async () => {
+    const lockPath = join(basePath, 'record.json.lock')
+    await writeFile(lockPath, JSON.stringify({ pid: process.pid, created_at_ms: Date.now(), token: 'live' }))
+    await expect(withExclusiveFileLock(lockPath, async () => undefined, {
+      allowedRoot: basePath,
+      timeoutMs: 20,
+      staleAfterMs: 60_000,
+    })).rejects.toMatchObject({ code: 'RUNTIME_LOCK_TIMEOUT' })
+
+    await writeFile(lockPath, JSON.stringify({ pid: 2_147_483_647, created_at_ms: Date.now(), token: 'dead' }))
+    await expect(withExclusiveFileLock(lockPath, async () => 'dead-recovered', {
+      allowedRoot: basePath,
+      timeoutMs: 100,
+      staleAfterMs: 60_000,
+    })).resolves.toBe('dead-recovered')
+
+    await writeFile(lockPath, JSON.stringify({ pid: process.pid, created_at_ms: 0, token: 'expired' }))
+    await expect(withExclusiveFileLock(lockPath, async () => 'stale-recovered', {
+      allowedRoot: basePath,
+      timeoutMs: 100,
+      staleAfterMs: 1,
+    })).resolves.toBe('stale-recovered')
+  })
+
+  test('authoritative commit succeeds even when the derived-index lock is unavailable', async () => {
+    await mkdir(join(basePath, '.threados/state'), { recursive: true })
+    await writeFile(join(basePath, '.threados/state/runtime-index.json.lock'), JSON.stringify({
+      pid: process.pid,
+      created_at_ms: Date.now(),
+      token: 'live-index-owner',
+    }))
+    await expect(new RunRepository(basePath).create(run())).resolves.toBeUndefined()
+    expect(JSON.parse(await readFile(join(basePath, '.threados/runs/run-01/run.json'), 'utf-8')).id).toBe('run-01')
+  })
+
+  test('root-aware atomic boundaries reject verified-parent swaps before lock, temp, and rename', async () => {
+    const outside = await mkdtemp(join(tmpdir(), 'threados-runtime-toctou-outside-'))
+    const swap = async (directory: string): Promise<void> => {
+      await rename(directory, `${directory}.moved`)
+      await symlink(outside, directory, 'junction')
+    }
+    try {
+      const repository = new RunRepository(basePath)
+      let swapped = false
+      setAtomicBoundaryHookForTests(async context => {
+        if (!swapped && context.stage === 'before-lock-open' && context.targetPath.endsWith('run.json.lock')) {
+          swapped = true
+          await swap(join(basePath, '.threados/runs/run-01'))
+        }
+      })
+      await expect(repository.create(run())).rejects.toThrow()
+      expect(await readdir(outside)).toEqual([])
+
+      setAtomicBoundaryHookForTests(null)
+      const secondBase = await mkdtemp(join(tmpdir(), 'threados-runtime-toctou-temp-'))
+      await new RunRepository(secondBase).create(run())
+      let tempHookCalled = false
+      setAtomicBoundaryHookForTests(async context => {
+        if (!tempHookCalled && context.stage === 'before-temp-open' && context.targetPath.endsWith('attempt.json')) {
+          tempHookCalled = true
+          await swap(join(secondBase, '.threados/runs/run-01/attempts/attempt-01'))
+        }
+      })
+      await expect(new AttemptRepository(secondBase).create(attempt('attempt-01', 1))).rejects.toThrow()
+      expect(tempHookCalled).toBe(true)
+
+      setAtomicBoundaryHookForTests(null)
+      const thirdBase = await mkdtemp(join(tmpdir(), 'threados-runtime-toctou-rename-'))
+      let renameHookCalled = false
+      setAtomicBoundaryHookForTests(async context => {
+        if (!renameHookCalled && context.stage === 'before-final-rename' && context.targetPath.endsWith('command-01.json')) {
+          renameHookCalled = true
+          await swap(join(thirdBase, '.threados/state/runtime-commands'))
+        }
+      })
+      await expect(new CommandRepository(thirdBase).createOrReplay(receipt())).rejects.toThrow()
+      expect(renameHookCalled).toBe(true)
+      expect(await readdir(outside)).toEqual([])
+      await rm(secondBase, { recursive: true, force: true })
+      await rm(thirdBase, { recursive: true, force: true })
+    } finally {
+      setAtomicBoundaryHookForTests(null)
+      await rm(outside, { recursive: true, force: true })
+    }
   })
 })

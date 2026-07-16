@@ -7,9 +7,28 @@ import {
 } from '../security/safe-path'
 
 async function ensureDirectory(root: string, ...segments: string[]): Promise<string> {
-  const candidate = await resolvePathWithinRoot(root, ...segments)
-  await mkdir(candidate, { recursive: true })
-  return await resolveExistingPathWithinRoot(root, ...segments)
+  let current = root
+  for (const segment of segments) {
+    const candidate = await resolvePathWithinRoot(current, segment)
+    await mkdir(candidate).catch(error => {
+      if (!(error instanceof Error && 'code' in error && error.code === 'EEXIST')) throw error
+    })
+    current = await resolveExistingPathWithinRoot(current, segment)
+  }
+  return current
+}
+
+function isMissing(error: unknown): boolean {
+  return error instanceof Error && 'code' in error && error.code === 'ENOENT'
+}
+
+async function existingOrNull(root: string, ...segments: string[]): Promise<string | null> {
+  try {
+    return await resolveExistingPathWithinRoot(root, ...segments)
+  } catch (error) {
+    if (isMissing(error)) return null
+    throw error
+  }
 }
 
 export async function ensureThreadosRoot(basePath: string): Promise<string> {
@@ -35,6 +54,15 @@ export async function runRecordPath(basePath: string, runId: string): Promise<st
   return await resolvePathWithinRoot(await ensureRunDirectory(basePath, runId), 'run.json')
 }
 
+export async function lookupRunsRoot(basePath: string): Promise<string | null> {
+  return await existingOrNull(basePath, '.threados', 'runs')
+}
+
+export async function lookupRunRecordPath(basePath: string, runId: string): Promise<string | null> {
+  assertSafePathSegment(runId, 'run id')
+  return await existingOrNull(basePath, '.threados', 'runs', runId, 'run.json')
+}
+
 export async function ensureAttemptsDirectory(basePath: string, runId: string): Promise<string> {
   return await ensureDirectory(await ensureRunDirectory(basePath, runId), 'attempts')
 }
@@ -52,8 +80,22 @@ export async function attemptRecordPath(basePath: string, runId: string, attempt
   return await resolvePathWithinRoot(await ensureAttemptDirectory(basePath, runId, attemptId), 'attempt.json')
 }
 
+export async function lookupAttemptsDirectory(basePath: string, runId: string): Promise<string | null> {
+  assertSafePathSegment(runId, 'run id')
+  return await existingOrNull(basePath, '.threados', 'runs', runId, 'attempts')
+}
+
 export async function processRecordPath(basePath: string, runId: string, attemptId: string): Promise<string> {
   return await resolvePathWithinRoot(await ensureAttemptDirectory(basePath, runId, attemptId), 'process.json')
+}
+
+export async function lookupCommandsRoot(basePath: string): Promise<string | null> {
+  return await existingOrNull(basePath, '.threados', 'state', 'runtime-commands')
+}
+
+export async function lookupCommandRecordPath(basePath: string, commandId: string): Promise<string | null> {
+  assertSafePathSegment(commandId, 'command id')
+  return await existingOrNull(basePath, '.threados', 'state', 'runtime-commands', `${commandId}.json`)
 }
 
 export async function ensureCommandsRoot(basePath: string): Promise<string> {
@@ -73,4 +115,8 @@ export async function commandIdempotencyLockPath(basePath: string, digest: strin
 
 export async function runtimeIndexPath(basePath: string): Promise<string> {
   return await resolvePathWithinRoot(await ensureStateRoot(basePath), 'runtime-index.json')
+}
+
+export async function lookupRuntimeIndexPath(basePath: string): Promise<string | null> {
+  return await existingOrNull(basePath, '.threados', 'state', 'runtime-index.json')
 }

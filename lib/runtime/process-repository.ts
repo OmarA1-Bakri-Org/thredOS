@@ -5,7 +5,13 @@ import { AttemptRepository } from './attempt-repository'
 import { processRecordPath } from './paths'
 import { RuntimeRepositoryError } from './run-repository'
 import { ProcessRecordSchema, type ProcessRecord } from './schema'
-import { readRuntimeIndex, rebuildRuntimeIndex, resolveRuntimeIndexReference } from './runtime-index'
+import {
+  readRuntimeIndex,
+  rebuildRuntimeIndex,
+  refreshRuntimeIndexBestEffort,
+  resolveRuntimeIndexReference,
+  scanAuthoritativeRuntimeIndex,
+} from './runtime-index'
 
 export type ProcessMutation = (current: ProcessRecord) => ProcessRecord
 
@@ -41,19 +47,38 @@ export class ProcessRepository {
       } catch (error) {
         if (!isMissing(error)) throw error
       }
-      await writeFileAtomic(path, `${JSON.stringify(processRecord, null, 2)}\n`)
-    })
-    await rebuildRuntimeIndex(this.basePath)
+      await writeFileAtomic(path, `${JSON.stringify(processRecord, null, 2)}\n`, { allowedRoot: this.basePath })
+    }, { allowedRoot: this.basePath })
+    await refreshRuntimeIndexBestEffort(this.basePath)
   }
 
   async get(processId: string): Promise<ProcessRecord | null> {
     assertSafePathSegment(processId, 'process id')
-    let reference = (await readRuntimeIndex(this.basePath)).processes[processId]
-    if (!reference) reference = (await rebuildRuntimeIndex(this.basePath)).processes[processId]
-    if (!reference) return null
-    const record = await readProcess(await resolveRuntimeIndexReference(this.basePath, reference))
-    if (record.id !== processId) throw new Error('process record identity does not match its index key')
-    return record
+    const readReference = async (reference: string | undefined): Promise<ProcessRecord | null> => {
+      if (!reference) return null
+      const record = await readProcess(await resolveRuntimeIndexReference(this.basePath, reference))
+      if (record.id !== processId) throw new Error('process record identity does not match its index key')
+      return record
+    }
+    const first = (await readRuntimeIndex(this.basePath)).processes[processId]
+    try {
+      const processRecord = await readReference(first)
+      if (processRecord) return processRecord
+    } catch {
+      // The derived reference is stale or invalid; authoritative scan wins below.
+    }
+    const authoritative = await scanAuthoritativeRuntimeIndex(this.basePath)
+    const retry = authoritative.processes[processId]
+    if (first || retry) await rebuildRuntimeIndex(this.basePath, 25).catch(() => undefined)
+    return await readReference(retry)
+  }
+
+  async list(): Promise<ProcessRecord[]> {
+    const index = await scanAuthoritativeRuntimeIndex(this.basePath)
+    const records = await Promise.all(Object.values(index.processes).map(async reference =>
+      await readProcess(await resolveRuntimeIndexReference(this.basePath, reference)),
+    ))
+    return records.sort((left, right) => left.id.localeCompare(right.id))
   }
 
   async update(processId: string, expectedRevision: number, mutate: ProcessMutation): Promise<ProcessRecord> {
@@ -72,10 +97,10 @@ export class ProcessRepository {
         attempt_id: current.attempt_id,
         revision: current.revision + 1,
       })
-      await writeFileAtomic(path, `${JSON.stringify(next, null, 2)}\n`)
+      await writeFileAtomic(path, `${JSON.stringify(next, null, 2)}\n`, { allowedRoot: this.basePath })
       return next
-    })
-    await rebuildRuntimeIndex(this.basePath)
+    }, { allowedRoot: this.basePath })
+    await refreshRuntimeIndexBestEffort(this.basePath)
     return updated
   }
 }

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { mkdtemp, readFile, rm, writeFile } from 'fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rename, rm, symlink, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import type { MergeEvent, RunEvent, RunScope, ThreadSurface } from './types'
@@ -9,6 +9,7 @@ import {
   updateThreadSurfaceState,
   writeThreadSurfaceState,
 } from './repository'
+import { setAtomicBoundaryHookForTests } from '../fs/atomic'
 
 let basePath: string
 
@@ -76,7 +77,27 @@ describe('thread surface repository', () => {
   })
 
   afterEach(async () => {
+    setAtomicBoundaryHookForTests(null)
     await rm(basePath, { recursive: true, force: true })
+  })
+
+  test('thread-surface write fails closed when verified state parent is swapped before lock', async () => {
+    const outside = await mkdtemp(join(tmpdir(), 'threados-thread-state-outside-'))
+    await mkdir(join(basePath, '.threados/state'), { recursive: true })
+    let swapped = false
+    setAtomicBoundaryHookForTests(async context => {
+      if (!swapped && context.stage === 'before-lock-open' && context.targetPath.endsWith('thread-surfaces.json.lock')) {
+        swapped = true
+        const stateRoot = join(basePath, '.threados/state')
+        await rename(stateRoot, `${stateRoot}.moved`)
+        await symlink(outside, stateRoot, 'junction')
+      }
+    })
+    await expect(writeThreadSurfaceState(basePath, {
+      version: 1, threadSurfaces: [], runs: [], mergeEvents: [], runEvents: [],
+    })).rejects.toThrow()
+    expect(await readdir(outside)).toEqual([])
+    await rm(outside, { recursive: true, force: true })
   })
 
   test('reading empty state returns empty collections', async () => {

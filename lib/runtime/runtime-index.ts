@@ -10,7 +10,12 @@ import {
 } from '../security/safe-path'
 import { readTextFileNoFollow } from '../security/safe-io'
 import { ProcessRecordSchema, RuntimeCommandReceiptSchema, StepAttemptSchema, WorkflowRunSchema } from './schema'
-import { ensureCommandsRoot, ensureRunsRoot, runtimeIndexPath } from './paths'
+import {
+  lookupCommandsRoot,
+  lookupRunsRoot,
+  lookupRuntimeIndexPath,
+  runtimeIndexPath,
+} from './paths'
 
 const PortableReferenceSchema = z.string().refine(value => {
   try {
@@ -47,8 +52,8 @@ async function readJson(path: string): Promise<unknown> {
   return JSON.parse(await readTextFileNoFollow(path))
 }
 
-async function scanAuthoritativeRecords(basePath: string): Promise<RuntimeIndex> {
-  const index: RuntimeIndex = {
+function emptyRuntimeIndex(): RuntimeIndex {
+  return {
     schema_version: 1,
     runs: {},
     attempts: {},
@@ -56,8 +61,12 @@ async function scanAuthoritativeRecords(basePath: string): Promise<RuntimeIndex>
     commands: {},
     idempotency: {},
   }
-  const runsRoot = await ensureRunsRoot(basePath)
-  for (const runEntry of await readdir(runsRoot, { withFileTypes: true })) {
+}
+
+export async function scanAuthoritativeRuntimeIndex(basePath: string): Promise<RuntimeIndex> {
+  const index = emptyRuntimeIndex()
+  const runsRoot = await lookupRunsRoot(basePath)
+  if (runsRoot) for (const runEntry of await readdir(runsRoot, { withFileTypes: true })) {
     if (!runEntry.isDirectory()) continue
     assertSafePathSegment(runEntry.name, 'run id')
     const runDir = await resolveExistingPathWithinRoot(runsRoot, runEntry.name)
@@ -91,8 +100,8 @@ async function scanAuthoritativeRecords(basePath: string): Promise<RuntimeIndex>
     }
   }
 
-  const commandsRoot = await ensureCommandsRoot(basePath)
-  for (const entry of await readdir(commandsRoot, { withFileTypes: true })) {
+  const commandsRoot = await lookupCommandsRoot(basePath)
+  if (commandsRoot) for (const entry of await readdir(commandsRoot, { withFileTypes: true })) {
     if (!entry.isFile() || !entry.name.endsWith('.json')) continue
     const commandPath = await resolveExistingPathWithinRoot(commandsRoot, entry.name)
     const parsed = RuntimeCommandReceiptSchema.safeParse(await readJson(commandPath).catch(() => null))
@@ -107,22 +116,31 @@ async function scanAuthoritativeRecords(basePath: string): Promise<RuntimeIndex>
   return index
 }
 
-export async function rebuildRuntimeIndex(basePath: string): Promise<RuntimeIndex> {
+export async function rebuildRuntimeIndex(basePath: string, lockTimeoutMs = 5_000): Promise<RuntimeIndex> {
   const indexPath = await runtimeIndexPath(basePath)
   return await withExclusiveFileLock(`${indexPath}.lock`, async () => {
-    const rebuilt = await scanAuthoritativeRecords(basePath)
-    await writeFileAtomic(indexPath, `${JSON.stringify(rebuilt, null, 2)}\n`)
+    const rebuilt = await scanAuthoritativeRuntimeIndex(basePath)
+    await writeFileAtomic(indexPath, `${JSON.stringify(rebuilt, null, 2)}\n`, { allowedRoot: basePath })
     return rebuilt
-  })
+  }, { allowedRoot: basePath, timeoutMs: lockTimeoutMs })
 }
 
 export async function readRuntimeIndex(basePath: string): Promise<RuntimeIndex> {
-  const indexPath = await runtimeIndexPath(basePath)
+  const indexPath = await lookupRuntimeIndexPath(basePath)
+  if (!indexPath) return await scanAuthoritativeRuntimeIndex(basePath)
   try {
     return RuntimeIndexSchema.parse(JSON.parse(await readTextFileNoFollow(indexPath)))
   } catch {
-    return await rebuildRuntimeIndex(basePath)
+    try {
+      return await rebuildRuntimeIndex(basePath)
+    } catch {
+      return await scanAuthoritativeRuntimeIndex(basePath)
+    }
   }
+}
+
+export async function refreshRuntimeIndexBestEffort(basePath: string): Promise<void> {
+  await rebuildRuntimeIndex(basePath, 25).catch(() => undefined)
 }
 
 export async function resolveRuntimeIndexReference(basePath: string, reference: string): Promise<string> {

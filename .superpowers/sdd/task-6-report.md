@@ -82,6 +82,36 @@ Result: 1 passed, 0 failed; fresh repository instances reconstructed one run and
 
 `git diff --check` passed. Task-scoped scans found no production `git worktree` invocation, no dependency change, no generated runtime state, and no canonical-workspace write/execution cutover.
 
+## Independent review corrections
+
+An independent review rejected the first implementation on four durability boundaries. The correction pass now:
+
+- revalidates the complete parent path at lock creation, temp-file creation, and final rename, including deterministic directory-swap tests for runtime and thread-surface records;
+- treats stale, malformed, identity-mismatched, or unsafe attempt/process index entries as derived-data failures, scans authoritative records, and rebuilds the index once on a best-effort basis;
+- keeps every read-only repository lookup side-effect free, so absent runtime state does not create `.threados`, entity roots, or phantom directories; and
+- records lock ownership metadata, fails closed for live owners, recovers dead or expired owners, and prevents a derived-index lock failure from invalidating an already committed authoritative record.
+
+The correction pass was test-driven. The expanded suite first failed at module load because the boundary hook did not exist:
+
+```text
+bun test lib/runtime/repositories.test.ts lib/thread-surfaces/repository.test.ts
+```
+
+RED result: exit 1; both files reported the missing `setAtomicBoundaryHookForTests` export.
+
+Post-correction focused validation:
+
+```text
+bun test lib/runtime/repositories.test.ts \
+  lib/runtime/legacy-projection.test.ts \
+  lib/thread-surfaces/repository.test.ts \
+  lib/exports/bundler.test.ts
+```
+
+Result: 44 passed, 0 failed, 144 assertions. `bun run typecheck`, `bun run lint`, and the exit-gate fixture proof all exited 0.
+
+Three post-correction exact full-suite attempts completed with no Task 6 failure but encountered unrelated process-test instability under concurrent workspace load: 1642/2, 1643/1, and 1643/1. The final failures were in `lib/runner/wrapper.test.ts` (`successful command`, then `custom env vars`); that complete file passed immediately in isolation with 19 passed and 0 failed. `lib/seqctl/commands/init.test.ts`, which accounted for the first attempt's two failures, likewise passed in isolation with 3 passed and 0 failed. The earlier pre-review full-suite run remains 1638 passed and 0 failed; the corrected exact full suite has not yet produced a zero-failure run.
+
 ## Path drift and compatibility
 
 - The plan allowed modifications to `lib/runner/artifacts.ts`; none were needed because legacy artifact writing remains untouched and export discovery can discriminate the canonical `run.json` schema.
@@ -92,6 +122,6 @@ Result: 1 passed, 0 failed; fresh repository instances reconstructed one run and
 
 Rollback is a clean revert of this PR-02 commit. Legacy readers/writers remain available and no migration was performed.
 
-- Lock acquisition has a bounded five-second wait and fails closed if a live lock remains; stale-lock recovery is intentionally deferred to service/recovery work rather than risking concurrent ownership.
+- Lock acquisition is bounded and fails closed while a live owner holds the lock. Dead owners and locks past the bounded stale threshold are recoverable from persisted owner metadata.
 - Rebuilding the derived index is an authoritative filesystem scan and is intentionally more expensive than an indexed read.
 - Repository APIs are not yet the application runtime path. PR-03 performs the shared runtime service and scheduler integration.

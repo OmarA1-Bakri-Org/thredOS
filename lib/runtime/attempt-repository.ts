@@ -2,10 +2,16 @@ import { readdir } from 'fs/promises'
 import { withExclusiveFileLock, writeFileAtomic } from '../fs/atomic'
 import { assertSafePathSegment, resolveExistingPathWithinRoot } from '../security/safe-path'
 import { readTextFileNoFollow } from '../security/safe-io'
-import { attemptRecordPath, ensureAttemptsDirectory, ensureRunsRoot } from './paths'
+import { attemptRecordPath, ensureRunsRoot, lookupAttemptsDirectory } from './paths'
 import { RuntimeRepositoryError } from './run-repository'
 import { StepAttemptSchema, type StepAttempt } from './schema'
-import { readRuntimeIndex, rebuildRuntimeIndex, resolveRuntimeIndexReference } from './runtime-index'
+import {
+  readRuntimeIndex,
+  rebuildRuntimeIndex,
+  refreshRuntimeIndexBestEffort,
+  resolveRuntimeIndexReference,
+  scanAuthoritativeRuntimeIndex,
+} from './runtime-index'
 
 export type AttemptMutation = (current: StepAttempt) => StepAttempt
 
@@ -35,31 +41,36 @@ export class AttemptRepository {
       } catch (error) {
         if (!isMissing(error)) throw error
       }
-      await writeFileAtomic(path, `${JSON.stringify(attempt, null, 2)}\n`)
-    })
-    await rebuildRuntimeIndex(this.basePath)
+      await writeFileAtomic(path, `${JSON.stringify(attempt, null, 2)}\n`, { allowedRoot: this.basePath })
+    }, { allowedRoot: this.basePath })
+    await refreshRuntimeIndexBestEffort(this.basePath)
   }
 
   async get(attemptId: string): Promise<StepAttempt | null> {
     assertSafePathSegment(attemptId, 'attempt id')
-    let reference = (await readRuntimeIndex(this.basePath)).attempts[attemptId]
-    if (!reference) reference = (await rebuildRuntimeIndex(this.basePath)).attempts[attemptId]
-    if (!reference) return null
-    try {
+    const readReference = async (reference: string | undefined): Promise<StepAttempt | null> => {
+      if (!reference) return null
       const attempt = await readAttemptFile(await resolveRuntimeIndexReference(this.basePath, reference))
       if (attempt.id !== attemptId) throw new Error('attempt record identity does not match its index key')
       return attempt
-    } catch (error) {
-      if (!isMissing(error)) throw error
-      const rebuilt = await rebuildRuntimeIndex(this.basePath)
-      const retry = rebuilt.attempts[attemptId]
-      return retry ? await readAttemptFile(await resolveRuntimeIndexReference(this.basePath, retry)) : null
     }
+    const first = (await readRuntimeIndex(this.basePath)).attempts[attemptId]
+    try {
+      const attempt = await readReference(first)
+      if (attempt) return attempt
+    } catch {
+      // Any stale, invalid, mismatched, or escaping derived reference is discarded below.
+    }
+    const authoritative = await scanAuthoritativeRuntimeIndex(this.basePath)
+    const retry = authoritative.attempts[attemptId]
+    if (first || retry) await rebuildRuntimeIndex(this.basePath, 25).catch(() => undefined)
+    return await readReference(retry)
   }
 
   async listForRun(runId: string): Promise<StepAttempt[]> {
     assertSafePathSegment(runId, 'run id')
-    const root = await ensureAttemptsDirectory(this.basePath, runId)
+    const root = await lookupAttemptsDirectory(this.basePath, runId)
+    if (!root) return []
     const attempts: StepAttempt[] = []
     for (const entry of await readdir(root, { withFileTypes: true })) {
       if (!entry.isDirectory()) continue
@@ -92,10 +103,10 @@ export class AttemptRepository {
         workflow_run_id: current.workflow_run_id,
         revision: current.revision + 1,
       })
-      await writeFileAtomic(path, `${JSON.stringify(next, null, 2)}\n`)
+      await writeFileAtomic(path, `${JSON.stringify(next, null, 2)}\n`, { allowedRoot: this.basePath })
       return next
-    })
-    await rebuildRuntimeIndex(this.basePath)
+    }, { allowedRoot: this.basePath })
+    await refreshRuntimeIndexBestEffort(this.basePath)
     return updated
   }
 }

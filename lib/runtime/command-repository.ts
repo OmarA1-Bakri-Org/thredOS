@@ -2,10 +2,15 @@ import { readdir } from 'fs/promises'
 import { withExclusiveFileLock, writeFileAtomic } from '../fs/atomic'
 import { assertSafePathSegment, resolveExistingPathWithinRoot } from '../security/safe-path'
 import { readTextFileNoFollow } from '../security/safe-io'
-import { commandIdempotencyLockPath, commandRecordPath, ensureCommandsRoot } from './paths'
+import {
+  commandIdempotencyLockPath,
+  commandRecordPath,
+  lookupCommandRecordPath,
+  lookupCommandsRoot,
+} from './paths'
 import { RuntimeRepositoryError } from './run-repository'
 import { RuntimeCommandReceiptSchema, type RuntimeCommandReceipt } from './schema'
-import { idempotencyDigest, rebuildRuntimeIndex } from './runtime-index'
+import { idempotencyDigest, refreshRuntimeIndexBestEffort } from './runtime-index'
 
 function isMissing(error: unknown): boolean {
   return error instanceof Error && 'code' in error && error.code === 'ENOENT'
@@ -19,7 +24,8 @@ export class CommandRepository {
   constructor(private readonly basePath: string) {}
 
   private async listReceipts(): Promise<RuntimeCommandReceipt[]> {
-    const root = await ensureCommandsRoot(this.basePath)
+    const root = await lookupCommandsRoot(this.basePath)
+    if (!root) return []
     const receipts: RuntimeCommandReceipt[] = []
     for (const entry of await readdir(root, { withFileTypes: true })) {
       if (!entry.isFile() || !entry.name.endsWith('.json')) continue
@@ -54,17 +60,18 @@ export class CommandRepository {
         } catch (error) {
           if (!isMissing(error)) throw error
         }
-        await writeFileAtomic(path, `${JSON.stringify(receipt, null, 2)}\n`)
-      })
+        await writeFileAtomic(path, `${JSON.stringify(receipt, null, 2)}\n`, { allowedRoot: this.basePath })
+      }, { allowedRoot: this.basePath })
       return receipt
-    })
-    await rebuildRuntimeIndex(this.basePath)
+    }, { allowedRoot: this.basePath })
+    await refreshRuntimeIndexBestEffort(this.basePath)
     return result
   }
 
   async get(commandId: string): Promise<RuntimeCommandReceipt | null> {
     assertSafePathSegment(commandId, 'command id')
-    const path = await commandRecordPath(this.basePath, commandId)
+    const path = await lookupCommandRecordPath(this.basePath, commandId)
+    if (!path) return null
     try {
       const receipt = await readReceipt(path)
       if (receipt.id !== commandId) throw new Error('command record identity does not match its path')
@@ -77,5 +84,9 @@ export class CommandRepository {
 
   async findByIdempotencyKey(key: string): Promise<RuntimeCommandReceipt | null> {
     return (await this.listReceipts()).find(receipt => receipt.idempotency_key === key) ?? null
+  }
+
+  async list(): Promise<RuntimeCommandReceipt[]> {
+    return (await this.listReceipts()).sort((left, right) => left.id.localeCompare(right.id))
   }
 }

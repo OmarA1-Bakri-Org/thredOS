@@ -304,13 +304,13 @@ async function writeCanonicalThreadSurfaceRecords(basePath: string, state: Threa
 
     await Promise.all([
       resolvePathWithinRoot(verifiedDirectoryPath, 'surface.json')
-        .then(path => writeFileAtomic(path, toJson(buildSurfaceRecord(surface)))),
+        .then(path => writeFileAtomic(path, toJson(buildSurfaceRecord(surface)), { allowedRoot: basePath })),
       resolvePathWithinRoot(verifiedDirectoryPath, 'access.json')
-        .then(path => writeFileAtomic(path, toJson(buildSurfaceAccessRecord(surface)))),
+        .then(path => writeFileAtomic(path, toJson(buildSurfaceAccessRecord(surface)), { allowedRoot: basePath })),
       resolvePathWithinRoot(verifiedDirectoryPath, 'barrier.json')
-        .then(path => writeFileAtomic(path, toJson(buildSurfaceBarrierRecord(surface)))),
+        .then(path => writeFileAtomic(path, toJson(buildSurfaceBarrierRecord(surface)), { allowedRoot: basePath })),
       resolvePathWithinRoot(verifiedDirectoryPath, 'state.json')
-        .then(path => writeFileAtomic(path, toJson(buildSurfaceStateRecord(state, surface)))),
+        .then(path => writeFileAtomic(path, toJson(buildSurfaceStateRecord(state, surface)), { allowedRoot: basePath })),
     ])
   }))
 
@@ -379,10 +379,10 @@ export async function writeThreadSurfaceState(basePath: string, state: ThreadSur
 
     const nextState: ThreadSurfaceState = { ...state, version: 1 }
     const content = toJson(nextState)
-    await writeFileAtomic(verifiedPath, content)
+    await writeFileAtomic(verifiedPath, content, { allowedRoot: basePath })
     await writeCanonicalThreadSurfaceRecords(basePath, nextState)
     attachRevision(state, content)
-  })
+  }, { allowedRoot: basePath })
 }
 
 const MERGE_EVENT_DEFAULTS: Omit<MergeEvent, 'summary'> = {
