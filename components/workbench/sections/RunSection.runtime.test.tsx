@@ -2,7 +2,6 @@ import { describe, expect, test } from 'bun:test'
 import { isValidElement, type ReactElement, type ReactNode } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import type { AttemptProjection, RunProjection } from '@/lib/runtime/service-types'
-import { RuntimeApiError } from '@/lib/ui/api'
 import {
   canCancelAttempt,
   canCancelRun,
@@ -250,12 +249,11 @@ describe('RunSection canonical runtime controls', () => {
   })
 
   test('renders typed control failures without changing the supplied canonical status', () => {
-    const error = new RuntimeApiError(
-      'attempt attempt-1 is interrupted',
-      'ATTEMPT_NOT_RUNNING',
-      409,
-      'cancel-1',
-    )
+    const error = Object.assign(new Error('attempt attempt-1 is interrupted'), {
+      code: 'ATTEMPT_NOT_RUNNING',
+      status: 409,
+      idempotencyKey: 'cancel-1',
+    })
     const markup = renderToStaticMarkup(
       <RuntimeRunConsole {...baseProps({ controlError: error })} />,
     )

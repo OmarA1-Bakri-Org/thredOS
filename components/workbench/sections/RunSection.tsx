@@ -123,7 +123,11 @@ function Metric({
 
 function RuntimeErrorNotice({ error }: { error: Error | null }) {
   if (!error) return null
-  const code = error instanceof RuntimeApiError ? error.code : 'CLIENT_ERROR'
+  const code = 'code' in error && typeof error.code === 'string'
+    ? error.code
+    : error instanceof RuntimeApiError
+      ? error.code
+      : 'CLIENT_ERROR'
   return (
     <div
       role="alert"
