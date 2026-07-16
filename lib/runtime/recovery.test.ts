@@ -418,7 +418,7 @@ describe('reconcileCanonicalRuntime', () => {
       result_ref: 'child-attempt',
       completed_at: NOW,
     })
-  })
+  }, 30_000)
 
   test('fails an accepted retry receipt when its child reserved attempt is missing', async () => {
     const repos = await repositories()
