@@ -2,9 +2,29 @@
 
 ## Global Options
 
-- `-j, --json` — Output as JSON
+- `-j, --json` — Output runtime commands with the versioned JSON envelope
 - `-h, --help` — Show help
-- `-w, --watch` — Watch mode (status only)
+- `-w, --watch` — Watch mode (status only); JSON watch mode emits compact NDJSON
+- `--idempotency-key <key>` — Supply a non-blank replay-safe key for a runtime mutation
+- `--confirm` — Confirm the exact executable-policy subject for a run command
+
+Runtime command JSON has one stable schema:
+
+```json
+{"schemaVersion":1,"success":true,"data":{}}
+```
+
+Failures use:
+
+```json
+{"schemaVersion":1,"success":false,"error":{"code":"VALIDATION_ERROR","message":"..."}}
+```
+
+Runtime exit codes are centralized: `0` success, `1` other error, `2` validation,
+`3` policy/approval, `4` not found, `5` conflict or invalid state, `6` unsuccessful
+run outcome, `7` process-control failure, and `8` unavailable runtime/resource.
+Cancellation commands exit `0` after a confirmed cancellation even though the resulting
+run or attempt status is `cancelled`.
 
 ## Commands
 
@@ -110,7 +130,7 @@ thread gate list
 
 ### `thread run step <stepId>`
 
-Run one specific step.
+Run one specific step through `ThreadOSRuntimeService`. Milestone 0 execution is sequential.
 
 ```bash
 thread run step research
@@ -118,7 +138,7 @@ thread run step research
 
 ### `thread run runnable`
 
-Run all runnable steps.
+Run all currently runnable steps through the shared sequential runtime.
 
 ```bash
 thread run runnable
@@ -126,25 +146,50 @@ thread run runnable
 
 ### `thread run group <groupId>`
 
-Run a grouped set of steps.
+Run a grouped set of steps sequentially. Group metadata does not enable concurrent execution
+before Milestone 3.
 
 ```bash
 thread run group group-1
 ```
 
+### `thread run list|inspect|cancel`
+
+Inspect and control canonical workflow-run records.
+
+```bash
+thread run list --json
+thread run inspect <runId> --json
+thread run cancel <runId> --idempotency-key <key> --json
+```
+
+### `thread attempt inspect|cancel|retry`
+
+Inspect and control canonical step-attempt records. Retry creates a new attempt with
+`retry_of_attempt_id` lineage; it never changes a historical attempt back to running.
+
+```bash
+thread attempt inspect <attemptId> --json
+thread attempt cancel <attemptId> --idempotency-key <key> --json
+thread attempt retry <attemptId> --idempotency-key <key> --json
+```
+
 ### `thread status [--watch]`
 
-Show sequence status.
+Show status derived from canonical runtime records. mprocs state is not execution truth.
 
 ```bash
 thread status
 thread status --watch
 thread status --json
+thread status --watch --json
 ```
 
 ### `thread stop <stepId>`
 
-Stop a running step.
+Cancel the latest running canonical attempt for a step. Until PR-06 installs the truthful
+process controller, a live cancellation returns a nonzero process-control error rather than
+claiming success.
 
 ```bash
 thread stop research
@@ -152,7 +197,7 @@ thread stop research
 
 ### `thread restart <stepId>`
 
-Restart a step.
+Retry the latest terminal canonical attempt for a step as a new attempt with lineage.
 
 ```bash
 thread restart research
@@ -160,7 +205,8 @@ thread restart research
 
 ### `thread group parallelize <stepId1> <stepId2> [...]`
 
-Mark steps as a parallel group.
+Mark steps as a parallel group. This is configuration only; Milestones 0–1 still schedule
+the group sequentially and explicit parallel execution remains unavailable until Milestone 3.
 
 ```bash
 thread group parallelize research implement validate
@@ -184,7 +230,8 @@ thread fusion create --candidates draft-a,draft-b --synth final-synth
 
 ### `thread mprocs open`
 
-Generate `.threados/mprocs.yaml` and launch mprocs.
+Generate `.threados/mprocs.yaml` and launch optional legacy observability. mprocs never
+updates or overrides canonical V2 runtime state, and launch failure exits nonzero.
 
 ```bash
 thread mprocs open
@@ -192,7 +239,7 @@ thread mprocs open
 
 ### `thread mprocs select <stepId>`
 
-Select a step process in mprocs.
+Select a legacy observed process in mprocs. Selection failure exits nonzero.
 
 ```bash
 thread mprocs select research

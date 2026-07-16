@@ -1,94 +1,52 @@
-import { readSequence, writeSequence } from '../../sequence/parser'
-import { MprocsClient } from '../../mprocs/client'
-import { readMprocsMap } from '../../mprocs/state'
-import { StepNotFoundError } from '../../errors'
+import { RuntimeServiceError } from '../../runtime/errors'
+import type { StepAttemptStatus } from '../../runtime/schema'
+import { renderRuntimeFailure, renderRuntimeSuccess, type CLIOptions } from '../formatters/runtime'
+import { createCLIContext, getCLIRuntimeService } from '../runtime'
 
-interface CLIOptions {
-  json: boolean
-  help: boolean
-  watch: boolean
-  basePath?: string
-}
+const TERMINAL_ATTEMPTS: StepAttemptStatus[] = [
+  'completed', 'needs_review', 'failed', 'cancelled', 'timed_out', 'interrupted',
+]
 
-type ControlResult = { success: boolean; action: string; stepId: string; message?: string; error?: string }
-
-interface ControlContext {
-  mprocsClient: MprocsClient
-  processIndex: number | undefined
-  step: import('../../sequence/schema').Step
-  stepId: string
-  basePath: string
-  sequence: import('../../sequence/schema').Sequence
-}
-
-async function handleStop(ctx: ControlContext): Promise<ControlResult> {
-  if (ctx.processIndex !== undefined) {
-    try { await ctx.mprocsClient.stopProcess(ctx.processIndex) } catch { /* mprocs may not be running */ }
-  }
-  ctx.step.status = 'FAILED'
-  await writeSequence(ctx.basePath, ctx.sequence)
-  return { success: true, action: 'stop', stepId: ctx.stepId, message: `Step '${ctx.stepId}' stopped` }
-}
-
-async function handleRestart(ctx: ControlContext): Promise<ControlResult> {
-  if (ctx.processIndex !== undefined) {
-    try { await ctx.mprocsClient.restartProcess(ctx.processIndex) } catch { /* mprocs may not be running */ }
-  }
-  ctx.step.status = 'RUNNING'
-  await writeSequence(ctx.basePath, ctx.sequence)
-  return { success: true, action: 'restart', stepId: ctx.stepId, message: `Step '${ctx.stepId}' restarted` }
-}
-
-type ControlHandler = (ctx: ControlContext) => Promise<ControlResult>
-
-const controlHandlers: Record<string, ControlHandler> = {
-  stop: handleStop,
-  restart: handleRestart,
-}
-
-function outputControlResult(result: ControlResult, options: CLIOptions): void {
-  if (options.json) {
-    console.log(JSON.stringify(result))
-  } else if (result.success) {
-    console.log(result.message)
-  } else {
-    console.error(`Error: ${result.error}`)
-    process.exit(1)
-  }
+function requireStepId(args: string[], action: string): string {
+  const stepId = args[0]?.trim()
+  if (!stepId) throw new RuntimeServiceError('VALIDATION_ERROR', `Usage: thread ${action} <stepId>`)
+  return stepId
 }
 
 export async function controlCommand(
   subcommand: string | undefined,
   args: string[],
-  options: CLIOptions
+  options: CLIOptions,
 ): Promise<void> {
-  const basePath = options.basePath ?? process.cwd()
-  const stepId = args[0]
+  try {
+    const action = subcommand ?? 'control'
+    const stepId = requireStepId(args, action)
+    const service = await getCLIRuntimeService(options.basePath ?? process.cwd())
+    const context = createCLIContext(options)
 
-  if (!stepId) {
-    const error = `Usage: seqctl ${subcommand} <stepId>`
-    if (options.json) { console.log(JSON.stringify({ success: false, error })); } else { console.error(error); }
-    process.exit(1)
+    if (subcommand === 'stop') {
+      const attempt = await service.findLatestAttempt({
+        sequenceId: '$current', stepId, statuses: ['running'],
+      })
+      if (!attempt) throw new RuntimeServiceError('ATTEMPT_NOT_RUNNING', `step ${stepId} has no running attempt`)
+      const cancelled = await service.cancelAttempt(attempt.id, context)
+      renderRuntimeSuccess({ attempt: cancelled }, options, () => console.log(`Step '${stepId}' stopped`))
+      return
+    }
+
+    if (subcommand === 'restart') {
+      const attempt = await service.findLatestAttempt({
+        sequenceId: '$current', stepId, statuses: TERMINAL_ATTEMPTS,
+      })
+      if (!attempt) throw new RuntimeServiceError('ATTEMPT_NOT_FOUND', `step ${stepId} has no terminal attempt to retry`)
+      const retried = await service.retryAttempt(attempt.id, context)
+      const projection = await service.inspectAttempt(retried.id)
+      renderRuntimeSuccess(projection, options, () => console.log(`Step '${stepId}' restarted as attempt '${retried.id}'`))
+      return
+    }
+
+    throw new RuntimeServiceError('VALIDATION_ERROR', 'Unknown subcommand. Usage: thread stop|restart <stepId>')
+  } catch (error) {
+    renderRuntimeFailure(error, options)
   }
-
-  const sequence = await readSequence(basePath)
-  const step = sequence.steps.find(s => s.id === stepId)
-  if (!step) {
-    const error = new StepNotFoundError(stepId).message
-    if (options.json) { console.log(JSON.stringify({ success: false, error })); } else { console.error(error); }
-    process.exit(1)
-  }
-
-  const handler = subcommand ? controlHandlers[subcommand] : undefined
-  if (!handler) {
-    const result: ControlResult = { success: false, action: subcommand || 'unknown', stepId, error: 'Unknown subcommand. Usage: seqctl stop|restart <stepId>' }
-    outputControlResult(result, options)
-    return
-  }
-
-  const mprocsClient = new MprocsClient()
-  const mprocsMap = await readMprocsMap(basePath)
-  const processIndex = mprocsMap[stepId]
-  const result = await handler({ mprocsClient, processIndex, step, stepId, basePath, sequence })
-  outputControlResult(result, options)
 }

@@ -45,9 +45,9 @@ const templateGenerators: Record<string, TemplateGenerator> = {
   }),
 }
 
-function exitTemplateError(error: string, json: boolean): never {
+function exitTemplateError(error: string, json: boolean): void {
   if (json) { console.log(JSON.stringify({ success: false, error })) } else { console.error(error) }
-  process.exit(1)
+  process.exitCode = 1
 }
 
 export async function templateCommand(

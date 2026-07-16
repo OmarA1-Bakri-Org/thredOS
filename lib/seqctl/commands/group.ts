@@ -43,7 +43,11 @@ export async function groupCommand(
 
       validateDAG(sequence)
       await writeSequence(basePath, sequence)
-      result = { success: true, action: 'parallelize', message: `Steps [${args.join(', ')}] grouped as '${groupId}' (parallel)` }
+      result = {
+        success: true,
+        action: 'parallelize',
+        message: `Steps [${args.join(', ')}] grouped as '${groupId}' (sequential runtime until Milestone 3)`,
+      }
       break
     }
 
@@ -74,6 +78,7 @@ export async function groupCommand(
       result = { success: false, action: subcommand || 'unknown', error: 'Unknown subcommand. Usage: seqctl group parallelize|list' }
   }
 
+  process.exitCode = result!.success ? 0 : 1
   if (options.json) {
     console.log(JSON.stringify(result!))
   } else {
@@ -81,7 +86,6 @@ export async function groupCommand(
       console.log(result!.message)
     } else {
       console.error(`Error: ${result!.error}`)
-      process.exit(1)
     }
   }
 }

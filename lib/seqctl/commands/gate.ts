@@ -108,6 +108,7 @@ export async function gateCommand(
       result = { success: false, action: subcommand || 'unknown', error: 'Unknown subcommand. Usage: seqctl gate insert|approve|block|list' }
   }
 
+  process.exitCode = result!.success ? 0 : 1
   if (options.json) {
     console.log(JSON.stringify(result!))
   } else {
@@ -115,7 +116,6 @@ export async function gateCommand(
       console.log(result!.message)
     } else {
       console.error(`Error: ${result!.error}`)
-      process.exit(1)
     }
   }
 }

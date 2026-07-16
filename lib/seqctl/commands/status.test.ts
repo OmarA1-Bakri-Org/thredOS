@@ -44,10 +44,12 @@ describe.serial('statusCommand', () => {
     console.log = origLog
 
     const output = JSON.parse(logs[0])
-    expect(output.name).toBe('test-seq')
-    expect(output.version).toBe('1.0')
-    expect(output.steps).toHaveLength(3)
-    expect(output.gates).toHaveLength(1)
+    expect(output.schemaVersion).toBe(1)
+    expect(output.success).toBe(true)
+    expect(output.data.name).toBe('test-seq')
+    expect(output.data.version).toBe('1.0')
+    expect(output.data.steps).toHaveLength(3)
+    expect(output.data.gates).toHaveLength(1)
   })
 
   test('computes summary correctly', async () => {
@@ -62,11 +64,11 @@ describe.serial('statusCommand', () => {
     console.log = origLog
 
     const output = JSON.parse(logs[0])
-    expect(output.summary.total).toBe(3)
-    expect(output.summary.ready).toBe(1)
-    expect(output.summary.running).toBe(1)
-    expect(output.summary.done).toBe(1)
-    expect(output.summary.failed).toBe(0)
+    expect(output.data.summary.total).toBe(3)
+    expect(output.data.summary.ready).toBe(1)
+    expect(output.data.summary.running).toBe(1)
+    expect(output.data.summary.done).toBe(1)
+    expect(output.data.summary.failed).toBe(0)
   })
 
   test('includes gate status info', async () => {
@@ -81,9 +83,9 @@ describe.serial('statusCommand', () => {
     console.log = origLog
 
     const output = JSON.parse(logs[0])
-    expect(output.gates[0].id).toBe('gate-1')
-    expect(output.gates[0].status).toBe('PENDING')
-    expect(output.gates[0].dependsOn).toContain('step-a')
+    expect(output.data.gates[0].id).toBe('gate-1')
+    expect(output.data.gates[0].status).toBe('PENDING')
+    expect(output.data.gates[0].dependsOn).toContain('step-a')
   })
 
   // --- Human-readable output tests ---
@@ -183,13 +185,13 @@ describe.serial('statusCommand', () => {
     console.log = origLog
 
     const output = JSON.parse(logs[0])
-    expect(output.summary.total).toBe(6)
-    expect(output.summary.ready).toBe(1)
-    expect(output.summary.running).toBe(1)
-    expect(output.summary.done).toBe(1)
-    expect(output.summary.failed).toBe(1)
-    expect(output.summary.blocked).toBe(1)
-    expect(output.summary.needsReview).toBe(1)
+    expect(output.data.summary.total).toBe(6)
+    expect(output.data.summary.ready).toBe(1)
+    expect(output.data.summary.running).toBe(1)
+    expect(output.data.summary.done).toBe(1)
+    expect(output.data.summary.failed).toBe(1)
+    expect(output.data.summary.blocked).toBe(1)
+    expect(output.data.summary.needsReview).toBe(1)
   })
 
   // --- Edge cases ---
@@ -241,7 +243,7 @@ describe.serial('statusCommand', () => {
     expect(combined).toContain('step-x')
   })
 
-  test('step status includes processIndex from mprocs map', async () => {
+  test('canonical status ignores legacy mprocs process indexes', async () => {
     const { statusCommand } = await import('./status')
 
     // Create a mprocs map with a process index
@@ -257,11 +259,11 @@ describe.serial('statusCommand', () => {
     console.log = origLog
 
     const output = JSON.parse(logs[0])
-    expect(output.steps[0].processIndex).toBe(0)
-    expect(output.steps[1].processIndex).toBe(1)
+    expect(output.data.steps[0].processIndex).toBeUndefined()
+    expect(output.data.steps[1].processIndex).toBeUndefined()
   })
 
-  test('human-readable output shows process info when mprocs map exists', async () => {
+  test('human-readable output does not treat mprocs as canonical process truth', async () => {
     const { statusCommand } = await import('./status')
 
     await mkdir(join(basePath, '.threados/state'), { recursive: true })
@@ -276,6 +278,6 @@ describe.serial('statusCommand', () => {
     console.log = origLog
 
     const combined = logs.join('\n')
-    expect(combined).toContain('proc:3')
+    expect(combined).not.toContain('proc:3')
   })
 })

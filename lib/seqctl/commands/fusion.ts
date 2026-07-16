@@ -89,13 +89,13 @@ const fusionHandlers: Record<string, FusionHandler> = {
 }
 
 function outputFusionResult(result: FusionResult, options: CLIOptions): void {
+  process.exitCode = result.success ? 0 : 1
   if (options.json) {
     console.log(JSON.stringify(result))
   } else if (result.success) {
     console.log(result.message)
   } else {
     console.error(`Error: ${result.error}`)
-    process.exit(1)
   }
 }
 
