@@ -6,12 +6,14 @@ import { AttemptRepository } from './attempt-repository'
 import { CommandRepository } from './command-repository'
 import { ProcessRepository } from './process-repository'
 import {
+  createRuntimeProjections,
   inspectRuntimeAttemptProjection,
   inspectRuntimeRunProjection,
   listRuntimeRunProjections,
 } from './projections'
 import { RunRepository } from './run-repository'
 import type { ProcessRecord, StepAttempt, WorkflowRun } from './schema'
+import { readThreadSurfaceState, writeThreadSurfaceState } from '../thread-surfaces/repository'
 
 const NOW = '2026-07-16T00:00:00.000Z'
 
@@ -246,5 +248,130 @@ describe('operator runtime projections', () => {
       },
       process: null,
     })
+  })
+
+  test('materializes a missing step surface before applying runtime-emitted merge events', async () => {
+    await writeThreadSurfaceState(basePath, {
+      version: 1,
+      threadSurfaces: [
+        {
+          id: 'thread-root',
+          parentSurfaceId: null,
+          parentAgentNodeId: null,
+          depth: 0,
+          surfaceLabel: 'Root',
+          createdAt: NOW,
+          childSurfaceIds: ['thread-source-a', 'thread-source-b'],
+          sequenceRef: null,
+          spawnedByAgentId: null,
+        },
+        {
+          id: 'thread-source-a',
+          parentSurfaceId: 'thread-root',
+          parentAgentNodeId: 'source-a',
+          depth: 1,
+          surfaceLabel: 'Source A',
+          createdAt: NOW,
+          childSurfaceIds: [],
+          sequenceRef: null,
+          spawnedByAgentId: null,
+        },
+        {
+          id: 'thread-source-b',
+          parentSurfaceId: 'thread-root',
+          parentAgentNodeId: 'source-b',
+          depth: 1,
+          surfaceLabel: 'Source B',
+          createdAt: NOW,
+          childSurfaceIds: [],
+          sequenceRef: null,
+          spawnedByAgentId: null,
+        },
+      ],
+      runs: [
+        {
+          id: 'run-source-a',
+          threadSurfaceId: 'thread-source-a',
+          runStatus: 'successful',
+          startedAt: NOW,
+          endedAt: NOW,
+          executionIndex: 1,
+          parentRunId: null,
+          childIndex: null,
+        },
+        {
+          id: 'run-source-b',
+          threadSurfaceId: 'thread-source-b',
+          runStatus: 'successful',
+          startedAt: NOW,
+          endedAt: NOW,
+          executionIndex: 2,
+          parentRunId: null,
+          childIndex: null,
+        },
+      ],
+      mergeEvents: [],
+      runEvents: [],
+    })
+    const run = workflowRun({
+      id: 'workflow-merge',
+      status: 'running',
+      attempt_ids: ['attempt-merge'],
+      ended_at: null,
+    })
+    const attempt = stepAttempt({
+      id: 'attempt-merge',
+      workflow_run_id: run.id,
+      step_id: 'synth',
+      surface_id: 'thread-synth',
+      status: 'completed',
+      process_id: null,
+      ended_at: NOW,
+      exit_code: 0,
+      error_code: null,
+      error_message: null,
+    })
+
+    await createRuntimeProjections(basePath).finalizeAttempt({
+      run,
+      attempt,
+      step: {
+        id: 'synth',
+        name: 'Synthesis',
+        type: 'f',
+        model: 'codex',
+        prompt_file: '.threados/prompts/synth.md',
+        depends_on: ['source-a', 'source-b'],
+        status: 'RUNNING',
+        fusion_synth: true,
+      },
+      runtimeEvents: [{
+        eventType: 'merge-into',
+        createdAt: NOW,
+        destinationStepId: 'synth',
+        sourceStepIds: ['source-a', 'source-b'],
+        mergeKind: 'block',
+        summary: 'Merged by runtime event',
+      }],
+    })
+
+    const state = await readThreadSurfaceState(basePath)
+    expect(state.threadSurfaces).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'thread-synth' }),
+    ]))
+    expect(state.runs).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'attempt-merge',
+        workflowRunId: 'workflow-merge',
+        attemptId: 'attempt-merge',
+      }),
+    ]))
+    expect(state.mergeEvents).toEqual([
+      expect.objectContaining({
+        destinationThreadSurfaceId: 'thread-synth',
+        sourceRunIds: ['run-source-a', 'run-source-b'],
+        summary: 'Merged by runtime event',
+      }),
+    ])
   })
 })

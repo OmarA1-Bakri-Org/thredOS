@@ -208,19 +208,20 @@ export function createRuntimeProjections(basePath: string): RuntimeProjectionPor
     async finalizeAttempt({ run, attempt, step, runtimeEvents }) {
       const pending = await mutateProjection<PendingChildSequence[]>(basePath, current => {
         const projected = current.runs.find(item => item.attemptId === attempt.id || item.id === attempt.id)
-        if (!projected || projected.endedAt != null) return null
-        const stepRun: StepRunScope = {
-          runId: projected.id, startedAt: projected.startedAt,
+        if (projected?.endedAt != null) return null
+        const stepRun: StepRunScope | null = projected ? {
+          runId: projected.id,
+          startedAt: projected.startedAt,
           executionIndex: projected.executionIndex ?? attempt.execution_index,
           threadSurfaceId: projected.threadSurfaceId,
-        }
+        } : null
         let childRun = 0
         let event = 0
         let merge = 0
         const finalized = finalizeStepRunWithRuntimeEvents(current, {
           step, stepRun, success: attempt.status === 'completed', endedAt: attempt.ended_at ?? run.ended_at ?? run.created_at,
           runtimeEvents,
-          nextRunId: () => `${attempt.id}-child-${++childRun}`,
+          nextRunId: () => childRun++ === 0 ? attempt.id : `${attempt.id}-child-${childRun}`,
           nextEventId: () => `${attempt.id}-event-${++event}`,
           nextMergeId: () => `${attempt.id}-merge-${++merge}`,
         })

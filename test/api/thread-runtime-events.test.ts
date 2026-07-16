@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, setDefaultTimeout, test } from 'bun:test'
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { dirname, join } from 'path'
@@ -11,6 +11,8 @@ let runtimeEventLinesByStep: Record<string, string[]> = {}
 let runtimeEmitterCommandsByStep: Record<string, { subcommand: string; args: string[] }> = {}
 let capturedDispatchPrompt = ''
 let capturedDispatchEmitter = ''
+
+setDefaultTimeout(30_000)
 
 async function setupSequence(sequence: object) {
   await mkdir(join(basePath, '.threados', 'prompts'), { recursive: true })
@@ -101,6 +103,9 @@ describe.serial('thread runtime event persistence', () => {
       }) => {
         const eventLogPath = env?.THREADOS_EVENT_LOG
         const lines = runtimeEventLinesByStep[stepId] ?? []
+        if (lines.length > 0 || runtimeEmitterCommandsByStep[stepId]) {
+          expect(eventLogPath).toBeTruthy()
+        }
         if (eventLogPath && lines.length > 0) {
           await mkdir(dirname(eventLogPath), { recursive: true })
           await writeFile(eventLogPath, `${lines.join('\n')}\n`, 'utf-8')

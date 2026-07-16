@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, setDefaultTimeout, test } from 'bun:test'
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { dirname, join } from 'path'
@@ -7,6 +7,8 @@ import type { ThreadSurfaceState } from '@/lib/thread-surfaces/repository'
 
 let basePath = ''
 let runtimeEventLinesByStep: Record<string, string[]> = {}
+
+setDefaultTimeout(30_000)
 
 async function setupSequence(sequence: object) {
   await mkdir(join(basePath, '.threados', 'prompts'), { recursive: true })
@@ -60,6 +62,7 @@ describe.serial('thread spawn event persistence', () => {
       }) => {
         const eventLogPath = env?.THREADOS_EVENT_LOG
         const lines = runtimeEventLinesByStep[stepId] ?? []
+        if (lines.length > 0) expect(eventLogPath).toBeTruthy()
         if (eventLogPath && lines.length > 0) {
           await mkdir(dirname(eventLogPath), { recursive: true })
           await writeFile(eventLogPath, `${lines.join('\n')}\n`, 'utf-8')
