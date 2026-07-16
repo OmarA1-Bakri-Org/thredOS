@@ -105,7 +105,7 @@ describe.serial('API Routes', () => {
     expect(data.steps[0].processIndex).toBeUndefined()
   })
 
-  test('GET /api/status reconciles orphaned mprocs-tracked RUNNING steps before returning status', async () => {
+  test('GET /api/status does not let missing mprocs override canonical status truth', async () => {
     await setupTestSequence({
       version: '1.0',
       name: 'reconcile-seq',
@@ -121,12 +121,12 @@ describe.serial('API Routes', () => {
     expect(res.status).toBe(200)
 
     const data = await res.json()
-    expect(data.summary.running).toBe(0)
-    expect(data.summary.failed).toBe(1)
+    expect(data.summary.running).toBe(1)
+    expect(data.summary.failed).toBe(0)
     expect(data.steps).toHaveLength(1)
     expect(data.steps[0]).toMatchObject({
       id: 'step-a',
-      status: 'FAILED',
+      status: 'RUNNING',
     })
     expect(data.steps[0].processIndex).toBeUndefined()
   })

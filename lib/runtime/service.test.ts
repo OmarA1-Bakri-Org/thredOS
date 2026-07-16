@@ -205,6 +205,15 @@ describe('ThreadOSRuntimeService', () => {
     expect(status.steps[0]).toMatchObject({ id: 'build', status: 'DONE' })
   }, 30_000)
 
+  test('status projection lets canonical attempts override the sequence fallback', async () => {
+    const { service } = await fixture()
+    await service.runAndWait(request, context)
+
+    const status = await service.getStatus()
+    expect(status.steps[0]).toMatchObject({ id: 'build', status: 'DONE' })
+    expect(status.summary).toMatchObject({ running: 0, done: 1, failed: 0 })
+  }, 30_000)
+
   test('canonical hashes ignore object insertion order without dropping nested fields', () => {
     expect(stableRuntimeHash({ a: { x: 1, y: 2 }, b: 3 })).toBe(stableRuntimeHash({ b: 3, a: { y: 2, x: 1 } }))
     expect(stableRuntimeHash({ a: { x: 1 } })).not.toBe(stableRuntimeHash({ a: { x: 2 } }))
