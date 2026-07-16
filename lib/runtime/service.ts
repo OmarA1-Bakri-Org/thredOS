@@ -477,7 +477,20 @@ export class ThreadOSRuntimeService {
   }
 
   async reconcile(): Promise<RuntimeReconciliationReport> {
-    const report = await this.deps.reconcile?.(this.basePath)
+    const report = await this.deps.reconcile?.(this.basePath, {
+      isProcessManaged: (processId, runId, attemptId) =>
+        this.processController.hasLiveHandle(processId)
+        || this.inFlightAttempts.has(attemptId)
+        || this.inFlight.has(runId)
+        || this.scheduler.get(runId) !== null,
+      isAttemptManaged: (attemptId, runId) =>
+        this.inFlightAttempts.has(attemptId)
+        || this.inFlight.has(runId)
+        || this.scheduler.get(runId) !== null,
+      isRunManaged: runId =>
+        this.inFlight.has(runId)
+        || this.scheduler.get(runId) !== null,
+    })
     if (report) return report
     return { checked: (await this.repositories.processes.list()).length, changes: [], errors: [] }
   }

@@ -1322,6 +1322,56 @@ describe('ThreadOSRuntimeService', () => {
     expect(reconciliations).toBe(1)
   })
 
+  test('factory runs canonical recovery once by default before exposing the singleton', async () => {
+    const basePath = await mkdtemp(join(tmpdir(), 'threados-factory-recovery-'))
+    roots.push(basePath)
+    const runs = new RunRepository(basePath)
+    const attempts = new AttemptRepository(basePath)
+    const processes = new ProcessRepository(basePath)
+    await runs.create({
+      schema_version: 2, id: 'stale-run', revision: 0, sequence_id: 'sequence-1',
+      sequence_snapshot_hash: 'hash', target: { kind: 'step', step_id: 'build' },
+      strategy: 'sequential', status: 'running', max_concurrency: 1,
+      policy_snapshot_hash: 'policy', baseline_snapshot_id: null, attempt_ids: ['stale-attempt'],
+      created_by: 'tester', created_via: 'system', created_at: '2026-01-01T00:00:00.000Z',
+      started_at: '2026-01-01T00:00:00.000Z', ended_at: null,
+      cancellation_requested_at: null, summary: null, error_code: null, error_message: null,
+    })
+    await attempts.create({
+      schema_version: 2, id: 'stale-attempt', revision: 0, workflow_run_id: 'stale-run',
+      sequence_id: 'sequence-1', step_id: 'build', surface_id: 'thread-build',
+      execution_index: 1, attempt_number: 1, retry_of_attempt_id: null, status: 'running',
+      agent_ref: null, model: 'shell', side_effect_class: 'execute',
+      baseline_snapshot_id: null, workspace_id: null, process_id: 'stale-process',
+      compiled_prompt_hash: 'hash', input_manifest_ref: null, output_manifest_ref: null,
+      artifact_manifest_ref: null, change_set_id: null, gate_decision_refs: [],
+      created_at: '2026-01-01T00:00:00.000Z', started_at: '2026-01-01T00:00:00.000Z',
+      ended_at: null, last_heartbeat_at: null, exit_code: null, signal: null,
+      duration_ms: null, error_code: null, error_message: null,
+    })
+    await processes.create({
+      schema_version: 1, id: 'stale-process', revision: 0, workflow_run_id: 'stale-run',
+      attempt_id: 'stale-attempt', provider: 'local-process', provider_handle: 'local:999999',
+      pid: 999999, command: 'node', redacted_args: [], environment_keys: [], cwd: basePath,
+      status: 'running', launch_requested_at: '2026-01-01T00:00:00.000Z',
+      started_at: '2026-01-01T00:00:00.000Z', ended_at: null, last_output_at: null,
+      last_heartbeat_at: null, cancellation_requested_at: null, exit_code: null, signal: null,
+    })
+
+    const [first, second] = await Promise.all([
+      getThreadOSRuntimeService(basePath),
+      getThreadOSRuntimeService(join(basePath, '.')),
+    ])
+
+    expect(first).toBe(second)
+    expect((await processes.get('stale-process'))?.status).toBe('lost')
+    expect((await attempts.get('stale-attempt'))?.status).toBe('interrupted')
+    expect((await runs.get('stale-run'))?.status).toBe('interrupted')
+    const revision = (await runs.get('stale-run'))?.revision
+    await first.reconcile()
+    expect((await runs.get('stale-run'))?.revision).toBe(revision)
+  })
+
   test('concurrent replay waits for the accepted run to finish instead of returning pending', async () => {
     const { basePath, repositories, service } = await fixture()
     const originalCreate = repositories.runs.create.bind(repositories.runs)

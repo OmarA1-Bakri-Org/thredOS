@@ -22,6 +22,7 @@ import { AttemptRepository } from './attempt-repository'
 import { CommandRepository } from './command-repository'
 import { ProcessRepository } from './process-repository'
 import { createRuntimeProjections } from './projections'
+import { reconcileCanonicalRuntime } from './recovery'
 import { RunRepository } from './run-repository'
 import { SequentialScheduler } from './scheduler'
 import { ThreadOSRuntimeService } from './service'
@@ -31,7 +32,7 @@ import type { RunnerConfig, RunResult } from '../runner/wrapper'
 
 export interface RuntimeFactoryOptions {
   dependencies?: Partial<RuntimeServiceDependencies>
-  reconcile?: (basePath: string) => Promise<void>
+  reconcile?: RuntimeServiceDependencies['reconcile']
   /** Explicit test-only bridge for legacy API/CLI terminal-runner fixtures. */
   testCompatibility?: {
     runStep(config: RunnerConfig): Promise<RunResult>
@@ -117,6 +118,7 @@ function defaults(basePath: string): RuntimeServiceDependencies {
       })
     },
     appendTrace: appendTraceEvent,
+    reconcile: reconcileCanonicalRuntime,
     projections: createRuntimeProjections(basePath),
   }
 }
@@ -126,13 +128,14 @@ export async function getThreadOSRuntimeService(basePath: string, options: Runti
   const existing = instances.get(canonical)
   if (existing) return await existing
   const initialization = (async () => {
-    await options.reconcile?.(canonical)
     const dependencies = { ...defaults(canonical), ...options.dependencies }
+    if (options.reconcile) dependencies.reconcile = options.reconcile
     if (options.testCompatibility) {
       dependencies.startProcess = createTestCompatibilityStartProcess(
         options.testCompatibility.runStep,
       )
     }
+    await dependencies.reconcile?.(canonical)
     return new ThreadOSRuntimeService({
       basePath: canonical, scheduler: new SequentialScheduler(), dependencies,
       repositories: {

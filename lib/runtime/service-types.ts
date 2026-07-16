@@ -63,7 +63,10 @@ export interface RuntimeServiceDependencies {
   enforceExecutablePolicy(input: { payload: ExecutablePayload; policy: PolicyConfig; confirmed: boolean; approvals: Approval[]; targetRefs: string[]; basePath: string }): PolicyResult
   recordApproval(input: { basePath: string; runId: string; context: RuntimeCommandContext; targetRef: string; payload: ExecutablePayload; policy: PolicyConfig; policySnapshotHash: string }): Promise<void>
   appendTrace(basePath: string, runId: string, event: TraceEvent): Promise<void>
-  reconcile?(basePath: string): Promise<RuntimeReconciliationReport | void>
+  reconcile?(
+    basePath: string,
+    context?: RuntimeReconciliationContext,
+  ): Promise<RuntimeReconciliationReport | void>
   projections: RuntimeProjectionPort
 }
 
@@ -92,6 +95,16 @@ export interface RuntimeReconciliationReport {
   checked: number
   changes: Array<{ entityType: 'run' | 'attempt' | 'process' | 'legacy-step'; entityId: string; from: string; to: string; reason: string }>
   errors: string[]
+}
+
+export interface RuntimeReconciliationContext {
+  /**
+   * Identifies process records whose live handle is still owned by the current
+   * service instance. Startup recovery omits this callback.
+   */
+  isProcessManaged?(processId: string, runId: string, attemptId: string): boolean
+  isAttemptManaged?(attemptId: string, runId: string): boolean
+  isRunManaged?(runId: string): boolean
 }
 
 export interface SequenceStatusProjection {

@@ -149,9 +149,8 @@ async function markOrphanedSteps(
 }
 
 /**
- * Reconcile sequence state with actual mprocs process state.
- * Steps marked RUNNING that don't have a corresponding running process
- * are marked as FAILED.
+ * Reconcile only legacy sequence state that is explicitly mapped to mprocs.
+ * Canonical V2 process, attempt, and run records are owned by runtime recovery.
  */
 export async function reconcileState(basePath: string): Promise<ReconciliationResult> {
   return reconcileStateWithDeps(basePath, DEFAULT_DEPS)
@@ -172,7 +171,6 @@ export async function reconcileStateWithDeps(
   }
 
   const runningSteps = sequence.steps.filter(s => s.status === 'RUNNING')
-  result.checked = runningSteps.length
 
   if (runningSteps.length === 0) return result
 
@@ -183,6 +181,10 @@ export async function reconcileStateWithDeps(
     result.errors.push(`Failed to read mprocs map: ${(error as Error).message}`)
     return result
   }
+
+  const trackedRunningSteps = runningSteps.filter(step => mprocsMap[step.id] !== undefined)
+  result.checked = trackedRunningSteps.length
+  if (trackedRunningSteps.length === 0) return result
 
   const mprocsAvailable = await checkMprocsAvailability(deps)
   result.changes = await markOrphanedSteps(sequence, mprocsMap, mprocsAvailable, deps)

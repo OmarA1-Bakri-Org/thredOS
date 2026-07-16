@@ -2,7 +2,8 @@ import { readFile } from 'fs/promises'
 import { join } from 'path'
 import { writeFileAtomic } from '../fs/atomic'
 
-// stepId -> processIndex mapping
+// Legacy compatibility/observability only: stepId -> mprocs processIndex.
+// Canonical V2 runtime recovery never uses this map as process truth.
 export type MprocsMap = Record<string, number>
 
 const MPROCS_MAP_PATH = '.threados/state/mprocs-map.json'

@@ -1,7 +1,7 @@
 import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test'
 import { reconcileState, reconcileStateWithDeps } from './reconciler'
 import { writeSequence, readSequence } from '../sequence/parser'
-import { mkdir, rm, readFile } from 'fs/promises'
+import { mkdir, rm, readFile, writeFile } from 'fs/promises'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import { readMprocsMap, writeMprocsMap } from '../mprocs/state'
@@ -79,7 +79,7 @@ describe('reconcileState', () => {
       }),
     })
 
-    expect(result.checked).toBe(1)
+    expect(result.checked).toBe(0)
     expect(result.changes).toEqual([])
     expect(auditLog).not.toHaveBeenCalled()
 
@@ -195,5 +195,36 @@ describe('reconcileState', () => {
     expect(result.checked).toBe(0)
     expect(result.changes).toHaveLength(0)
     expect(result.errors).toHaveLength(0)
+  })
+
+  test('does not inspect or mutate canonical V2 runtime records', async () => {
+    await writeSequence(testDir, {
+      version: '1.0',
+      name: 'test',
+      steps: [
+        { id: 'legacy', name: 'Legacy', type: 'base', model: 'claude-code', prompt_file: 'p.md', depends_on: [], status: 'RUNNING' },
+      ],
+      gates: [],
+    })
+    await mkdir(join(testDir, '.threados', 'runs', 'run-v2'), { recursive: true })
+    const canonicalPath = join(testDir, '.threados', 'runs', 'run-v2', 'run.json')
+    const canonical = '{"schema_version":2,"id":"run-v2","status":"running"}\n'
+    await writeFile(canonicalPath, canonical, 'utf-8')
+
+    const result = await reconcileStateWithDeps(testDir, {
+      readSequence,
+      writeSequence,
+      readMprocsMap: async () => ({}),
+      removeStepProcess: mock(async () => {}),
+      logAudit: mock(async () => {}),
+      createClient: () => ({
+        isServerRunning: async () => { throw new Error('mprocs should not be queried without mapped steps') },
+        sendCommand: async (_command: MprocsCommand): Promise<MprocsResult> => ({ success: false, exitCode: 1 }),
+      }),
+    })
+
+    expect(result).toEqual({ checked: 0, changes: [], errors: [] })
+    expect(await readFile(canonicalPath, 'utf-8')).toBe(canonical)
+    expect((await readSequence(testDir)).steps[0]?.status).toBe('RUNNING')
   })
 })
