@@ -17,6 +17,7 @@ import { evaluateStepGates } from '../gates/engine'
 import { ProcessTimeoutError } from '../errors'
 import type { Approval } from '../contracts/schemas'
 import { executableSubjectDigest } from '../policy/executable'
+import type { RawProcessResult, RunningProcessHandle } from '../runner/process-handle'
 
 const roots: string[] = []
 afterEach(async () => { await Promise.all(roots.splice(0).map(path => rm(path, { recursive: true, force: true }))) })
@@ -55,7 +56,84 @@ async function make(overrides: Partial<RuntimeServiceDependencies>) {
 const context = { actor: 't', interface: 'system' as const, idempotencyKey: 'k', policyConfirmed: true }
 const cmd = { sequence_id: 's', target: { kind: 'step' as const, step_id: 'x' }, strategy: 'sequential' as const, max_concurrency: 1 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason: unknown) => void
+  const promise = new Promise<T>((onResolve, onReject) => {
+    resolve = onResolve
+    reject = onReject
+  })
+  return { promise, resolve, reject }
+}
+
+function rawResult(
+  overrides: Partial<RawProcessResult> = {},
+): RawProcessResult {
+  return {
+    stepId: 'x',
+    runId: 'run-1',
+    exitCode: 0,
+    signal: null,
+    status: 'SUCCESS',
+    duration: 4,
+    stdout: 'ok',
+    stderr: '',
+    startTime: new Date('2026-01-01T00:00:00.000Z'),
+    endTime: new Date('2026-01-01T00:00:00.004Z'),
+    ...overrides,
+  }
+}
+
 describe('AttemptExecutor and lifecycle', () => {
+  test('controller owns launch persistence and maps verified success after completion gates', async () => {
+    const terminal = deferred<RawProcessResult>()
+    const starts: string[] = []
+    const { basePath, service } = await make({
+      startProcess: async config => {
+        starts.push(config.processId ?? '')
+        const process = (await new ProcessRepository(basePath).list())[0]
+        const attempt = await new AttemptRepository(basePath).get(process!.attempt_id)
+        const run = await new RunRepository(basePath).get(process!.workflow_run_id)
+        expect(process).toMatchObject({
+          id: config.processId,
+          status: 'starting',
+          pid: null,
+          provider_handle: null,
+        })
+        expect(attempt).toMatchObject({ status: 'running', process_id: config.processId })
+        expect(run?.status).toBe('running')
+        return {
+          processId: config.processId!,
+          pid: 321,
+          result: terminal.promise,
+          cancel: async signal => ({
+            success: true,
+            signal: signal ?? 'SIGTERM',
+            escalated: false,
+          }),
+        } satisfies RunningProcessHandle
+      },
+      runStep: async () => { throw new Error('compatibility runner must not be used') },
+    } as Partial<RuntimeServiceDependencies> & {
+      startProcess: (config: Parameters<NonNullable<RuntimeServiceDependencies['startProcess']>>[0]) => Promise<RunningProcessHandle>
+    })
+
+    const completion = service.runAndWait(cmd, context)
+    while (starts.length === 0) await new Promise(resolve => setTimeout(resolve, 1))
+    terminal.resolve(rawResult())
+    const out = await completion
+
+    expect(out.run.status).toBe('successful')
+    expect(out.attempts[0]).toMatchObject({ status: 'completed', exit_code: 0 })
+    expect(starts).toEqual([out.attempts[0]!.process_id!])
+    expect((await new ProcessRepository(basePath).list())[0]).toMatchObject({
+      status: 'exited',
+      pid: 321,
+      provider_handle: 'pid:321',
+      exit_code: 0,
+    })
+  }, 30_000)
+
   test('blocked pre-run gate durably fails and never dispatches or spawns', async () => {
     let dispatches = 0; let spawns = 0
     const { service } = await make({
@@ -254,12 +332,36 @@ describe('AttemptExecutor and lifecycle', () => {
     ])
   }, 30_000)
 
-  test('timeout produces timed_out attempt, lost process, and failed receipt without invented evidence', async () => {
-    const { basePath, service } = await make({ runStep: async () => { throw new ProcessTimeoutError('x', 5) } })
+  test('verified controller timeout produces a timed_out attempt and exited process evidence', async () => {
+    const { basePath, service } = await make({
+      startProcess: async config => ({
+        processId: config.processId!,
+        pid: 322,
+        result: Promise.resolve(rawResult({
+          exitCode: null,
+          signal: 'SIGKILL',
+          status: 'TIMEOUT',
+          stderr: 'timed out',
+        })),
+        cancel: async signal => ({
+          success: true,
+          signal: signal ?? 'SIGTERM',
+          escalated: true,
+        }),
+      }),
+      runStep: async () => { throw new ProcessTimeoutError('compatibility runner used', 5) },
+    } as Partial<RuntimeServiceDependencies> & {
+      startProcess: (config: Parameters<NonNullable<RuntimeServiceDependencies['startProcess']>>[0]) => Promise<RunningProcessHandle>
+    })
     const out = await service.runAndWait(cmd, context)
     expect(out.attempts[0]?.status).toBe('timed_out')
     expect(out.run.status).toBe('failed')
-    expect((await new ProcessRepository(basePath).list())[0]).toMatchObject({ status: 'lost', pid: null, exit_code: null })
+    expect((await new ProcessRepository(basePath).list())[0]).toMatchObject({
+      status: 'exited',
+      pid: 322,
+      exit_code: null,
+      signal: 'SIGKILL',
+    })
     expect((await new CommandRepository(basePath).list())[0]?.status).toBe('failed')
   }, 30_000)
 

@@ -11,7 +11,7 @@ import { readPrompt, validatePromptExists } from '../prompts/manager'
 import { getRuntimeEventLogPath, saveRunArtifacts, writeCompiledPrompt, writeInputManifest } from '../runner/artifacts'
 import { dispatch } from '../runner/dispatch'
 import { compilePrompt } from '../runner/prompt-compiler'
-import { runStep } from '../runner/wrapper'
+import { runStep, startProcess } from '../runner/wrapper'
 import { validateDAG } from '../sequence/dag'
 import { readSequence } from '../sequence/parser'
 import { readRuntimeEventLog } from '../thread-surfaces/runtime-event-log'
@@ -68,6 +68,7 @@ function defaults(basePath: string): RuntimeServiceDependencies {
       ? { allowed: true }
       : { allowed: false, errorCode: 'SHELL_MODEL_DISABLED', reason: 'Shell execution is disabled in hosted mode' },
     dispatch,
+    startProcess,
     runStep,
     saveArtifacts: async (path, result, input) => await saveRunArtifacts(path, result, {
       surfaceId: input.surfaceId, compiledPrompt: input.compiledPrompt,
@@ -122,6 +123,9 @@ export async function getThreadOSRuntimeService(basePath: string, options: Runti
   const initialization = (async () => {
     await options.reconcile?.(canonical)
     const dependencies = { ...defaults(canonical), ...options.dependencies }
+    if (options.dependencies?.runStep && !options.dependencies.startProcess) {
+      dependencies.startProcess = undefined
+    }
     return new ThreadOSRuntimeService({
       basePath: canonical, scheduler: new SequentialScheduler(), dependencies,
       repositories: {

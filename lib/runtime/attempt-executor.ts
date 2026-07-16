@@ -3,11 +3,12 @@ import { approvalMatchesExecutableSubject, executableSubjectDigest } from '../po
 import type { ExecutablePayload, PolicyConfig } from '../policy/schema'
 import type { Sequence, Step } from '../sequence/schema'
 import { getRuntimeEventLogPath } from '../runner/artifacts'
-import type { RunnerConfig } from '../runner/wrapper'
-import { ProcessTimeoutError } from '../errors'
-import { transitionAttempt, transitionProcess, transitionRun } from './lifecycle'
+import type { RawProcessResult } from '../runner/process-handle'
+import type { RunnerConfig, RunResult } from '../runner/wrapper'
+import { transitionAttempt, transitionRun } from './lifecycle'
+import type { ProcessController } from './process-controller'
 import type { RuntimeCommandContext, RuntimeRepositories, RuntimeServiceDependencies } from './service-types'
-import type { ProcessRecord, StepAttempt, WorkflowRun } from './schema'
+import type { StepAttempt, WorkflowRun } from './schema'
 
 const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000
 const EVENT_EMITTER = 'thread event'
@@ -20,8 +21,12 @@ function payloadFrom(config: RunnerConfig, basePath: string): ExecutablePayload 
   return config.executablePayload ?? { command: config.command, args: config.args ?? [], cwd: config.cwd ?? basePath }
 }
 
-function redactedArgs(payload: ExecutablePayload): string[] {
-  return payload.args.map(() => '[REDACTED]')
+function compatibilityResult(result: RawProcessResult): RunResult {
+  const { signal: _signal, status, ...compatible } = result
+  return {
+    ...compatible,
+    status: status === 'CANCELLED' ? 'ERROR' : status,
+  }
 }
 
 export interface ExecuteAttemptInput {
@@ -44,6 +49,7 @@ export class AttemptExecutor {
     private readonly basePath: string,
     private readonly repositories: RuntimeRepositories,
     private readonly deps: RuntimeServiceDependencies,
+    private readonly processController: ProcessController,
   ) {}
 
   async execute(input: ExecuteAttemptInput): Promise<ExecuteAttemptResult> {
@@ -140,15 +146,7 @@ export class AttemptExecutor {
       }
 
       const processId = this.deps.newId('process')
-      let processRecord: ProcessRecord = {
-        schema_version: 1, id: processId, revision: 0, workflow_run_id: run.id, attempt_id: attempt.id,
-        provider: 'local-process', provider_handle: null, pid: null, command: payload.command,
-        redacted_args: redactedArgs(payload), cwd: payload.cwd, status: 'planned', launch_requested_at: this.deps.now(),
-        started_at: null, ended_at: null, last_output_at: null, cancellation_requested_at: null, exit_code: null, signal: null,
-      }
-      await this.repositories.processes.create(processRecord)
       attempt = await this.repositories.attempts.update(attempt.id, attempt.revision, value => ({ ...value, process_id: processId }))
-      processRecord = await transitionProcess(this.repositories.processes, processRecord, 'starting')
       if (run.status === 'provisioning') run = await transitionRun(this.repositories.runs, run, 'running', { started_at: this.deps.now() })
       attempt = await transitionAttempt(this.repositories.attempts, attempt, 'running', { started_at: this.deps.now() })
       await this.deps.appendTrace(this.basePath, run.id, {
@@ -156,67 +154,84 @@ export class AttemptExecutor {
         event_type: 'step-started', payload_ref: attempt.id, policy_ref: run.policy_snapshot_hash,
       })
 
-      let result
+      let controlled
       try {
-        result = await this.deps.runStep(runnerConfig)
+        controlled = await this.processController.start({
+          processId,
+          workflowRunId: run.id,
+          attemptId: attempt.id,
+          runnerConfig,
+        })
       } catch (error) {
-        processRecord = await transitionProcess(this.repositories.processes, processRecord, 'lost', { ended_at: this.deps.now() })
-        const timedOut = error instanceof ProcessTimeoutError
-        attempt = await transitionAttempt(this.repositories.attempts, attempt, timedOut ? 'timed_out' : 'failed', {
-          ended_at: this.deps.now(), error_code: timedOut ? error.code : 'PROCESS_LOST',
+        attempt = await transitionAttempt(this.repositories.attempts, attempt, 'failed', {
+          ended_at: this.deps.now(), error_code: 'PROCESS_LOST',
           error_message: error instanceof Error ? error.message : String(error),
         })
         await this.deps.projections.finalizeAttempt({ run, attempt, step, runtimeEvents: [] }).catch(() => undefined)
         return { run, attempt }
       }
 
-      if (result.exitCode == null) {
-        processRecord = await transitionProcess(this.repositories.processes, processRecord, 'lost', {
-          ended_at: result.endTime.toISOString(), last_output_at: result.endTime.toISOString(),
-        })
+      const completion = await controlled.completion
+      const result = completion.result
+      if (!result || completion.process.status !== 'exited') {
+        const endedAt = completion.process.ended_at ?? this.deps.now()
         await this.deps.appendTrace(this.basePath, run.id, {
-          ts: result.endTime.toISOString(), run_id: run.id, surface_id: surfaceId, actor: context.actor,
-          event_type: 'step-failed', payload_ref: processRecord.id, policy_ref: run.policy_snapshot_hash,
+          ts: endedAt, run_id: run.id, surface_id: surfaceId, actor: context.actor,
+          event_type: 'step-failed', payload_ref: processId, policy_ref: run.policy_snapshot_hash,
         })
         attempt = await transitionAttempt(this.repositories.attempts, attempt, 'failed', {
-          ended_at: result.endTime.toISOString(), duration_ms: result.duration,
-          error_code: 'PROCESS_LOST', error_message: result.stderr || 'Process returned no exit evidence',
+          ended_at: endedAt,
+          error_code: 'PROCESS_LOST',
+          error_message: completion.error?.message ?? 'Process returned no verified terminal result',
         })
         await this.deps.projections.finalizeAttempt({ run, attempt, step, runtimeEvents: [] }).catch(() => undefined)
         return { run, attempt }
       }
 
-      processRecord = await transitionProcess(this.repositories.processes, processRecord, 'exited', {
-        started_at: result.startTime.toISOString(), ended_at: result.endTime.toISOString(),
-        last_output_at: result.endTime.toISOString(), exit_code: result.exitCode,
-      })
-      await this.deps.saveArtifacts(this.basePath, result, { surfaceId, compiledPrompt, step })
-      const artifactRef = `.threados/runs/${run.id}/surfaces/${surfaceId}/artifact.manifest.json`
-      const completionGates = this.deps.evaluateCompletionGates({ step, result, artifactManifestPresent: true })
-      await this.deps.persistGateDecisions(this.basePath, run.id, surfaceId, completionGates, run.policy_snapshot_hash)
-      for (const decision of completionGates) {
-        await this.deps.appendTrace(this.basePath, run.id, {
-          ts: decision.decided_at, run_id: run.id, surface_id: surfaceId, actor: context.actor,
-          event_type: decision.status === 'PASS' ? 'gate-evaluated' : 'gate-blocked', payload_ref: decision.id,
-          policy_ref: run.policy_snapshot_hash,
+      let artifactRef: string | null = null
+      let completionGates: ReturnType<RuntimeServiceDependencies['evaluateCompletionGates']> = []
+      if (result.exitCode !== null) {
+        const compatible = compatibilityResult(result)
+        await this.deps.saveArtifacts(this.basePath, compatible, { surfaceId, compiledPrompt, step })
+        artifactRef = `.threados/runs/${run.id}/surfaces/${surfaceId}/artifact.manifest.json`
+        completionGates = this.deps.evaluateCompletionGates({
+          step,
+          result: compatible,
+          artifactManifestPresent: true,
         })
+        await this.deps.persistGateDecisions(this.basePath, run.id, surfaceId, completionGates, run.policy_snapshot_hash)
+        for (const decision of completionGates) {
+          await this.deps.appendTrace(this.basePath, run.id, {
+            ts: decision.decided_at, run_id: run.id, surface_id: surfaceId, actor: context.actor,
+            event_type: decision.status === 'PASS' ? 'gate-evaluated' : 'gate-blocked', payload_ref: decision.id,
+            policy_ref: run.policy_snapshot_hash,
+          })
+        }
       }
       const completionPassed = completionGates.every(decision => decision.status === 'PASS')
       const runtimeEvents = await this.deps.readRuntimeEvents(this.basePath, run.id, step.id)
-      const status = result.exitCode === 42
-        ? 'needs_review'
-        : result.status === 'SUCCESS' ? (completionPassed ? 'completed' : 'needs_review') : 'failed'
+      const status = result.status === 'TIMEOUT'
+        ? 'timed_out'
+        : result.status === 'CANCELLED'
+          ? 'cancelled'
+          : result.status === 'SUCCESS' && result.exitCode === 0
+            ? (completionPassed ? 'completed' : 'needs_review')
+            : 'failed'
       await this.deps.appendTrace(this.basePath, run.id, {
         ts: result.endTime.toISOString(), run_id: run.id, surface_id: surfaceId, actor: context.actor,
-        event_type: status === 'completed' ? 'step-completed' : 'step-failed', payload_ref: artifactRef,
+        event_type: status === 'completed' ? 'step-completed' : 'step-failed',
+        payload_ref: artifactRef ?? processId,
         policy_ref: run.policy_snapshot_hash,
       })
       attempt = await transitionAttempt(this.repositories.attempts, attempt, status, {
         ended_at: result.endTime.toISOString(), exit_code: result.exitCode, duration_ms: result.duration,
+        signal: result.signal,
         artifact_manifest_ref: artifactRef,
         gate_decision_refs: [...new Set([...attempt.gate_decision_refs, ...completionGates.map(gate => gate.id)])],
         error_code: status === 'failed' ? 'PROCESS_EXIT_FAILED' : null,
-        error_message: status === 'failed' ? result.stderr || `process exited ${result.exitCode}` : null,
+        error_message: status === 'failed'
+          ? result.stderr || `process ${result.status.toLowerCase()} with exit ${result.exitCode ?? 'unknown'}`
+          : null,
       })
       await this.deps.projections.finalizeAttempt({ run, attempt, step, runtimeEvents }).catch(() => undefined)
       return { run, attempt }

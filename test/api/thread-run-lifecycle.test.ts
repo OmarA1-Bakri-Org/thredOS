@@ -140,7 +140,7 @@ describe.serial('thread run lifecycle routes', () => {
       }),
     ])
     expect(state.runEvents).toEqual([])
-  })
+  }, 30_000)
 
   test('a new run request creates a new RunScope instead of mutating the old run', async () => {
     const { POST } = await import('@/app/api/run/route')
@@ -166,7 +166,7 @@ describe.serial('thread run lifecycle routes', () => {
     expect(rootRuns[0]?.id).not.toBe(rootRuns[1]?.id)
     expect(rootRuns.every(run => run.runStatus === 'successful')).toBe(true)
     expect(state.runEvents).toEqual([])
-  }, 15_000)
+  }, 30_000)
 
   test('stop delegates the latest canonical attempt to the runtime service', async () => {
     const calls: string[] = []

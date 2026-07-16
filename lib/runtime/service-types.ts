@@ -2,6 +2,7 @@ import type { Approval, GateDecision, TraceEvent } from '../contracts/schemas'
 import type { PolicyConfig, PolicyResult, ExecutablePayload } from '../policy/schema'
 import type { DispatchOptions } from '../runner/dispatch'
 import type { RunnerConfig, RunResult } from '../runner/wrapper'
+import type { RunningProcessHandle } from '../runner/process-handle'
 import type { Sequence, Step } from '../sequence/schema'
 import type { RuntimeDelegationEvent } from '../thread-surfaces/runtime-event-log'
 import type { RevealState, SurfaceClass } from '../thread-surfaces/types'
@@ -48,6 +49,9 @@ export interface RuntimeServiceDependencies {
   resolveGateSurface(input: { basePath: string; surfaceId: string; step: Step }): Promise<{ surfaceClass: SurfaceClass; revealState: RevealState }>
   allowModelExecution(input: { step: Step }): { allowed: boolean; errorCode?: string; reason?: string }
   dispatch(model: Step['model'], options: DispatchOptions): Promise<RunnerConfig>
+  /** Canonical process launch boundary. Production factories always provide the real starter. */
+  startProcess?: (config: RunnerConfig) => Promise<RunningProcessHandle>
+  /** Compatibility-only terminal runner for legacy API/CLI test injection. */
   runStep(config: RunnerConfig): Promise<RunResult>
   saveArtifacts(basePath: string, result: RunResult, input: { surfaceId: string; compiledPrompt: string; step: Step }): Promise<string>
   readRuntimeEvents(basePath: string, runId: string, stepId: string): Promise<RuntimeDelegationEvent[]>
