@@ -549,6 +549,99 @@ describe('reconcileCanonicalRuntime', () => {
     })
   })
 
+  test('rejects self, same-run, and recovery-interrupted retry parents', async () => {
+    const repos = await repositories()
+
+    await repos.runs.create(run({
+      id: 'self-run',
+      status: 'failed',
+      attempt_ids: ['self-attempt'],
+      ended_at: NOW,
+    }))
+    await repos.attempts.create(attempt({
+      id: 'self-attempt',
+      workflow_run_id: 'self-run',
+      status: 'failed',
+      retry_of_attempt_id: 'self-attempt',
+      process_id: null,
+      ended_at: NOW,
+    }))
+    await repos.commands.createOrReplay(receipt({
+      id: 'self-retry',
+      idempotency_key: 'self-retry-key',
+      command_type: 'retry-attempt',
+      result_ref: formatRetryBinding('self-attempt', 'self-run'),
+    }))
+
+    await repos.runs.create(run({
+      id: 'same-run',
+      status: 'failed',
+      attempt_ids: ['same-run-original', 'same-run-child'],
+      ended_at: NOW,
+    }))
+    await repos.attempts.create(attempt({
+      id: 'same-run-original',
+      workflow_run_id: 'same-run',
+      status: 'failed',
+      process_id: null,
+      ended_at: NOW,
+    }))
+    await repos.attempts.create(attempt({
+      id: 'same-run-child',
+      workflow_run_id: 'same-run',
+      status: 'failed',
+      retry_of_attempt_id: 'same-run-original',
+      process_id: null,
+      ended_at: NOW,
+    }))
+    await repos.commands.createOrReplay(receipt({
+      id: 'same-run-retry',
+      idempotency_key: 'same-run-retry-key',
+      command_type: 'retry-attempt',
+      result_ref: formatRetryBinding('same-run-original', 'same-run'),
+    }))
+
+    await repos.runs.create(run({
+      id: 'active-original-run',
+      attempt_ids: ['active-original'],
+    }))
+    await repos.attempts.create(attempt({
+      id: 'active-original',
+      workflow_run_id: 'active-original-run',
+      process_id: null,
+    }))
+    await repos.runs.create(run({
+      id: 'active-child-run',
+      status: 'failed',
+      attempt_ids: ['active-child'],
+      ended_at: NOW,
+    }))
+    await repos.attempts.create(attempt({
+      id: 'active-child',
+      workflow_run_id: 'active-child-run',
+      status: 'failed',
+      retry_of_attempt_id: 'active-original',
+      process_id: null,
+      ended_at: NOW,
+    }))
+    await repos.commands.createOrReplay(receipt({
+      id: 'active-original-retry',
+      idempotency_key: 'active-original-retry-key',
+      command_type: 'retry-attempt',
+      result_ref: formatRetryBinding('active-original', 'active-child-run'),
+    }))
+
+    await reconcileCanonicalRuntime(repos.basePath, { now: () => NOW })
+
+    for (const id of ['self-retry', 'same-run-retry', 'active-original-retry']) {
+      expect(await repos.commands.get(id)).toMatchObject({
+        status: 'failed',
+        error_code: 'PROCESS_LOST',
+        completed_at: NOW,
+      })
+    }
+  }, 30_000)
+
   test('fails unsafe encoded retry identifiers without traversal or an accepted receipt', async () => {
     const repos = await repositories()
     for (const [id, binding] of [

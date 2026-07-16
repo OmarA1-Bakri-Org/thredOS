@@ -98,6 +98,7 @@ async function repairAcceptedReceipts(
   receipts: import('./schema').RuntimeCommandReceipt[],
   runs: Map<string, WorkflowRun>,
   attempts: Map<string, StepAttempt>,
+  historicalRetryAttemptIds: ReadonlySet<string>,
   inconsistentRunIds: ReadonlySet<string>,
   missingReservedAttemptsByRun: ReadonlyMap<string, string>,
   now: string,
@@ -132,11 +133,23 @@ async function repairAcceptedReceipts(
           }, now)
           continue
         }
-        if (!attempts.has(binding.originalAttemptId)) {
+        const originalAttempt = attempts.get(binding.originalAttemptId)
+        if (!originalAttempt) {
           await repositories.commands.complete(receipt.id, {
             status: 'failed',
             errorCode: 'PROCESS_LOST',
             errorMessage: `Retry original attempt ${binding.originalAttemptId} was missing or quarantined during recovery`,
+          }, now)
+          continue
+        }
+        if (
+          !historicalRetryAttemptIds.has(originalAttempt.id)
+          || originalAttempt.workflow_run_id === childRun.id
+        ) {
+          await repositories.commands.complete(receipt.id, {
+            status: 'failed',
+            errorCode: 'PROCESS_LOST',
+            errorMessage: `Retry original attempt ${originalAttempt.id} was not terminal historical lineage from a different run`,
           }, now)
           continue
         }
@@ -268,6 +281,11 @@ export async function reconcileCanonicalRuntime(
   const runs = new Map(physical.runs)
   const processesById = new Map(physical.processes)
   const processes = [...processesById.values()]
+  const historicalRetryAttemptIds = new Set(
+    [...attempts.values()]
+      .filter(attempt => TERMINAL_ATTEMPT_STATUSES.has(attempt.status))
+      .map(attempt => attempt.id),
+  )
   const managedAttemptIds = new Set<string>()
   const inconsistentRunIds = new Set<string>()
   const missingReservedAttemptsByRun = new Map<string, string>()
@@ -441,6 +459,7 @@ export async function reconcileCanonicalRuntime(
     physical.receipts,
     runs,
     attempts,
+    historicalRetryAttemptIds,
     inconsistentRunIds,
     missingReservedAttemptsByRun,
     now,

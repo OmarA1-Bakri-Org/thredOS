@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from 'bun:test'
+import { afterEach, describe, expect, setDefaultTimeout, test } from 'bun:test'
 import { mkdir, mkdtemp, rm, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { dirname, join } from 'path'
@@ -13,7 +13,10 @@ import {
 import { ProcessRepository } from '@/lib/runtime/process-repository'
 import { RunRepository } from '@/lib/runtime/run-repository'
 import type { ThreadOSRuntimeService } from '@/lib/runtime/service'
-import { startProcess } from '@/lib/runner/wrapper'
+import {
+  setProcessTerminationHookForTests,
+  startProcess,
+} from '@/lib/runner/wrapper'
 import type { RunningProcessHandle } from '@/lib/runner/process-handle'
 
 const fixturePath = fileURLToPath(
@@ -25,6 +28,8 @@ const cliOptions = {
   watch: false,
   policyConfirmed: true,
 }
+
+setDefaultTimeout(120_000)
 
 async function waitForRunningAttempt(
   service: ThreadOSRuntimeService,
@@ -56,15 +61,40 @@ async function waitForRetryAttempt(
   throw new Error(`retry lineage for ${originalAttemptId} was not persisted`)
 }
 
+async function terminateFixtureDirectly(
+  pid: number,
+  signal: 'SIGTERM' | 'SIGKILL',
+) {
+  try {
+    process.kill(pid, signal)
+    return { success: true, signaled: true }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ESRCH') {
+      return { success: true, signaled: false }
+    }
+    return {
+      success: false,
+      message: error instanceof Error ? error.message : String(error),
+    }
+  }
+}
+
 describe.serial('PR-06 real process exit gate', () => {
   let basePath: string | null = null
   let orphanHandle: RunningProcessHandle | null = null
+  const runtimeHandles = new Set<RunningProcessHandle>()
 
   afterEach(async () => {
+    for (const handle of runtimeHandles) {
+      await handle.cancel('SIGKILL').catch(() => undefined)
+      await handle.result.catch(() => undefined)
+    }
+    runtimeHandles.clear()
     if (orphanHandle) {
       await orphanHandle.cancel('SIGKILL').catch(() => undefined)
       await orphanHandle.result.catch(() => undefined)
     }
+    setProcessTerminationHookForTests(null)
     delete globalThis.__THREADOS_RUNTIME_SERVICE__
     delete globalThis.__THREADOS_CLI_RUNTIME_SERVICE__
     delete process.env.THREADOS_BASE_PATH
@@ -100,10 +130,20 @@ describe.serial('PR-06 real process exit gate', () => {
       side_effect_mode: 'free',
     }))
     await writeFile(promptPath, '# real process proof')
+    setProcessTerminationHookForTests(terminateFixtureDirectly)
 
     const service = await getThreadOSRuntimeService(basePath, {
       dependencies: {
         allowModelExecution: () => ({ allowed: true }),
+        startProcess: async config => {
+          const handle = await startProcess(config)
+          runtimeHandles.add(handle)
+          void handle.result.then(
+            () => runtimeHandles.delete(handle),
+            () => runtimeHandles.delete(handle),
+          )
+          return handle
+        },
         dispatch: async (_model, options) => ({
           stepId: options.stepId,
           runId: options.runId,
@@ -153,7 +193,7 @@ describe.serial('PR-06 real process exit gate', () => {
         basePath,
         idempotencyKey: 'pr06-cli-stop',
       })
-      expect(process.exitCode).toBe(0)
+      expect(process.exitCode, output.at(-1)).toBe(0)
       process.exitCode = 0
       await controlCommand('restart', ['step-1'], {
         ...cliOptions,

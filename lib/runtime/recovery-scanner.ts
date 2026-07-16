@@ -240,6 +240,14 @@ async function scanRuntimeRecords(
     }
   }
 
+  for (const [attemptId, record] of snapshot.attempts) {
+    if (snapshot.runs.has(record.workflow_run_id)) continue
+    quarantineIdentity(snapshot.attempts, quarantinedAttempts, attemptId)
+    snapshot.errors.push(
+      `Attempt ${record.id} references invalid run ${record.workflow_run_id}`,
+    )
+  }
+
   for (const [processId, record] of snapshot.processes) {
     const owner = snapshot.attempts.get(record.attempt_id)
     if (owner?.workflow_run_id === record.workflow_run_id) continue
