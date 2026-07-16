@@ -1313,12 +1313,17 @@ describe('ThreadOSRuntimeService', () => {
   })
 
   test('shared retry binding parser preserves the service binding contract', () => {
-    const binding = formatRetryBinding('attempt%encoded', 'run%encoded')
+    const binding = formatRetryBinding('attempt-safe', 'run-safe')
     expect(parseRetryBinding(binding)).toEqual({
-      originalAttemptId: 'attempt%encoded',
-      childRunId: 'run%encoded',
+      originalAttemptId: 'attempt-safe',
+      childRunId: 'run-safe',
     })
-    expect(parseUnboundRetry('retry:attempt%2525encoded')).toBe('attempt%25encoded')
+    expect(() => formatRetryBinding('../escape', 'run-safe')).toThrow('file-safe identifier')
+    expect(() => formatRetryBinding('attempt-safe', 'CON')).toThrow('file-safe identifier')
+    expect(parseUnboundRetry('retry:attempt-safe')).toBe('attempt-safe')
+    expect(parseRetryBinding('retry:..%2Fescape:run:safe-run')).toBeNull()
+    expect(parseRetryBinding('retry:safe-attempt:run:..%5Cescape')).toBeNull()
+    expect(parseUnboundRetry('retry:CON')).toBeNull()
   })
 
   test('factory keys singleton identity by canonical base path and reconciles once', async () => {

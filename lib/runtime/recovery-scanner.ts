@@ -31,13 +31,16 @@ async function readJson(path: string): Promise<unknown> {
 
 function addUnique<T extends { id: string }>(
   records: Map<string, T>,
+  quarantined: Set<string>,
   record: T,
   kind: string,
-  label: string,
   errors: string[],
 ): boolean {
+  if (quarantined.has(record.id)) return false
   if (records.has(record.id)) {
-    errors.push(`Duplicate ${kind} identity ${record.id} at ${label}`)
+    records.delete(record.id)
+    quarantined.add(record.id)
+    errors.push(`Duplicate ${kind} identity ${record.id}`)
     return false
   }
   records.set(record.id, record)
@@ -50,6 +53,9 @@ async function scanRuntimeRecords(
 ): Promise<void> {
   const root = await lookupRunsRoot(basePath)
   if (!root) return
+  const quarantinedRuns = new Set<string>()
+  const quarantinedAttempts = new Set<string>()
+  const quarantinedProcesses = new Set<string>()
 
   for (const runEntry of await readdir(root, { withFileTypes: true })) {
     if (!runEntry.isDirectory()) continue
@@ -64,7 +70,9 @@ async function scanRuntimeRecords(
       const runLabel = `${runEntry.name}/run.json`
       let validRun = false
       const runPath = await resolveExistingPathWithinRoot(runDirectory, 'run.json').catch(() => null)
-      if (runPath) {
+      if (!runPath) {
+        snapshot.errors.push(`Missing run record at ${runLabel}`)
+      } else {
         try {
           const parsed = WorkflowRunSchema.safeParse(await readJson(runPath))
           if (!parsed.success) {
@@ -74,7 +82,13 @@ async function scanRuntimeRecords(
               `Run record identity mismatch at ${runLabel}: expected ${runEntry.name}, received ${parsed.data.id}`,
             )
           } else {
-            validRun = addUnique(snapshot.runs, parsed.data, 'run', runLabel, snapshot.errors)
+            validRun = addUnique(
+              snapshot.runs,
+              quarantinedRuns,
+              parsed.data,
+              'run',
+              snapshot.errors,
+            )
           }
         } catch (error) {
           snapshot.errors.push(`Malformed run record at ${runLabel}: ${errorMessage(error)}`)
@@ -120,10 +134,14 @@ async function scanRuntimeRecords(
                 if (identityValid && validRun) {
                   validAttempt = addUnique(
                     snapshot.attempts,
+                    quarantinedAttempts,
                     parsed.data,
                     'attempt',
-                    attemptLabel,
                     snapshot.errors,
+                  )
+                } else if (identityValid) {
+                  snapshot.errors.push(
+                    `Attempt ${parsed.data.id} is under invalid run ${runEntry.name}`,
                   )
                 }
               }
@@ -166,7 +184,13 @@ async function scanRuntimeRecords(
               )
               continue
             }
-            addUnique(snapshot.processes, parsed.data, 'process', processLabel, snapshot.errors)
+            addUnique(
+              snapshot.processes,
+              quarantinedProcesses,
+              parsed.data,
+              'process',
+              snapshot.errors,
+            )
           } catch (error) {
             snapshot.errors.push(`Malformed process record at ${processLabel}: ${errorMessage(error)}`)
           }
@@ -179,6 +203,15 @@ async function scanRuntimeRecords(
     } catch (error) {
       snapshot.errors.push(`Failed to inspect run directory ${runEntry.name}: ${errorMessage(error)}`)
     }
+  }
+
+  for (const [processId, record] of snapshot.processes) {
+    const owner = snapshot.attempts.get(record.attempt_id)
+    if (owner?.workflow_run_id === record.workflow_run_id) continue
+    snapshot.processes.delete(processId)
+    snapshot.errors.push(
+      `Process ${record.id} references invalid attempt ${record.attempt_id}`,
+    )
   }
 }
 

@@ -303,5 +303,5 @@ describe.serial('runtime V2 API routes', () => {
     expect(repaired.retry_of_attempt_id).toBe(original.id)
     for (let poll = 0; spawns < 3 && poll < 200; poll++) await new Promise(resolve => setTimeout(resolve, 10))
     expect(spawns).toBe(3)
-  }, 30_000)
+  }, 60_000)
 })

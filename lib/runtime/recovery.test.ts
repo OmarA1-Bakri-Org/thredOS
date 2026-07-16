@@ -515,6 +515,31 @@ describe('reconcileCanonicalRuntime', () => {
     })
   })
 
+  test('fails unsafe encoded retry identifiers without traversal or an accepted receipt', async () => {
+    const repos = await repositories()
+    for (const [id, binding] of [
+      ['unsafe-original', 'retry:..%2Fescape:run:safe-run'],
+      ['unsafe-child', 'retry:safe-attempt:run:..%5Cescape'],
+    ] as const) {
+      await repos.commands.createOrReplay(receipt({
+        id,
+        idempotency_key: `${id}-key`,
+        command_type: 'retry-attempt',
+        result_ref: binding,
+      }))
+    }
+
+    await reconcileCanonicalRuntime(repos.basePath, { now: () => NOW })
+
+    for (const id of ['unsafe-original', 'unsafe-child']) {
+      expect(await repos.commands.get(id)).toMatchObject({
+        status: 'failed',
+        error_code: 'PROCESS_LOST',
+        completed_at: NOW,
+      })
+    }
+  }, 30_000)
+
   test('reports corrupt physical ownership and malformed JSON while recovering a healthy tree', async () => {
     const repos = await repositories()
     await createActiveTree(repos)
@@ -582,6 +607,118 @@ describe('reconcileCanonicalRuntime', () => {
     expect((await repos.runs.get('run-1'))?.status).toBe('interrupted')
     expect(await repos.processes.get('corrupt-process')).toBeNull()
   })
+
+  test('quarantines duplicate attempt identities across valid runs', async () => {
+    const repos = await repositories()
+    await createActiveTree(repos)
+    for (const runId of ['duplicate-run-a', 'duplicate-run-b']) {
+      await repos.runs.create(run({ id: runId, attempt_ids: ['duplicate-attempt'] }))
+      const directory = join(
+        repos.basePath,
+        '.threados',
+        'runs',
+        runId,
+        'attempts',
+        'duplicate-attempt',
+      )
+      await mkdir(directory, { recursive: true })
+      await writeFile(join(directory, 'attempt.json'), JSON.stringify(attempt({
+        id: 'duplicate-attempt',
+        workflow_run_id: runId,
+        process_id: null,
+      })))
+    }
+
+    const report = await reconcileCanonicalRuntime(repos.basePath, { now: () => NOW })
+
+    expect(report.errors).toContain('Duplicate attempt identity duplicate-attempt')
+    for (const runId of ['duplicate-run-a', 'duplicate-run-b']) {
+      const physical = JSON.parse(await Bun.file(join(
+        repos.basePath,
+        '.threados',
+        'runs',
+        runId,
+        'attempts',
+        'duplicate-attempt',
+        'attempt.json',
+      )).text()) as StepAttempt
+      expect(physical.status).toBe('running')
+    }
+    expect((await repos.processes.get('process-1'))?.status).toBe('lost')
+  }, 30_000)
+
+  test('quarantines duplicate process identities across valid attempts', async () => {
+    const repos = await repositories()
+    await createActiveTree(repos)
+    for (const [runId, attemptId] of [
+      ['duplicate-process-run-a', 'duplicate-process-attempt-a'],
+      ['duplicate-process-run-b', 'duplicate-process-attempt-b'],
+    ] as const) {
+      await repos.runs.create(run({ id: runId, attempt_ids: [attemptId] }))
+      await repos.attempts.create(attempt({
+        id: attemptId,
+        workflow_run_id: runId,
+        process_id: 'duplicate-process',
+      }))
+      await writeFile(
+        await processRecordPath(repos.basePath, runId, attemptId),
+        JSON.stringify(processRecord({
+          id: 'duplicate-process',
+          workflow_run_id: runId,
+          attempt_id: attemptId,
+        })),
+      )
+    }
+
+    const report = await reconcileCanonicalRuntime(repos.basePath, { now: () => NOW })
+
+    expect(report.errors).toContain('Duplicate process identity duplicate-process')
+    for (const [runId, attemptId] of [
+      ['duplicate-process-run-a', 'duplicate-process-attempt-a'],
+      ['duplicate-process-run-b', 'duplicate-process-attempt-b'],
+    ] as const) {
+      const physical = JSON.parse(await Bun.file(
+        await processRecordPath(repos.basePath, runId, attemptId),
+      ).text()) as ProcessRecord
+      expect(physical.status).toBe('running')
+    }
+    expect((await repos.processes.get('process-1'))?.status).toBe('lost')
+  }, 30_000)
+
+  test('diagnoses descendants under a missing run record and leaves them quarantined', async () => {
+    const repos = await repositories()
+    await createActiveTree(repos)
+    const directory = join(
+      repos.basePath,
+      '.threados',
+      'runs',
+      'missing-run-record',
+      'attempts',
+      'orphan-attempt',
+    )
+    await mkdir(directory, { recursive: true })
+    await writeFile(join(directory, 'attempt.json'), JSON.stringify(attempt({
+      id: 'orphan-attempt',
+      workflow_run_id: 'missing-run-record',
+      process_id: 'orphan-process',
+    })))
+    await writeFile(join(directory, 'process.json'), JSON.stringify(processRecord({
+      id: 'orphan-process',
+      workflow_run_id: 'missing-run-record',
+      attempt_id: 'orphan-attempt',
+    })))
+
+    const report = await reconcileCanonicalRuntime(repos.basePath, { now: () => NOW })
+
+    expect(report.errors).toEqual(expect.arrayContaining([
+      'Missing run record at missing-run-record/run.json',
+      expect.stringContaining('Attempt orphan-attempt is under invalid run missing-run-record'),
+      expect.stringContaining('Process orphan-process references invalid attempt orphan-attempt'),
+    ]))
+    const physical = JSON.parse(await Bun.file(join(directory, 'attempt.json')).text()) as StepAttempt
+    expect(physical.status).toBe('running')
+    expect((await repos.processes.get('process-1'))?.status).toBe('lost')
+  }, 30_000)
 
   test('isolates malformed and mismatched command files while repairing valid receipts', async () => {
     const repos = await repositories()
