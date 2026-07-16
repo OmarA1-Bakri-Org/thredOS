@@ -73,11 +73,15 @@ export interface RuntimeServiceDependencies {
 export interface RunProjection {
   run: WorkflowRun
   attempts: StepAttempt[]
+  source: 'v2' | 'legacy'
+  schemaVersion: 2 | 1
 }
 
 export interface AttemptProjection {
   attempt: StepAttempt
   process: ProcessRecord | null
+  source: 'v2' | 'legacy'
+  schemaVersion: 2 | 1
 }
 
 export interface LatestAttemptQuery {

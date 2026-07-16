@@ -20,6 +20,11 @@ import type {
   AttemptProjection, CompletedRunResult, LatestAttemptQuery, RunProjection, RuntimeCommandContext,
   RuntimeReconciliationReport, RuntimeRunQuery, RuntimeServiceOptions, SequenceStatusProjection, StartRunRequest,
 } from './service-types'
+import {
+  inspectRuntimeAttemptProjection,
+  inspectRuntimeRunProjection,
+  listRuntimeRunProjections,
+} from './projections'
 import type { RuntimeCommandReceipt, StepAttempt, WorkflowRun, WorkflowRunTarget } from './schema'
 
 function targetRef(target: WorkflowRunTarget): string {
@@ -178,24 +183,23 @@ export class ThreadOSRuntimeService {
   }
 
   async listRuns(query: RuntimeRunQuery = {}): Promise<RunProjection[]> {
-    const runs = await this.repositories.runs.list(query)
-    return await Promise.all(runs.map(async run => ({
-      run,
-      attempts: await this.repositories.attempts.listForRun(run.id),
-    })))
+    return await listRuntimeRunProjections(this.basePath, this.repositories, query)
   }
 
   async inspectRun(runId: string): Promise<RunProjection> {
-    const run = await this.repositories.runs.get(runId)
-    if (!run) throw new RuntimeServiceError('RUN_NOT_FOUND', `run ${runId} was not found`)
-    return { run, attempts: await this.repositories.attempts.listForRun(run.id) }
+    const projection = await inspectRuntimeRunProjection(this.basePath, this.repositories, runId)
+    if (!projection) throw new RuntimeServiceError('RUN_NOT_FOUND', `run ${runId} was not found`)
+    return projection
   }
 
   async inspectAttempt(attemptId: string): Promise<AttemptProjection> {
-    const attempt = await this.repositories.attempts.get(attemptId)
-    if (!attempt) throw new RuntimeServiceError('ATTEMPT_NOT_FOUND', `attempt ${attemptId} was not found`)
-    const process = attempt.process_id ? await this.repositories.processes.get(attempt.process_id) : null
-    return { attempt, process }
+    const projection = await inspectRuntimeAttemptProjection(
+      this.basePath,
+      this.repositories,
+      attemptId,
+    )
+    if (!projection) throw new RuntimeServiceError('ATTEMPT_NOT_FOUND', `attempt ${attemptId} was not found`)
+    return projection
   }
 
   async findLatestAttempt(query: LatestAttemptQuery): Promise<StepAttempt | null> {

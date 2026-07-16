@@ -1,4 +1,7 @@
+import { readdir } from 'fs/promises'
 import { ThreadSurfaceStateConflictError } from '../errors'
+import { assertSafePathSegment, resolveExistingPathWithinRoot } from '../security/safe-path'
+import { readTextFileNoFollow } from '../security/safe-io'
 import { ROOT_THREAD_SURFACE_ID } from '../thread-surfaces/constants'
 import { completeRun, createReplacementRun, createRootThreadSurfaceRun } from '../thread-surfaces/mutations'
 import { provisionAllChildSequences, type PendingChildSequence } from '../thread-surfaces/provision-child-sequence'
@@ -6,7 +9,139 @@ import {
   readThreadSurfaceState, withThreadSurfaceStateRevision, writeThreadSurfaceState, type ThreadSurfaceState,
 } from '../thread-surfaces/repository'
 import { beginStepRunIfSurfaceExists, finalizeStepRunWithRuntimeEvents, type StepRunScope } from '../thread-surfaces/step-run-runtime'
-import type { RuntimeProjectionPort } from './service-types'
+import { lookupRunRecordPath, lookupRunsRoot } from './paths'
+import {
+  LegacyRunRecordSchema,
+  WorkflowRunSchema,
+  projectLegacyRunRecord,
+} from './schema'
+import type {
+  AttemptProjection,
+  RunProjection,
+  RuntimeProjectionPort,
+  RuntimeRepositories,
+  RuntimeRunQuery,
+} from './service-types'
+
+type DiscoveredRun =
+  | { source: 'v2'; schemaVersion: 2; run: RunProjection['run'] }
+  | { source: 'legacy'; schemaVersion: 1; run: ReturnType<typeof projectLegacyRunRecord> }
+
+async function discoverRunRecord(path: string): Promise<DiscoveredRun | null> {
+  let value: unknown
+  try {
+    value = JSON.parse(await readTextFileNoFollow(path))
+  } catch {
+    return null
+  }
+  const current = WorkflowRunSchema.safeParse(value)
+  if (current.success) {
+    return { source: 'v2', schemaVersion: 2, run: current.data }
+  }
+  const legacy = LegacyRunRecordSchema.safeParse(value)
+  if (legacy.success) {
+    return {
+      source: 'legacy',
+      schemaVersion: 1,
+      run: projectLegacyRunRecord(legacy.data),
+    }
+  }
+  return null
+}
+
+function matchesRunQuery(projection: RunProjection, query: RuntimeRunQuery): boolean {
+  if (query.sequenceId && projection.run.sequence_id !== query.sequenceId) return false
+  if (query.status && projection.run.status !== query.status) return false
+  return true
+}
+
+async function projectDiscoveredRun(
+  repositories: RuntimeRepositories,
+  discovered: DiscoveredRun,
+): Promise<RunProjection> {
+  if (discovered.source === 'legacy') {
+    return {
+      source: discovered.source,
+      schemaVersion: discovered.schemaVersion,
+      run: discovered.run.workflowRun,
+      attempts: [discovered.run.stepAttempt],
+    }
+  }
+  return {
+    source: discovered.source,
+    schemaVersion: discovered.schemaVersion,
+    run: discovered.run,
+    attempts: await repositories.attempts.listForRun(discovered.run.id),
+  }
+}
+
+export async function listRuntimeRunProjections(
+  basePath: string,
+  repositories: RuntimeRepositories,
+  query: RuntimeRunQuery = {},
+): Promise<RunProjection[]> {
+  const root = await lookupRunsRoot(basePath)
+  if (!root) return []
+  const projections: RunProjection[] = []
+  for (const entry of await readdir(root, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue
+    assertSafePathSegment(entry.name, 'run id')
+    const path = await resolveExistingPathWithinRoot(root, entry.name, 'run.json').catch(() => null)
+    if (!path) continue
+    const discovered = await discoverRunRecord(path)
+    if (!discovered) continue
+    const projection = await projectDiscoveredRun(repositories, discovered)
+    if (projection.run.id !== entry.name || !matchesRunQuery(projection, query)) continue
+    projections.push(projection)
+  }
+  return projections.sort((left, right) => left.run.id.localeCompare(right.run.id))
+}
+
+export async function inspectRuntimeRunProjection(
+  basePath: string,
+  repositories: RuntimeRepositories,
+  runId: string,
+): Promise<RunProjection | null> {
+  assertSafePathSegment(runId, 'run id')
+  const path = await lookupRunRecordPath(basePath, runId)
+  if (!path) return null
+  const discovered = await discoverRunRecord(path)
+  if (!discovered) return null
+  const projection = await projectDiscoveredRun(repositories, discovered)
+  return projection.run.id === runId ? projection : null
+}
+
+export async function inspectRuntimeAttemptProjection(
+  basePath: string,
+  repositories: RuntimeRepositories,
+  attemptId: string,
+): Promise<AttemptProjection | null> {
+  const attempt = attemptId.includes(':')
+    ? null
+    : await repositories.attempts.get(attemptId)
+  if (attempt) {
+    return {
+      source: 'v2',
+      schemaVersion: 2,
+      attempt,
+      process: attempt.process_id ? await repositories.processes.get(attempt.process_id) : null,
+    }
+  }
+  const legacy = await listRuntimeRunProjections(basePath, repositories)
+  for (const projection of legacy) {
+    if (projection.source !== 'legacy') continue
+    const projectedAttempt = projection.attempts.find(item => item.id === attemptId)
+    if (projectedAttempt) {
+      return {
+        source: 'legacy',
+        schemaVersion: 1,
+        attempt: projectedAttempt,
+        process: null,
+      }
+    }
+  }
+  return null
+}
 
 async function mutateProjection<T>(
   basePath: string,
