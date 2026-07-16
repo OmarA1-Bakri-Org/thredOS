@@ -395,7 +395,21 @@ export async function writeFileAtomic(
     await verifyFileIdentity(tempPath, opened)
     await atomicBoundaryHookForTests?.({ stage: 'after-final-precheck-before-rename', targetPath: filePath, tempPath })
     if (!sameFileIdentity(await handle.stat(), opened)) throw new Error(`Atomic temp handle changed: ${tempPath}`)
-    await rename(tempPath, filePath)
+    const replaceDeadline = Date.now() + 1_000
+    while (true) {
+      try {
+        await rename(tempPath, filePath)
+        break
+      } catch (error) {
+        const transientWindowsSharingViolation = process.platform === 'win32'
+          && (hasCode(error, 'EPERM') || hasCode(error, 'EACCES') || hasCode(error, 'EBUSY'))
+        if (!transientWindowsSharingViolation || Date.now() >= replaceDeadline) throw error
+        await verifyParentIdentity(options.allowedRoot, filePath, parentIdentity)
+        await verifyFileIdentity(tempPath, opened)
+        if (!sameFileIdentity(await handle.stat(), opened)) throw new Error(`Atomic temp handle changed: ${tempPath}`)
+        await pause(5)
+      }
+    }
     await verifyParentIdentity(options.allowedRoot, filePath, parentIdentity)
     await verifyFileIdentity(filePath, opened)
     if (!sameFileIdentity(await handle.stat(), opened)) throw new Error(`Atomic destination handle changed: ${filePath}`)

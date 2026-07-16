@@ -232,6 +232,23 @@ describe('atomic runtime repositories', () => {
     )).id).toBe('process-01')
   })
 
+  test('stable run, attempt, and process references expose fresh content without index rebuilds', async () => {
+    const runs = new RunRepository(basePath)
+    const attempts = new AttemptRepository(basePath)
+    const processes = new ProcessRepository(basePath)
+    await runs.create(run())
+    await attempts.create(attempt('attempt-01', 1))
+    await processes.create(processRecord())
+
+    await runs.update('run-01', 0, current => ({ ...current, status: 'running' }))
+    await attempts.update('attempt-01', 0, current => ({ ...current, status: 'provisioning' }))
+    await processes.update('process-01', 0, current => ({ ...current, status: 'starting' }))
+
+    expect((await runs.list())[0]).toMatchObject({ revision: 1, status: 'running' })
+    expect((await attempts.listForRun('run-01'))[0]).toMatchObject({ revision: 1, status: 'provisioning' })
+    expect(await processes.get('process-01')).toMatchObject({ revision: 1, status: 'starting' })
+  })
+
   test('rejects escaping symlink roots for runs, attempts, commands, and state', async () => {
     const outside = await mkdtemp(join(tmpdir(), 'threados-runtime-outside-'))
     try {

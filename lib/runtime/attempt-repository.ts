@@ -106,7 +106,6 @@ export class AttemptRepository {
       await writeFileAtomic(path, `${JSON.stringify(next, null, 2)}\n`, { allowedRoot: this.basePath })
       return next
     }, { allowedRoot: this.basePath })
-    await refreshRuntimeIndexBestEffort(this.basePath)
     return updated
   }
 }

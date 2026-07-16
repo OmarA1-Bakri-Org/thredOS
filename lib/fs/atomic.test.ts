@@ -1,7 +1,7 @@
 import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
 import { setAtomicBoundaryHookForTests, withExclusiveFileLock, writeFileAtomic } from './atomic'
 import { createTempDir, cleanTempDir } from '../../test/helpers/setup'
-import { mkdir, mkdtemp, readFile, readdir, rename, rm, symlink, unlink, utimes, writeFile } from 'fs/promises'
+import { mkdir, mkdtemp, open, readFile, readdir, rename, rm, symlink, unlink, utimes, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
 
@@ -37,6 +37,22 @@ describe('writeFileAtomic', () => {
     await writeFileAtomic(filePath, 'second')
     const content = await readFile(filePath, 'utf-8')
     expect(content).toBe('second')
+  })
+
+  test.skipIf(process.platform !== 'win32')('retries replacement while a Windows reader briefly holds the destination', async () => {
+    const filePath = join(tempDir, 'shared.txt')
+    await writeFileAtomic(filePath, 'first')
+    const reader = await open(filePath, 'r')
+    const release = new Promise<void>(resolve => {
+      setTimeout(() => void reader.close().then(() => resolve()), 50)
+    })
+    try {
+      await writeFileAtomic(filePath, 'second')
+      expect(await readFile(filePath, 'utf-8')).toBe('second')
+    } finally {
+      await release
+      await reader.close().catch(() => undefined)
+    }
   })
 
   test('revalidates a lock parent after precheck and removes the empty escaped artifact', async () => {
