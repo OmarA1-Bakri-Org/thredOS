@@ -33,6 +33,9 @@ describe('forward ChangeSet contract', () => {
       agent_ref: 'agent-01',
       baseline_snapshot_id: 'snapshot-01',
       baseline_manifest_hash: 'sha256:baseline',
+      final_workspace_manifest_ref: 'manifests/workspace-final.json',
+      final_workspace_manifest_hash: 'sha256:workspace-final',
+      change_set_root_hash: 'sha256:change-set-root',
       created_at: timestamp,
       entries: [entry],
       total_bytes: 48,
@@ -45,6 +48,38 @@ describe('forward ChangeSet contract', () => {
       status: 'validated',
     })
     expect(result.success).toBe(true)
+  })
+
+  test('requires baseline, final-workspace, and deterministic root evidence', () => {
+    const record = {
+      schema_version: 1,
+      id: 'change-set-01',
+      workflow_run_id: 'run-01',
+      attempt_id: 'attempt-01',
+      step_id: 'step-01',
+      surface_id: 'surface-01',
+      agent_ref: null,
+      baseline_snapshot_id: 'snapshot-01',
+      baseline_manifest_hash: 'sha256:baseline',
+      final_workspace_manifest_ref: 'manifests/workspace-final.json',
+      final_workspace_manifest_hash: 'sha256:workspace-final',
+      change_set_root_hash: 'sha256:change-set-root',
+      created_at: timestamp,
+      entries: [],
+      total_bytes: 0,
+      total_lines_added: null,
+      total_lines_deleted: null,
+      path_scope_violations: [],
+      validation: { status: 'pending', evidence_refs: [] },
+      output_contract_state: 'pending',
+      approval_state: 'not_required',
+      status: 'draft',
+    }
+
+    expect(ChangeSetSchema.safeParse(record).success).toBe(true)
+    expect(ChangeSetSchema.safeParse({ ...record, final_workspace_manifest_ref: undefined }).success).toBe(false)
+    expect(ChangeSetSchema.safeParse({ ...record, final_workspace_manifest_hash: undefined }).success).toBe(false)
+    expect(ChangeSetSchema.safeParse({ ...record, change_set_root_hash: undefined }).success).toBe(false)
   })
 
   test('accepts every canonical lifecycle status and rejects an invented one', () => {

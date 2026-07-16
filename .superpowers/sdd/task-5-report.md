@@ -78,3 +78,34 @@ Diff checks:
 - Command schemas and forward Change Set/merge schemas are intentionally unused in PR-01. Repository/service enforcement begins in later manifest PRs.
 - Legacy projection cannot invent trustworthy process evidence; it returns `processRecord: null` by design.
 - Forward Change Set and merge contracts validate representative records but do not implement capture, merge, apply, or rollback behavior.
+
+## Independent-review correction pass
+
+Review identified three important representational gaps:
+
+1. successful legacy projection inferred `exit_code: 0` without process evidence;
+2. Change Sets did not require final-workspace manifest evidence or their deterministic root hash; and
+3. Merge Results conflated filesystem apply state with optional Git commit state.
+
+Review-fix RED command:
+
+```text
+bun test lib/runtime/schema.test.ts lib/changesets/schema.test.ts lib/merge/schema.test.ts
+```
+
+RED result: exit 1. Legacy projection returned `0` instead of `null`; ChangeSet parsing accepted absent final-manifest fields; merge schema lacked the separate filesystem/Git outcome exports and shape.
+
+Corrections:
+
+- legacy projections now retain `exit_code: null` whenever no process evidence exists;
+- Change Sets require `final_workspace_manifest_ref`, `final_workspace_manifest_hash`, and `change_set_root_hash`;
+- Merge Results require strict `filesystem_apply` and `git_commit` outcome objects;
+- Git status distinguishes `disabled`, `skipped`, `pending`, `success`, and `failed`, with status-specific commit/error evidence.
+
+Review-fix GREEN evidence:
+
+- focused correction suite: 26 passed, 0 failed, 54 assertions;
+- canonical Task 5 suite: 53 passed, 0 failed, 101 assertions;
+- `bun run typecheck`: exit 0;
+- `bun run lint`: exit 0;
+- full `bun test`: 1615 passed, 0 failed, 4019 assertions across 196 files in 45.18 seconds.

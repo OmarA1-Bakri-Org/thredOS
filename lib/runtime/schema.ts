@@ -238,7 +238,7 @@ export function projectLegacyRunRecord(record: LegacyRunRecord): LegacyRunProjec
     started_at: record.started_at,
     ended_at: record.ended_at,
     last_heartbeat_at: null,
-    exit_code: record.status === 'successful' ? 0 : null,
+    exit_code: null,
     signal: null,
     duration_ms: record.timing_summary?.duration_ms ?? null,
     error_code: null,

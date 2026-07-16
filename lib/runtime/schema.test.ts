@@ -206,6 +206,7 @@ describe('legacy run projection', () => {
       workspace_id: null,
     })
     expect(projection.stepAttempt.id).not.toBe(projection.workflowRun.id)
+    expect(projection.stepAttempt.exit_code).toBeNull()
     expect(projection.processRecord).toBeNull()
   })
 })

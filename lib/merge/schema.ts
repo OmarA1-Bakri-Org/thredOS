@@ -42,26 +42,95 @@ export const MergePlanSchema = z.object({
 })
 export type MergePlan = z.infer<typeof MergePlanSchema>
 
-export const MergeResultStatusSchema = z.enum([
+export const FilesystemApplyStatusSchema = z.enum([
+  'pending',
   'applied',
   'failed',
   'rolled_back',
   'rollback_failed',
 ])
+export type FilesystemApplyStatus = z.infer<typeof FilesystemApplyStatusSchema>
+
+export const MergeResultStatusSchema = FilesystemApplyStatusSchema
 export type MergeResultStatus = z.infer<typeof MergeResultStatusSchema>
+
+export const FilesystemApplyOutcomeSchema = z.discriminatedUnion('status', [
+  z.object({
+    status: z.literal('pending'),
+    rollback_ref: z.null(),
+    error_code: z.null(),
+    error_message: z.null(),
+  }).strict(),
+  z.object({
+    status: z.literal('applied'),
+    rollback_ref: z.string().min(1),
+    error_code: z.null(),
+    error_message: z.null(),
+  }).strict(),
+  z.object({
+    status: z.literal('failed'),
+    rollback_ref: z.string().nullable(),
+    error_code: z.string().min(1),
+    error_message: z.string().nullable(),
+  }).strict(),
+  z.object({
+    status: z.literal('rolled_back'),
+    rollback_ref: z.string().min(1),
+    error_code: z.string().nullable(),
+    error_message: z.string().nullable(),
+  }).strict(),
+  z.object({
+    status: z.literal('rollback_failed'),
+    rollback_ref: z.string().min(1),
+    error_code: z.string().min(1),
+    error_message: z.string().nullable(),
+  }).strict(),
+])
+export type FilesystemApplyOutcome = z.infer<typeof FilesystemApplyOutcomeSchema>
+
+export const GitCommitStatusSchema = z.enum([
+  'disabled',
+  'skipped',
+  'pending',
+  'success',
+  'failed',
+])
+export type GitCommitStatus = z.infer<typeof GitCommitStatusSchema>
+
+const GitCommitNotPerformedFields = {
+  commit_sha: z.null(),
+  error_code: z.null(),
+  error_message: z.null(),
+}
+
+export const GitCommitOutcomeSchema = z.discriminatedUnion('status', [
+  z.object({ status: z.literal('disabled'), ...GitCommitNotPerformedFields }).strict(),
+  z.object({ status: z.literal('skipped'), ...GitCommitNotPerformedFields }).strict(),
+  z.object({ status: z.literal('pending'), ...GitCommitNotPerformedFields }).strict(),
+  z.object({
+    status: z.literal('success'),
+    commit_sha: z.string().min(1),
+    error_code: z.null(),
+    error_message: z.null(),
+  }).strict(),
+  z.object({
+    status: z.literal('failed'),
+    commit_sha: z.null(),
+    error_code: z.string().min(1),
+    error_message: z.string().nullable(),
+  }).strict(),
+])
+export type GitCommitOutcome = z.infer<typeof GitCommitOutcomeSchema>
 
 export const MergeResultSchema = z.object({
   schema_version: z.literal(1),
   id: z.string().min(1),
   merge_plan_id: z.string().min(1),
   workflow_run_id: z.string().min(1),
-  status: MergeResultStatusSchema,
+  filesystem_apply: FilesystemApplyOutcomeSchema,
   applied_change_set_ids: z.array(z.string()),
-  rollback_ref: z.string().nullable(),
-  git_commit: z.string().nullable(),
+  git_commit: GitCommitOutcomeSchema,
   created_at: z.string().datetime(),
   completed_at: z.string().datetime().nullable(),
-  error_code: z.string().nullable(),
-  error_message: z.string().nullable(),
-})
+}).strict()
 export type MergeResult = z.infer<typeof MergeResultSchema>
