@@ -8,6 +8,8 @@ export type AtomicBoundaryStage =
   | 'before-lock-open'
   | 'after-lock-precheck-before-open'
   | 'after-lock-open-before-write'
+  | 'after-lock-metadata-precheck-before-open'
+  | 'after-lock-metadata-open-before-read'
   | 'before-temp-open'
   | 'after-temp-precheck-before-open'
   | 'after-temp-open-before-write'
@@ -35,6 +37,8 @@ interface LockOwner {
   created_at_ms: number
   token: string
 }
+
+const MAX_LOCK_METADATA_BYTES = 4_096
 
 interface ParentIdentity {
   realPath: string
@@ -223,13 +227,46 @@ function isProcessAlive(pid: number): boolean {
   }
 }
 
-async function readLockOwner(lockPath: string): Promise<{ owner: LockOwner | null; stat: Awaited<ReturnType<FileHandle['stat']>> }> {
+async function readLockOwner(
+  lockPath: string,
+  allowedRoot: string | undefined,
+): Promise<{ owner: LockOwner | null; stat: Awaited<ReturnType<FileHandle['stat']>> }> {
+  // THREADOS_SCOPED path checks protect repository integrity; they are not
+  // HOST_ENFORCED isolation against a same-privilege process racing these calls.
+  const parentIdentity = await captureParentIdentity(allowedRoot, lockPath)
+  const expected = await lstat(lockPath)
+  if (expected.isSymbolicLink() || !expected.isFile()) {
+    throw new Error(`Refusing non-file lock metadata: ${lockPath}`)
+  }
+  await atomicBoundaryHookForTests?.({
+    stage: 'after-lock-metadata-precheck-before-open',
+    targetPath: lockPath,
+  })
   const handle = await open(lockPath, 'r')
   try {
     const opened = await handle.stat()
+    await atomicBoundaryHookForTests?.({
+      stage: 'after-lock-metadata-open-before-read',
+      targetPath: lockPath,
+    })
+    await verifyParentIdentity(allowedRoot, lockPath, parentIdentity)
+    if (!sameFileIdentity(opened, expected)) {
+      throw new Error(`Refusing replaced lock metadata: ${lockPath}`)
+    }
     await verifyFileIdentity(lockPath, opened)
-    const raw = await handle.readFile('utf-8')
-    const value: unknown = JSON.parse(raw)
+    if (Number(opened.size) > MAX_LOCK_METADATA_BYTES) return { owner: null, stat: opened }
+    const buffer = Buffer.allocUnsafe(MAX_LOCK_METADATA_BYTES + 1)
+    const { bytesRead } = await handle.read(buffer, 0, buffer.byteLength, 0)
+    await verifyParentIdentity(allowedRoot, lockPath, parentIdentity)
+    await verifyFileIdentity(lockPath, opened)
+    if (bytesRead > MAX_LOCK_METADATA_BYTES) return { owner: null, stat: opened }
+    let value: unknown
+    try {
+      value = JSON.parse(buffer.toString('utf-8', 0, bytesRead))
+    } catch (error) {
+      if (error instanceof SyntaxError) return { owner: null, stat: opened }
+      throw error
+    }
     const owner = typeof value === 'object' && value != null
       && Number.isInteger((value as Partial<LockOwner>).pid)
       && typeof (value as Partial<LockOwner>).created_at_ms === 'number'
@@ -237,12 +274,6 @@ async function readLockOwner(lockPath: string): Promise<{ owner: LockOwner | nul
       ? value as LockOwner
       : null
     return { owner, stat: opened }
-  } catch (error) {
-    if (error instanceof SyntaxError) {
-      const opened = await handle.stat()
-      return { owner: null, stat: opened }
-    }
-    throw error
   } finally {
     await handle.close()
   }
@@ -256,7 +287,7 @@ async function recoverOrphanedLock(
   await verifyParentWithinRoot(allowedRoot, lockPath)
   let observed: Awaited<ReturnType<typeof readLockOwner>>
   try {
-    observed = await readLockOwner(lockPath)
+    observed = await readLockOwner(lockPath, allowedRoot)
   } catch (error) {
     if (hasCode(error, 'ENOENT')) return true
     throw error

@@ -144,6 +144,34 @@ The first bounded post-correction exact `bun test` attempt exceeded 180 seconds 
 
 With the workspace idle, the exact full suite completed in 65.19 seconds: 1,646 passed and one unrelated `runStep > successful command` process test failed. No Task 6 test failed. A subsequent isolated wrapper-file run passed `successful command` but encountered the sibling `custom env vars` flake with Windows `ENOTCONN`; that exact failing case then passed alone. This report therefore does not claim a post-third-review full-suite green run, but the 180-second timeout was not reproduced and the Task 6 normal path remained within its prior timing envelope.
 
+## Final-review stale-lock inspection correction
+
+The final review found that orphan-lock recovery still opened and read owner metadata without binding that read to the parent and file identities inspected immediately beforehand. Lock inspection now captures both identities, opens the file handle, verifies the unchanged parent plus opened/path identity before reading, reads at most 4,097 bytes to enforce a 4,096-byte metadata limit, and revalidates after the bounded read. Oversized metadata is treated as an unknown owner and can only recover through the malformed/no-owner stale threshold. The handle closes in `finally`, including hook failures.
+
+These checks provide `THREADOS_SCOPED` path integrity for cooperative runtime operations. They do not provide `HOST_ENFORCED` isolation from a malicious same-privilege process; portable Node filesystem APIs cannot remove every kernel-call race without platform-specific directory-handle-relative primitives.
+
+Final-cycle RED evidence:
+
+```text
+bun test lib/fs/atomic.test.ts
+```
+
+Result before implementation: 6 passed and 4 failed. Replaced metadata timed out instead of being rejected, the parent-swap and post-open hooks were absent, and a stale oversized live-looking record incorrectly blocked recovery.
+
+Final-cycle validation:
+
+```text
+bun test lib/fs/atomic.test.ts \
+  lib/runtime/repositories.test.ts \
+  lib/runtime/legacy-projection.test.ts \
+  lib/thread-surfaces/repository.test.ts \
+  lib/exports/bundler.test.ts
+```
+
+Result: 54 passed, 0 failed, 163 expectations. `bun run typecheck`, `bun run lint`, and the fresh-repository exit fixture all exited 0.
+
+The bounded exact full-suite attempt exceeded 180 seconds while an unrelated `test/api/conflict-routes.test.ts` child process remained active in its sequence-reset subprocess. The orphaned test tree was terminated; that complete file then passed 2/2 in isolation. No full-suite green claim is made for this final correction.
+
 ## Path drift and compatibility
 
 - The plan allowed modifications to `lib/runner/artifacts.ts`; none were needed because legacy artifact writing remains untouched and export discovery can discriminate the canonical `run.json` schema.
