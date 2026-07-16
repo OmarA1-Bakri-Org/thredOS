@@ -49,10 +49,10 @@ export interface RuntimeServiceDependencies {
   resolveGateSurface(input: { basePath: string; surfaceId: string; step: Step }): Promise<{ surfaceClass: SurfaceClass; revealState: RevealState }>
   allowModelExecution(input: { step: Step }): { allowed: boolean; errorCode?: string; reason?: string }
   dispatch(model: Step['model'], options: DispatchOptions): Promise<RunnerConfig>
-  /** Canonical process launch boundary. Production factories always provide the real starter. */
-  startProcess?: (config: RunnerConfig) => Promise<RunningProcessHandle>
-  /** Compatibility-only terminal runner for legacy API/CLI test injection. */
-  runStep(config: RunnerConfig): Promise<RunResult>
+  /** Canonical process launch boundary. Required for every service construction. */
+  startProcess: (config: RunnerConfig) => Promise<RunningProcessHandle>
+  /** @deprecated Test fixtures must bridge this explicitly with createTestCompatibilityStartProcess. */
+  runStep?(config: RunnerConfig): Promise<RunResult>
   saveArtifacts(basePath: string, result: RunResult, input: { surfaceId: string; compiledPrompt: string; step: Step }): Promise<string>
   readRuntimeEvents(basePath: string, runId: string, stepId: string): Promise<RuntimeDelegationEvent[]>
   readApprovals(basePath: string, runId: string): Promise<Approval[]>

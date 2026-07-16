@@ -11,7 +11,7 @@ import { readPrompt, validatePromptExists } from '../prompts/manager'
 import { getRuntimeEventLogPath, saveRunArtifacts, writeCompiledPrompt, writeInputManifest } from '../runner/artifacts'
 import { dispatch } from '../runner/dispatch'
 import { compilePrompt } from '../runner/prompt-compiler'
-import { runStep, startProcess } from '../runner/wrapper'
+import { startProcess } from '../runner/wrapper'
 import { validateDAG } from '../sequence/dag'
 import { readSequence } from '../sequence/parser'
 import { readRuntimeEventLog } from '../thread-surfaces/runtime-event-log'
@@ -26,10 +26,16 @@ import { RunRepository } from './run-repository'
 import { SequentialScheduler } from './scheduler'
 import { ThreadOSRuntimeService } from './service'
 import type { RuntimeServiceDependencies } from './service-types'
+import { createTestCompatibilityStartProcess } from './test-compatibility'
+import type { RunnerConfig, RunResult } from '../runner/wrapper'
 
 export interface RuntimeFactoryOptions {
   dependencies?: Partial<RuntimeServiceDependencies>
   reconcile?: (basePath: string) => Promise<void>
+  /** Explicit test-only bridge for legacy API/CLI terminal-runner fixtures. */
+  testCompatibility?: {
+    runStep(config: RunnerConfig): Promise<RunResult>
+  }
 }
 
 const instances = new Map<string, Promise<ThreadOSRuntimeService>>()
@@ -69,7 +75,6 @@ function defaults(basePath: string): RuntimeServiceDependencies {
       : { allowed: false, errorCode: 'SHELL_MODEL_DISABLED', reason: 'Shell execution is disabled in hosted mode' },
     dispatch,
     startProcess,
-    runStep,
     saveArtifacts: async (path, result, input) => await saveRunArtifacts(path, result, {
       surfaceId: input.surfaceId, compiledPrompt: input.compiledPrompt,
       outputContractRef: input.step.output_contract_ref, completionContract: input.step.completion_contract,
@@ -123,8 +128,10 @@ export async function getThreadOSRuntimeService(basePath: string, options: Runti
   const initialization = (async () => {
     await options.reconcile?.(canonical)
     const dependencies = { ...defaults(canonical), ...options.dependencies }
-    if (options.dependencies?.runStep && !options.dependencies.startProcess) {
-      dependencies.startProcess = undefined
+    if (options.testCompatibility) {
+      dependencies.startProcess = createTestCompatibilityStartProcess(
+        options.testCompatibility.runStep,
+      )
     }
     return new ThreadOSRuntimeService({
       basePath: canonical, scheduler: new SequentialScheduler(), dependencies,

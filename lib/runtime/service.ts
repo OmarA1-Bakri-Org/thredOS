@@ -1,7 +1,5 @@
 import { topologicalSort } from '../sequence/dag'
 import type { Sequence, Step } from '../sequence/schema'
-import type { RawProcessResult, RunningProcessHandle } from '../runner/process-handle'
-import { ProcessSpawnError, type RunnerConfig, type RunResult } from '../runner/wrapper'
 import {
   CancelAttemptCommandSchema, CancelRunCommandSchema, RetryAttemptCommandSchema,
   RuntimeCommandContextSchema, StartRunCommandSchema,
@@ -9,7 +7,7 @@ import {
 import { AttemptExecutor, stableRuntimeHash } from './attempt-executor'
 import { RuntimeErrorCodeSchema } from './error-codes'
 import { RuntimeServiceError } from './errors'
-import { transitionRun } from './lifecycle'
+import { transitionAttempt, transitionRun } from './lifecycle'
 import { RuntimeRepositoryError } from './run-repository'
 import { ProcessController } from './process-controller'
 import type {
@@ -48,6 +46,8 @@ function surfaceId(step: Step): string {
 const terminalRunStatuses = new Set<WorkflowRun['status']>([
   'successful', 'failed', 'cancelled', 'interrupted', 'awaiting_review', 'partially_successful',
 ])
+const CONTROL_WINDOW_POLLS = 250
+const CONTROL_POLL_INTERVAL_MS = 20
 
 function compareAttemptRecency(left: StepAttempt, right: StepAttempt): number {
   const byCreated = right.created_at.localeCompare(left.created_at)
@@ -66,39 +66,6 @@ function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void; reje
   return { promise, resolve, reject }
 }
 
-let compatibilityPid = 900_000_000
-
-function rawCompatibilityResult(result: RunResult): RawProcessResult {
-  return { ...result, signal: null }
-}
-
-function compatibilityStartProcess(
-  runStep: (config: RunnerConfig) => Promise<RunResult>,
-): (config: RunnerConfig) => Promise<RunningProcessHandle> {
-  return async config => {
-    const processId = config.processId
-    if (!processId) throw new Error('compatibility process launch requires processId')
-    const result = rawCompatibilityResult(await runStep(config))
-    if (result.status === 'ERROR' && result.exitCode === null && result.signal === null) {
-      throw new ProcessSpawnError(
-        result.stderr || `compatibility process ${processId} returned no exit evidence`,
-        result,
-      )
-    }
-    return {
-      processId,
-      pid: compatibilityPid++,
-      result: Promise.resolve(result),
-      cancel: async signal => ({
-        success: false,
-        code: 'PROCESS_CONTROL_FAILED',
-        message: 'Compatibility runStep adapter has no live process control handle',
-        signal: signal ?? 'SIGTERM',
-      }),
-    }
-  }
-}
-
 export class ThreadOSRuntimeService {
   private readonly basePath: string
   private readonly scheduler: RuntimeServiceOptions['scheduler']
@@ -106,16 +73,22 @@ export class ThreadOSRuntimeService {
   private readonly deps: RuntimeServiceOptions['dependencies']
   private readonly processController: ProcessController
   private readonly inFlight = new Map<string, Promise<CompletedRunResult>>()
+  private readonly inFlightAttempts = new Map<string, Promise<{ run: WorkflowRun; attempt: StepAttempt }>>()
+  private readonly inFlightAttemptCancellations = new Map<string, Promise<StepAttempt>>()
+  private readonly inFlightRunCancellations = new Map<string, Promise<WorkflowRun>>()
 
   constructor(options: RuntimeServiceOptions) {
     this.basePath = options.basePath
     this.scheduler = options.scheduler
     this.repositories = options.repositories
     this.deps = options.dependencies
+    if (typeof this.deps.startProcess !== 'function') {
+      throw new Error('RuntimeServiceDependencies.startProcess is required')
+    }
     this.processController = new ProcessController({
       processes: this.repositories.processes,
       now: this.deps.now,
-      startProcess: this.deps.startProcess ?? compatibilityStartProcess(this.deps.runStep),
+      startProcess: this.deps.startProcess,
     })
   }
 
@@ -234,31 +207,43 @@ export class ThreadOSRuntimeService {
     CancelAttemptCommandSchema.parse({ command_type: 'cancel-attempt', context, attempt_id: attemptId })
     const claim = await this.claimMutation('cancel-attempt', attemptId, context)
     if (claim.replayed) return await this.replayAttemptMutation(claim.receipt)
+    const cancellation = this.executeAttemptCancellation(attemptId, claim.receipt.id)
+    this.inFlightAttemptCancellations.set(claim.receipt.id, cancellation)
+    try {
+      return await cancellation
+    } finally {
+      if (this.inFlightAttemptCancellations.get(claim.receipt.id) === cancellation) {
+        this.inFlightAttemptCancellations.delete(claim.receipt.id)
+      }
+    }
+  }
+
+  private async executeAttemptCancellation(attemptId: string, commandId: string): Promise<StepAttempt> {
     const attempt = await this.repositories.attempts.get(attemptId)
-    if (!attempt) return await this.failAttemptMutation(claim.receipt.id, 'ATTEMPT_NOT_FOUND', `attempt ${attemptId} was not found`)
+    if (!attempt) return await this.failAttemptMutation(commandId, 'ATTEMPT_NOT_FOUND', `attempt ${attemptId} was not found`)
     if (attempt.status !== 'running') {
-      return await this.failAttemptMutation(claim.receipt.id, 'ATTEMPT_NOT_RUNNING', `attempt ${attemptId} is ${attempt.status}`)
+      return await this.failAttemptMutation(commandId, 'ATTEMPT_NOT_RUNNING', `attempt ${attemptId} is ${attempt.status}`)
     }
     if (!attempt.process_id) {
       return await this.failAttemptMutation(
-        claim.receipt.id,
+        commandId,
         'PROCESS_CONTROL_FAILED',
         `attempt ${attemptId} has no canonical process`,
       )
     }
     const control = await this.processController.cancel(attempt.process_id)
     if (!control.success) {
-      return await this.failAttemptMutation(claim.receipt.id, control.code, control.message)
+      return await this.failAttemptMutation(commandId, control.code, control.message)
     }
     const cancelled = await this.waitForCancelledAttempt(attempt.id)
     if (cancelled.status !== 'cancelled') {
       return await this.failAttemptMutation(
-        claim.receipt.id,
+        commandId,
         'PROCESS_CONTROL_FAILED',
         `process ${attempt.process_id} terminated without cancelled attempt evidence`,
       )
     }
-    await this.repositories.commands.complete(claim.receipt.id, {
+    await this.repositories.commands.complete(commandId, {
       status: 'completed',
       resultRef: cancelled.id,
     }, this.deps.now())
@@ -270,28 +255,44 @@ export class ThreadOSRuntimeService {
     CancelRunCommandSchema.parse({ command_type: 'cancel-run', context, workflow_run_id: runId })
     const claim = await this.claimMutation('cancel-run', runId, context)
     if (claim.replayed) return await this.replayRunCancellation(claim.receipt)
+    const cancellation = this.executeRunCancellation(runId, claim.receipt.id)
+    this.inFlightRunCancellations.set(claim.receipt.id, cancellation)
+    try {
+      return await cancellation
+    } finally {
+      if (this.inFlightRunCancellations.get(claim.receipt.id) === cancellation) {
+        this.inFlightRunCancellations.delete(claim.receipt.id)
+      }
+    }
+  }
+
+  private async executeRunCancellation(runId: string, commandId: string): Promise<WorkflowRun> {
     let run = await this.repositories.runs.get(runId)
     if (!run) {
-      await this.repositories.commands.complete(claim.receipt.id, { status: 'failed', errorCode: 'RUN_NOT_FOUND', errorMessage: `run ${runId} was not found` }, this.deps.now())
+      await this.repositories.commands.complete(commandId, { status: 'failed', errorCode: 'RUN_NOT_FOUND', errorMessage: `run ${runId} was not found` }, this.deps.now())
       throw new RuntimeServiceError('RUN_NOT_FOUND', `run ${runId} was not found`)
     }
     if (terminalRunStatuses.has(run.status)) {
-      await this.repositories.commands.complete(claim.receipt.id, {
+      await this.repositories.commands.complete(commandId, {
         status: 'failed',
         errorCode: 'ATTEMPT_NOT_RUNNING',
         errorMessage: `run ${runId} is ${run.status}`,
       }, this.deps.now())
       throw new RuntimeServiceError('ATTEMPT_NOT_RUNNING', `run ${runId} is ${run.status}`)
     }
-    const cancellationRequestedAt = run.cancellation_requested_at ?? this.deps.now()
-    run = await this.repositories.runs.update(run.id, run.revision, current => ({
-      ...current,
-      cancellation_requested_at: cancellationRequestedAt,
-    }))
+    run = await this.persistRunCancellationIntent(run.id)
     const attempts = await this.repositories.attempts.listForRun(run.id)
     const active = attempts.filter(attempt => ['pending', 'provisioning', 'running'].includes(attempt.status))
     if (active.length === 0) {
-      await this.repositories.commands.complete(claim.receipt.id, {
+      if (attempts.length === 0 || attempts.every(attempt => attempt.status === 'cancelled')) {
+        const cancelled = await this.completeRunCancellation(run.id)
+        await this.repositories.commands.complete(commandId, {
+          status: 'completed',
+          resultRef: cancelled.id,
+        }, this.deps.now())
+        return cancelled
+      }
+      await this.repositories.commands.complete(commandId, {
         status: 'failed',
         errorCode: 'ATTEMPT_NOT_RUNNING',
         errorMessage: `run ${runId} has no active attempt`,
@@ -299,27 +300,31 @@ export class ThreadOSRuntimeService {
       throw new RuntimeServiceError('ATTEMPT_NOT_RUNNING', `run ${runId} has no active attempt`)
     }
     for (const attempt of active) {
-      if (!attempt.process_id) {
-        const message = `attempt ${attempt.id} has no canonical process to cancel`
-        await this.repositories.commands.complete(claim.receipt.id, {
+      try {
+        await this.cancelAttemptForRun(attempt.id)
+      } catch (error) {
+        const normalized = error instanceof RuntimeServiceError
+          ? error
+          : new RuntimeServiceError(
+              'PROCESS_CONTROL_FAILED',
+              error instanceof Error ? error.message : String(error),
+              error,
+            )
+        await this.repositories.commands.complete(commandId, {
           status: 'failed',
-          errorCode: 'PROCESS_CONTROL_FAILED',
-          errorMessage: message,
+          errorCode: normalized.code,
+          errorMessage: normalized.message,
         }, this.deps.now())
-        throw new RuntimeServiceError('PROCESS_CONTROL_FAILED', message)
-      }
-      const control = await this.processController.cancel(attempt.process_id)
-      if (!control.success) {
-        await this.repositories.commands.complete(claim.receipt.id, {
-          status: 'failed',
-          errorCode: control.code,
-          errorMessage: control.message,
-        }, this.deps.now())
-        throw new RuntimeServiceError(control.code, control.message)
+        throw normalized
       }
     }
-    const cancelled = await this.waitForCancelledRun(run.id)
-    await this.repositories.commands.complete(claim.receipt.id, {
+    const latestAttempts = await this.repositories.attempts.listForRun(run.id)
+    const allCancelled = latestAttempts.length > 0
+      && latestAttempts.every(attempt => attempt.status === 'cancelled')
+    const cancelled = allCancelled
+      ? await this.completeRunCancellation(run.id)
+      : await this.waitForCancelledRun(run.id)
+    await this.repositories.commands.complete(commandId, {
       status: 'completed',
       resultRef: cancelled.id,
     }, this.deps.now())
@@ -429,13 +434,20 @@ export class ThreadOSRuntimeService {
   }
 
   private async replayAttemptMutation(receipt: RuntimeCommandReceipt): Promise<StepAttempt> {
-    let current = receipt
-    for (let poll = 0; current.status === 'accepted' && poll < 50; poll++) {
-      await new Promise(resolve => setTimeout(resolve, 20))
-      current = await this.repositories.commands.get(current.id) ?? current
-    }
+    const inFlight = this.inFlightAttemptCancellations.get(receipt.id)
+    if (inFlight) return await inFlight
+    const current = receipt.status === 'accepted'
+      ? await this.repositories.commands.get(receipt.id) ?? receipt
+      : receipt
     if (current.status === 'accepted') {
       const target = current.result_ref ? await this.repositories.attempts.get(current.result_ref) : null
+      if (target?.status === 'cancelled') {
+        await this.repositories.commands.complete(current.id, {
+          status: 'completed',
+          resultRef: target.id,
+        }, this.deps.now()).catch(() => undefined)
+        return target
+      }
       if (target && target.status !== 'running') {
         throw new RuntimeServiceError('ATTEMPT_NOT_RUNNING', `attempt ${target.id} is ${target.status}`)
       }
@@ -580,15 +592,23 @@ export class ThreadOSRuntimeService {
   }
 
   private async replayRunCancellation(receipt: RuntimeCommandReceipt): Promise<WorkflowRun> {
-    let current = receipt
-    for (let poll = 0; current.status === 'accepted' && poll < 50; poll++) {
-      await new Promise(resolve => setTimeout(resolve, 20))
-      current = await this.repositories.commands.get(current.id) ?? current
-    }
+    const inFlight = this.inFlightRunCancellations.get(receipt.id)
+    if (inFlight) return await inFlight
+    const current = receipt.status === 'accepted'
+      ? await this.repositories.commands.get(receipt.id) ?? receipt
+      : receipt
     if (current.status === 'failed') throw this.receiptError(current)
     const run = current.result_ref ? await this.repositories.runs.get(current.result_ref) : null
     if (!run) throw new RuntimeServiceError('RUN_NOT_FOUND', 'Cancellation result run was not found')
-    if (current.status === 'completed' && run.status === 'cancelled') return run
+    if (run.status === 'cancelled') {
+      if (current.status === 'accepted') {
+        await this.repositories.commands.complete(current.id, {
+          status: 'completed',
+          resultRef: run.id,
+        }, this.deps.now()).catch(() => undefined)
+      }
+      return run
+    }
     const attempts = await this.repositories.attempts.listForRun(run.id)
     const active = attempts.some(attempt => ['pending', 'provisioning', 'running'].includes(attempt.status))
     throw new RuntimeServiceError(
@@ -606,21 +626,30 @@ export class ThreadOSRuntimeService {
     throw new RuntimeServiceError(code, message)
   }
 
-  private async waitForCancelledAttempt(attemptId: string): Promise<StepAttempt> {
-    for (let poll = 0; poll < 250; poll++) {
-      const attempt = await this.repositories.attempts.get(attemptId)
-      if (!attempt) throw new RuntimeServiceError('ATTEMPT_NOT_FOUND', `attempt ${attemptId} was not found`)
-      if (!['pending', 'provisioning', 'running'].includes(attempt.status)) return attempt
-      await new Promise(resolve => setTimeout(resolve, 20))
+  private async persistRunCancellationIntent(runId: string): Promise<WorkflowRun> {
+    for (let attempt = 0; attempt < CONTROL_WINDOW_POLLS; attempt++) {
+      const run = await this.repositories.runs.get(runId)
+      if (!run) throw new RuntimeServiceError('RUN_NOT_FOUND', `run ${runId} was not found`)
+      if (run.cancellation_requested_at) return run
+      try {
+        return await this.repositories.runs.update(run.id, run.revision, current => ({
+          ...current,
+          cancellation_requested_at: this.deps.now(),
+        }))
+      } catch (error) {
+        if (!(error instanceof RuntimeRepositoryError) || error.code !== 'RUNTIME_REVISION_CONFLICT') {
+          throw error
+        }
+      }
     }
     throw new RuntimeServiceError(
       'PROCESS_CONTROL_FAILED',
-      `attempt ${attemptId} did not persist terminal cancellation evidence`,
+      `run ${runId} cancellation intent could not be persisted`,
     )
   }
 
-  private async waitForCancelledRun(runId: string): Promise<WorkflowRun> {
-    for (let poll = 0; poll < 250; poll++) {
+  private async completeRunCancellation(runId: string): Promise<WorkflowRun> {
+    for (let attempt = 0; attempt < CONTROL_WINDOW_POLLS; attempt++) {
       const run = await this.repositories.runs.get(runId)
       if (!run) throw new RuntimeServiceError('RUN_NOT_FOUND', `run ${runId} was not found`)
       if (run.status === 'cancelled') return run
@@ -630,11 +659,93 @@ export class ThreadOSRuntimeService {
           `run ${runId} ended as ${run.status} instead of cancelled`,
         )
       }
-      await new Promise(resolve => setTimeout(resolve, 20))
+      try {
+        return await transitionRun(this.repositories.runs, run, 'cancelled', {
+          cancellation_requested_at: run.cancellation_requested_at ?? this.deps.now(),
+          ended_at: this.deps.now(),
+          error_code: null,
+          error_message: null,
+        })
+      } catch (error) {
+        if (!(error instanceof RuntimeRepositoryError) || error.code !== 'RUNTIME_REVISION_CONFLICT') {
+          throw error
+        }
+      }
     }
     throw new RuntimeServiceError(
       'PROCESS_CONTROL_FAILED',
-      `run ${runId} did not persist terminal cancellation evidence`,
+      `run ${runId} could not persist cancelled state`,
+    )
+  }
+
+  private async cancelAttemptForRun(attemptId: string): Promise<StepAttempt> {
+    for (let poll = 0; poll < CONTROL_WINDOW_POLLS; poll++) {
+      const attempt = await this.repositories.attempts.get(attemptId)
+      if (!attempt) throw new RuntimeServiceError('ATTEMPT_NOT_FOUND', `attempt ${attemptId} was not found`)
+      if (!['pending', 'provisioning', 'running'].includes(attempt.status)) return attempt
+      if (attempt.status === 'pending' || attempt.status === 'provisioning') {
+        try {
+          return await transitionAttempt(this.repositories.attempts, attempt, 'cancelled', {
+            ended_at: this.deps.now(),
+            error_code: null,
+            error_message: null,
+          })
+        } catch (error) {
+          if (!(error instanceof RuntimeRepositoryError) || error.code !== 'RUNTIME_REVISION_CONFLICT') {
+            throw error
+          }
+          continue
+        }
+      }
+      if (!attempt.process_id) {
+        await new Promise(resolve => setTimeout(resolve, CONTROL_POLL_INTERVAL_MS))
+        continue
+      }
+      const process = await this.repositories.processes.get(attempt.process_id)
+      if (!process) {
+        await new Promise(resolve => setTimeout(resolve, CONTROL_POLL_INTERVAL_MS))
+        continue
+      }
+      if (process.status === 'exited' || process.status === 'lost') {
+        return await this.waitForCancelledAttempt(attempt.id)
+      }
+      const control = await this.processController.cancel(attempt.process_id)
+      if (!control.success) {
+        throw new RuntimeServiceError(control.code, control.message)
+      }
+      return await this.waitForCancelledAttempt(attempt.id)
+    }
+    throw new RuntimeServiceError(
+      'PROCESS_CONTROL_FAILED',
+      `attempt ${attemptId} did not become cancellable within the control window`,
+    )
+  }
+
+  private async waitForCancelledAttempt(attemptId: string): Promise<StepAttempt> {
+    let attempt = await this.repositories.attempts.get(attemptId)
+    if (!attempt) throw new RuntimeServiceError('ATTEMPT_NOT_FOUND', `attempt ${attemptId} was not found`)
+    const execution = this.inFlightAttempts.get(attempt.id)
+    if (execution) await execution
+    attempt = await this.repositories.attempts.get(attemptId)
+    if (!attempt) throw new RuntimeServiceError('ATTEMPT_NOT_FOUND', `attempt ${attemptId} was not found`)
+    if (!['pending', 'provisioning', 'running'].includes(attempt.status)) return attempt
+    throw new RuntimeServiceError(
+      'PROCESS_CONTROL_FAILED',
+      `attempt ${attemptId} has no recoverable terminal cancellation evidence`,
+    )
+  }
+
+  private async waitForCancelledRun(runId: string): Promise<WorkflowRun> {
+    const execution = this.inFlight.get(runId) ?? this.scheduler.get<CompletedRunResult>(runId)
+    if (execution) await execution
+    const run = await this.repositories.runs.get(runId)
+    if (!run) throw new RuntimeServiceError('RUN_NOT_FOUND', `run ${runId} was not found`)
+    if (run.status === 'cancelled') return run
+    throw new RuntimeServiceError(
+      'PROCESS_CONTROL_FAILED',
+      terminalRunStatuses.has(run.status)
+        ? `run ${runId} ended as ${run.status} instead of cancelled`
+        : `run ${runId} has no recoverable terminal cancellation evidence`,
     )
   }
 
@@ -703,9 +814,25 @@ export class ThreadOSRuntimeService {
     commandId: string,
     retryOf?: StepAttempt,
   ): Promise<CompletedRunResult> {
-    let run = initialRun
+    let run = await this.repositories.runs.get(initialRun.id) ?? initialRun
     const attempts: StepAttempt[] = []
     try {
+      if (run.status === 'cancelled' || run.cancellation_requested_at) {
+        if (run.status !== 'cancelled') run = await this.completeRunCancellation(run.id)
+        await this.repositories.commands.complete(commandId, {
+          status: 'failed',
+          errorCode: 'RUNTIME_EXECUTION_FAILED',
+          errorMessage: 'Run was cancelled before execution',
+        }, this.deps.now()).catch(() => undefined)
+        return { run, attempts, replayed: false }
+      }
+      if (terminalRunStatuses.has(run.status)) {
+        return {
+          run,
+          attempts: await this.repositories.attempts.listForRun(run.id),
+          replayed: false,
+        }
+      }
       const sequence = await this.deps.loadSequence(this.basePath)
       this.deps.validateSequence(sequence)
       if ((sequence.id ?? sequence.name) !== request.sequence_id) {
@@ -765,12 +892,38 @@ export class ThreadOSRuntimeService {
         await this.repositories.attempts.create(attempt)
         run = await this.repositories.runs.update(run.id, run.revision, value => ({ ...value, attempt_ids: [...value.attempt_ids, attemptId] }))
         await this.deps.projections.beginAttempt({ run, attempt, step }).catch(() => undefined)
-        const outcome = await executor.execute({ run, attempt, sequence, step, policy, context, targetRef: targetRef(request.target) })
+        const execution = executor.execute({
+          run,
+          attempt,
+          sequence,
+          step,
+          policy,
+          context,
+          targetRef: targetRef(request.target),
+        })
+        this.inFlightAttempts.set(attempt.id, execution)
+        let outcome
+        try {
+          outcome = await execution
+        } finally {
+          if (this.inFlightAttempts.get(attempt.id) === execution) {
+            this.inFlightAttempts.delete(attempt.id)
+          }
+        }
         run = outcome.run
         attempts.push(outcome.attempt)
       }
 
       run = await this.repositories.runs.get(run.id) ?? run
+      if (run.status === 'cancelled') {
+        await this.deps.projections.finalizeRun({ run, attempts }).catch(() => undefined)
+        await this.repositories.commands.complete(commandId, {
+          status: 'failed',
+          errorCode: 'RUNTIME_EXECUTION_FAILED',
+          errorMessage: 'Run was cancelled',
+        }, this.deps.now()).catch(() => undefined)
+        return { run, attempts, replayed: false }
+      }
       const cancelled = attempts.some(attempt => attempt.status === 'cancelled')
       const successful = !cancelled && attempts.every(attempt => attempt.status === 'completed')
       const terminal = cancelled ? 'cancelled' : successful ? 'successful' : 'failed'

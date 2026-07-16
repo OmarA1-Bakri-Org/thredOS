@@ -11,7 +11,7 @@ export type CLIRuntimeService = Pick<ThreadOSRuntimeService,
 
 interface LegacyCLIRunRuntime {
   dispatch: RuntimeServiceDependencies['dispatch']
-  runStep: RuntimeServiceDependencies['runStep']
+  runStep: NonNullable<RuntimeServiceDependencies['runStep']>
   saveRunArtifacts: RuntimeServiceDependencies['saveArtifacts']
 }
 
@@ -28,9 +28,9 @@ export async function getCLIRuntimeService(basePath: string): Promise<CLIRuntime
   return await getThreadOSRuntimeService(basePath, legacy ? {
     dependencies: {
       dispatch: legacy.dispatch,
-      runStep: legacy.runStep,
       saveArtifacts: legacy.saveRunArtifacts,
     },
+    testCompatibility: { runStep: legacy.runStep },
   } : {})
 }
 

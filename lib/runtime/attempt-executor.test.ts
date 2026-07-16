@@ -18,6 +18,7 @@ import { ProcessTimeoutError } from '../errors'
 import type { Approval } from '../contracts/schemas'
 import { executableSubjectDigest } from '../policy/executable'
 import type { RawProcessResult, RunningProcessHandle } from '../runner/process-handle'
+import { createTestCompatibilityStartProcess } from './test-compatibility'
 
 const roots: string[] = []
 afterEach(async () => { await Promise.all(roots.splice(0).map(path => rm(path, { recursive: true, force: true }))) })
@@ -32,6 +33,11 @@ function seq(): Sequence {
 async function make(overrides: Partial<RuntimeServiceDependencies>) {
   const basePath = await mkdtemp(join(tmpdir(), 'threados-attempt-')); roots.push(basePath)
   let id = 0
+  const defaultRunStep: NonNullable<RuntimeServiceDependencies['runStep']> = async c => ({
+    stepId: c.stepId, runId: c.runId, exitCode: 0, status: 'SUCCESS', duration: 1,
+    stdout: '', stderr: '', startTime: new Date(), endTime: new Date(),
+  })
+  const selectedRunStep = overrides.runStep ?? defaultRunStep
   const deps: RuntimeServiceDependencies = {
     now: () => '2026-01-01T00:00:00.000Z', newId: p => `${p}-${++id}`,
     loadSequence: async () => seq(), loadPolicy: async () => PolicyConfigSchema.parse({ mode: 'POWER', side_effect_mode: 'free' }),
@@ -40,13 +46,15 @@ async function make(overrides: Partial<RuntimeServiceDependencies>) {
     resolveGateSurface: async () => ({ surfaceClass: 'shared', revealState: null }),
     allowModelExecution: () => ({ allowed: true }),
     dispatch: async (_m, o) => ({ stepId: o.stepId, runId: o.runId, command: 'sh', args: [], cwd: basePath }),
-    runStep: async c => ({ stepId: c.stepId, runId: c.runId, exitCode: 0, status: 'SUCCESS', duration: 1, stdout: '', stderr: '', startTime: new Date(), endTime: new Date() }),
+    runStep: selectedRunStep,
     saveArtifacts: async () => 'artifact', readRuntimeEvents: async () => [], readApprovals: async () => [],
     evaluatePreGates: () => [], evaluateCompletionGates: () => [], persistGateDecisions: async () => undefined,
     enforceBatchPolicy: () => ({ allowed: true, confirmation_required: false }), enforceExecutablePolicy: () => ({ allowed: true, confirmation_required: false }),
     recordApproval: async () => undefined, appendTrace: async () => undefined,
     projections: { beginRun: async () => undefined, beginAttempt: async () => undefined, finalizeAttempt: async () => undefined, finalizeRun: async () => undefined },
     ...overrides,
+    startProcess: overrides.startProcess
+      ?? createTestCompatibilityStartProcess(selectedRunStep),
   }
   return { basePath, service: new ThreadOSRuntimeService({ basePath, scheduler: new SequentialScheduler(), repositories: {
     runs: new RunRepository(basePath), attempts: new AttemptRepository(basePath), processes: new ProcessRepository(basePath), commands: new CommandRepository(basePath),

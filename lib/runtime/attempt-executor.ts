@@ -4,9 +4,11 @@ import type { ExecutablePayload, PolicyConfig } from '../policy/schema'
 import type { Sequence, Step } from '../sequence/schema'
 import { getRuntimeEventLogPath } from '../runner/artifacts'
 import type { RawProcessResult } from '../runner/process-handle'
+import { ProcessControlError } from '../runner/process-handle'
 import type { RunnerConfig, RunResult } from '../runner/wrapper'
 import { transitionAttempt, transitionRun } from './lifecycle'
 import type { ProcessController } from './process-controller'
+import { RuntimeRepositoryError } from './run-repository'
 import type { RuntimeCommandContext, RuntimeRepositories, RuntimeServiceDependencies } from './service-types'
 import type { StepAttempt, WorkflowRun } from './schema'
 
@@ -56,6 +58,8 @@ export class AttemptExecutor {
     let { run, attempt } = input
     const { sequence, step, policy, context } = input
     const surfaceId = attempt.surface_id
+    const cancelledBeforeProvisioning = await this.observeRunCancellation(run.id, attempt.id)
+    if (cancelledBeforeProvisioning) return cancelledBeforeProvisioning
     attempt = await transitionAttempt(this.repositories.attempts, attempt, 'provisioning')
 
     try {
@@ -114,7 +118,7 @@ export class AttemptExecutor {
         return { run, attempt }
       }
 
-      // dispatch may perform provider preflight and prompt-temp preparation, but runStep is the governed spawn boundary.
+      // Dispatch may perform provider preflight and prompt-temp preparation; ProcessController is the spawn boundary.
       const runnerConfig = await this.deps.dispatch(step.model, {
         stepId: step.id, runId: run.id, compiledPrompt, cwd: step.cwd || this.basePath,
         timeout: step.timeout_ms || DEFAULT_TIMEOUT_MS,
@@ -145,10 +149,22 @@ export class AttemptExecutor {
         })
       }
 
+      const cancelledBeforeProcess = await this.observeRunCancellation(run.id, attempt.id)
+      if (cancelledBeforeProcess) return cancelledBeforeProcess
+      run = await this.repositories.runs.get(run.id) ?? run
+      attempt = await this.repositories.attempts.get(attempt.id) ?? attempt
       const processId = this.deps.newId('process')
       attempt = await this.repositories.attempts.update(attempt.id, attempt.revision, value => ({ ...value, process_id: processId }))
+      const cancelledAfterProcessBinding = await this.observeRunCancellation(run.id, attempt.id)
+      if (cancelledAfterProcessBinding) return cancelledAfterProcessBinding
+      run = await this.repositories.runs.get(run.id) ?? run
+      attempt = await this.repositories.attempts.get(attempt.id) ?? attempt
       if (run.status === 'provisioning') run = await transitionRun(this.repositories.runs, run, 'running', { started_at: this.deps.now() })
       attempt = await transitionAttempt(this.repositories.attempts, attempt, 'running', { started_at: this.deps.now() })
+      const cancelledBeforeSpawn = await this.observeRunCancellation(run.id, attempt.id)
+      if (cancelledBeforeSpawn) return cancelledBeforeSpawn
+      run = await this.repositories.runs.get(run.id) ?? run
+      attempt = await this.repositories.attempts.get(attempt.id) ?? attempt
       await this.deps.appendTrace(this.basePath, run.id, {
         ts: this.deps.now(), run_id: run.id, surface_id: surfaceId, actor: context.actor,
         event_type: 'step-started', payload_ref: attempt.id, policy_ref: run.policy_snapshot_hash,
@@ -173,6 +189,9 @@ export class AttemptExecutor {
 
       const completion = await controlled.completion
       const result = completion.result
+      if (!result && completion.error instanceof ProcessControlError) {
+        return await this.waitForControlledTerminal(run.id, attempt.id, processId, step)
+      }
       if (!result || completion.process.status !== 'exited') {
         const endedAt = completion.process.ended_at ?? this.deps.now()
         await this.deps.appendTrace(this.basePath, run.id, {
@@ -210,7 +229,9 @@ export class AttemptExecutor {
       }
       const completionPassed = completionGates.every(decision => decision.status === 'PASS')
       const runtimeEvents = await this.deps.readRuntimeEvents(this.basePath, run.id, step.id)
-      const status = result.status === 'TIMEOUT'
+      const status = result.exitCode === 42
+        ? 'needs_review'
+        : result.status === 'TIMEOUT'
         ? 'timed_out'
         : result.status === 'CANCELLED'
           ? 'cancelled'
@@ -236,12 +257,101 @@ export class AttemptExecutor {
       await this.deps.projections.finalizeAttempt({ run, attempt, step, runtimeEvents }).catch(() => undefined)
       return { run, attempt }
     } catch (error) {
+      const cancellation = await this.observeRunCancellation(run.id, attempt.id)
+      if (cancellation) return cancellation
+      run = await this.repositories.runs.get(run.id) ?? run
+      attempt = await this.repositories.attempts.get(attempt.id) ?? attempt
       attempt = await transitionAttempt(this.repositories.attempts, attempt, 'failed', {
         ended_at: this.deps.now(), error_code: 'ATTEMPT_PREPARATION_FAILED',
         error_message: error instanceof Error ? error.message : String(error),
       })
       await this.deps.projections.finalizeAttempt({ run, attempt, step, runtimeEvents: [] }).catch(() => undefined)
       return { run, attempt }
+    }
+  }
+
+  private async observeRunCancellation(
+    runId: string,
+    attemptId: string,
+  ): Promise<ExecuteAttemptResult | null> {
+    for (let retry = 0; retry < 250; retry++) {
+      const [run, attempt] = await Promise.all([
+        this.repositories.runs.get(runId),
+        this.repositories.attempts.get(attemptId),
+      ])
+      if (!run || !attempt) return null
+      const cancellationRequested = run.status === 'cancelled'
+        || run.cancellation_requested_at !== null
+      if (!cancellationRequested) return null
+      if (!['pending', 'provisioning', 'running'].includes(attempt.status)) {
+        return { run, attempt }
+      }
+      try {
+        const cancelled = await transitionAttempt(
+          this.repositories.attempts,
+          attempt,
+          'cancelled',
+          {
+            ended_at: this.deps.now(),
+            error_code: null,
+            error_message: null,
+          },
+        )
+        return { run, attempt: cancelled }
+      } catch (error) {
+        if (!(error instanceof RuntimeRepositoryError) || error.code !== 'RUNTIME_REVISION_CONFLICT') {
+          throw error
+        }
+        await new Promise(resolve => setTimeout(resolve, 2))
+      }
+    }
+    throw new Error(`attempt ${attemptId} could not observe persisted run cancellation`)
+  }
+
+  private async waitForControlledTerminal(
+    runId: string,
+    attemptId: string,
+    processId: string,
+    step: Step,
+  ): Promise<ExecuteAttemptResult> {
+    while (true) {
+      const process = await this.repositories.processes.get(processId)
+      if (process?.status === 'exited' || process?.status === 'lost') {
+        const [run, attempt] = await Promise.all([
+          this.repositories.runs.get(runId),
+          this.repositories.attempts.get(attemptId),
+        ])
+        if (!run || !attempt) {
+          throw new Error(`terminal process ${processId} lost its run or attempt`)
+        }
+        if (!['pending', 'provisioning', 'running'].includes(attempt.status)) {
+          return { run, attempt }
+        }
+        const cancelled = process.status === 'exited'
+          && (process.cancellation_requested_at !== null || run.cancellation_requested_at !== null)
+        const terminalAttempt = await transitionAttempt(
+          this.repositories.attempts,
+          attempt,
+          cancelled ? 'cancelled' : 'failed',
+          {
+            ended_at: process.ended_at ?? this.deps.now(),
+            exit_code: process.exit_code,
+            signal: process.signal,
+            error_code: cancelled ? null : 'PROCESS_LOST',
+            error_message: cancelled
+              ? null
+              : 'Process control failed and no verified execution result was recovered',
+          },
+        )
+        await this.deps.projections.finalizeAttempt({
+          run,
+          attempt: terminalAttempt,
+          step,
+          runtimeEvents: [],
+        }).catch(() => undefined)
+        return { run, attempt: terminalAttempt }
+      }
+      await new Promise(resolve => setTimeout(resolve, 20))
     }
   }
 }

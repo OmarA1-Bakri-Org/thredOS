@@ -284,11 +284,15 @@ describe.serial('CLI runtime service parity', () => {
     try {
       await createRuntimeFixture(cliPath)
       await createRuntimeFixture(apiPath)
+      const cliRuntime = deterministicRuntime(() => { cliSpawns += 1 })
+      const apiRuntime = deterministicRuntime(() => { apiSpawns += 1 })
       const cliService = await getThreadOSRuntimeService(cliPath, {
-        dependencies: deterministicRuntime(() => { cliSpawns += 1 }),
+        dependencies: cliRuntime,
+        testCompatibility: { runStep: cliRuntime.runStep! },
       })
       const apiService = await getThreadOSRuntimeService(apiPath, {
-        dependencies: deterministicRuntime(() => { apiSpawns += 1 }),
+        dependencies: apiRuntime,
+        testCompatibility: { runStep: apiRuntime.runStep! },
       })
 
       globalThis.__THREADOS_CLI_RUNTIME_SERVICE__ = cliService

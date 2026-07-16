@@ -16,7 +16,8 @@ export type RuntimeServicePort = Pick<ThreadOSRuntimeService,
 
 declare global {
   var __THREADOS_RUNTIME_SERVICE__: RuntimeServicePort | undefined
-  var __THREADOS_RUN_ROUTE_RUNTIME__: (Pick<RuntimeServiceDependencies, 'dispatch' | 'runStep'> & {
+  var __THREADOS_RUN_ROUTE_RUNTIME__: (Pick<RuntimeServiceDependencies, 'dispatch'> & {
+    runStep: NonNullable<RuntimeServiceDependencies['runStep']>
     saveArtifacts?: RuntimeServiceDependencies['saveArtifacts']
     saveRunArtifacts?: RuntimeServiceDependencies['saveArtifacts']
   }) | undefined
@@ -32,10 +33,15 @@ export async function getApiRuntimeService(
   const dependencies = legacy ? {
     ...options.dependencies,
     dispatch: legacy.dispatch,
-    runStep: legacy.runStep,
     ...(saveArtifacts ? { saveArtifacts } : {}),
   } : options.dependencies
-  return await getThreadOSRuntimeService(basePath, { ...options, dependencies })
+  return await getThreadOSRuntimeService(basePath, {
+    ...options,
+    dependencies,
+    testCompatibility: legacy
+      ? { runStep: legacy.runStep }
+      : options.testCompatibility,
+  })
 }
 
 export function resolveRuntimeContext(

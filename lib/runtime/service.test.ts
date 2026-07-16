@@ -19,6 +19,8 @@ import type {
   RawProcessResult,
   RunningProcessHandle,
 } from '../runner/process-handle'
+import { ProcessControlError } from '../runner/process-handle'
+import { createTestCompatibilityStartProcess } from './test-compatibility'
 
 const roots: string[] = []
 afterEach(async () => {
@@ -57,6 +59,18 @@ async function fixture(overrides: Partial<RuntimeServiceDependencies> = {}) {
     stdout: 'ok', stderr: '', startTime: new Date('2026-01-01T00:00:00.000Z'),
     endTime: new Date('2026-01-01T00:00:00.004Z'),
   }
+  const defaultRunStep: NonNullable<RuntimeServiceDependencies['runStep']> = async config => {
+    calls.push('run')
+    const process = (await new ProcessRepository(basePath).list())[0]
+    expect(process?.status).toBe('starting')
+    expect(process).toMatchObject({ pid: null, provider_handle: null, started_at: null })
+    const attempt = await new AttemptRepository(basePath).get(process!.attempt_id)
+    const run = await new RunRepository(basePath).get(process!.workflow_run_id)
+    expect(attempt?.status).toBe('running')
+    expect(run?.status).toBe('running')
+    return { ...result, stepId: config.stepId, runId: config.runId }
+  }
+  const selectedRunStep = overrides.runStep ?? defaultRunStep
   const dependencies: RuntimeServiceDependencies = {
     now: () => '2026-01-01T00:00:00.000Z',
     newId: (() => { let n = 0; return prefix => `${prefix}-${++n}` })(),
@@ -72,17 +86,7 @@ async function fixture(overrides: Partial<RuntimeServiceDependencies> = {}) {
       calls.push('dispatch')
       return { stepId: options.stepId, runId: options.runId, command: 'sh', args: [], cwd: basePath } satisfies RunnerConfig
     },
-    runStep: async config => {
-      calls.push('run')
-      const process = (await new ProcessRepository(basePath).list())[0]
-      expect(process?.status).toBe('starting')
-      expect(process).toMatchObject({ pid: null, provider_handle: null, started_at: null })
-      const attempt = await new AttemptRepository(basePath).get(process!.attempt_id)
-      const run = await new RunRepository(basePath).get(process!.workflow_run_id)
-      expect(attempt?.status).toBe('running')
-      expect(run?.status).toBe('running')
-      return { ...result, stepId: config.stepId, runId: config.runId }
-    },
+    runStep: selectedRunStep,
     saveArtifacts: async () => '.threados/runs/artifact',
     readRuntimeEvents: async () => [],
     readApprovals: async () => [],
@@ -100,6 +104,8 @@ async function fixture(overrides: Partial<RuntimeServiceDependencies> = {}) {
       finalizeRun: async () => { calls.push('project-finalize-run') },
     },
     ...overrides,
+    startProcess: overrides.startProcess
+      ?? createTestCompatibilityStartProcess(selectedRunStep),
   }
   const repositories = {
     runs: new RunRepository(basePath), attempts: new AttemptRepository(basePath),
@@ -174,7 +180,321 @@ async function waitForRunningAttempt(
   throw new Error(`run ${runId} did not reach a controllable attempt`)
 }
 
+async function waitForAttemptStatus(
+  repositories: Awaited<ReturnType<typeof fixture>>['repositories'],
+  runId: string,
+  status: 'pending' | 'provisioning' | 'running',
+) {
+  for (let poll = 0; poll < 500; poll++) {
+    const attempt = (await repositories.attempts.listForRun(runId))[0]
+    if (attempt?.status === status) return attempt
+    await new Promise(resolve => setTimeout(resolve, 2))
+  }
+  throw new Error(`run ${runId} did not reach attempt status ${status}`)
+}
+
 describe('ThreadOSRuntimeService', () => {
+  test('automatic timeout control failure keeps the run active until stronger control persists death evidence', async () => {
+    const failedControl: ProcessControlResult = {
+      success: false,
+      code: 'PROCESS_CONTROL_FAILED',
+      message: 'timeout could not stop the process tree',
+      signal: 'SIGTERM',
+    }
+    const failedResult = deferred<RawProcessResult>()
+    void failedResult.promise.catch(() => undefined)
+    let completionSettled = false
+    const { repositories, service } = await fixture({
+      startProcess: async config => ({
+        processId: config.processId!,
+        pid: 400,
+        result: failedResult.promise,
+        cancel: async signal => ({
+          success: true,
+          signal: signal ?? 'SIGTERM',
+          escalated: true,
+        }),
+      }),
+      runStep: async () => { throw new Error('compatibility runner must not be used') },
+    } as Partial<RuntimeServiceDependencies> & {
+      startProcess: (config: Parameters<NonNullable<RuntimeServiceDependencies['startProcess']>>[0]) => Promise<RunningProcessHandle>
+    })
+    const startContext = { ...context, idempotencyKey: 'timeout-control-start' }
+    const completion = service.runAndWait(request, startContext)
+      .finally(() => { completionSettled = true })
+    const active = await waitForRunningAttempt(repositories, 'run-1')
+    failedResult.reject(new ProcessControlError(failedControl.message, failedControl))
+    await new Promise(resolve => setTimeout(resolve, 1_100))
+
+    expect(completionSettled).toBe(false)
+    expect(await repositories.attempts.get(active.attempt.id)).toMatchObject({
+      status: 'running',
+      ended_at: null,
+    })
+    expect(await repositories.runs.get(active.attempt.workflow_run_id)).toMatchObject({
+      status: 'running',
+      ended_at: null,
+    })
+
+    const cancelled = await service.cancelAttempt(active.attempt.id, {
+      ...context,
+      idempotencyKey: 'timeout-control-retry',
+    })
+    expect(cancelled.status).toBe('cancelled')
+    expect((await completion).run.status).toBe('cancelled')
+  }, 30_000)
+
+  test('queued run cancellation persists intent, completes without a process, and prevents later spawn', async () => {
+    const firstTerminal = deferred<RawProcessResult>()
+    let starts = 0
+    const { repositories, service } = await fixture({
+      startProcess: async config => {
+        starts++
+        return {
+          processId: config.processId!,
+          pid: 410 + starts,
+          result: starts === 1
+            ? firstTerminal.promise
+            : Promise.resolve(rawResult(config.runId)),
+          cancel: async signal => ({
+            success: true,
+            signal: signal ?? 'SIGTERM',
+            escalated: false,
+          }),
+        }
+      },
+      runStep: async () => { throw new Error('compatibility runner must not be used') },
+    } as Partial<RuntimeServiceDependencies> & {
+      startProcess: (config: Parameters<NonNullable<RuntimeServiceDependencies['startProcess']>>[0]) => Promise<RunningProcessHandle>
+    })
+    const firstContext = { ...context, idempotencyKey: 'queued-first' }
+    const secondContext = { ...context, idempotencyKey: 'queued-second' }
+    const firstCompletion = service.runAndWait(request, firstContext)
+    await waitForRunningAttempt(repositories, 'run-1')
+    const queued = await service.startRun(request, secondContext)
+
+    const cancelled = await service.cancelRun(queued.id, {
+      ...context,
+      idempotencyKey: 'queued-cancel',
+    })
+
+    expect(cancelled).toMatchObject({
+      status: 'cancelled',
+      cancellation_requested_at: expect.any(String),
+    })
+    expect(await repositories.attempts.listForRun(queued.id)).toEqual([])
+    firstTerminal.resolve(rawResult('run-1'))
+    await firstCompletion
+    const queuedCompletion = await service.runAndWait(request, secondContext)
+    expect(queuedCompletion.run.status).toBe('cancelled')
+    expect(starts).toBe(1)
+    expect((await repositories.processes.list()).filter(process => process.workflow_run_id === queued.id)).toEqual([])
+  }, 30_000)
+
+  test('provisioning run cancellation terminalizes without a process and blocks the pending spawn race', async () => {
+    const releaseCompilation = deferred<void>()
+    let starts = 0
+    const { repositories, service } = await fixture({
+      compilePrompt: async () => {
+        await releaseCompilation.promise
+        return 'compiled prompt'
+      },
+      startProcess: async config => {
+        starts++
+        return {
+          processId: config.processId!,
+          pid: 420,
+          result: Promise.resolve(rawResult(config.runId)),
+          cancel: async signal => ({
+            success: true,
+            signal: signal ?? 'SIGTERM',
+            escalated: false,
+          }),
+        }
+      },
+      runStep: async () => { throw new Error('compatibility runner must not be used') },
+    } as Partial<RuntimeServiceDependencies> & {
+      startProcess: (config: Parameters<NonNullable<RuntimeServiceDependencies['startProcess']>>[0]) => Promise<RunningProcessHandle>
+    })
+    const startContext = { ...context, idempotencyKey: 'provisioning-start' }
+    const completion = service.runAndWait(request, startContext)
+    await waitForAttemptStatus(repositories, 'run-1', 'provisioning')
+
+    const cancelled = await service.cancelRun('run-1', {
+      ...context,
+      idempotencyKey: 'provisioning-cancel',
+    })
+    releaseCompilation.resolve()
+
+    expect(cancelled.status).toBe('cancelled')
+    expect((await completion).run.status).toBe('cancelled')
+    expect((await repositories.attempts.listForRun('run-1'))[0]).toMatchObject({
+      status: 'cancelled',
+      process_id: null,
+    })
+    expect(starts).toBe(0)
+    expect(await repositories.processes.list()).toEqual([])
+  }, 30_000)
+
+  test('concurrent cancel-attempt replay rejoins the in-flight controller operation without receipt polling', async () => {
+    const terminal = deferred<RawProcessResult>()
+    const controlStarted = deferred<void>()
+    const releaseControl = deferred<void>()
+    const { repositories, service } = await fixture({
+      startProcess: async config => ({
+        processId: config.processId!,
+        pid: 430,
+        result: terminal.promise,
+        cancel: async signal => {
+          controlStarted.resolve()
+          await releaseControl.promise
+          terminal.resolve(rawResult(config.runId, {
+            exitCode: null,
+            signal: signal ?? 'SIGTERM',
+            status: 'CANCELLED',
+          }))
+          return { success: true, signal: signal ?? 'SIGTERM', escalated: false }
+        },
+      }),
+      runStep: async () => { throw new Error('compatibility runner must not be used') },
+    } as Partial<RuntimeServiceDependencies> & {
+      startProcess: (config: Parameters<NonNullable<RuntimeServiceDependencies['startProcess']>>[0]) => Promise<RunningProcessHandle>
+    })
+    const run = await service.startRun(request, { ...context, idempotencyKey: 'slow-attempt-start' })
+    const active = await waitForRunningAttempt(repositories, run.id)
+    const cancelContext = { ...context, idempotencyKey: 'slow-attempt-cancel' }
+    const first = service.cancelAttempt(active.attempt.id, cancelContext)
+    await controlStarted.promise
+    repositories.commands.get = async () => {
+      throw new Error('in-flight cancellation replay must not poll its receipt')
+    }
+    const replay = service.cancelAttempt(active.attempt.id, cancelContext)
+    await new Promise(resolve => setTimeout(resolve, 30))
+    releaseControl.resolve()
+
+    const [firstResult, replayResult] = await Promise.all([first, replay])
+
+    expect(firstResult.status).toBe('cancelled')
+    expect(replayResult.status).toBe('cancelled')
+    expect(firstResult.id).toBe(replayResult.id)
+  }, 30_000)
+
+  test('concurrent cancel-run replay rejoins the in-flight controller operation without receipt polling', async () => {
+    const terminal = deferred<RawProcessResult>()
+    const controlStarted = deferred<void>()
+    const releaseControl = deferred<void>()
+    const { repositories, service } = await fixture({
+      startProcess: async config => ({
+        processId: config.processId!,
+        pid: 440,
+        result: terminal.promise,
+        cancel: async signal => {
+          controlStarted.resolve()
+          await releaseControl.promise
+          terminal.resolve(rawResult(config.runId, {
+            exitCode: null,
+            signal: signal ?? 'SIGTERM',
+            status: 'CANCELLED',
+          }))
+          return { success: true, signal: signal ?? 'SIGTERM', escalated: false }
+        },
+      }),
+      runStep: async () => { throw new Error('compatibility runner must not be used') },
+    } as Partial<RuntimeServiceDependencies> & {
+      startProcess: (config: Parameters<NonNullable<RuntimeServiceDependencies['startProcess']>>[0]) => Promise<RunningProcessHandle>
+    })
+    const run = await service.startRun(request, { ...context, idempotencyKey: 'slow-run-start' })
+    await waitForRunningAttempt(repositories, run.id)
+    const cancelContext = { ...context, idempotencyKey: 'slow-run-cancel' }
+    const first = service.cancelRun(run.id, cancelContext)
+    await controlStarted.promise
+    repositories.commands.get = async () => {
+      throw new Error('in-flight cancellation replay must not poll its receipt')
+    }
+    const replay = service.cancelRun(run.id, cancelContext)
+    await new Promise(resolve => setTimeout(resolve, 30))
+    releaseControl.resolve()
+
+    const [firstResult, replayResult] = await Promise.all([first, replay])
+
+    expect(firstResult.status).toBe('cancelled')
+    expect(replayResult.status).toBe('cancelled')
+    expect(firstResult.id).toBe(replayResult.id)
+  }, 30_000)
+
+  test('accepted cancellation replay without an owning controller fails safely when terminal evidence is absent', async () => {
+    const terminal = deferred<RawProcessResult>()
+    const { basePath, dependencies, repositories, service } = await fixture({
+      startProcess: async config => ({
+        processId: config.processId!,
+        pid: 445,
+        result: terminal.promise,
+        cancel: async signal => ({
+          success: true,
+          signal: signal ?? 'SIGTERM',
+          escalated: false,
+        }),
+      }),
+      runStep: async () => { throw new Error('compatibility runner must not be used') },
+    } as Partial<RuntimeServiceDependencies> & {
+      startProcess: (config: Parameters<NonNullable<RuntimeServiceDependencies['startProcess']>>[0]) => Promise<RunningProcessHandle>
+    })
+    const startContext = { ...context, idempotencyKey: 'orphaned-cancel-start' }
+    const run = await service.startRun(request, startContext)
+    const active = await waitForRunningAttempt(repositories, run.id)
+    const cancelContext = { ...context, idempotencyKey: 'orphaned-cancel-command' }
+    await repositories.commands.createOrReplay({
+      schema_version: 1,
+      id: 'orphaned-command',
+      idempotency_key: cancelContext.idempotencyKey,
+      command_type: 'cancel-attempt',
+      request_hash: stableRuntimeHash({
+        commandType: 'cancel-attempt',
+        targetId: active.attempt.id,
+        actor: cancelContext.actor,
+        interface: cancelContext.interface,
+        policyConfirmed: cancelContext.policyConfirmed,
+      }),
+      status: 'accepted',
+      result_ref: active.attempt.id,
+      error_code: null,
+      error_message: null,
+      created_at: '2026-01-01T00:00:00.000Z',
+      completed_at: null,
+    })
+    const freshService = new ThreadOSRuntimeService({
+      basePath,
+      scheduler: new SequentialScheduler(),
+      repositories,
+      dependencies,
+    })
+
+    await expect(freshService.cancelAttempt(active.attempt.id, cancelContext))
+      .rejects.toMatchObject({ code: 'PROCESS_CONTROL_FAILED' })
+    expect(await repositories.attempts.get(active.attempt.id)).toMatchObject({
+      status: 'running',
+      ended_at: null,
+    })
+    expect(await repositories.commands.get('orphaned-command')).toMatchObject({
+      status: 'accepted',
+      result_ref: active.attempt.id,
+    })
+
+    terminal.resolve(rawResult(run.id))
+    await service.runAndWait(request, startContext)
+  }, 30_000)
+
+  test('canonical service construction rejects a missing process starter', async () => {
+    const { basePath, dependencies, repositories } = await fixture()
+    const { startProcess: _startProcess, ...missingStarter } = dependencies
+    expect(() => new ThreadOSRuntimeService({
+      basePath,
+      scheduler: new SequentialScheduler(),
+      repositories,
+      dependencies: missingStarter as RuntimeServiceDependencies,
+    })).toThrow('startProcess')
+  })
+
   test('successful attempt cancellation reaches the controller and waits for truthful terminal state', async () => {
     const terminal = deferred<RawProcessResult>()
     const signals: string[] = []

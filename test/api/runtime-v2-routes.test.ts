@@ -4,6 +4,7 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import type { RuntimeServicePort } from '@/lib/api/runtime-request'
 import { clearRuntimeServiceFactoryForTests, getThreadOSRuntimeService } from '@/lib/runtime/factory'
+import type { RuntimeServiceDependencies } from '@/lib/runtime/service-types'
 import { CommandRepository } from '@/lib/runtime/command-repository'
 import { stableRuntimeHash } from '@/lib/runtime/attempt-executor'
 import { RuntimeServiceError } from '@/lib/runtime/errors'
@@ -180,20 +181,20 @@ describe.serial('runtime V2 API routes', () => {
     }))
     await writeFile(join(basePath, '.threados', 'prompts', 'step-1.md'), '# step 1')
     let spawns = 0
+    const runStep: NonNullable<RuntimeServiceDependencies['runStep']> = async config => {
+      spawns++
+      return {
+        stepId: config.stepId, runId: config.runId, exitCode: 0, status: 'SUCCESS' as const,
+        duration: 1, stdout: 'ok', stderr: '', startTime: new Date(NOW), endTime: new Date(NOW),
+      }
+    }
     const service = await getThreadOSRuntimeService(basePath, { dependencies: {
       dispatch: async (_model, options) => ({
         stepId: options.stepId, runId: options.runId, command: 'mock-agent', args: [],
         cwd: options.cwd, timeout: options.timeout,
         executablePayload: { command: 'mock-agent', args: [], cwd: options.cwd },
       }),
-      runStep: async config => {
-        spawns++
-        return {
-          stepId: config.stepId, runId: config.runId, exitCode: 0, status: 'SUCCESS' as const,
-          duration: 1, stdout: 'ok', stderr: '', startTime: new Date(NOW), endTime: new Date(NOW),
-        }
-      },
-    } })
+    }, testCompatibility: { runStep } })
     globalThis.__THREADOS_RUNTIME_SERVICE__ = service
     const { POST: start } = await import('@/app/api/runs/route')
     const startBody = JSON.stringify({
