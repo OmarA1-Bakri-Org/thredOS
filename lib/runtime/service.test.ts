@@ -248,4 +248,42 @@ describe('ThreadOSRuntimeService', () => {
     expect((await new CommandRepository(basePath).list())[0]?.status).toBe('completed')
     expect(runners).toBe(1)
   }, 30_000)
+
+  test('fresh replay repairs an accepted receipt from terminal run truth without spawning again', async () => {
+    let runners = 0
+    const { basePath, dependencies, repositories, service } = await fixture({
+      runStep: async config => {
+        runners++
+        const now = new Date()
+        return { stepId: config.stepId, runId: config.runId, exitCode: 0, status: 'SUCCESS', duration: 1, stdout: '', stderr: '', startTime: now, endTime: now }
+      },
+    })
+    const complete = repositories.commands.complete.bind(repositories.commands)
+    let failures = 2
+    repositories.commands.complete = async (...args) => {
+      if (failures-- > 0) throw new Error('receipt storage unavailable')
+      return await complete(...args)
+    }
+
+    const first = await service.runAndWait(request, context)
+    expect(first.run.status).toBe('successful')
+    expect((await repositories.commands.list())[0]?.status).toBe('accepted')
+    repositories.commands.complete = complete
+
+    const fresh = new ThreadOSRuntimeService({
+      basePath,
+      scheduler: new SequentialScheduler(),
+      repositories,
+      dependencies,
+    })
+    const replay = await Promise.race([
+      fresh.runAndWait(request, context),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error('replay did not settle')), 5_000)),
+    ])
+    expect(replay.run.id).toBe(first.run.id)
+    expect(replay.run.status).toBe('successful')
+    expect(replay.replayed).toBe(true)
+    expect(runners).toBe(1)
+    expect((await repositories.commands.list())[0]).toMatchObject({ status: 'completed', result_ref: first.run.id })
+  }, 30_000)
 })

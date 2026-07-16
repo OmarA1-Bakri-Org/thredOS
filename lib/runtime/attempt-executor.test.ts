@@ -15,6 +15,8 @@ import { PolicyConfigSchema } from '../policy/schema'
 import type { Sequence } from '../sequence/schema'
 import { evaluateStepGates } from '../gates/engine'
 import { ProcessTimeoutError } from '../errors'
+import type { Approval } from '../contracts/schemas'
+import { executableSubjectDigest } from '../policy/executable'
 
 const roots: string[] = []
 afterEach(async () => { await Promise.all(roots.splice(0).map(path => rm(path, { recursive: true, force: true }))) })
@@ -202,6 +204,54 @@ describe('AttemptExecutor and lifecycle', () => {
     const first = await service.runAndWait(cmd, context)
     await service.runAndWait(cmd, context)
     expect(recorded).toEqual([first.run.policy_snapshot_hash])
+  }, 30_000)
+
+  test('confirmed SAFE execution records only when payload and policy lack an exact approval', async () => {
+    const existingPolicy = PolicyConfigSchema.parse({ mode: 'SAFE', side_effect_mode: 'free' })
+    const approval = (subjectDigest: string): Approval => ({
+      id: 'approval-1', action_type: 'run', target_ref: 'step:x', requested_by: 't', status: 'approved',
+      approved_by: 't', approved_at: '2026-01-01T00:00:00.000Z', notes: null, subject_digest: subjectDigest,
+    })
+
+    let exactApprovals: Approval[] = []
+    const exactRecorded: string[] = []
+    const exact = await make({
+      loadPolicy: async () => existingPolicy,
+      readApprovals: async () => exactApprovals,
+      recordApproval: async input => { exactRecorded.push(executableSubjectDigest(input.payload, input.basePath, input.policy)) },
+    })
+    const originalPayload = { command: 'sh', args: [], cwd: exact.basePath }
+    exactApprovals = [approval(executableSubjectDigest(originalPayload, exact.basePath, existingPolicy))]
+    await exact.service.runAndWait(cmd, context)
+    expect(exactRecorded).toEqual([])
+
+    let changedPayloadApprovals: Approval[] = []
+    const changedPayloadRecorded: string[] = []
+    const changedPayload = await make({
+      loadPolicy: async () => existingPolicy,
+      readApprovals: async () => changedPayloadApprovals,
+      dispatch: async (_model, options) => ({ stepId: options.stepId, runId: options.runId, command: 'sh', args: ['changed'], cwd: changedPayload.basePath }),
+      recordApproval: async input => { changedPayloadRecorded.push(executableSubjectDigest(input.payload, input.basePath, input.policy)) },
+    })
+    changedPayloadApprovals = [approval(executableSubjectDigest({ command: 'sh', args: [], cwd: changedPayload.basePath }, changedPayload.basePath, existingPolicy))]
+    await changedPayload.service.runAndWait(cmd, context)
+    expect(changedPayloadRecorded).toEqual([
+      executableSubjectDigest({ command: 'sh', args: ['changed'], cwd: changedPayload.basePath }, changedPayload.basePath, existingPolicy),
+    ])
+
+    const changedPolicy = PolicyConfigSchema.parse({ mode: 'SAFE', side_effect_mode: 'approved_only' })
+    let changedPolicyApprovals: Approval[] = []
+    const changedPolicyRecorded: string[] = []
+    const policyChanged = await make({
+      loadPolicy: async () => changedPolicy,
+      readApprovals: async () => changedPolicyApprovals,
+      recordApproval: async input => { changedPolicyRecorded.push(executableSubjectDigest(input.payload, input.basePath, input.policy)) },
+    })
+    changedPolicyApprovals = [approval(executableSubjectDigest({ command: 'sh', args: [], cwd: policyChanged.basePath }, policyChanged.basePath, existingPolicy))]
+    await policyChanged.service.runAndWait(cmd, context)
+    expect(changedPolicyRecorded).toEqual([
+      executableSubjectDigest({ command: 'sh', args: [], cwd: policyChanged.basePath }, policyChanged.basePath, changedPolicy),
+    ])
   }, 30_000)
 
   test('timeout produces timed_out attempt, lost process, and failed receipt without invented evidence', async () => {

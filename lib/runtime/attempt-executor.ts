@@ -1,4 +1,5 @@
 import { createHash } from 'crypto'
+import { approvalMatchesExecutableSubject, executableSubjectDigest } from '../policy/executable'
 import type { ExecutablePayload, PolicyConfig } from '../policy/schema'
 import type { Sequence, Step } from '../sequence/schema'
 import { getRuntimeEventLogPath } from '../runner/artifacts'
@@ -115,9 +116,13 @@ export class AttemptExecutor {
         runtimeEventEmitterCommand: EVENT_EMITTER,
       })
       const payload = payloadFrom(runnerConfig, this.basePath)
+      const targetRefs = [`step:${step.id}`, input.targetRef]
+      const subjectDigest = executableSubjectDigest(payload, this.basePath, policy)
+      const exactApprovalPresent = approvals.some(approval =>
+        approvalMatchesExecutableSubject(approval, targetRefs, subjectDigest))
       const executablePolicy = this.deps.enforceExecutablePolicy({
         payload, policy, confirmed: context.policyConfirmed, approvals,
-        targetRefs: [`step:${step.id}`, input.targetRef], basePath: this.basePath,
+        targetRefs, basePath: this.basePath,
       })
       if (!executablePolicy.allowed || (executablePolicy.confirmation_required && !context.policyConfirmed)) {
         attempt = await transitionAttempt(this.repositories.attempts, attempt, 'failed', {
@@ -127,7 +132,7 @@ export class AttemptExecutor {
         await this.deps.projections.finalizeAttempt({ run, attempt, step, runtimeEvents: [] }).catch(() => undefined)
         return { run, attempt }
       }
-      if (context.policyConfirmed && policy.mode === 'SAFE') {
+      if (context.policyConfirmed && policy.mode === 'SAFE' && !exactApprovalPresent) {
         await this.deps.recordApproval({
           basePath: this.basePath, runId: run.id, context, targetRef: `step:${step.id}`,
           payload, policy, policySnapshotHash: run.policy_snapshot_hash,

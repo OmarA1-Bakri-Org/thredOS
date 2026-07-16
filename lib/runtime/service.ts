@@ -142,7 +142,19 @@ export class ThreadOSRuntimeService {
         this.repositories.runs.get(runId),
         this.repositories.commands.findByIdempotencyKey(idempotencyKey),
       ])
-      if (run && terminalRunStatuses.has(run.status) && receipt && receipt.status !== 'accepted') {
+      if (run && terminalRunStatuses.has(run.status) && receipt) {
+        if (receipt.status === 'accepted') {
+          const outcome = run.status === 'successful'
+            ? { status: 'completed' as const, resultRef: run.id }
+            : {
+                status: 'failed' as const,
+                errorCode: run.error_code ?? 'RUNTIME_EXECUTION_FAILED',
+                errorMessage: run.error_message ?? `Run ended with status ${run.status}`,
+              }
+          // The terminal run is canonical authority. Repair the derived command receipt when possible,
+          // but never poll forever if receipt persistence remains unavailable.
+          await this.repositories.commands.complete(receipt.id, outcome, this.deps.now()).catch(() => undefined)
+        }
         return { run, attempts: await this.repositories.attempts.listForRun(run.id), replayed: true }
       }
       await new Promise(resolve => setTimeout(resolve, 20))
