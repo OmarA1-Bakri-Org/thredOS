@@ -573,7 +573,7 @@ describe('ProcessController', () => {
     })
     expect(signals).toEqual(['SIGTERM', 'SIGKILL'])
     expect(controller.hasLiveHandle('process-01')).toBe(false)
-    expect(processes.record?.status).toBe('lost')
+    expect(processes.record?.status).toBe('exited')
   })
 
   test('observes natural exit after failed registration cleanup and releases the handle', async () => {

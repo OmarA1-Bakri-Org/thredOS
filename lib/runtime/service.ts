@@ -1003,8 +1003,11 @@ export class ThreadOSRuntimeService {
           created_at: this.deps.now(), started_at: null, ended_at: null, last_heartbeat_at: null,
           exit_code: null, signal: null, duration_ms: null, error_code: null, error_message: null,
         }
-        await this.repositories.attempts.create(attempt)
+        // Reserve identity on the still-active run before creating the attempt record.
+        // A crash between these writes is a detectable missing-record recovery case;
+        // cancellation can never leave an unattached attempt behind.
         run = await this.repositories.runs.update(run.id, run.revision, value => ({ ...value, attempt_ids: [...value.attempt_ids, attemptId] }))
+        await this.repositories.attempts.create(attempt)
         await this.deps.projections.beginAttempt({ run, attempt, step }).catch(() => undefined)
         const execution = executor.execute({
           run,
@@ -1058,10 +1061,21 @@ export class ThreadOSRuntimeService {
       return { run, attempts, replayed: false }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
-      if (run.status === 'pending' || run.status === 'provisioning' || run.status === 'running') {
-        run = await transitionRun(this.repositories.runs, run, 'failed', {
+      const latestRun = await this.repositories.runs.get(run.id) ?? run
+      if (latestRun.status === 'cancelled' || latestRun.cancellation_requested_at) {
+        run = latestRun.status === 'cancelled'
+          ? latestRun
+          : await this.completeRunCancellation(latestRun.id)
+      } else if (
+        latestRun.status === 'pending'
+        || latestRun.status === 'provisioning'
+        || latestRun.status === 'running'
+      ) {
+        run = await transitionRun(this.repositories.runs, latestRun, 'failed', {
           ended_at: this.deps.now(), error_code: error instanceof RuntimeServiceError ? error.code : 'RUNTIME_EXECUTION_FAILED', error_message: message,
         })
+      } else {
+        run = latestRun
       }
       await this.deps.projections.finalizeRun({ run, attempts }).catch(() => undefined)
       await this.repositories.commands.complete(commandId, {

@@ -326,7 +326,7 @@ export class ProcessController {
             if (error instanceof ProcessCallbackError) observed = error.result
           }
           const finalizationError = await this.persistTerminal(managed, {
-            status: managed.registrationFailed ? 'lost' : 'exited',
+            status: 'exited',
             endedAt: observed?.endTime.toISOString() ?? this.options.now(),
             exitCode: observed?.exitCode ?? null,
             signal: observed?.signal ?? result.signal,

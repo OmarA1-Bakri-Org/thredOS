@@ -279,7 +279,7 @@ describe('ThreadOSRuntimeService', () => {
     expect(cancelled.status).toBe('cancelled')
     expect(controls).toBe(2)
     expect(await repositories.processes.get(attempt.process_id!)).toMatchObject({
-      status: 'lost',
+      status: 'exited',
       signal: 'SIGTERM',
     })
     expect((await completion).run.status).toBe('cancelled')
@@ -327,7 +327,11 @@ describe('ThreadOSRuntimeService', () => {
       await new Promise(resolve => setTimeout(resolve, 2))
     }
     expect(controls).toBe(1)
-    terminal.resolve(rawResult('run-1'))
+    terminal.resolve(rawResult('run-1', {
+      exitCode: null,
+      signal: 'SIGTERM',
+      status: 'FAILED',
+    }))
 
     const result = await completion
     expect(result.attempts[0]).toMatchObject({
@@ -522,6 +526,63 @@ describe('ThreadOSRuntimeService', () => {
       await new Promise(resolve => setTimeout(resolve, 2))
     }
     releaseTrace.resolve()
+
+    expect((await cancellation).status).toBe('cancelled')
+    expect((await completion).run.status).toBe('cancelled')
+    expect(starts).toBe(0)
+    expect(await repositories.processes.list()).toEqual([])
+  }, 30_000)
+
+  test('the final launch observation runs after refreshed run and attempt reads', async () => {
+    const launchReadEntered = deferred<void>()
+    const releaseLaunchRead = deferred<void>()
+    let starts = 0
+    let readsAfterTrace = 0
+    let traceWritten = false
+    const { repositories, service } = await fixture({
+      appendTrace: async (_basePath, _runId, event) => {
+        if (event.event_type === 'step-started') traceWritten = true
+      },
+      startProcess: async config => {
+        starts++
+        return {
+          processId: config.processId!,
+          pid: 421,
+          result: Promise.resolve(rawResult(config.runId)),
+          cancel: async signal => ({
+            success: true,
+            signal: signal ?? 'SIGTERM',
+            escalated: false,
+          }),
+        }
+      },
+      runStep: async () => { throw new Error('compatibility runner must not be used') },
+    } as Partial<RuntimeServiceDependencies> & {
+      startProcess: (config: Parameters<NonNullable<RuntimeServiceDependencies['startProcess']>>[0]) => Promise<RunningProcessHandle>
+    })
+    const getRun = repositories.runs.get.bind(repositories.runs)
+    repositories.runs.get = async runId => {
+      if (traceWritten && ++readsAfterTrace === 2) {
+        launchReadEntered.resolve()
+        await releaseLaunchRead.promise
+      }
+      return await getRun(runId)
+    }
+
+    const completion = service.runAndWait(request, {
+      ...context,
+      idempotencyKey: 'final-launch-check-start',
+    })
+    await launchReadEntered.promise
+    const cancellation = service.cancelRun('run-1', {
+      ...context,
+      idempotencyKey: 'final-launch-check-cancel',
+    })
+    for (let poll = 0; poll < 500; poll++) {
+      if ((await getRun('run-1'))?.cancellation_requested_at) break
+      await new Promise(resolve => setTimeout(resolve, 2))
+    }
+    releaseLaunchRead.resolve()
 
     expect((await cancellation).status).toBe('cancelled')
     expect((await completion).run.status).toBe('cancelled')
@@ -1083,6 +1144,65 @@ describe('ThreadOSRuntimeService', () => {
     expect(result.run.status).toBe('cancelled')
     expect(await repositories.attempts.listForRun(result.run.id)).toHaveLength(1)
     expect(starts).toBe(1)
+  }, 30_000)
+
+  test('cancellation after reserving a second attempt waits for its attached record and prevents spawn', async () => {
+    const secondCreateEntered = deferred<void>()
+    const releaseSecondCreate = deferred<void>()
+    let starts = 0
+    const { repositories, service } = await fixture({
+      loadSequence: async () => multiStepSequence(),
+      startProcess: async config => {
+        starts++
+        return {
+          processId: config.processId!,
+          pid: 470 + starts,
+          result: Promise.resolve(rawResult(config.runId, { stepId: config.stepId })),
+          cancel: async signal => ({ success: true, signal: signal ?? 'SIGTERM', escalated: false }),
+        }
+      },
+      runStep: async () => { throw new Error('compatibility runner must not be used') },
+    } as Partial<RuntimeServiceDependencies> & {
+      startProcess: (config: Parameters<NonNullable<RuntimeServiceDependencies['startProcess']>>[0]) => Promise<RunningProcessHandle>
+    })
+    const createAttempt = repositories.attempts.create.bind(repositories.attempts)
+    repositories.attempts.create = async attempt => {
+      if (attempt.step_id === 'verify') {
+        secondCreateEntered.resolve()
+        await releaseSecondCreate.promise
+      }
+      await createAttempt(attempt)
+    }
+
+    const multiRequest = { ...request, target: { kind: 'runnable' as const } }
+    const startContext = { ...context, idempotencyKey: 'reserved-attempt-start' }
+    const completion = service.runAndWait(multiRequest, startContext)
+    await secondCreateEntered.promise
+    expect(await repositories.runs.get('run-1')).toMatchObject({
+      attempt_ids: ['attempt-3', 'attempt-5'],
+    })
+
+    const cancellation = service.cancelRun('run-1', {
+      ...context,
+      idempotencyKey: 'reserved-attempt-cancel',
+    })
+    for (let poll = 0; poll < 500; poll++) {
+      if ((await repositories.runs.get('run-1'))?.cancellation_requested_at) break
+      await new Promise(resolve => setTimeout(resolve, 2))
+    }
+    releaseSecondCreate.resolve()
+
+    expect((await cancellation).status).toBe('cancelled')
+    const result = await completion
+    const run = await repositories.runs.get(result.run.id)
+    const attempts = await repositories.attempts.listForRun(result.run.id)
+    expect(run?.status).toBe('cancelled')
+    expect(attempts.map(attempt => attempt.id)).toEqual(run!.attempt_ids)
+    expect(attempts).toHaveLength(2)
+    expect(attempts[1]).toMatchObject({ step_id: 'verify', status: 'cancelled' })
+    expect(starts).toBe(1)
+    expect(await repositories.commands.findByIdempotencyKey('reserved-attempt-cancel'))
+      .toMatchObject({ status: 'completed', result_ref: result.run.id })
   }, 30_000)
 
   test('runs one attempt without an API or CLI and persists truthful canonical state before runner invocation', async () => {

@@ -169,10 +169,10 @@ export class AttemptExecutor {
         ts: this.deps.now(), run_id: run.id, surface_id: surfaceId, actor: context.actor,
         event_type: 'step-started', payload_ref: attempt.id, policy_ref: run.policy_snapshot_hash,
       })
-      const cancelledAtLaunch = await this.observeRunCancellation(run.id, attempt.id)
-      if (cancelledAtLaunch) return cancelledAtLaunch
       run = await this.repositories.runs.get(run.id) ?? run
       attempt = await this.repositories.attempts.get(attempt.id) ?? attempt
+      const cancelledAtLaunch = await this.observeRunCancellation(run.id, attempt.id)
+      if (cancelledAtLaunch) return cancelledAtLaunch
 
       let controlled
       try {
@@ -336,8 +336,7 @@ export class AttemptExecutor {
         }
         const cancellationRequested = process.cancellation_requested_at !== null
           || run.cancellation_requested_at !== null
-        const cancelled = cancellationRequested
-          && (process.status === 'exited' || process.signal !== null)
+        const cancelled = process.status === 'exited' && cancellationRequested
         const terminalAttempt = await transitionAttempt(
           this.repositories.attempts,
           attempt,
