@@ -60,6 +60,9 @@ async function fixture(overrides: Partial<RuntimeServiceDependencies> = {}) {
     validateSequence: () => undefined,
     validatePrompt: async () => true,
     compilePrompt: async () => 'compiled prompt',
+    prepareArtifacts: async () => undefined,
+    resolveGateSurface: async () => ({ surfaceClass: 'shared', revealState: null }),
+    allowModelExecution: () => ({ allowed: true }),
     dispatch: async (_model, options) => {
       calls.push('dispatch')
       return { stepId: options.stepId, runId: options.runId, command: 'sh', args: [], cwd: basePath } satisfies RunnerConfig
@@ -109,7 +112,7 @@ async function fixture(overrides: Partial<RuntimeServiceDependencies> = {}) {
     repositories,
     dependencies,
   })
-  return { basePath, calls, dependencies, service }
+  return { basePath, calls, dependencies, repositories, service }
 }
 
 const context = { actor: 'tester', interface: 'system' as const, idempotencyKey: 'same-key', policyConfirmed: true }
@@ -191,4 +194,58 @@ describe('ThreadOSRuntimeService', () => {
     expect(left).toBe(right)
     expect(reconciliations).toBe(1)
   })
+
+  test('concurrent replay waits for the accepted run to finish instead of returning pending', async () => {
+    const { basePath, repositories, service } = await fixture()
+    const originalCreate = repositories.runs.create.bind(repositories.runs)
+    let releaseCreate!: () => void
+    let persisted!: () => void
+    const release = new Promise<void>(resolve => { releaseCreate = resolve })
+    const persistedRun = new Promise<void>(resolve => { persisted = resolve })
+    let first = true
+    repositories.runs.create = async value => {
+      await originalCreate(value)
+      if (!first) return
+      first = false
+      persisted()
+      await release
+    }
+
+    const firstRun = service.runAndWait(request, context)
+    await persistedRun
+    let replayResolved = false
+    const replay = service.runAndWait(request, context).then(result => { replayResolved = true; return result })
+    await new Promise(resolve => setTimeout(resolve, 1_500))
+    expect(replayResolved).toBe(false)
+    releaseCreate()
+    const [left, right] = await Promise.all([firstRun, replay])
+    expect(left.run.status).toBe('successful')
+    expect(right.run.status).toBe('successful')
+    expect(right.run.id).toBe(left.run.id)
+    expect(await new ProcessRepository(basePath).list()).toHaveLength(1)
+  }, 30_000)
+
+  test('finalizeRun projection failure cannot downgrade a successful receipt or replay the runner', async () => {
+    let runners = 0
+    const projectionError = async () => { throw new Error('projection failed') }
+    const { basePath, service } = await fixture({
+      runStep: async config => {
+        runners++
+        const now = new Date()
+        return { stepId: config.stepId, runId: config.runId, exitCode: 0, status: 'SUCCESS', duration: 1, stdout: '', stderr: '', startTime: now, endTime: now }
+      },
+      projections: {
+        beginRun: async () => undefined,
+        beginAttempt: async () => undefined,
+        finalizeAttempt: async () => undefined,
+        finalizeRun: projectionError,
+      },
+    })
+    const first = await service.runAndWait(request, context)
+    const replay = await service.runAndWait(request, context)
+    expect(first.run.status).toBe('successful')
+    expect(replay.run.status).toBe('successful')
+    expect((await new CommandRepository(basePath).list())[0]?.status).toBe('completed')
+    expect(runners).toBe(1)
+  }, 30_000)
 })

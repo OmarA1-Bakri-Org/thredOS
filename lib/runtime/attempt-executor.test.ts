@@ -13,6 +13,8 @@ import { CommandRepository } from './command-repository'
 import type { RuntimeServiceDependencies } from './service-types'
 import { PolicyConfigSchema } from '../policy/schema'
 import type { Sequence } from '../sequence/schema'
+import { evaluateStepGates } from '../gates/engine'
+import { ProcessTimeoutError } from '../errors'
 
 const roots: string[] = []
 afterEach(async () => { await Promise.all(roots.splice(0).map(path => rm(path, { recursive: true, force: true }))) })
@@ -31,6 +33,9 @@ async function make(overrides: Partial<RuntimeServiceDependencies>) {
     now: () => '2026-01-01T00:00:00.000Z', newId: p => `${p}-${++id}`,
     loadSequence: async () => seq(), loadPolicy: async () => PolicyConfigSchema.parse({ mode: 'POWER', side_effect_mode: 'free' }),
     validateSequence: () => undefined, validatePrompt: async () => true, compilePrompt: async () => 'prompt',
+    prepareArtifacts: async () => undefined,
+    resolveGateSurface: async () => ({ surfaceClass: 'shared', revealState: null }),
+    allowModelExecution: () => ({ allowed: true }),
     dispatch: async (_m, o) => ({ stepId: o.stepId, runId: o.runId, command: 'sh', args: [], cwd: basePath }),
     runStep: async c => ({ stepId: c.stepId, runId: c.runId, exitCode: 0, status: 'SUCCESS', duration: 1, stdout: '', stderr: '', startTime: new Date(), endTime: new Date() }),
     saveArtifacts: async () => 'artifact', readRuntimeEvents: async () => [], readApprovals: async () => [],
@@ -138,5 +143,95 @@ describe('AttemptExecutor and lifecycle', () => {
     expect(out.run.status).toBe('failed')
     expect(out.attempts[0]?.error_code).toBe('PROCESS_LOST')
     expect((await new ProcessRepository(basePath).list())[0]?.status).toBe('lost')
+  }, 30_000)
+
+  test('sealed unrevealed surface authority blocks before dispatch while revealed surfaces run', async () => {
+    let dispatches = 0
+    const gateEvaluator: RuntimeServiceDependencies['evaluatePreGates'] = input => evaluateStepGates(
+      input.step, input.sequence.steps, input.sequence.gates, {
+        policyMode: input.policy.mode, sideEffectMode: input.policy.side_effect_mode,
+        crossSurfaceReads: input.policy.cross_surface_reads, surfaceClass: input.surfaceClass,
+        revealState: input.revealState, isDependency: true, inputManifestPresent: true,
+        approvalPresent: input.approvalPresent,
+      },
+    )
+    const blocked = await make({
+      resolveGateSurface: async () => ({ surfaceClass: 'sealed', revealState: 'sealed' }),
+      evaluatePreGates: gateEvaluator,
+      dispatch: async () => { dispatches++; throw new Error('must not dispatch') },
+    })
+    const denied = await blocked.service.runAndWait(cmd, context)
+    expect(denied.attempts[0]?.gate_decision_refs.length).toBeGreaterThan(0)
+    expect(denied.attempts[0]?.error_code).toBe('PRE_RUN_GATE_BLOCKED')
+    expect(dispatches).toBe(0)
+    expect(await new ProcessRepository(blocked.basePath).list()).toEqual([])
+
+    const revealed = await make({
+      resolveGateSurface: async () => ({ surfaceClass: 'sealed', revealState: 'revealed' }),
+      evaluatePreGates: gateEvaluator,
+      dispatch: async (_model, options) => {
+        dispatches++
+        return { stepId: options.stepId, runId: options.runId, command: 'sh', args: [], cwd: revealed.basePath }
+      },
+    })
+    const allowed = await revealed.service.runAndWait(cmd, context)
+    expect(allowed.run.status).toBe('successful')
+    expect(dispatches).toBe(1)
+  }, 30_000)
+
+  test('input manifest reference stays null when preparation is unavailable or fails', async () => {
+    for (const prepareArtifacts of [undefined, async () => { throw new Error('prepare failed') }]) {
+      let spawns = 0
+      const { service } = await make({
+        prepareArtifacts,
+        runStep: async () => { spawns++; throw new Error('must not spawn') },
+      })
+      const out = await service.runAndWait(cmd, context)
+      expect(out.attempts[0]?.input_manifest_ref).toBeNull()
+      expect(out.attempts[0]?.status).toBe('failed')
+      expect(spawns).toBe(0)
+    }
+  }, 30_000)
+
+  test('exact approval recording receives the run policy snapshot and is not duplicated on replay', async () => {
+    const recorded: string[] = []
+    const { service } = await make({
+      loadPolicy: async () => PolicyConfigSchema.parse({ mode: 'SAFE', side_effect_mode: 'free' }),
+      recordApproval: async input => { recorded.push(input.policySnapshotHash) },
+    })
+    const first = await service.runAndWait(cmd, context)
+    await service.runAndWait(cmd, context)
+    expect(recorded).toEqual([first.run.policy_snapshot_hash])
+  }, 30_000)
+
+  test('timeout produces timed_out attempt, lost process, and failed receipt without invented evidence', async () => {
+    const { basePath, service } = await make({ runStep: async () => { throw new ProcessTimeoutError('x', 5) } })
+    const out = await service.runAndWait(cmd, context)
+    expect(out.attempts[0]?.status).toBe('timed_out')
+    expect(out.run.status).toBe('failed')
+    expect((await new ProcessRepository(basePath).list())[0]).toMatchObject({ status: 'lost', pid: null, exit_code: null })
+    expect((await new CommandRepository(basePath).list())[0]?.status).toBe('failed')
+  }, 30_000)
+
+  test('hosted shell guard fails before dispatch/process while an allowed local shell runs', async () => {
+    let dispatches = 0
+    const blocked = await make({
+      allowModelExecution: () => ({ allowed: false, errorCode: 'SHELL_MODEL_DISABLED', reason: 'Shell execution is disabled in hosted mode' }),
+      dispatch: async () => { dispatches++; throw new Error('must not dispatch') },
+    })
+    const denied = await blocked.service.runAndWait(cmd, context)
+    expect(denied.attempts[0]?.error_code).toBe('SHELL_MODEL_DISABLED')
+    expect(dispatches).toBe(0)
+    expect(await new ProcessRepository(blocked.basePath).list()).toEqual([])
+
+    const local = await make({
+      allowModelExecution: () => ({ allowed: true }),
+      dispatch: async (_model, options) => {
+        dispatches++
+        return { stepId: options.stepId, runId: options.runId, command: 'sh', args: [], cwd: local.basePath }
+      },
+    })
+    expect((await local.service.runAndWait(cmd, context)).run.status).toBe('successful')
+    expect(dispatches).toBe(1)
   }, 30_000)
 })

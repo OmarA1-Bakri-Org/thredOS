@@ -4,6 +4,7 @@ import type { DispatchOptions } from '../runner/dispatch'
 import type { RunnerConfig, RunResult } from '../runner/wrapper'
 import type { Sequence, Step } from '../sequence/schema'
 import type { RuntimeDelegationEvent } from '../thread-surfaces/runtime-event-log'
+import type { RevealState, SurfaceClass } from '../thread-surfaces/types'
 import type { AttemptRepository } from './attempt-repository'
 import type { CommandRepository } from './command-repository'
 import type { ProcessRepository } from './process-repository'
@@ -41,17 +42,19 @@ export interface RuntimeServiceDependencies {
   validatePrompt(basePath: string, stepId: string): Promise<boolean>
   compilePrompt(input: { basePath: string; sequence: Sequence; step: Step; runId: string }): Promise<string>
   prepareArtifacts?(input: { basePath: string; runId: string; surfaceId: string; step: Step; compiledPrompt: string; createdAt: string }): Promise<void>
+  resolveGateSurface(input: { basePath: string; surfaceId: string; step: Step }): Promise<{ surfaceClass: SurfaceClass; revealState: RevealState }>
+  allowModelExecution(input: { step: Step }): { allowed: boolean; errorCode?: string; reason?: string }
   dispatch(model: Step['model'], options: DispatchOptions): Promise<RunnerConfig>
   runStep(config: RunnerConfig): Promise<RunResult>
   saveArtifacts(basePath: string, result: RunResult, input: { surfaceId: string; compiledPrompt: string; step: Step }): Promise<string>
   readRuntimeEvents(basePath: string, runId: string, stepId: string): Promise<RuntimeDelegationEvent[]>
   readApprovals(basePath: string, runId: string): Promise<Approval[]>
-  evaluatePreGates(input: { step: Step; sequence: Sequence; policy: PolicyConfig; approvalPresent: boolean }): GateDecision[]
+  evaluatePreGates(input: { step: Step; sequence: Sequence; policy: PolicyConfig; approvalPresent: boolean; surfaceClass: SurfaceClass; revealState: RevealState }): GateDecision[]
   evaluateCompletionGates(input: { step: Step; result: RunResult; artifactManifestPresent: boolean }): GateDecision[]
   persistGateDecisions(basePath: string, runId: string, surfaceId: string, decisions: GateDecision[], policyRef: string): Promise<void>
   enforceBatchPolicy(input: { policy: PolicyConfig; stepCount: number; confirmed: boolean; basePath: string }): PolicyResult
   enforceExecutablePolicy(input: { payload: ExecutablePayload; policy: PolicyConfig; confirmed: boolean; approvals: Approval[]; targetRefs: string[]; basePath: string }): PolicyResult
-  recordApproval(input: { basePath: string; runId: string; context: RuntimeCommandContext; targetRef: string; payload: ExecutablePayload; policy: PolicyConfig }): Promise<void>
+  recordApproval(input: { basePath: string; runId: string; context: RuntimeCommandContext; targetRef: string; payload: ExecutablePayload; policy: PolicyConfig; policySnapshotHash: string }): Promise<void>
   appendTrace(basePath: string, runId: string, event: TraceEvent): Promise<void>
   projections: RuntimeProjectionPort
 }

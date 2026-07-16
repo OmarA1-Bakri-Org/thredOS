@@ -36,11 +36,24 @@ function surfaceId(step: Step): string {
   return step.surface_ref || `thread-${step.id}`
 }
 
+const terminalRunStatuses = new Set<WorkflowRun['status']>([
+  'successful', 'failed', 'cancelled', 'interrupted', 'awaiting_review', 'partially_successful',
+])
+
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void; reject: (reason: unknown) => void } {
+  let resolve!: (value: T) => void
+  let reject!: (reason: unknown) => void
+  const promise = new Promise<T>((onResolve, onReject) => { resolve = onResolve; reject = onReject })
+  void promise.catch(() => undefined)
+  return { promise, resolve, reject }
+}
+
 export class ThreadOSRuntimeService {
   private readonly basePath: string
   private readonly scheduler: RuntimeServiceOptions['scheduler']
   private readonly repositories: RuntimeServiceOptions['repositories']
   private readonly deps: RuntimeServiceOptions['dependencies']
+  private readonly inFlight = new Map<string, Promise<CompletedRunResult>>()
 
   constructor(options: RuntimeServiceOptions) {
     this.basePath = options.basePath
@@ -72,6 +85,9 @@ export class ThreadOSRuntimeService {
     const accepted = await this.repositories.commands.createOrReplay(receipt)
     if (accepted.id !== commandId) return await this.waitForExistingRun(accepted)
 
+    const completion = deferred<CompletedRunResult>()
+    this.inFlight.set(runId, completion.promise)
+
     const now = this.deps.now()
     const run: WorkflowRun = {
       schema_version: 2, id: runId, revision: 0, sequence_id: request.sequence_id,
@@ -83,35 +99,54 @@ export class ThreadOSRuntimeService {
     try {
       await this.repositories.runs.create(run)
     } catch (error) {
+      completion.reject(error)
+      this.inFlight.delete(runId)
       await this.repositories.commands.complete(commandId, {
         status: 'failed', errorCode: 'RUN_PERSIST_FAILED', errorMessage: error instanceof Error ? error.message : String(error),
       }, this.deps.now()).catch(() => undefined)
       throw error
     }
-    this.scheduler.enqueue(runId, async () => await this.executeRun(run, request, context, commandId)).catch(() => undefined)
+    const scheduled = this.scheduler.enqueue(runId, async () => await this.executeRun(run, request, context, commandId))
+    void scheduled.then(completion.resolve, completion.reject).finally(() => {
+      if (this.inFlight.get(runId) === completion.promise) this.inFlight.delete(runId)
+    })
     return run
   }
 
   async runAndWait(request: StartRunRequest, context: RuntimeCommandContext): Promise<CompletedRunResult> {
     const started = await this.startRun(request, context)
-    const job = this.scheduler.get<CompletedRunResult>(started.id)
-    if (job) return await job
-    const attempts = await this.repositories.attempts.listForRun(started.id)
-    const run = await this.repositories.runs.get(started.id)
-    if (!run) throw new RuntimeServiceError('RUN_NOT_FOUND', `run ${started.id} was not found`)
-    return { run, attempts, replayed: true }
+    const inFlight = this.inFlight.get(started.id) ?? this.scheduler.get<CompletedRunResult>(started.id)
+    if (inFlight) return await inFlight
+    return await this.waitForDurableCompletion(started.id, context.idempotencyKey)
   }
 
   private async waitForExistingRun(receipt: RuntimeCommandReceipt): Promise<WorkflowRun> {
     const runId = receipt.result_ref
     if (!runId) throw new RuntimeServiceError('RUN_NOT_FOUND', 'accepted start-run receipt has no result reference')
-    for (let count = 0; count < 500; count++) {
+    while (true) {
       const run = await this.repositories.runs.get(runId)
       if (run) return run
-      if (receipt.status === 'failed') break
+      const currentReceipt = await this.repositories.commands.get(receipt.id)
+      if (currentReceipt?.status === 'failed') {
+        throw new RuntimeServiceError('RUN_NOT_FOUND', `accepted run ${runId} failed before persistence`)
+      }
       await new Promise(resolve => setTimeout(resolve, 20))
     }
-    throw new RuntimeServiceError('RUN_NOT_FOUND', `accepted run ${runId} is not yet recoverable`)
+  }
+
+  private async waitForDurableCompletion(runId: string, idempotencyKey: string): Promise<CompletedRunResult> {
+    while (true) {
+      const inFlight = this.inFlight.get(runId) ?? this.scheduler.get<CompletedRunResult>(runId)
+      if (inFlight) return await inFlight
+      const [run, receipt] = await Promise.all([
+        this.repositories.runs.get(runId),
+        this.repositories.commands.findByIdempotencyKey(idempotencyKey),
+      ])
+      if (run && terminalRunStatuses.has(run.status) && receipt && receipt.status !== 'accepted') {
+        return { run, attempts: await this.repositories.attempts.listForRun(run.id), replayed: true }
+      }
+      await new Promise(resolve => setTimeout(resolve, 20))
+    }
   }
 
   private async executeRun(
@@ -169,7 +204,7 @@ export class ThreadOSRuntimeService {
         ended_at: this.deps.now(), summary: `${attempts.length} attempt(s)`,
         error_code: successful ? null : 'RUN_ATTEMPT_FAILED', error_message: successful ? null : 'One or more attempts did not complete',
       })
-      await this.deps.projections.finalizeRun({ run, attempts })
+      await this.deps.projections.finalizeRun({ run, attempts }).catch(() => undefined)
       await this.repositories.commands.complete(commandId, successful
         ? { status: 'completed', resultRef: run.id }
         : { status: 'failed', errorCode: run.error_code ?? 'RUN_ATTEMPT_FAILED', errorMessage: run.error_message ?? 'Run failed' },

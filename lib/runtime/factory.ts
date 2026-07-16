@@ -16,6 +16,8 @@ import { validateDAG } from '../sequence/dag'
 import { readSequence } from '../sequence/parser'
 import { readRuntimeEventLog } from '../thread-surfaces/runtime-event-log'
 import { appendTraceEvent } from '../traces/writer'
+import { readThreadSurfaceState } from '../thread-surfaces/repository'
+import { allowShellModel } from '../hosted'
 import { AttemptRepository } from './attempt-repository'
 import { CommandRepository } from './command-repository'
 import { ProcessRepository } from './process-repository'
@@ -57,6 +59,14 @@ function defaults(basePath: string): RuntimeServiceDependencies {
       })
       await writeCompiledPrompt(path, runId, surfaceId, compiledPrompt)
     },
+    resolveGateSurface: async ({ basePath: path, surfaceId }) => {
+      const state = await readThreadSurfaceState(path)
+      const surface = state.threadSurfaces.find(candidate => candidate.id === surfaceId)
+      return { surfaceClass: surface?.surfaceClass ?? 'shared', revealState: surface?.revealState ?? null }
+    },
+    allowModelExecution: ({ step }) => step.model !== 'shell' || allowShellModel()
+      ? { allowed: true }
+      : { allowed: false, errorCode: 'SHELL_MODEL_DISABLED', reason: 'Shell execution is disabled in hosted mode' },
     dispatch,
     runStep,
     saveArtifacts: async (path, result, input) => await saveRunArtifacts(path, result, {
@@ -65,9 +75,9 @@ function defaults(basePath: string): RuntimeServiceDependencies {
     }),
     readRuntimeEvents: async (path, runId, stepId) => (await readRuntimeEventLog(path, runId, stepId)).events,
     readApprovals,
-    evaluatePreGates: ({ step, sequence, policy, approvalPresent }) => evaluateStepGates(step, sequence.steps, sequence.gates, {
+    evaluatePreGates: ({ step, sequence, policy, approvalPresent, surfaceClass, revealState }) => evaluateStepGates(step, sequence.steps, sequence.gates, {
       policyMode: policy.mode, sideEffectMode: policy.side_effect_mode, crossSurfaceReads: policy.cross_surface_reads,
-      surfaceClass: 'shared', revealState: null, isDependency: true, inputManifestPresent: true, approvalPresent,
+      surfaceClass, revealState, isDependency: true, inputManifestPresent: true, approvalPresent,
     }),
     evaluateCompletionGates: ({ step, result, artifactManifestPresent }) => evaluateStepCompletionGates(step, {
       artifactManifestPresent,
@@ -91,12 +101,13 @@ function defaults(basePath: string): RuntimeServiceDependencies {
       const exactApproval = approvals.some(approval => approvalMatchesExecutableSubject(approval, targetRefs, digest))
       return enforceExecutablePayload(payload, policy, confirmed || exactApproval)
     },
-    recordApproval: async ({ basePath: path, runId, context, targetRef, payload, policy }) => {
+    recordApproval: async ({ basePath: path, runId, context, targetRef, payload, policy, policySnapshotHash }) => {
       const digest = executableSubjectDigest(payload, path, policy)
       await recordApprovedApprovalLifecycle({
         basePath: path, runId, actionType: 'run', targetRef, requestedBy: context.actor,
         resolvedBy: context.actor, actor: `runtime:${context.interface}`,
-        notes: 'Confirmation bound to exact executable subject.', payloadRef: digest, policyRef: digest, subjectDigest: digest,
+        notes: 'Confirmation bound to exact executable subject.', payloadRef: digest,
+        policyRef: policySnapshotHash, subjectDigest: digest,
       })
     },
     appendTrace: appendTraceEvent,

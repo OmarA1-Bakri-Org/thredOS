@@ -3,6 +3,7 @@ import type { ExecutablePayload, PolicyConfig } from '../policy/schema'
 import type { Sequence, Step } from '../sequence/schema'
 import { getRuntimeEventLogPath } from '../runner/artifacts'
 import type { RunnerConfig } from '../runner/wrapper'
+import { ProcessTimeoutError } from '../errors'
 import { transitionAttempt, transitionProcess, transitionRun } from './lifecycle'
 import type { RuntimeCommandContext, RuntimeRepositories, RuntimeServiceDependencies } from './service-types'
 import type { ProcessRecord, StepAttempt, WorkflowRun } from './schema'
@@ -59,16 +60,21 @@ export class AttemptExecutor {
       attempt = await this.repositories.attempts.update(attempt.id, attempt.revision, value => ({
         ...value,
         compiled_prompt_hash: compiledHash,
-        input_manifest_ref: `.threados/runs/${run.id}/surfaces/${surfaceId}/input.manifest.json`,
       }))
-      await this.deps.prepareArtifacts?.({
+      if (!this.deps.prepareArtifacts) throw new Error('Runtime artifact preparation is unavailable')
+      await this.deps.prepareArtifacts({
         basePath: this.basePath, runId: run.id, surfaceId, step, compiledPrompt, createdAt: this.deps.now(),
       })
+      attempt = await this.repositories.attempts.update(attempt.id, attempt.revision, value => ({
+        ...value,
+        input_manifest_ref: `.threados/runs/${run.id}/surfaces/${surfaceId}/input.manifest.json`,
+      }))
 
       const approvals = await this.deps.readApprovals(this.basePath, run.id)
       const approvalPresent = context.policyConfirmed || approvals.some(approval =>
         approval.status === 'approved' && (approval.target_ref === `step:${step.id}` || approval.target_ref === input.targetRef))
-      const preGates = this.deps.evaluatePreGates({ step, sequence, policy, approvalPresent })
+      const gateSurface = await this.deps.resolveGateSurface({ basePath: this.basePath, surfaceId, step })
+      const preGates = this.deps.evaluatePreGates({ step, sequence, policy, approvalPresent, ...gateSurface })
       await this.deps.persistGateDecisions(this.basePath, run.id, surfaceId, preGates, run.policy_snapshot_hash)
       if (preGates.length > 0) {
         attempt = await this.repositories.attempts.update(attempt.id, attempt.revision, value => ({
@@ -86,6 +92,16 @@ export class AttemptExecutor {
         attempt = await transitionAttempt(this.repositories.attempts, attempt, 'failed', {
           ended_at: this.deps.now(), error_code: 'PRE_RUN_GATE_BLOCKED',
           error_message: preGates.flatMap(decision => decision.reason_codes).join(', '),
+        })
+        await this.deps.projections.finalizeAttempt({ run, attempt, step, runtimeEvents: [] }).catch(() => undefined)
+        return { run, attempt }
+      }
+
+      const modelExecution = this.deps.allowModelExecution({ step })
+      if (!modelExecution.allowed) {
+        attempt = await transitionAttempt(this.repositories.attempts, attempt, 'failed', {
+          ended_at: this.deps.now(), error_code: modelExecution.errorCode ?? 'MODEL_EXECUTION_DISABLED',
+          error_message: modelExecution.reason ?? `Execution is disabled for model ${step.model}`,
         })
         await this.deps.projections.finalizeAttempt({ run, attempt, step, runtimeEvents: [] }).catch(() => undefined)
         return { run, attempt }
@@ -112,7 +128,10 @@ export class AttemptExecutor {
         return { run, attempt }
       }
       if (context.policyConfirmed && policy.mode === 'SAFE') {
-        await this.deps.recordApproval({ basePath: this.basePath, runId: run.id, context, targetRef: `step:${step.id}`, payload, policy })
+        await this.deps.recordApproval({
+          basePath: this.basePath, runId: run.id, context, targetRef: `step:${step.id}`,
+          payload, policy, policySnapshotHash: run.policy_snapshot_hash,
+        })
       }
 
       const processId = this.deps.newId('process')
@@ -137,8 +156,10 @@ export class AttemptExecutor {
         result = await this.deps.runStep(runnerConfig)
       } catch (error) {
         processRecord = await transitionProcess(this.repositories.processes, processRecord, 'lost', { ended_at: this.deps.now() })
-        attempt = await transitionAttempt(this.repositories.attempts, attempt, 'failed', {
-          ended_at: this.deps.now(), error_code: 'PROCESS_LOST', error_message: error instanceof Error ? error.message : String(error),
+        const timedOut = error instanceof ProcessTimeoutError
+        attempt = await transitionAttempt(this.repositories.attempts, attempt, timedOut ? 'timed_out' : 'failed', {
+          ended_at: this.deps.now(), error_code: timedOut ? error.code : 'PROCESS_LOST',
+          error_message: error instanceof Error ? error.message : String(error),
         })
         await this.deps.projections.finalizeAttempt({ run, attempt, step, runtimeEvents: [] }).catch(() => undefined)
         return { run, attempt }
