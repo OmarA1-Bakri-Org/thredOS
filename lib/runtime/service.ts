@@ -10,6 +10,12 @@ import { RuntimeServiceError } from './errors'
 import { transitionAttempt, transitionRun } from './lifecycle'
 import { RuntimeRepositoryError } from './run-repository'
 import { ProcessController } from './process-controller'
+import {
+  formatRetryBinding,
+  parseRetryBinding,
+  parseUnboundRetry,
+  type RetryBinding,
+} from './retry-binding'
 import type {
   AttemptProjection, CompletedRunResult, LatestAttemptQuery, RunProjection, RuntimeCommandContext,
   RuntimeReconciliationReport, RuntimeRunQuery, RuntimeServiceOptions, SequenceStatusProjection, StartRunRequest,
@@ -425,7 +431,7 @@ export class ThreadOSRuntimeService {
         return await this.failAttemptMutation(receipt.id, 'ATTEMPT_NOT_RUNNING', `attempt ${attemptId} is not terminal`)
       }
       const childRunId = this.deps.newId('run')
-      const binding = this.retryBinding(original.id, childRunId)
+      const binding = formatRetryBinding(original.id, childRunId)
       try {
         receipt = await this.repositories.commands.bindResult(receipt.id, binding, unboundRetry)
       } catch (error) {
@@ -564,20 +570,6 @@ export class ThreadOSRuntimeService {
     return attempt
   }
 
-  private retryBinding(originalAttemptId: string, childRunId: string): string {
-    return `retry:${encodeURIComponent(originalAttemptId)}:run:${encodeURIComponent(childRunId)}`
-  }
-
-  private parseRetryBinding(value: string | null): { originalAttemptId: string; childRunId: string } | null {
-    const match = /^retry:([^:]+):run:([^:]+)$/.exec(value ?? '')
-    return match ? { originalAttemptId: decodeURIComponent(match[1]!), childRunId: decodeURIComponent(match[2]!) } : null
-  }
-
-  private parseUnboundRetry(value: string | null): string | null {
-    const match = /^retry:([^:]+)$/.exec(value ?? '')
-    return match ? decodeURIComponent(match[1]!) : null
-  }
-
   private retryStartRequest(original: StepAttempt): StartRunRequest {
     return {
       sequence_id: original.sequence_id,
@@ -588,7 +580,7 @@ export class ThreadOSRuntimeService {
   }
 
   private async repairRetryChildRun(
-    binding: { originalAttemptId: string; childRunId: string },
+    binding: RetryBinding,
     original: StepAttempt,
     context: RuntimeCommandContext,
     outerCommandId: string,
@@ -664,7 +656,7 @@ export class ThreadOSRuntimeService {
 
   private async replayRetryMutation(receipt: RuntimeCommandReceipt, context: RuntimeCommandContext): Promise<StepAttempt> {
     let current = receipt
-    for (let poll = 0; current.status === 'accepted' && !this.parseRetryBinding(current.result_ref) && !this.parseUnboundRetry(current.result_ref) && poll < 50; poll++) {
+    for (let poll = 0; current.status === 'accepted' && !parseRetryBinding(current.result_ref) && !parseUnboundRetry(current.result_ref) && poll < 50; poll++) {
       await new Promise(resolve => setTimeout(resolve, 20))
       current = await this.repositories.commands.get(current.id) ?? current
     }
@@ -674,18 +666,18 @@ export class ThreadOSRuntimeService {
       if (!attempt) throw new RuntimeServiceError('ATTEMPT_NOT_FOUND', 'Retry result attempt was not found')
       return attempt
     }
-    let binding = this.parseRetryBinding(current.result_ref)
-    const unboundOriginal = this.parseUnboundRetry(current.result_ref)
+    let binding = parseRetryBinding(current.result_ref)
+    const unboundOriginal = parseUnboundRetry(current.result_ref)
     if (!binding && unboundOriginal) {
       const childRunId = this.deps.newId('run')
-      const candidate = this.retryBinding(unboundOriginal, childRunId)
+      const candidate = formatRetryBinding(unboundOriginal, childRunId)
       try {
         current = await this.repositories.commands.bindResult(current.id, candidate, current.result_ref)
       } catch (error) {
         if (!(error instanceof RuntimeRepositoryError) || error.code !== 'RUNTIME_REVISION_CONFLICT') throw error
         current = await this.repositories.commands.get(current.id) ?? current
       }
-      binding = this.parseRetryBinding(current.result_ref)
+      binding = parseRetryBinding(current.result_ref)
     }
     if (!binding) throw new RuntimeServiceError('PROCESS_CONTROL_FAILED', 'Retry receipt has no recoverable child-run binding')
     const original = await this.repositories.attempts.get(binding.originalAttemptId)

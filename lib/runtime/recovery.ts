@@ -4,6 +4,8 @@ import { CommandRepository } from './command-repository'
 import { transitionAttempt, transitionProcess, transitionRun } from './lifecycle'
 import { ProcessRepository } from './process-repository'
 import { RunRepository } from './run-repository'
+import { scanRecoveryPhysicalState } from './recovery-scanner'
+import { parseRetryBinding } from './retry-binding'
 import type {
   RuntimeReconciliationContext,
   RuntimeReconciliationReport,
@@ -93,24 +95,83 @@ function recordChange(
 
 async function repairAcceptedReceipts(
   repositories: RuntimeRepositories,
+  receipts: import('./schema').RuntimeCommandReceipt[],
+  runs: Map<string, WorkflowRun>,
+  attempts: Map<string, StepAttempt>,
+  inconsistentRunIds: ReadonlySet<string>,
+  missingReservedAttemptsByRun: ReadonlyMap<string, string>,
   now: string,
   report: RuntimeReconciliationReport,
 ): Promise<void> {
-  let receipts
-  try {
-    receipts = await repositories.commands.list()
-  } catch (error) {
-    report.errors.push(`Failed to list runtime command receipts: ${message(error)}`)
-    return
-  }
-
   for (const receipt of receipts) {
-    if (receipt.status !== 'accepted' || !receipt.result_ref) continue
+    if (receipt.status !== 'accepted') continue
     try {
+      if (receipt.command_type === 'retry-attempt') {
+        const binding = parseRetryBinding(receipt.result_ref)
+        if (!binding) {
+          await repositories.commands.complete(receipt.id, {
+            status: 'failed',
+            errorCode: 'PROCESS_LOST',
+            errorMessage: 'Accepted retry receipt has no valid child-run binding',
+          }, now)
+          continue
+        }
+        const childRun = runs.get(binding.childRunId)
+          ?? await repositories.runs.get(binding.childRunId)
+        const durableAttempt = childRun?.attempt_ids
+          .map(attemptId => attempts.get(attemptId))
+          .find((attempt): attempt is StepAttempt =>
+            attempt !== undefined
+            && attempt.workflow_run_id === binding.childRunId
+            && attempt.retry_of_attempt_id === binding.originalAttemptId)
+        if (durableAttempt) {
+          await repositories.commands.complete(receipt.id, {
+            status: 'completed',
+            resultRef: durableAttempt.id,
+          }, now)
+          continue
+        }
+
+        const missingAttemptId = missingReservedAttemptsByRun.get(binding.childRunId)
+          ?? childRun?.attempt_ids.find(attemptId => !attempts.has(attemptId))
+        if (missingAttemptId) {
+          await repositories.commands.complete(receipt.id, {
+            status: 'failed',
+            errorCode: 'PROCESS_LOST',
+            errorMessage: `Retry child run lost reserved attempt ${missingAttemptId}`,
+          }, now)
+          continue
+        }
+        const childStart = receipts.find(candidate =>
+          candidate.idempotency_key === `retry-start:${receipt.id}`
+          && candidate.command_type === 'start-run')
+        if (childStart?.status === 'failed') {
+          await repositories.commands.complete(receipt.id, {
+            status: 'failed',
+            errorCode: childStart.error_code ?? 'PROCESS_LOST',
+            errorMessage: childStart.error_message ?? 'Retry child start failed without durable attempt lineage',
+          }, now)
+          continue
+        }
+        await repositories.commands.complete(receipt.id, {
+          status: 'failed',
+          errorCode: childRun?.error_code ?? 'PROCESS_LOST',
+          errorMessage: childRun?.error_message ?? 'Retry child run has no durable attempt lineage',
+        }, now)
+        continue
+      }
+
+      if (!receipt.result_ref) continue
       if (receipt.command_type === 'start-run' || receipt.command_type === 'cancel-run') {
-        const run = await repositories.runs.get(receipt.result_ref)
+        const run = runs.get(receipt.result_ref) ?? await repositories.runs.get(receipt.result_ref)
         if (!run || !TERMINAL_RUN_STATUSES.has(run.status)) continue
-        if (
+        if (inconsistentRunIds.has(run.id)) {
+          await repositories.commands.complete(receipt.id, {
+            status: 'failed',
+            errorCode: 'PROCESS_LOST',
+            errorMessage: `Run ${run.id} contained active attempt state after terminalization`,
+          }, now)
+        } else if (
           (receipt.command_type === 'start-run' && run.status === 'successful')
           || (receipt.command_type === 'cancel-run' && run.status === 'cancelled')
         ) {
@@ -129,7 +190,8 @@ async function repairAcceptedReceipts(
       }
 
       if (receipt.command_type === 'cancel-attempt') {
-        const attempt = await repositories.attempts.get(receipt.result_ref)
+        const attempt = attempts.get(receipt.result_ref)
+          ?? await repositories.attempts.get(receipt.result_ref)
         if (!attempt || !TERMINAL_ATTEMPT_STATUSES.has(attempt.status)) continue
         if (attempt.status === 'cancelled') {
           await repositories.commands.complete(receipt.id, {
@@ -143,7 +205,9 @@ async function repairAcceptedReceipts(
             errorMessage: attempt.error_message ?? `Attempt ended with status ${attempt.status}`,
           }, now)
         }
+        continue
       }
+
     } catch (error) {
       report.errors.push(`Failed to repair command receipt ${receipt.id}: ${message(error)}`)
     }
@@ -164,15 +228,15 @@ export async function reconcileCanonicalRuntime(
   const now = (options.now ?? (() => new Date().toISOString()))()
   const probePid = options.probePid ?? defaultProbePid
   const report: RuntimeReconciliationReport = { checked: 0, changes: [], errors: [] }
-  const attempts = new Map<string, StepAttempt>()
+  const physical = await scanRecoveryPhysicalState(basePath)
+  report.errors.push(...physical.errors)
+  const attempts = new Map(physical.attempts)
+  const runs = new Map(physical.runs)
+  const processes = [...physical.processes.values()]
   const managedAttemptIds = new Set<string>()
+  const inconsistentRunIds = new Set<string>()
+  const missingReservedAttemptsByRun = new Map<string, string>()
 
-  let processes: ProcessRecord[] = []
-  try {
-    processes = await repositories.processes.list()
-  } catch (error) {
-    report.errors.push(`Failed to list canonical processes: ${message(error)}`)
-  }
   report.checked += processes.length
 
   for (const processRecord of processes) {
@@ -244,24 +308,20 @@ export async function reconcileCanonicalRuntime(
     }
   }
 
-  let runs: WorkflowRun[] = []
-  try {
-    runs = await repositories.runs.list()
-  } catch (error) {
-    report.errors.push(`Failed to list canonical runs: ${message(error)}`)
-  }
-  report.checked += runs.length
+  report.checked += runs.size
+  report.checked += attempts.size
 
-  for (const run of runs) {
-    try {
-      for (const attempt of await repositories.attempts.listForRun(run.id)) {
-        attempts.set(attempt.id, attempt)
-      }
-    } catch (error) {
-      report.errors.push(`Failed to list attempts for run ${run.id}: ${message(error)}`)
+  for (const run of runs.values()) {
+    if (!TERMINAL_RUN_STATUSES.has(run.status)) continue
+    for (const attemptId of run.attempt_ids) {
+      const attempt = attempts.get(attemptId)
+      if (attempt?.workflow_run_id === run.id) continue
+      inconsistentRunIds.add(run.id)
+      report.errors.push(
+        `Run ${run.id} is terminal as ${run.status} but references missing attempt ${attemptId}`,
+      )
     }
   }
-  report.checked += attempts.size
 
   for (const owner of [...attempts.values()].sort((left, right) => left.id.localeCompare(right.id))) {
     if (
@@ -269,6 +329,13 @@ export async function reconcileCanonicalRuntime(
       || managedAttemptIds.has(owner.id)
       || options.isAttemptManaged?.(owner.id, owner.workflow_run_id)
     ) continue
+    const owningRun = runs.get(owner.workflow_run_id)
+    if (owningRun && TERMINAL_RUN_STATUSES.has(owningRun.status)) {
+      inconsistentRunIds.add(owningRun.id)
+      report.errors.push(
+        `Run ${owningRun.id} is terminal as ${owningRun.status} but owned active attempt ${owner.id} required recovery`,
+      )
+    }
     if (owner.process_id) {
       try {
         const processRecord = await repositories.processes.get(owner.process_id)
@@ -280,11 +347,12 @@ export async function reconcileCanonicalRuntime(
       }
     }
     try {
-      await transitionAttempt(repositories.attempts, owner, 'interrupted', {
+      const interrupted = await transitionAttempt(repositories.attempts, owner, 'interrupted', {
         ended_at: owner.ended_at ?? now,
         error_code: 'PROCESS_LOST',
         error_message: 'Runtime service restarted before the attempt reached terminal process evidence',
       })
+      attempts.set(interrupted.id, interrupted)
       recordChange(
         report,
         'attempt',
@@ -298,7 +366,7 @@ export async function reconcileCanonicalRuntime(
     }
   }
 
-  for (const run of runs.sort((left, right) => left.id.localeCompare(right.id))) {
+  for (const run of [...runs.values()].sort((left, right) => left.id.localeCompare(right.id))) {
     if (!ACTIVE_RUN_STATUSES.has(run.status)) continue
     if (options.isRunManaged?.(run.id)) continue
     const runAttempts = [...attempts.values()].filter(attempt => attempt.workflow_run_id === run.id)
@@ -310,6 +378,7 @@ export async function reconcileCanonicalRuntime(
         const referenced = attempts.get(attemptId) ?? await repositories.attempts.get(attemptId)
         if (!referenced) {
           missingReservedAttempt ??= attemptId
+          missingReservedAttemptsByRun.set(run.id, attemptId)
           report.errors.push(
             `Run ${run.id} references reserved attempt ${attemptId} whose record is missing`,
           )
@@ -325,11 +394,12 @@ export async function reconcileCanonicalRuntime(
       ? `Reserved attempt ${missingReservedAttempt} was not persisted before restart`
       : 'Runtime service restarted before the run reached terminal attempt evidence'
     try {
-      await transitionRun(repositories.runs, run, 'interrupted', {
+      const interrupted = await transitionRun(repositories.runs, run, 'interrupted', {
         ended_at: run.ended_at ?? now,
         error_code: 'PROCESS_LOST',
         error_message: errorMessage,
       })
+      runs.set(interrupted.id, interrupted)
       recordChange(
         report,
         'run',
@@ -345,6 +415,15 @@ export async function reconcileCanonicalRuntime(
     }
   }
 
-  await repairAcceptedReceipts(repositories, now, report)
+  await repairAcceptedReceipts(
+    repositories,
+    physical.receipts,
+    runs,
+    attempts,
+    inconsistentRunIds,
+    missingReservedAttemptsByRun,
+    now,
+    report,
+  )
   return report
 }

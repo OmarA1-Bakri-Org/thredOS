@@ -21,6 +21,7 @@ import type {
 } from '../runner/process-handle'
 import { ProcessControlError } from '../runner/process-handle'
 import { createTestCompatibilityStartProcess } from './test-compatibility'
+import { formatRetryBinding, parseRetryBinding, parseUnboundRetry } from './retry-binding'
 
 const roots: string[] = []
 afterEach(async () => {
@@ -1309,6 +1310,15 @@ describe('ThreadOSRuntimeService', () => {
   test('canonical hashes ignore object insertion order without dropping nested fields', () => {
     expect(stableRuntimeHash({ a: { x: 1, y: 2 }, b: 3 })).toBe(stableRuntimeHash({ b: 3, a: { y: 2, x: 1 } }))
     expect(stableRuntimeHash({ a: { x: 1 } })).not.toBe(stableRuntimeHash({ a: { x: 2 } }))
+  })
+
+  test('shared retry binding parser preserves the service binding contract', () => {
+    const binding = formatRetryBinding('attempt%encoded', 'run%encoded')
+    expect(parseRetryBinding(binding)).toEqual({
+      originalAttemptId: 'attempt%encoded',
+      childRunId: 'run%encoded',
+    })
+    expect(parseUnboundRetry('retry:attempt%2525encoded')).toBe('attempt%25encoded')
   })
 
   test('factory keys singleton identity by canonical base path and reconciles once', async () => {

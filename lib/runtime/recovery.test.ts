@@ -1,12 +1,13 @@
 import { afterEach, describe, expect, mock, test } from 'bun:test'
-import { mkdtemp, rm, unlink } from 'fs/promises'
+import { mkdir, mkdtemp, rm, unlink, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { dirname, join } from 'path'
 import { AttemptRepository } from './attempt-repository'
 import { CommandRepository } from './command-repository'
-import { processRecordPath } from './paths'
+import { commandRecordPath, processRecordPath } from './paths'
 import { ProcessRepository } from './process-repository'
 import { reconcileCanonicalRuntime } from './recovery'
+import { formatRetryBinding } from './retry-binding'
 import { RunRepository } from './run-repository'
 import type {
   ProcessRecord,
@@ -266,7 +267,7 @@ describe('reconcileCanonicalRuntime', () => {
     const report = await reconcileCanonicalRuntime(repos.basePath, { now: () => NOW })
 
     expect(report.errors).toContain('Process process-1 references missing attempt attempt-1')
-    expect((await repos.processes.get('process-1'))?.status).toBe('lost')
+    expect((await repos.processes.get('process-1'))?.status).toBe('running')
     expect((await repos.processes.get('process-2'))?.status).toBe('lost')
     expect((await repos.attempts.get('attempt-2'))?.status).toBe('interrupted')
     expect((await repos.runs.get('run-2'))?.status).toBe('interrupted')
@@ -355,5 +356,327 @@ describe('reconcileCanonicalRuntime', () => {
     expect(report.changes).toEqual([])
     expect((await repos.attempts.get('attempt-1'))?.status).toBe('provisioning')
     expect((await repos.runs.get('run-1'))?.status).toBe('provisioning')
+  })
+
+  test('completes an accepted retry receipt with the durable child attempt after interruption', async () => {
+    const repos = await repositories()
+    await repos.runs.create(run({
+      id: 'original-run',
+      status: 'failed',
+      attempt_ids: ['original-attempt'],
+      ended_at: '2026-07-15T23:58:00.000Z',
+    }))
+    await repos.attempts.create(attempt({
+      id: 'original-attempt',
+      workflow_run_id: 'original-run',
+      status: 'failed',
+      process_id: null,
+      ended_at: '2026-07-15T23:58:00.000Z',
+    }))
+    await repos.runs.create(run({
+      id: 'child-run',
+      attempt_ids: ['child-attempt'],
+    }))
+    await repos.attempts.create(attempt({
+      id: 'child-attempt',
+      workflow_run_id: 'child-run',
+      retry_of_attempt_id: 'original-attempt',
+      process_id: 'child-process',
+    }))
+    await repos.processes.create(processRecord({
+      id: 'child-process',
+      workflow_run_id: 'child-run',
+      attempt_id: 'child-attempt',
+    }))
+    await repos.commands.createOrReplay(receipt({
+      id: 'outer-retry',
+      idempotency_key: 'outer-retry-key',
+      command_type: 'retry-attempt',
+      result_ref: formatRetryBinding('original-attempt', 'child-run'),
+    }))
+    await repos.commands.createOrReplay({
+      ...receipt({
+        id: 'child-start',
+        idempotency_key: 'retry-start:outer-retry',
+        command_type: 'start-run',
+        result_ref: 'child-run',
+      }),
+      status: 'failed',
+      error_code: 'RUN_PERSIST_FAILED',
+      error_message: 'child start also failed',
+      completed_at: '2026-07-15T23:59:30.000Z',
+    })
+
+    await reconcileCanonicalRuntime(repos.basePath, { now: () => NOW })
+
+    expect(await repos.attempts.get('child-attempt')).toMatchObject({
+      status: 'interrupted',
+      error_code: 'PROCESS_LOST',
+    })
+    expect(await repos.commands.get('outer-retry')).toMatchObject({
+      status: 'completed',
+      result_ref: 'child-attempt',
+      completed_at: NOW,
+    })
+  })
+
+  test('fails an accepted retry receipt when its child reserved attempt is missing', async () => {
+    const repos = await repositories()
+    await repos.runs.create(run({
+      id: 'child-run',
+      status: 'provisioning',
+      attempt_ids: ['missing-child-attempt'],
+    }))
+    await repos.commands.createOrReplay(receipt({
+      id: 'outer-retry',
+      idempotency_key: 'outer-retry-key',
+      command_type: 'retry-attempt',
+      result_ref: formatRetryBinding('original-attempt', 'child-run'),
+    }))
+    await repos.commands.createOrReplay(receipt({
+      id: 'child-start',
+      idempotency_key: 'retry-start:outer-retry',
+      command_type: 'start-run',
+      result_ref: 'child-run',
+    }))
+
+    await reconcileCanonicalRuntime(repos.basePath, { now: () => NOW })
+
+    expect(await repos.commands.get('outer-retry')).toMatchObject({
+      status: 'failed',
+      error_code: 'PROCESS_LOST',
+      completed_at: NOW,
+    })
+  })
+
+  test('fails an accepted retry receipt from a durable failed child start without attempt lineage', async () => {
+    const repos = await repositories()
+    await repos.commands.createOrReplay(receipt({
+      id: 'outer-retry',
+      idempotency_key: 'outer-retry-key',
+      command_type: 'retry-attempt',
+      result_ref: formatRetryBinding('original-attempt', 'child-run'),
+    }))
+    await repos.commands.createOrReplay({
+      ...receipt({
+        id: 'child-start',
+        idempotency_key: 'retry-start:outer-retry',
+        command_type: 'start-run',
+        result_ref: 'child-run',
+      }),
+      status: 'failed',
+      error_code: 'RUN_PERSIST_FAILED',
+      error_message: 'child run could not be persisted',
+      completed_at: '2026-07-15T23:59:30.000Z',
+    })
+
+    await reconcileCanonicalRuntime(repos.basePath, { now: () => NOW })
+
+    expect(await repos.commands.get('outer-retry')).toMatchObject({
+      status: 'failed',
+      error_code: 'RUN_PERSIST_FAILED',
+      error_message: 'child run could not be persisted',
+      completed_at: NOW,
+    })
+  })
+
+  test('does not complete retry from an unrelated attempt in the child run', async () => {
+    const repos = await repositories()
+    await repos.runs.create(run({
+      id: 'child-run',
+      status: 'interrupted',
+      attempt_ids: ['unrelated-attempt'],
+      ended_at: NOW,
+      error_code: 'PROCESS_LOST',
+      error_message: 'child interrupted',
+    }))
+    await repos.attempts.create(attempt({
+      id: 'unrelated-attempt',
+      workflow_run_id: 'child-run',
+      status: 'interrupted',
+      retry_of_attempt_id: 'different-original',
+      process_id: null,
+      ended_at: NOW,
+      error_code: 'PROCESS_LOST',
+    }))
+    await repos.commands.createOrReplay(receipt({
+      id: 'outer-retry',
+      idempotency_key: 'outer-retry-key',
+      command_type: 'retry-attempt',
+      result_ref: formatRetryBinding('original-attempt', 'child-run'),
+    }))
+
+    await reconcileCanonicalRuntime(repos.basePath, { now: () => NOW })
+
+    expect(await repos.commands.get('outer-retry')).toMatchObject({
+      status: 'failed',
+      error_code: 'PROCESS_LOST',
+      completed_at: NOW,
+    })
+  })
+
+  test('reports corrupt physical ownership and malformed JSON while recovering a healthy tree', async () => {
+    const repos = await repositories()
+    await createActiveTree(repos)
+    const runsRoot = join(repos.basePath, '.threados', 'runs')
+
+    await mkdir(join(runsRoot, 'directory-run', 'attempts'), { recursive: true })
+    await writeFile(
+      join(runsRoot, 'directory-run', 'run.json'),
+      JSON.stringify(run({ id: 'record-run' })),
+    )
+
+    await mkdir(join(runsRoot, 'attempt-owner', 'attempts', 'directory-attempt'), { recursive: true })
+    await writeFile(
+      join(runsRoot, 'attempt-owner', 'run.json'),
+      JSON.stringify(run({ id: 'attempt-owner', attempt_ids: [] })),
+    )
+    await writeFile(
+      join(runsRoot, 'attempt-owner', 'attempts', 'directory-attempt', 'attempt.json'),
+      JSON.stringify(attempt({
+        id: 'record-attempt',
+        workflow_run_id: 'different-run',
+        process_id: null,
+      })),
+    )
+
+    await repos.runs.create(run({
+      id: 'process-owner',
+      status: 'failed',
+      attempt_ids: ['process-attempt'],
+      ended_at: NOW,
+    }))
+    await repos.attempts.create(attempt({
+      id: 'process-attempt',
+      workflow_run_id: 'process-owner',
+      status: 'failed',
+      process_id: 'corrupt-process',
+      ended_at: NOW,
+    }))
+    const corruptProcessPath = await processRecordPath(
+      repos.basePath,
+      'process-owner',
+      'process-attempt',
+    )
+    await writeFile(corruptProcessPath, JSON.stringify(processRecord({
+      id: 'corrupt-process',
+      workflow_run_id: 'other-run',
+      attempt_id: 'other-attempt',
+      status: 'running',
+    })))
+
+    await mkdir(join(runsRoot, 'malformed-run'), { recursive: true })
+    await writeFile(join(runsRoot, 'malformed-run', 'run.json'), '{not-json')
+
+    const report = await reconcileCanonicalRuntime(repos.basePath, { now: () => NOW })
+
+    expect(report.errors).toEqual(expect.arrayContaining([
+      expect.stringContaining('Run record identity mismatch at directory-run/run.json'),
+      expect.stringContaining('Attempt record identity mismatch at attempt-owner/attempts/directory-attempt/attempt.json'),
+      expect.stringContaining('Attempt ownership mismatch at attempt-owner/attempts/directory-attempt/attempt.json'),
+      expect.stringContaining('Process ownership mismatch at process-owner/attempts/process-attempt/process.json'),
+      expect.stringContaining('Malformed run record at malformed-run/run.json'),
+    ]))
+    expect((await repos.processes.get('process-1'))?.status).toBe('lost')
+    expect((await repos.attempts.get('attempt-1'))?.status).toBe('interrupted')
+    expect((await repos.runs.get('run-1'))?.status).toBe('interrupted')
+    expect(await repos.processes.get('corrupt-process')).toBeNull()
+  })
+
+  test('isolates malformed and mismatched command files while repairing valid receipts', async () => {
+    const repos = await repositories()
+    await createActiveTree(repos)
+    await repos.commands.createOrReplay(receipt({
+      id: 'valid-start',
+      idempotency_key: 'valid-start-key',
+    }))
+    await writeFile(await commandRecordPath(repos.basePath, 'malformed-command'), '{not-json')
+    await writeFile(
+      await commandRecordPath(repos.basePath, 'wrong-file'),
+      JSON.stringify(receipt({
+        id: 'different-id',
+        idempotency_key: 'mismatched-key',
+      })),
+    )
+
+    const report = await reconcileCanonicalRuntime(repos.basePath, { now: () => NOW })
+
+    expect(report.errors).toEqual(expect.arrayContaining([
+      expect.stringContaining('Malformed runtime command receipt malformed-command.json'),
+      expect.stringContaining('Runtime command receipt identity mismatch at wrong-file.json'),
+    ]))
+    expect(await repos.commands.get('valid-start')).toMatchObject({
+      status: 'failed',
+      error_code: 'PROCESS_LOST',
+    })
+  })
+
+  test('fails start receipt when a terminal successful run contradicts an interrupted active attempt', async () => {
+    const repos = await repositories()
+    await repos.runs.create(run({
+      status: 'successful',
+      ended_at: '2026-07-15T23:59:30.000Z',
+    }))
+    await repos.attempts.create(attempt())
+    await repos.processes.create(processRecord())
+    await repos.commands.createOrReplay(receipt({
+      id: 'contradictory-start',
+      idempotency_key: 'contradictory-start-key',
+    }))
+
+    const report = await reconcileCanonicalRuntime(repos.basePath, { now: () => NOW })
+
+    expect((await repos.runs.get('run-1'))?.status).toBe('successful')
+    expect((await repos.attempts.get('attempt-1'))?.status).toBe('interrupted')
+    expect(report.errors).toContain(
+      'Run run-1 is terminal as successful but owned active attempt attempt-1 required recovery',
+    )
+    expect(await repos.commands.get('contradictory-start')).toMatchObject({
+      status: 'failed',
+      error_code: 'PROCESS_LOST',
+    })
+  })
+
+  test('fails start receipt when a successful run references a missing physical attempt', async () => {
+    const repos = await repositories()
+    await repos.runs.create(run({
+      status: 'successful',
+      attempt_ids: ['missing-success-attempt'],
+      ended_at: '2026-07-15T23:59:30.000Z',
+    }))
+    await repos.commands.createOrReplay(receipt({
+      id: 'missing-success-start',
+      idempotency_key: 'missing-success-start-key',
+    }))
+
+    const report = await reconcileCanonicalRuntime(repos.basePath, { now: () => NOW })
+
+    expect((await repos.runs.get('run-1'))?.status).toBe('successful')
+    expect(report.errors).toContain(
+      'Run run-1 is terminal as successful but references missing attempt missing-success-attempt',
+    )
+    expect(await repos.commands.get('missing-success-start')).toMatchObject({
+      status: 'failed',
+      error_code: 'PROCESS_LOST',
+      completed_at: NOW,
+    })
+  })
+
+  test('keeps planned launch intent while interrupting its active attempt and run', async () => {
+    const repos = await repositories()
+    await repos.runs.create(run())
+    await repos.attempts.create(attempt())
+    await repos.processes.create(processRecord({
+      status: 'planned',
+      provider_handle: null,
+      pid: null,
+      started_at: null,
+    }))
+
+    await reconcileCanonicalRuntime(repos.basePath, { now: () => NOW })
+
+    expect((await repos.processes.get('process-1'))?.status).toBe('planned')
+    expect((await repos.attempts.get('attempt-1'))?.status).toBe('interrupted')
+    expect((await repos.runs.get('run-1'))?.status).toBe('interrupted')
   })
 })
