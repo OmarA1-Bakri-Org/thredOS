@@ -39,7 +39,7 @@ export function WorkbenchShell({
         {topBar}
       </div>
       <div className="flex min-h-0 flex-1">
-        <aside data-workbench-region="accordion-panel" className="hidden xl:block">
+        <aside data-workbench-region="accordion-panel" className="hidden h-full overflow-hidden xl:block">
           <AccordionPanel />
         </aside>
         <main className="flex min-w-0 flex-1 flex-col">

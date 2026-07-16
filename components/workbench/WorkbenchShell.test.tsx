@@ -127,6 +127,8 @@ describe('WorkbenchShell', () => {
 
     const accordionPanel = collectByDataRegion(shell, 'accordion-panel')[0]
     expect(accordionPanel).toBeDefined()
+    expect(String(accordionPanel.props.className)).toContain('h-full')
+    expect(String(accordionPanel.props.className)).toContain('overflow-hidden')
   })
 
   test('applies preview variant metadata to the shell root', () => {

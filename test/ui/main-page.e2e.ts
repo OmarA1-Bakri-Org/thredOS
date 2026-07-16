@@ -144,13 +144,13 @@ test.describe('thredOS Desktop launch surfaces', () => {
     await expect(page.getByText('Prompt drafts')).toBeVisible()
     await expect(page).toHaveScreenshot('app-node-assets.png', screenshotOptions)
 
-    await page.getByTestId('agent-card-tab-prompt').click()
+    await page.getByTestId('node-agent-card-tab-prompt').click()
     await expect(page).toHaveScreenshot('app-agent-prompt-summary.png', screenshotOptions)
 
     await page.getByRole('button', { name: 'Open editor' }).first().click()
     await expect(page).toHaveScreenshot('app-agent-prompt-editor.png', screenshotOptions)
 
-    await page.getByTestId('agent-card-tab-skills').click()
+    await page.getByTestId('node-agent-card-tab-skills').click()
     await expect(page).toHaveScreenshot('app-agent-skills-summary.png', screenshotOptions)
   })
 

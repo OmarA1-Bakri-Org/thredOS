@@ -198,6 +198,8 @@ describe('RunSection', () => {
     expect(markup).toContain('data-testid="run-control-plane"')
     expect(markup).toContain('data-testid="run-export-button"')
     expect(markup).toContain('data-testid="run-reveal-button"')
+    expect(markup).toContain('data-testid="run-trace-count"')
+    expect(markup).toContain('data-testid="run-approval-count"')
     expect(markup).toContain('data-testid="run-trace-events"')
     expect(markup).toContain('data-testid="run-approval-events"')
     expect(markup).toContain('.threados/exports/run-1/bundle.json')

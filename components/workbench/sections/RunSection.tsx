@@ -108,15 +108,17 @@ function Metric({
   label,
   value,
   tone = 'text-white',
+  testId,
 }: {
   label: string
   value: string | number
   tone?: string
+  testId?: string
 }) {
   return (
     <div className="border-l border-slate-800 pl-3 first:border-l-0 first:pl-0">
       <dt className="font-mono text-[9px] uppercase tracking-[0.16em] text-slate-500">{label}</dt>
-      <dd className={`mt-1 text-base font-semibold ${tone}`}>{value}</dd>
+      <dd data-testid={testId} className={`mt-1 text-base font-semibold ${tone}`}>{value}</dd>
     </div>
   )
 }
@@ -671,8 +673,8 @@ export function RunSection() {
           </div>
 
           <dl className="grid grid-cols-2 gap-3 border-y border-slate-800 py-3">
-            <Metric label="Trace events" value={traceEvents?.length ?? 0} />
-            <Metric label="Approvals" value={approvals?.length ?? 0} />
+            <Metric label="Trace events" value={traceEvents?.length ?? 0} testId="run-trace-count" />
+            <Metric label="Approvals" value={approvals?.length ?? 0} testId="run-approval-count" />
           </dl>
 
           <div className="grid gap-4 lg:grid-cols-2">

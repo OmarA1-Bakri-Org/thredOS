@@ -266,7 +266,7 @@ export function AccordionPanel() {
 
   return (
     <div
-      className="relative shrink-0 border-r border-slate-800/80 bg-[#08101d] flex flex-col overflow-hidden"
+      className="relative h-full shrink-0 border-r border-slate-800/80 bg-[#08101d] flex flex-col overflow-hidden"
       style={{ width: panelWidthPx }}
     >
       {/* Section navigation tabs */}

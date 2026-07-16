@@ -145,6 +145,11 @@ mock.module('@/lib/ui/api', () => ({
 const { AccordionPanel } = await import('./AccordionPanel')
 
 describe('AccordionPanel', () => {
+  test('fills the shell height so section content scrolls inside the panel', () => {
+    const markup = renderToStaticMarkup(<AccordionPanel />)
+    expect(markup).toContain('relative h-full shrink-0')
+  })
+
   beforeEach(() => {
     Object.assign(storeState, {
       activeAccordionSections: ['sequence'],

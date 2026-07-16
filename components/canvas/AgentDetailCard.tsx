@@ -61,6 +61,49 @@ function StatBar({ value }: { value: number }) {
   )
 }
 
+interface FloatingCardLayoutInput {
+  rawLeft: number
+  rawBottom: number
+  cardWidth: number
+  cardHeight: number
+  zoom: number
+  containerWidth: number
+  containerHeight: number
+  topInset: number
+  bottomLimit?: number
+  margin: number
+}
+
+export function resolveFloatingCardLayout({
+  rawLeft,
+  rawBottom,
+  cardWidth,
+  cardHeight,
+  zoom,
+  containerWidth,
+  containerHeight,
+  topInset,
+  bottomLimit,
+  margin,
+}: FloatingCardLayoutInput) {
+  const safeZoom = Math.max(zoom, Number.EPSILON)
+  const scaledWidth = cardWidth * safeZoom
+  const availableBottom = Math.min(
+    containerHeight - margin,
+    bottomLimit ?? containerHeight - margin,
+  )
+  const availableScaledHeight = Math.max(0, availableBottom - topInset)
+  const visibleScaledHeight = Math.min(cardHeight * safeZoom, availableScaledHeight)
+  const maxLeft = Math.max(margin, containerWidth - scaledWidth - margin)
+  const maxTop = Math.max(topInset, availableBottom - visibleScaledHeight)
+
+  return {
+    left: Math.min(Math.max(rawLeft, margin), maxLeft),
+    top: Math.min(Math.max(rawBottom - visibleScaledHeight, topInset), maxTop),
+    maxHeight: availableScaledHeight / safeZoom,
+  }
+}
+
 export function AgentDetailCard() {
   const selectedNodeId = useUIStore(s => s.selectedNodeId)
   const setSelectedNodeId = useUIStore(s => s.setSelectedNodeId)
@@ -244,7 +287,11 @@ export function AgentDetailCard() {
         .querySelector('[data-workbench-region="top-bar"]')
         ?.getBoundingClientRect()
       const containerRect = container.getBoundingClientRect()
-      setCardHeightPx(article instanceof HTMLElement ? article.offsetHeight : 620)
+      setCardHeightPx(
+        article instanceof HTMLElement
+          ? Math.max(article.scrollHeight, article.offsetHeight)
+          : 620,
+      )
       setCardWidthPx(article instanceof HTMLElement ? article.offsetWidth : 320)
       setContainerMetrics({
         width: containerRect.width || window.innerWidth,
@@ -273,28 +320,31 @@ export function AgentDetailCard() {
   if (!flowNode) return null
 
   const nodeWidth = flowNode.measured?.width ?? (flowNode.type === 'gateNode' ? 96 : 220)
-  const cardHalfW = cardWidthPx / 2
+  const nodeHeight = flowNode.measured?.height ?? (flowNode.type === 'gateNode' ? 96 : 68)
   const minMargin = 12
-  const scaledCardWidth = cardWidthPx * zoom
-  const scaledCardHeight = cardHeightPx * zoom
-  const rawCardX = (flowNode.position.x + nodeWidth / 2 - cardHalfW) * zoom + tx
+  const rawCardX = (flowNode.position.x + nodeWidth / 2 - cardWidthPx / 2) * zoom + tx
   const rawCardBottom = (flowNode.position.y - 16) * zoom + ty
-  const cardX = Math.min(
-    Math.max(rawCardX, minMargin),
-    containerMetrics.width - scaledCardWidth - minMargin,
-  )
-  const cardTop = Math.min(
-    Math.max(rawCardBottom - scaledCardHeight, containerMetrics.topInset),
-    containerMetrics.height - scaledCardHeight - minMargin,
-  )
+  const nodeCardTop = (flowNode.position.y + nodeHeight + 16) * zoom + ty
+  const cardLayout = resolveFloatingCardLayout({
+    rawLeft: rawCardX,
+    rawBottom: rawCardBottom,
+    cardWidth: cardWidthPx,
+    cardHeight: cardHeightPx,
+    zoom,
+    containerWidth: containerMetrics.width,
+    containerHeight: containerMetrics.height,
+    topInset: containerMetrics.topInset,
+    bottomLimit: nodeCardTop - minMargin,
+    margin: minMargin,
+  })
 
   return (
     <div
       ref={wrapperRef}
       className="pointer-events-auto absolute"
       style={{
-        left: cardX,
-        top: cardTop,
+        left: cardLayout.left,
+        top: cardLayout.top,
         zIndex: 1001,
         transformOrigin: '0 0',
         transform: `scale(${zoom})`,
@@ -304,7 +354,8 @@ export function AgentDetailCard() {
     >
       <article
         data-testid="agent-detail-card"
-        className="relative w-[320px] overflow-hidden border border-slate-700/80 bg-[#0a101a] shadow-[0_28px_80px_rgba(0,0,0,0.54)]"
+        className="relative w-[320px] overflow-x-hidden overflow-y-auto overscroll-contain border border-slate-700/80 bg-[#0a101a] shadow-[0_28px_80px_rgba(0,0,0,0.54)]"
+        style={{ maxHeight: cardLayout.maxHeight }}
         onClick={() => openPanel('workshop', 'overview')}
       >
         <div className="absolute top-0 left-0 w-3 h-3 border-t-[1.5px] border-l-[1.5px] border-sky-400/50" />
