@@ -62,6 +62,11 @@ mock.module('@/lib/ui/store', () => ({
 }))
 
 mock.module('@/lib/ui/api', () => ({
+  RuntimeApiError: class RuntimeApiError extends Error {
+    code = 'TEST_ERROR'
+    status = 500
+    idempotencyKey = null
+  },
   useThreadSurfaces: () => ({
     data: [
       { id: 'thread-master', surfaceLabel: 'Master Thread', depth: 0, role: 'orchestrator', childSurfaceIds: ['thread-child'] },
@@ -82,6 +87,13 @@ mock.module('@/lib/ui/api', () => ({
     isLoading: false,
   }),
   useRunRunnable: () => ({ mutate: () => {}, isPending: false }),
+  useRuns: () => ({ data: [], isLoading: false, isFetching: false, error: null }),
+  useRun: () => ({ data: null, isFetching: false, error: null }),
+  useRunAttempts: () => ({ data: [], isFetching: false, error: null }),
+  useAttempt: () => ({ data: null }),
+  useCancelRun: () => ({ mutate: () => {}, isPending: false, error: null }),
+  useCancelAttempt: () => ({ mutate: () => {}, isPending: false, error: null }),
+  useRetryAttempt: () => ({ mutate: () => {}, isPending: false, error: null }),
   useRunStep: () => ({ mutate: () => {}, isPending: false, error: null }),
   useStopStep: () => ({ mutate: () => {}, isPending: false, error: null }),
   useRestartStep: () => ({ mutate: () => {}, isPending: false, error: null }),
@@ -127,6 +139,7 @@ mock.module('@/lib/ui/api', () => ({
   useRevealSurface: () => ({ mutate: () => {}, mutateAsync: async () => ({}) }),
   useExportBundle: () => ({ mutate: () => {}, mutateAsync: async () => ({}) }),
   useSurfaceAccess: () => ({ data: null, isLoading: false }),
+  useGateDecisions: () => ({ data: [], isLoading: false }),
 }))
 
 const { AccordionPanel } = await import('./AccordionPanel')
@@ -250,7 +263,7 @@ describe('AccordionPanel', () => {
     storeState.activeAccordionSections = ['run']
     const markup = renderToStaticMarkup(<AccordionPanel />)
     expect(markup).toContain('Run all')
-    expect(markup).toContain('Controls')
+    expect(markup).toContain('Runtime control')
   })
 
   test('shows phase scope dot when NODE/AGENT/GATE tabs have phase context', () => {

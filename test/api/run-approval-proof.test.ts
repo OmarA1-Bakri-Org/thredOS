@@ -93,7 +93,7 @@ describe.serial('run route approval proof', () => {
     const approvalTraces = traces.filter(entry => entry.event_type.startsWith('approval-'))
     expect(approvalTraces.map(entry => entry.event_type)).toEqual(['approval-requested', 'approval-resolved'])
     expect(approvalTraces[0]).toMatchObject({
-      actor: 'api:run',
+      actor: 'runtime:api',
       surface_id: 'step:step-safe',
       payload_ref: approvals[1].subject_digest,
     })
