@@ -1,9 +1,13 @@
 import { z } from 'zod'
 import { TraceEventSchema, GateDecisionSchema, ApprovalSchema } from '@/lib/contracts/schemas'
+import { StepAttemptSchema } from '@/lib/runtime/schema'
 
 export const ExportBundleSchema = z.object({
   bundle_version: z.literal('1.0'),
   run_id: z.string().min(1),
+  run_source: z.enum(['legacy', 'v2']).default('legacy'),
+  run_schema_version: z.union([z.literal(1), z.literal(2)]).default(1),
+  attempts: z.array(StepAttemptSchema).default([]),
   pack: z.object({
     id: z.string().nullable(),
     version: z.string().nullable(),

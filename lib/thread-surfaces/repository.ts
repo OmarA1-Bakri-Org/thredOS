@@ -1,7 +1,7 @@
 import { existsSync } from 'fs'
 import { mkdir, readdir, rm } from 'fs/promises'
 import { join } from 'path'
-import { writeFileAtomic } from '@/lib/fs/atomic'
+import { withExclusiveFileLock, writeFileAtomic } from '@/lib/fs/atomic'
 import { ThreadSurfaceStateConflictError } from '@/lib/errors'
 import { readTextFileNoFollow } from '@/lib/security/safe-io'
 import {
@@ -365,22 +365,24 @@ export async function readThreadSurfaceState(basePath: string): Promise<ThreadSu
 export async function writeThreadSurfaceState(basePath: string, state: ThreadSurfaceState): Promise<void> {
   validateThreadSurfaceState(state)
   const stateRoot = await getThreadosSubdirectory(basePath, 'state', true)
-  let fullPath = await resolvePathWithinRoot(stateRoot, 'thread-surfaces.json')
-  if (existsSync(fullPath)) {
-    fullPath = await resolveExistingPathWithinRoot(stateRoot, 'thread-surfaces.json')
-  }
-  const currentRevision = await readCurrentRevision(fullPath)
-  const expectedRevision = getRevision(state)
+  const fullPath = await resolvePathWithinRoot(stateRoot, 'thread-surfaces.json')
+  await withExclusiveFileLock(`${fullPath}.lock`, async () => {
+    const verifiedPath = existsSync(fullPath)
+      ? await resolveExistingPathWithinRoot(stateRoot, 'thread-surfaces.json')
+      : fullPath
+    const currentRevision = await readCurrentRevision(verifiedPath)
+    const expectedRevision = getRevision(state)
 
-  if (expectedRevision !== undefined && expectedRevision !== currentRevision) {
-    throw new ThreadSurfaceStateConflictError()
-  }
+    if (expectedRevision !== undefined && expectedRevision !== currentRevision) {
+      throw new ThreadSurfaceStateConflictError()
+    }
 
-  const nextState: ThreadSurfaceState = { ...state, version: 1 }
-  const content = toJson(nextState)
-  await writeFileAtomic(fullPath, content)
-  await writeCanonicalThreadSurfaceRecords(basePath, nextState)
-  attachRevision(state, content)
+    const nextState: ThreadSurfaceState = { ...state, version: 1 }
+    const content = toJson(nextState)
+    await writeFileAtomic(verifiedPath, content)
+    await writeCanonicalThreadSurfaceRecords(basePath, nextState)
+    attachRevision(state, content)
+  })
 }
 
 const MERGE_EVENT_DEFAULTS: Omit<MergeEvent, 'summary'> = {

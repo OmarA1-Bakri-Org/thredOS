@@ -12,6 +12,41 @@ import {
   resolvePathWithinRoot,
 } from '@/lib/security/safe-path'
 import { readTextFileNoFollow } from '@/lib/security/safe-io'
+import { AttemptRepository } from '@/lib/runtime/attempt-repository'
+import {
+  LegacyRunRecordSchema,
+  WorkflowRunSchema,
+  projectLegacyRunRecord,
+  type StepAttempt,
+} from '@/lib/runtime/schema'
+
+interface RunDiscovery {
+  source: 'legacy' | 'v2'
+  schemaVersion: 1 | 2
+  attempts: StepAttempt[]
+}
+
+async function discoverRun(basePath: string, runDir: string, runId: string): Promise<RunDiscovery> {
+  const raw = await readOptionalContainedFile(runDir, 'run.json')
+  if (raw == null) return { source: 'legacy', schemaVersion: 1, attempts: [] }
+  const value: unknown = JSON.parse(raw)
+  const v2 = WorkflowRunSchema.safeParse(value)
+  if (v2.success) {
+    if (v2.data.id !== runId) throw new Error('run record identity does not match export path')
+    return {
+      source: 'v2',
+      schemaVersion: 2,
+      attempts: await new AttemptRepository(basePath).listForRun(runId),
+    }
+  }
+  const legacy = LegacyRunRecordSchema.parse(value)
+  if (legacy.id !== runId) throw new Error('legacy run record identity does not match export path')
+  return {
+    source: 'legacy',
+    schemaVersion: 1,
+    attempts: [projectLegacyRunRecord(legacy).stepAttempt],
+  }
+}
 
 async function readOptionalContainedFile(root: string, fileName: string): Promise<string | null> {
   try {
@@ -92,6 +127,7 @@ export async function generateExportBundle(basePath: string, runId: string): Pro
 
   // Read run artifacts
   const runDir = await resolvePathWithinRoot(basePath, '.threados/runs', runId)
+  const runDiscovery = await discoverRun(basePath, runDir, runId)
   const traceEvents = await readTraceEvents(basePath, runId)
   const gateDecisions = await readGateDecisions(basePath, runId)
   const approvals = await readApprovals(basePath, runId)
@@ -102,6 +138,9 @@ export async function generateExportBundle(basePath: string, runId: string): Pro
   return {
     bundle_version: '1.0',
     run_id: runId,
+    run_source: runDiscovery.source,
+    run_schema_version: runDiscovery.schemaVersion,
+    attempts: runDiscovery.attempts,
     pack: { id: null, version: null },
     sequence_snapshot: sequenceSnapshot,
     policy_snapshot: policySnapshot,

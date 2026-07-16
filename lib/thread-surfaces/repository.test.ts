@@ -269,6 +269,26 @@ describe('thread surface repository', () => {
     })
   })
 
+  test('concurrent stale thread-surface writes have exactly one cross-process lock winner', async () => {
+    await writeThreadSurfaceState(basePath, {
+      version: 1,
+      threadSurfaces: [threadSurface],
+      runs: [],
+      mergeEvents: [],
+      runEvents: [],
+    })
+    const first = await readThreadSurfaceState(basePath)
+    const second = await readThreadSurfaceState(basePath)
+    first.runs = [run]
+    second.runEvents = [runEvent]
+    const results = await Promise.allSettled([
+      writeThreadSurfaceState(basePath, first),
+      writeThreadSurfaceState(basePath, second),
+    ])
+    expect(results.filter(result => result.status === 'fulfilled')).toHaveLength(1)
+    expect(results.filter(result => result.status === 'rejected')).toHaveLength(1)
+  })
+
   test('validates all file-backed surface IDs before replacing aggregate state', async () => {
     await writeThreadSurfaceState(basePath, {
       version: 1,
