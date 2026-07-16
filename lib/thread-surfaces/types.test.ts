@@ -10,6 +10,7 @@ import {
   type RunScope,
   type RunStatus,
   type ThreadSurface,
+  normalizeThreadSurface,
 } from './types'
 
 describe('thread surface domain types', () => {
@@ -130,5 +131,79 @@ describe('thread surface domain types', () => {
       payload: { reason: 'agent lacks spawn skill', childStepId: 'child-1' },
     }
     expect(event.eventType).toBe('spawn-denied')
+  })
+
+  test('legacy thread-surface objects normalize without V2 links', () => {
+    const legacy: ThreadSurface = {
+      id: 'legacy-surface',
+      parentSurfaceId: null,
+      parentAgentNodeId: null,
+      depth: 0,
+      surfaceLabel: 'Legacy',
+      createdAt: '2026-03-09T00:00:00.000Z',
+      childSurfaceIds: [],
+      sequenceRef: null,
+      spawnedByAgentId: null,
+    }
+
+    expect(normalizeThreadSurface(legacy)).toEqual({
+      ...legacy,
+      surfaceClass: 'shared',
+      visibility: 'dependency',
+      isolationLabel: 'NONE',
+      revealState: null,
+      allowedReadScopes: [],
+      allowedWriteScopes: [],
+    })
+  })
+
+  test('V2 links remain additive across surfaces, runs, and events', () => {
+    const linkedSurface: ThreadSurface = {
+      id: 'surface-01',
+      parentSurfaceId: null,
+      parentAgentNodeId: null,
+      depth: 0,
+      surfaceLabel: 'Linked',
+      createdAt: '2026-03-09T00:00:00.000Z',
+      childSurfaceIds: [],
+      sequenceRef: null,
+      spawnedByAgentId: null,
+      workflowRunId: 'run-01',
+      attemptId: 'attempt-01',
+      workspaceId: 'workspace-01',
+      snapshotId: 'snapshot-01',
+      changeSetId: 'change-set-01',
+    }
+    const linkedRun: RunScope = {
+      id: 'legacy-run-01',
+      threadSurfaceId: linkedSurface.id,
+      runStatus: 'running',
+      startedAt: linkedSurface.createdAt,
+      endedAt: null,
+      parentRunId: null,
+      childIndex: null,
+      workflowRunId: 'run-01',
+      attemptId: 'attempt-01',
+      workspaceId: 'workspace-01',
+      snapshotId: 'snapshot-01',
+      changeSetId: 'change-set-01',
+    }
+    const linkedEvent: RunEvent = {
+      id: 'event-01',
+      runId: linkedRun.id,
+      eventType: 'step-started',
+      createdAt: linkedSurface.createdAt,
+      threadSurfaceId: linkedSurface.id,
+      workflowRunId: 'run-01',
+      attemptId: 'attempt-01',
+      workspaceId: 'workspace-01',
+      snapshotId: 'snapshot-01',
+      changeSetId: 'change-set-01',
+      payload: { stepId: 'step-01' },
+    }
+
+    expect(normalizeThreadSurface(linkedSurface).workflowRunId).toBe('run-01')
+    expect(linkedRun.attemptId).toBe('attempt-01')
+    expect(linkedEvent.changeSetId).toBe('change-set-01')
   })
 })

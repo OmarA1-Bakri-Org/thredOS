@@ -8,6 +8,20 @@ import {
   BarrierAttestationSchema,
 } from './schemas'
 import { GateReasonCode } from './reason-codes'
+import {
+  RuntimeCommandSchema,
+  SurfaceWorkspaceSchema,
+  WorkflowRunSchema,
+} from './index'
+
+describe('canonical contract barrel', () => {
+  it('retains legacy exports and adds V2 contracts', () => {
+    expect(RunSchema).toBeDefined()
+    expect(WorkflowRunSchema).toBeDefined()
+    expect(SurfaceWorkspaceSchema).toBeDefined()
+    expect(RuntimeCommandSchema).toBeDefined()
+  })
+})
 
 describe('SurfaceSchema', () => {
   const sharedSurfaceBase = {

@@ -5,6 +5,14 @@ export type SurfaceVisibility = 'public' | 'dependency' | 'self_only'
 export type IsolationLabel = 'NONE' | 'THREADOS_SCOPED' | 'HOST_ENFORCED'
 export type RevealState = 'sealed' | 'revealed' | null
 
+export interface RuntimeLinkRefs {
+  workflowRunId?: string
+  attemptId?: string
+  workspaceId?: string
+  snapshotId?: string
+  changeSetId?: string
+}
+
 export const LaneTerminalStateValues = ['completed', 'failed', 'cancelled', 'merged'] as const
 export type LaneTerminalState = typeof LaneTerminalStateValues[number]
 
@@ -25,7 +33,7 @@ export const RunEventTypeValues = [
 ] as const
 export type RunEventType = typeof RunEventTypeValues[number]
 
-export interface ThreadSurface {
+export interface ThreadSurface extends RuntimeLinkRefs {
   id: string
   parentSurfaceId: string | null
   parentAgentNodeId: string | null
@@ -69,7 +77,7 @@ export function normalizeThreadSurface(surface: ThreadSurface): NormalizedThread
   }
 }
 
-export interface RunScope {
+export interface RunScope extends RuntimeLinkRefs {
   id: string
   threadSurfaceId: string
   runStatus: RunStatus
@@ -128,7 +136,7 @@ export interface RunEventPayloadByType {
   }
 }
 
-interface BaseRunEvent<T extends RunEventType> {
+interface BaseRunEvent<T extends RunEventType> extends RuntimeLinkRefs {
   id: string
   runId: string
   eventType: T
@@ -141,7 +149,7 @@ export type RunEvent = {
   [T in RunEventType]: BaseRunEvent<T>
 }[RunEventType]
 
-export interface MergeEvent {
+export interface MergeEvent extends RuntimeLinkRefs {
   id: string
   runId: string
   destinationThreadSurfaceId: string
