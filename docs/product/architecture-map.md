@@ -7,7 +7,7 @@ thredOS is a local-first application with one visible product entry and several 
 - UI in `app/`, `components/`, and `lib/ui/`
 - local API routes in `app/api/`
 - CLI control plane in `lib/seqctl/`
-- execution runtime in `lib/runner/`, `lib/mprocs/`, and `lib/thread-surfaces/`
+- shared application runtime in `lib/runtime/`, with process adapters in `lib/runner/` and compatibility projections in `lib/thread-surfaces/`
 - safety and traceability in `lib/policy/` and `lib/audit/`
 
 `app/page.tsx` is the top-level switch:
@@ -34,7 +34,8 @@ Client-side data access lives in `lib/ui/api.ts`:
 
 - reads from `app/api/*`
 - invalidates runtime queries after mutations
-- polls status on a short interval
+- polls canonical runs and attempts only while execution is active
+- preserves typed runtime error codes and idempotency metadata for operator controls
 
 Client-side local UI state lives in `lib/ui/store.ts`:
 
@@ -60,6 +61,9 @@ Core sequence and runtime routes:
 - `app/api/stop/`
 - `app/api/restart/`
 - `app/api/status/`
+- `app/api/runs/` and `app/api/runs/[runId]/` for canonical workflow-run resources
+- `app/api/runs/[runId]/attempts/` for process-aware attempt lists
+- `app/api/attempts/[attemptId]/` plus `cancel/` and `retry/` for canonical attempt controls
 
 Thread-surface read model routes:
 
@@ -80,7 +84,7 @@ Chat routes:
 - `app/api/chat/` streams responses, extracts proposed actions, computes dry-run diffs, and still falls back to stub output when no provider is configured
 - `app/api/apply/` applies validated chat actions against the sequence
 
-## Runtime
+## Shared Runtime
 
 The runtime is local and file-backed.
 
@@ -90,22 +94,37 @@ The runtime is local and file-backed.
 - Runtime state: `.threados/state/`
 - Policy file: `.threados/policy.yaml`
 
-Primary runtime modules:
+Canonical application-service modules:
+
+- `lib/runtime/service.ts` owns run and attempt orchestration behind `ThreadOSRuntimeService`
+- `lib/runtime/scheduler.ts` provides the truthful Milestone 0 sequential scheduler
+- `lib/runtime/process-controller.ts` controls and observes real processes
+- `lib/runtime/recovery.ts` and `lib/reconciliation/` eliminate stale-running state without interpreting missing evidence as success
+- `lib/runtime/projections.ts` provides source-aware V2/legacy operator projections and writes compatibility surface projections
+- `lib/runtime/*-repository.ts` persists workflow runs, attempts, processes, and idempotent command receipts
+
+Supporting modules:
 
 - `lib/sequence/` for schema, parsing, and DAG validation
 - `lib/templates/` for thread-type template generators used by the workbench and API
-- `lib/runner/` for prompt compilation, dispatch, wrapper logic, and artifact handling
-- `lib/mprocs/` for process-manager integration
-- `lib/thread-surfaces/` for runtime state beyond simple step status
+- `lib/runner/` for provider dispatch, process launch adapters, wrapper logic, and artifact handling behind runtime ports
+- `lib/mprocs/` for optional observability and legacy compatibility, not runtime truth
+- `lib/thread-surfaces/` for topology, compatibility history, and merge projections
 
 The main execution path is:
 
-1. a UI or CLI mutation requests execution
-2. the sequence is read and validated
-3. prompt context is compiled in `lib/runner/prompt-compiler.ts`
-4. a runner is dispatched in `lib/runner/dispatch.ts`
-5. artifacts and runtime events are written under `.threados/`
-6. thread-surface state is updated and exposed back to the UI
+1. an API route or CLI command validates interface input and calls `ThreadOSRuntimeService`
+2. the service persists the command and workflow-run intent before execution
+3. the sequential scheduler reserves an attempt and the service persists attempt/process launch intent
+4. runtime ports compile the prompt, provision execution context, and start the real process
+5. the service observes terminal process evidence, persists lifecycle/artifact/gate results, and updates projections
+6. recovery reconciles interrupted or missing process evidence on startup
+7. API, CLI, and operator UI read the same canonical records
+
+API and CLI lifecycle handlers are guarded by
+`test/architecture/runtime-service-boundary.test.ts`, and
+`test/integration/runtime-interface-parity.test.ts` proves that a sequential
+attempt persists the same canonical state tree through either interface.
 
 ## Orchestration
 
@@ -123,7 +142,7 @@ Chat orchestration:
 - validation/apply layer: `lib/chat/validator.ts`
 - provider abstraction: `lib/llm/providers/*`
 
-The system is designed so both UI and CLI act on the same local model instead of maintaining separate sources of truth.
+Both UI and CLI call the same runtime service instead of maintaining separate execution lifecycles or sources of truth.
 
 The workbench's sequence authoring flow is also tied directly to that model:
 
