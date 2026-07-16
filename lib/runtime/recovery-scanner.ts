@@ -47,6 +47,15 @@ function addUnique<T extends { id: string }>(
   return true
 }
 
+function quarantineIdentity<T>(
+  records: Map<string, T>,
+  quarantined: Set<string>,
+  id: string,
+): void {
+  records.delete(id)
+  quarantined.add(id)
+}
+
 async function scanRuntimeRecords(
   basePath: string,
   snapshot: RecoveryPhysicalSnapshot,
@@ -78,6 +87,7 @@ async function scanRuntimeRecords(
           if (!parsed.success) {
             snapshot.errors.push(`Malformed run record at ${runLabel}: ${parsed.error.message}`)
           } else if (parsed.data.id !== runEntry.name) {
+            quarantineIdentity(snapshot.runs, quarantinedRuns, parsed.data.id)
             snapshot.errors.push(
               `Run record identity mismatch at ${runLabel}: expected ${runEntry.name}, received ${parsed.data.id}`,
             )
@@ -120,12 +130,22 @@ async function scanRuntimeRecords(
               } else {
                 let identityValid = true
                 if (parsed.data.id !== attemptEntry.name) {
+                  quarantineIdentity(
+                    snapshot.attempts,
+                    quarantinedAttempts,
+                    parsed.data.id,
+                  )
                   snapshot.errors.push(
                     `Attempt record identity mismatch at ${attemptLabel}: expected ${attemptEntry.name}, received ${parsed.data.id}`,
                   )
                   identityValid = false
                 }
                 if (parsed.data.workflow_run_id !== runEntry.name) {
+                  quarantineIdentity(
+                    snapshot.attempts,
+                    quarantinedAttempts,
+                    parsed.data.id,
+                  )
                   snapshot.errors.push(
                     `Attempt ownership mismatch at ${attemptLabel}: expected run ${runEntry.name}, received ${parsed.data.workflow_run_id}`,
                   )
@@ -140,6 +160,11 @@ async function scanRuntimeRecords(
                     snapshot.errors,
                   )
                 } else if (identityValid) {
+                  quarantineIdentity(
+                    snapshot.attempts,
+                    quarantinedAttempts,
+                    parsed.data.id,
+                  )
                   snapshot.errors.push(
                     `Attempt ${parsed.data.id} is under invalid run ${runEntry.name}`,
                   )
@@ -163,6 +188,11 @@ async function scanRuntimeRecords(
               parsed.data.workflow_run_id !== runEntry.name
               || parsed.data.attempt_id !== attemptEntry.name
             ) {
+              quarantineIdentity(
+                snapshot.processes,
+                quarantinedProcesses,
+                parsed.data.id,
+              )
               snapshot.errors.push(
                 `Process ownership mismatch at ${processLabel}: expected run ${runEntry.name} attempt ${attemptEntry.name}, received run ${parsed.data.workflow_run_id} attempt ${parsed.data.attempt_id}`,
               )
@@ -177,6 +207,11 @@ async function scanRuntimeRecords(
               continue
             }
             if (!validAttempt) {
+              quarantineIdentity(
+                snapshot.processes,
+                quarantinedProcesses,
+                parsed.data.id,
+              )
               snapshot.errors.push(
                 attemptPath
                   ? `Process ${parsed.data.id} references invalid attempt ${parsed.data.attempt_id}`
@@ -208,7 +243,7 @@ async function scanRuntimeRecords(
   for (const [processId, record] of snapshot.processes) {
     const owner = snapshot.attempts.get(record.attempt_id)
     if (owner?.workflow_run_id === record.workflow_run_id) continue
-    snapshot.processes.delete(processId)
+    quarantineIdentity(snapshot.processes, quarantinedProcesses, processId)
     snapshot.errors.push(
       `Process ${record.id} references invalid attempt ${record.attempt_id}`,
     )

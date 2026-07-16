@@ -132,6 +132,14 @@ async function repairAcceptedReceipts(
           }, now)
           continue
         }
+        if (!attempts.has(binding.originalAttemptId)) {
+          await repositories.commands.complete(receipt.id, {
+            status: 'failed',
+            errorCode: 'PROCESS_LOST',
+            errorMessage: `Retry original attempt ${binding.originalAttemptId} was missing or quarantined during recovery`,
+          }, now)
+          continue
+        }
         const durableAttempt = childRun.attempt_ids
           .map(attemptId => attempts.get(attemptId))
           .find((attempt): attempt is StepAttempt =>

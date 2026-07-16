@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, mock, test } from 'bun:test'
+import { afterEach, describe, expect, mock, setDefaultTimeout, test } from 'bun:test'
 import { mkdir, mkdtemp, rm, unlink, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { dirname, join } from 'path'
@@ -18,6 +18,8 @@ import type {
 
 const roots: string[] = []
 const NOW = '2026-07-16T00:00:00.000Z'
+
+setDefaultTimeout(30_000)
 
 afterEach(async () => {
   await Promise.all(roots.splice(0).map(path => rm(path, { recursive: true, force: true })))
@@ -515,6 +517,38 @@ describe('reconcileCanonicalRuntime', () => {
     })
   })
 
+  test('fails retry receipt when the original attempt is absent from validated recovery truth', async () => {
+    const repos = await repositories()
+    await repos.runs.create(run({
+      id: 'child-run',
+      status: 'failed',
+      attempt_ids: ['child-attempt'],
+      ended_at: NOW,
+    }))
+    await repos.attempts.create(attempt({
+      id: 'child-attempt',
+      workflow_run_id: 'child-run',
+      status: 'failed',
+      retry_of_attempt_id: 'missing-original',
+      process_id: null,
+      ended_at: NOW,
+    }))
+    await repos.commands.createOrReplay(receipt({
+      id: 'missing-original-retry',
+      idempotency_key: 'missing-original-retry-key',
+      command_type: 'retry-attempt',
+      result_ref: formatRetryBinding('missing-original', 'child-run'),
+    }))
+
+    await reconcileCanonicalRuntime(repos.basePath, { now: () => NOW })
+
+    expect(await repos.commands.get('missing-original-retry')).toMatchObject({
+      status: 'failed',
+      error_code: 'PROCESS_LOST',
+      completed_at: NOW,
+    })
+  })
+
   test('fails unsafe encoded retry identifiers without traversal or an accepted receipt', async () => {
     const repos = await repositories()
     for (const [id, binding] of [
@@ -645,6 +679,26 @@ describe('reconcileCanonicalRuntime', () => {
       command_type: 'cancel-attempt',
       result_ref: 'duplicate-attempt',
     }))
+    await repos.runs.create(run({
+      id: 'duplicate-retry-child',
+      status: 'failed',
+      attempt_ids: ['duplicate-retry-child-attempt'],
+      ended_at: NOW,
+    }))
+    await repos.attempts.create(attempt({
+      id: 'duplicate-retry-child-attempt',
+      workflow_run_id: 'duplicate-retry-child',
+      status: 'failed',
+      retry_of_attempt_id: 'duplicate-attempt',
+      process_id: null,
+      ended_at: NOW,
+    }))
+    await repos.commands.createOrReplay(receipt({
+      id: 'duplicate-original-retry',
+      idempotency_key: 'duplicate-original-retry-key',
+      command_type: 'retry-attempt',
+      result_ref: formatRetryBinding('duplicate-attempt', 'duplicate-retry-child'),
+    }))
 
     const report = await reconcileCanonicalRuntime(repos.basePath, { now: () => NOW })
 
@@ -666,7 +720,78 @@ describe('reconcileCanonicalRuntime', () => {
       error_code: 'PROCESS_LOST',
       completed_at: NOW,
     })
+    expect(await repos.commands.get('duplicate-original-retry')).toMatchObject({
+      status: 'failed',
+      error_code: 'PROCESS_LOST',
+      completed_at: NOW,
+    })
     expect((await repos.processes.get('process-1'))?.status).toBe('lost')
+  }, 30_000)
+
+  test('quarantines identities claimed beneath invalid ancestors before any mutation', async () => {
+    const repos = await repositories()
+    await repos.runs.create(run({
+      id: 'a-valid-run',
+      attempt_ids: ['shared-attempt'],
+    }))
+    await repos.attempts.create(attempt({
+      id: 'shared-attempt',
+      workflow_run_id: 'a-valid-run',
+      process_id: 'shared-process',
+    }))
+    await repos.processes.create(processRecord({
+      id: 'shared-process',
+      workflow_run_id: 'a-valid-run',
+      attempt_id: 'shared-attempt',
+    }))
+
+    const invalidDirectory = join(
+      repos.basePath,
+      '.threados',
+      'runs',
+      'z-invalid-run',
+      'attempts',
+      'shared-attempt',
+    )
+    await mkdir(invalidDirectory, { recursive: true })
+    await writeFile(join(invalidDirectory, 'attempt.json'), JSON.stringify(attempt({
+      id: 'shared-attempt',
+      workflow_run_id: 'z-invalid-run',
+      process_id: 'shared-process',
+    })))
+    await writeFile(join(invalidDirectory, 'process.json'), JSON.stringify(processRecord({
+      id: 'shared-process',
+      workflow_run_id: 'z-invalid-run',
+      attempt_id: 'shared-attempt',
+    })))
+
+    const report = await reconcileCanonicalRuntime(repos.basePath, { now: () => NOW })
+
+    expect(report.errors).toEqual(expect.arrayContaining([
+      'Missing run record at z-invalid-run/run.json',
+      'Attempt shared-attempt is under invalid run z-invalid-run',
+      'Process shared-process references invalid attempt shared-attempt',
+    ]))
+    const validAttempt = JSON.parse(await Bun.file(join(
+      repos.basePath,
+      '.threados',
+      'runs',
+      'a-valid-run',
+      'attempts',
+      'shared-attempt',
+      'attempt.json',
+    )).text()) as StepAttempt
+    const validProcess = JSON.parse(await Bun.file(join(
+      repos.basePath,
+      '.threados',
+      'runs',
+      'a-valid-run',
+      'attempts',
+      'shared-attempt',
+      'process.json',
+    )).text()) as ProcessRecord
+    expect(validAttempt.status).toBe('running')
+    expect(validProcess.status).toBe('running')
   }, 30_000)
 
   test('quarantines duplicate process identities across valid attempts', async () => {
