@@ -1,11 +1,17 @@
 import { topologicalSort } from '../sequence/dag'
 import type { Sequence, Step } from '../sequence/schema'
-import { RuntimeCommandContextSchema, StartRunCommandSchema } from './command-schema'
+import {
+  CancelAttemptCommandSchema, CancelRunCommandSchema, RetryAttemptCommandSchema,
+  RuntimeCommandContextSchema, StartRunCommandSchema,
+} from './command-schema'
 import { AttemptExecutor, stableRuntimeHash } from './attempt-executor'
+import { RuntimeErrorCodeSchema } from './error-codes'
 import { RuntimeServiceError } from './errors'
 import { transitionRun } from './lifecycle'
+import { RuntimeRepositoryError } from './run-repository'
 import type {
-  CompletedRunResult, RuntimeCommandContext, RuntimeServiceOptions, StartRunRequest,
+  AttemptProjection, CompletedRunResult, LatestAttemptQuery, RunProjection, RuntimeCommandContext,
+  RuntimeReconciliationReport, RuntimeRunQuery, RuntimeServiceOptions, SequenceStatusProjection, StartRunRequest,
 } from './service-types'
 import type { RuntimeCommandReceipt, StepAttempt, WorkflowRun, WorkflowRunTarget } from './schema'
 
@@ -40,6 +46,15 @@ const terminalRunStatuses = new Set<WorkflowRun['status']>([
   'successful', 'failed', 'cancelled', 'interrupted', 'awaiting_review', 'partially_successful',
 ])
 
+function compareAttemptRecency(left: StepAttempt, right: StepAttempt): number {
+  const byCreated = right.created_at.localeCompare(left.created_at)
+  if (byCreated !== 0) return byCreated
+  const byAttempt = right.attempt_number - left.attempt_number
+  if (byAttempt !== 0) return byAttempt
+  const byIndex = right.execution_index - left.execution_index
+  return byIndex !== 0 ? byIndex : right.id.localeCompare(left.id)
+}
+
 function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void; reject: (reason: unknown) => void } {
   let resolve!: (value: T) => void
   let reject!: (reason: unknown) => void
@@ -63,18 +78,32 @@ export class ThreadOSRuntimeService {
   }
 
   async startRun(request: StartRunRequest, rawContext: RuntimeCommandContext): Promise<WorkflowRun> {
+    return await this.startRunWithLineage(request, rawContext)
+  }
+
+  private async startRunWithLineage(
+    request: StartRunRequest,
+    rawContext: RuntimeCommandContext,
+    retryOf?: StepAttempt,
+    preferredRunId?: string,
+  ): Promise<WorkflowRun> {
+    if (request.sequence_id === '$current') {
+      const sequence = await this.deps.loadSequence(this.basePath)
+      request = { ...request, sequence_id: sequence.id ?? sequence.name }
+    }
     const context = RuntimeCommandContextSchema.parse(rawContext)
     const command = StartRunCommandSchema.parse({ command_type: 'start-run', context, ...request })
     request = {
       sequence_id: command.sequence_id, target: command.target,
       strategy: command.strategy, max_concurrency: command.max_concurrency,
+      allow_empty: command.allow_empty,
     }
     if (request.strategy !== 'sequential' || request.max_concurrency !== 1) {
       throw new RuntimeServiceError('PARALLEL_RUNTIME_UNAVAILABLE', 'Parallel runtime is unavailable before Milestone 3')
     }
     if (request.sequence_id.length === 0) throw new RuntimeServiceError('RUNTIME_TARGET_NOT_FOUND', 'sequence_id is required')
 
-    const runId = this.deps.newId('run')
+    const runId = preferredRunId ?? this.deps.newId('run')
     const commandId = this.deps.newId('command')
     const requestHash = stableRuntimeHash({ request, actor: context.actor, interface: context.interface, policyConfirmed: context.policyConfirmed })
     const receipt: RuntimeCommandReceipt = {
@@ -106,7 +135,7 @@ export class ThreadOSRuntimeService {
       }, this.deps.now()).catch(() => undefined)
       throw error
     }
-    const scheduled = this.scheduler.enqueue(runId, async () => await this.executeRun(run, request, context, commandId))
+    const scheduled = this.scheduler.enqueue(runId, async () => await this.executeRun(run, request, context, commandId, retryOf))
     void scheduled.then(completion.resolve, completion.reject).finally(() => {
       if (this.inFlight.get(runId) === completion.promise) this.inFlight.delete(runId)
     })
@@ -118,6 +147,380 @@ export class ThreadOSRuntimeService {
     const inFlight = this.inFlight.get(started.id) ?? this.scheduler.get<CompletedRunResult>(started.id)
     if (inFlight) return await inFlight
     return await this.waitForDurableCompletion(started.id, context.idempotencyKey)
+  }
+
+  async listRuns(query: RuntimeRunQuery = {}): Promise<RunProjection[]> {
+    const runs = await this.repositories.runs.list(query)
+    return await Promise.all(runs.map(async run => ({
+      run,
+      attempts: await this.repositories.attempts.listForRun(run.id),
+    })))
+  }
+
+  async inspectRun(runId: string): Promise<RunProjection> {
+    const run = await this.repositories.runs.get(runId)
+    if (!run) throw new RuntimeServiceError('RUN_NOT_FOUND', `run ${runId} was not found`)
+    return { run, attempts: await this.repositories.attempts.listForRun(run.id) }
+  }
+
+  async inspectAttempt(attemptId: string): Promise<AttemptProjection> {
+    const attempt = await this.repositories.attempts.get(attemptId)
+    if (!attempt) throw new RuntimeServiceError('ATTEMPT_NOT_FOUND', `attempt ${attemptId} was not found`)
+    const process = attempt.process_id ? await this.repositories.processes.get(attempt.process_id) : null
+    return { attempt, process }
+  }
+
+  async findLatestAttempt(query: LatestAttemptQuery): Promise<StepAttempt | null> {
+    let sequenceId = query.sequenceId
+    if (sequenceId === '$current') {
+      const sequence = await this.deps.loadSequence(this.basePath)
+      if (!sequence.steps.some(step => step.id === query.stepId)) {
+        throw new RuntimeServiceError('RUNTIME_TARGET_NOT_FOUND', `step ${query.stepId} was not found`)
+      }
+      sequenceId = sequence.id ?? sequence.name
+    }
+    const runs = await this.repositories.runs.list({ sequenceId })
+    const attempts = (await Promise.all(runs.map(run => this.repositories.attempts.listForRun(run.id)))).flat()
+      .filter(attempt => attempt.step_id === query.stepId)
+      .filter(attempt => !query.statuses || query.statuses.includes(attempt.status))
+    attempts.sort(compareAttemptRecency)
+    return attempts[0] ?? null
+  }
+
+  async cancelAttempt(attemptId: string, rawContext: RuntimeCommandContext): Promise<StepAttempt> {
+    const context = RuntimeCommandContextSchema.parse(rawContext)
+    CancelAttemptCommandSchema.parse({ command_type: 'cancel-attempt', context, attempt_id: attemptId })
+    const claim = await this.claimMutation('cancel-attempt', attemptId, context)
+    if (claim.replayed) return await this.replayAttemptMutation(claim.receipt)
+    const attempt = await this.repositories.attempts.get(attemptId)
+    if (!attempt) return await this.failAttemptMutation(claim.receipt.id, 'ATTEMPT_NOT_FOUND', `attempt ${attemptId} was not found`)
+    if (attempt.status !== 'running') {
+      return await this.failAttemptMutation(claim.receipt.id, 'ATTEMPT_NOT_RUNNING', `attempt ${attemptId} is ${attempt.status}`)
+    }
+    return await this.failAttemptMutation(
+      claim.receipt.id,
+      'PROCESS_CONTROL_FAILED',
+      'Live process cancellation is unavailable until the truthful process controller is installed',
+    )
+  }
+
+  async cancelRun(runId: string, rawContext: RuntimeCommandContext): Promise<WorkflowRun> {
+    const context = RuntimeCommandContextSchema.parse(rawContext)
+    CancelRunCommandSchema.parse({ command_type: 'cancel-run', context, workflow_run_id: runId })
+    const claim = await this.claimMutation('cancel-run', runId, context)
+    if (claim.replayed) return await this.replayRunCancellation(claim.receipt)
+    const run = await this.repositories.runs.get(runId)
+    if (!run) {
+      await this.repositories.commands.complete(claim.receipt.id, { status: 'failed', errorCode: 'RUN_NOT_FOUND', errorMessage: `run ${runId} was not found` }, this.deps.now())
+      throw new RuntimeServiceError('RUN_NOT_FOUND', `run ${runId} was not found`)
+    }
+    const attempts = await this.repositories.attempts.listForRun(run.id)
+    const active = attempts.filter(attempt => ['pending', 'provisioning', 'running'].includes(attempt.status))
+    const code = active.length === 0 ? 'ATTEMPT_NOT_RUNNING' : 'PROCESS_CONTROL_FAILED'
+    const message = active.length === 0
+      ? `run ${runId} has no active attempt`
+      : 'Run cancellation is unavailable until the truthful process controller is installed'
+    await this.repositories.commands.complete(claim.receipt.id, {
+      status: 'failed', errorCode: code, errorMessage: message,
+    }, this.deps.now())
+    throw new RuntimeServiceError(code, message)
+  }
+
+  async retryAttempt(attemptId: string, rawContext: RuntimeCommandContext): Promise<StepAttempt> {
+    const context = RuntimeCommandContextSchema.parse(rawContext)
+    RetryAttemptCommandSchema.parse({ command_type: 'retry-attempt', context, attempt_id: attemptId })
+    const unboundRetry = `retry:${encodeURIComponent(attemptId)}`
+    const claim = await this.claimMutation('retry-attempt', attemptId, context, unboundRetry)
+    let receipt = claim.receipt
+    if (!claim.replayed) {
+      const original = await this.repositories.attempts.get(attemptId)
+      if (!original) return await this.failAttemptMutation(receipt.id, 'ATTEMPT_NOT_FOUND', `attempt ${attemptId} was not found`)
+      if (['pending', 'provisioning', 'running'].includes(original.status)) {
+        return await this.failAttemptMutation(receipt.id, 'ATTEMPT_NOT_RUNNING', `attempt ${attemptId} is not terminal`)
+      }
+      const childRunId = this.deps.newId('run')
+      const binding = this.retryBinding(original.id, childRunId)
+      try {
+        receipt = await this.repositories.commands.bindResult(receipt.id, binding, unboundRetry)
+      } catch (error) {
+        if (!(error instanceof RuntimeRepositoryError) || error.code !== 'RUNTIME_REVISION_CONFLICT') throw error
+        receipt = await this.repositories.commands.get(receipt.id) ?? receipt
+      }
+    }
+    return await this.replayRetryMutation(receipt, context)
+  }
+
+  async getStatus(): Promise<SequenceStatusProjection> {
+    await this.reconcile()
+    const sequence = await this.deps.loadSequence(this.basePath)
+    const latest = new Map<string, StepAttempt>()
+    const runs = await this.repositories.runs.list({ sequenceId: sequence.id ?? sequence.name })
+    for (const run of runs) {
+      for (const attempt of await this.repositories.attempts.listForRun(run.id)) {
+        const current = latest.get(attempt.step_id)
+        if (!current || compareAttemptRecency(attempt, current) < 0) {
+          latest.set(attempt.step_id, attempt)
+        }
+      }
+    }
+    const statusFor = (step: Step): Step['status'] => {
+      const status = latest.get(step.id)?.status
+      if (!status) return step.status
+      if (status === 'running' || status === 'provisioning' || status === 'pending') return 'RUNNING'
+      if (status === 'completed') return 'DONE'
+      if (status === 'needs_review') return 'NEEDS_REVIEW'
+      return 'FAILED'
+    }
+    const steps = sequence.steps.map(step => ({
+      id: step.id, name: step.name, type: step.type, status: statusFor(step), model: step.model,
+      dependsOn: step.depends_on, processId: latest.get(step.id)?.process_id ?? undefined,
+      groupId: step.group_id, fusionCandidates: step.fusion_candidates, fusionSynth: step.fusion_synth,
+    }))
+    const summary = { total: steps.length, ready: 0, running: 0, done: 0, failed: 0, blocked: 0, needsReview: 0 }
+    const keys = { READY: 'ready', RUNNING: 'running', DONE: 'done', FAILED: 'failed', BLOCKED: 'blocked', NEEDS_REVIEW: 'needsReview' } as const
+    for (const step of steps) summary[keys[step.status]]++
+    return {
+      name: sequence.name, version: sequence.version, thread_type: sequence.thread_type, steps,
+      gates: sequence.gates.map(gate => ({
+        id: gate.id, name: gate.name, status: gate.status, dependsOn: gate.depends_on,
+        description: gate.description, acceptance_conditions: gate.acceptance_conditions,
+        required_review: gate.required_review,
+      })),
+      summary,
+    }
+  }
+
+  async reconcile(): Promise<RuntimeReconciliationReport> {
+    const report = await this.deps.reconcile?.(this.basePath)
+    if (report) return report
+    return { checked: (await this.repositories.processes.list()).length, changes: [], errors: [] }
+  }
+
+  private async claimMutation(
+    commandType: 'cancel-run' | 'cancel-attempt' | 'retry-attempt',
+    targetId: string,
+    context: RuntimeCommandContext,
+    initialResultRef: string | null = targetId,
+  ): Promise<{ receipt: RuntimeCommandReceipt; replayed: boolean }> {
+    const id = this.deps.newId('command')
+    const receipt: RuntimeCommandReceipt = {
+      schema_version: 1, id, idempotency_key: context.idempotencyKey, command_type: commandType,
+      request_hash: stableRuntimeHash({
+        commandType, targetId, actor: context.actor, interface: context.interface,
+        policyConfirmed: context.policyConfirmed,
+      }),
+      status: 'accepted', result_ref: initialResultRef, error_code: null, error_message: null,
+      created_at: this.deps.now(), completed_at: null,
+    }
+    try {
+      const accepted = await this.repositories.commands.createOrReplay(receipt)
+      return { receipt: accepted, replayed: accepted.id !== id }
+    } catch (error) {
+      if (error instanceof RuntimeRepositoryError && error.code === 'IDEMPOTENCY_CONFLICT') {
+        throw new RuntimeServiceError('IDEMPOTENCY_CONFLICT', error.message, error)
+      }
+      throw error
+    }
+  }
+
+  private receiptError(receipt: RuntimeCommandReceipt): RuntimeServiceError {
+    const parsed = RuntimeErrorCodeSchema.safeParse(receipt.error_code)
+    return new RuntimeServiceError(parsed.success ? parsed.data : 'INTERNAL_ERROR', receipt.error_message ?? 'Runtime command failed')
+  }
+
+  private async replayAttemptMutation(receipt: RuntimeCommandReceipt): Promise<StepAttempt> {
+    let current = receipt
+    for (let poll = 0; current.status === 'accepted' && poll < 50; poll++) {
+      await new Promise(resolve => setTimeout(resolve, 20))
+      current = await this.repositories.commands.get(current.id) ?? current
+    }
+    if (current.status === 'accepted') {
+      const target = current.result_ref ? await this.repositories.attempts.get(current.result_ref) : null
+      if (target && target.status !== 'running') {
+        throw new RuntimeServiceError('ATTEMPT_NOT_RUNNING', `attempt ${target.id} is ${target.status}`)
+      }
+      throw new RuntimeServiceError('PROCESS_CONTROL_FAILED', 'Runtime command was accepted but has no recoverable terminal evidence')
+    }
+    if (current.status === 'failed') throw this.receiptError(current)
+    const attempt = current.result_ref ? await this.repositories.attempts.get(current.result_ref) : null
+    if (!attempt) throw new RuntimeServiceError('ATTEMPT_NOT_FOUND', 'Runtime command result attempt was not found')
+    return attempt
+  }
+
+  private retryBinding(originalAttemptId: string, childRunId: string): string {
+    return `retry:${encodeURIComponent(originalAttemptId)}:run:${encodeURIComponent(childRunId)}`
+  }
+
+  private parseRetryBinding(value: string | null): { originalAttemptId: string; childRunId: string } | null {
+    const match = /^retry:([^:]+):run:([^:]+)$/.exec(value ?? '')
+    return match ? { originalAttemptId: decodeURIComponent(match[1]!), childRunId: decodeURIComponent(match[2]!) } : null
+  }
+
+  private parseUnboundRetry(value: string | null): string | null {
+    const match = /^retry:([^:]+)$/.exec(value ?? '')
+    return match ? decodeURIComponent(match[1]!) : null
+  }
+
+  private retryStartRequest(original: StepAttempt): StartRunRequest {
+    return {
+      sequence_id: original.sequence_id,
+      target: { kind: 'step', step_id: original.step_id },
+      strategy: 'sequential',
+      max_concurrency: 1,
+    }
+  }
+
+  private async repairRetryChildRun(
+    binding: { originalAttemptId: string; childRunId: string },
+    original: StepAttempt,
+    context: RuntimeCommandContext,
+    outerCommandId: string,
+  ): Promise<WorkflowRun> {
+    const request = this.retryStartRequest(original)
+    const idempotencyKey = `retry-start:${outerCommandId}`
+    let run = await this.repositories.runs.get(binding.childRunId)
+    const startReceipt = await this.repositories.commands.findByIdempotencyKey(idempotencyKey)
+
+    if (!run && !startReceipt) {
+      return await this.startRunWithLineage(
+        request,
+        { ...context, idempotencyKey },
+        original,
+        binding.childRunId,
+      )
+    }
+
+    if (!startReceipt) {
+      throw new RuntimeServiceError('PROCESS_CONTROL_FAILED', 'Retry child run is missing its start receipt')
+    }
+    if (startReceipt.status === 'failed') throw this.receiptError(startReceipt)
+    if (startReceipt.result_ref !== binding.childRunId) {
+      throw new RuntimeServiceError('PROCESS_CONTROL_FAILED', 'Retry child start receipt is bound to a different run')
+    }
+    if (!run && startReceipt.status !== 'accepted') {
+      throw new RuntimeServiceError('RUN_NOT_FOUND', `completed retry child run ${binding.childRunId} was not found`)
+    }
+
+    if (!run) {
+      const now = this.deps.now()
+      const candidate: WorkflowRun = {
+        schema_version: 2,
+        id: binding.childRunId,
+        revision: 0,
+        sequence_id: request.sequence_id,
+        sequence_snapshot_hash: 'pending',
+        target: request.target,
+        strategy: 'sequential',
+        status: 'pending',
+        max_concurrency: 1,
+        policy_snapshot_hash: 'pending',
+        baseline_snapshot_id: null,
+        attempt_ids: [],
+        created_by: context.actor,
+        created_via: context.interface,
+        created_at: now,
+        started_at: null,
+        ended_at: null,
+        cancellation_requested_at: null,
+        summary: null,
+        error_code: null,
+        error_message: null,
+      }
+      try {
+        await this.repositories.runs.create(candidate)
+        run = candidate
+      } catch (error) {
+        if (!(error instanceof RuntimeRepositoryError) || error.code !== 'RUNTIME_RECORD_EXISTS') throw error
+        run = await this.repositories.runs.get(binding.childRunId)
+      }
+    }
+    if (!run) throw new RuntimeServiceError('RUN_NOT_FOUND', `retry child run ${binding.childRunId} was not found`)
+
+    if (run.status === 'pending' && run.attempt_ids.length === 0 && !this.scheduler.get(run.id)) {
+      const recoveredRun = run
+      const scheduled = this.scheduler.enqueue(recoveredRun.id, async () =>
+        await this.executeRun(recoveredRun, request, { ...context, idempotencyKey }, startReceipt!.id, original))
+      void scheduled.catch(() => undefined)
+    }
+    return run
+  }
+
+  private async replayRetryMutation(receipt: RuntimeCommandReceipt, context: RuntimeCommandContext): Promise<StepAttempt> {
+    let current = receipt
+    for (let poll = 0; current.status === 'accepted' && !this.parseRetryBinding(current.result_ref) && !this.parseUnboundRetry(current.result_ref) && poll < 50; poll++) {
+      await new Promise(resolve => setTimeout(resolve, 20))
+      current = await this.repositories.commands.get(current.id) ?? current
+    }
+    if (current.status === 'failed') throw this.receiptError(current)
+    if (current.status === 'completed') {
+      const attempt = current.result_ref ? await this.repositories.attempts.get(current.result_ref) : null
+      if (!attempt) throw new RuntimeServiceError('ATTEMPT_NOT_FOUND', 'Retry result attempt was not found')
+      return attempt
+    }
+    let binding = this.parseRetryBinding(current.result_ref)
+    const unboundOriginal = this.parseUnboundRetry(current.result_ref)
+    if (!binding && unboundOriginal) {
+      const childRunId = this.deps.newId('run')
+      const candidate = this.retryBinding(unboundOriginal, childRunId)
+      try {
+        current = await this.repositories.commands.bindResult(current.id, candidate, current.result_ref)
+      } catch (error) {
+        if (!(error instanceof RuntimeRepositoryError) || error.code !== 'RUNTIME_REVISION_CONFLICT') throw error
+        current = await this.repositories.commands.get(current.id) ?? current
+      }
+      binding = this.parseRetryBinding(current.result_ref)
+    }
+    if (!binding) throw new RuntimeServiceError('PROCESS_CONTROL_FAILED', 'Retry receipt has no recoverable child-run binding')
+    const original = await this.repositories.attempts.get(binding.originalAttemptId)
+    if (!original) throw new RuntimeServiceError('ATTEMPT_NOT_FOUND', `attempt ${binding.originalAttemptId} was not found`)
+    await this.repairRetryChildRun(binding, original, context, current.id)
+    const retried = await this.waitForAttemptCreation(binding.childRunId)
+    await this.repositories.commands.complete(current.id, { status: 'completed', resultRef: retried.id }, this.deps.now()).catch(() => undefined)
+    return retried
+  }
+
+  private async replayRunCancellation(receipt: RuntimeCommandReceipt): Promise<WorkflowRun> {
+    let current = receipt
+    for (let poll = 0; current.status === 'accepted' && poll < 50; poll++) {
+      await new Promise(resolve => setTimeout(resolve, 20))
+      current = await this.repositories.commands.get(current.id) ?? current
+    }
+    if (current.status === 'failed') throw this.receiptError(current)
+    const run = current.result_ref ? await this.repositories.runs.get(current.result_ref) : null
+    if (!run) throw new RuntimeServiceError('RUN_NOT_FOUND', 'Cancellation result run was not found')
+    if (current.status === 'completed' && run.status === 'cancelled') return run
+    const attempts = await this.repositories.attempts.listForRun(run.id)
+    const active = attempts.some(attempt => ['pending', 'provisioning', 'running'].includes(attempt.status))
+    throw new RuntimeServiceError(
+      active ? 'PROCESS_CONTROL_FAILED' : 'ATTEMPT_NOT_RUNNING',
+      active ? 'Run cancellation has no recoverable terminal evidence' : `run ${run.id} has no active attempt`,
+    )
+  }
+
+  private async failAttemptMutation(
+    commandId: string,
+    code: 'ATTEMPT_NOT_FOUND' | 'ATTEMPT_NOT_RUNNING' | 'PROCESS_CONTROL_FAILED',
+    message: string,
+  ): Promise<never> {
+    await this.repositories.commands.complete(commandId, { status: 'failed', errorCode: code, errorMessage: message }, this.deps.now())
+    throw new RuntimeServiceError(code, message)
+  }
+
+  private async waitForAttemptCreation(runId: string): Promise<StepAttempt> {
+    for (let poll = 0; poll < 250; poll++) {
+      const run = await this.repositories.runs.get(runId)
+      if (!run) throw new RuntimeServiceError('RUN_NOT_FOUND', `run ${runId} was not found`)
+      const attemptId = run.attempt_ids[0]
+      if (attemptId) {
+        const attempt = await this.repositories.attempts.get(attemptId)
+        if (attempt) return attempt
+      }
+      if (terminalRunStatuses.has(run.status)) {
+        throw new RuntimeServiceError('ATTEMPT_NOT_FOUND', `retry run ${runId} ended before an attempt was created`)
+      }
+      await new Promise(resolve => setTimeout(resolve, 20))
+    }
+    throw new RuntimeServiceError('PROCESS_CONTROL_FAILED', `run ${runId} did not create an attempt within the recovery window`)
   }
 
   private async waitForExistingRun(receipt: RuntimeCommandReceipt): Promise<WorkflowRun> {
@@ -166,6 +569,7 @@ export class ThreadOSRuntimeService {
     request: StartRunRequest,
     context: RuntimeCommandContext,
     commandId: string,
+    retryOf?: StepAttempt,
   ): Promise<CompletedRunResult> {
     let run = initialRun
     const attempts: StepAttempt[] = []
@@ -181,10 +585,27 @@ export class ThreadOSRuntimeService {
       })
       await this.deps.projections.beginRun({ run, sequence }).catch(() => undefined)
       const steps = resolveTarget(sequence, request.target)
-      if (steps.length === 0) throw new RuntimeServiceError('RUNTIME_TARGET_NOT_FOUND', 'runtime target resolved to no runnable steps')
+      if (steps.length === 0) {
+        if (!request.allow_empty) {
+          const message = request.target.kind === 'step'
+            ? `step ${request.target.step_id} was not found`
+            : 'runtime target resolved to no runnable steps'
+          throw new RuntimeServiceError('RUNTIME_TARGET_NOT_FOUND', message)
+        }
+        run = await transitionRun(this.repositories.runs, run, 'running', { started_at: this.deps.now() })
+        run = await transitionRun(this.repositories.runs, run, 'successful', {
+          ended_at: this.deps.now(), summary: '0 attempt(s)', error_code: null, error_message: null,
+        })
+        await this.deps.projections.finalizeRun({ run, attempts }).catch(() => undefined)
+        await this.repositories.commands.complete(commandId, { status: 'completed', resultRef: run.id }, this.deps.now())
+        return { run, attempts, replayed: false }
+      }
       const batchPolicy = this.deps.enforceBatchPolicy({ policy, stepCount: steps.length, confirmed: context.policyConfirmed, basePath: this.basePath })
       if (!batchPolicy.allowed || (batchPolicy.confirmation_required && !context.policyConfirmed)) {
-        throw new RuntimeServiceError('RUNTIME_TARGET_NOT_FOUND', batchPolicy.reason ?? 'Batch policy denied')
+        throw new RuntimeServiceError(
+          batchPolicy.confirmation_required ? 'POLICY_CONFIRMATION_REQUIRED' : 'POLICY_DENIED',
+          batchPolicy.reason ?? 'Batch policy denied',
+        )
       }
 
       const executor = new AttemptExecutor(this.basePath, this.repositories, this.deps)
@@ -195,7 +616,9 @@ export class ThreadOSRuntimeService {
         const attempt: StepAttempt = {
           schema_version: 2, id: attemptId, revision: 0, workflow_run_id: run.id,
           sequence_id: run.sequence_id, step_id: step.id, surface_id: surfaceId(step), execution_index: executionIndex,
-          attempt_number: 1, retry_of_attempt_id: null, status: 'pending', agent_ref: step.assigned_agent_id ?? null,
+          attempt_number: retryOf?.step_id === step.id ? retryOf.attempt_number + 1 : 1,
+          retry_of_attempt_id: retryOf?.step_id === step.id ? retryOf.id : null,
+          status: 'pending', agent_ref: step.assigned_agent_id ?? null,
           model: step.model, side_effect_class: step.side_effect_class ?? 'execute', baseline_snapshot_id: null,
           workspace_id: null, process_id: null, compiled_prompt_hash: 'pending', input_manifest_ref: null,
           output_manifest_ref: null, artifact_manifest_ref: null, change_set_id: null, gate_decision_refs: [],

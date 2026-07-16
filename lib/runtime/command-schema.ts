@@ -17,6 +17,7 @@ const StartRunCommandSchema = z.object({
   target: WorkflowRunTargetSchema,
   strategy: WorkflowRunStrategySchema,
   max_concurrency: z.number().int().positive(),
+  allow_empty: z.boolean().optional().default(false),
 })
 
 const CancelRunCommandSchema = z.object({

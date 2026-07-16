@@ -108,6 +108,24 @@ export class CommandRepository {
     return completed
   }
 
+  async bindResult(commandId: string, resultRef: string, expectedResultRef: string | null = null): Promise<RuntimeCommandReceipt> {
+    assertSafePathSegment(commandId, 'command id')
+    const path = await lookupCommandRecordPath(this.basePath, commandId)
+    if (!path) throw new RuntimeRepositoryError('RUNTIME_COMMAND_NOT_FOUND', `command ${commandId} was not found`)
+    const bound = await withExclusiveFileLock(`${path}.lock`, async () => {
+      const current = await readReceipt(path)
+      if (current.status !== 'accepted') return current
+      if (current.result_ref !== expectedResultRef && current.result_ref !== resultRef) {
+        throw new RuntimeRepositoryError('RUNTIME_REVISION_CONFLICT', `command ${commandId} already has a different result binding`)
+      }
+      if (current.result_ref === resultRef) return current
+      const next = RuntimeCommandReceiptSchema.parse({ ...current, result_ref: resultRef })
+      await writeFileAtomic(path, `${JSON.stringify(next, null, 2)}\n`, { allowedRoot: this.basePath })
+      return next
+    }, { allowedRoot: this.basePath })
+    return bound
+  }
+
   async findByIdempotencyKey(key: string): Promise<RuntimeCommandReceipt | null> {
     return (await this.listReceipts()).find(receipt => receipt.idempotency_key === key) ?? null
   }

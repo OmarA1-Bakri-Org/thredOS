@@ -131,12 +131,24 @@ describe.serial('runtime persistence proof', () => {
     const stepSurfaceDir = join(runDir, 'surfaces', 'thread-step-a')
 
     const runRecord = JSON.parse(await readFile(join(runDir, 'run.json'), 'utf-8'))
+    const attemptId = runRecord.attempt_ids[0] as string
     expect(runRecord).toMatchObject({
       id: runId,
       sequence_id: expect.any(String),
+      status: 'successful',
+      target: { kind: 'step', step_id: 'step-a' },
+      strategy: 'sequential',
+      attempt_ids: [expect.any(String)],
+    })
+    const attemptRecord = JSON.parse(await readFile(
+      join(runDir, 'attempts', attemptId, 'attempt.json'),
+      'utf-8',
+    ))
+    expect(attemptRecord).toMatchObject({
+      workflow_run_id: runId,
       step_id: 'step-a',
       surface_id: 'thread-step-a',
-      status: 'successful',
+      status: 'completed',
       input_manifest_ref: ".threados/runs/" + runId + "/surfaces/thread-step-a/input.manifest.json",
       artifact_manifest_ref: ".threados/runs/" + runId + "/surfaces/thread-step-a/artifact.manifest.json",
     })

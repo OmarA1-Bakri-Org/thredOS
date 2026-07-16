@@ -179,6 +179,32 @@ describe('ThreadOSRuntimeService', () => {
     await expect(service.startRun({ ...request, strategy: 'race', max_concurrency: 2 }, context)).rejects.toMatchObject({ code: 'PARALLEL_RUNTIME_UNAVAILABLE' })
   })
 
+  test('status projection prefers retry lineage when timestamps and execution indexes tie', async () => {
+    const { repositories, service } = await fixture({
+      runStep: async config => ({
+        stepId: config.stepId, runId: config.runId, exitCode: 0, status: 'SUCCESS', duration: 1,
+        stdout: 'ok', stderr: '', startTime: new Date('2026-01-01T00:00:00.000Z'),
+        endTime: new Date('2026-01-01T00:00:00.001Z'),
+      }),
+    })
+    const first = await service.runAndWait(request, context)
+    const original = first.attempts[0]!
+    const retried = await service.retryAttempt(original.id, {
+      ...context, idempotencyKey: 'retry-status-key',
+    })
+    let latest = await service.inspectAttempt(retried.id)
+    for (let poll = 0; latest.attempt.status !== 'completed' && poll < 200; poll++) {
+      await new Promise(resolve => setTimeout(resolve, 10))
+      latest = await service.inspectAttempt(retried.id)
+    }
+    await repositories.attempts.update(original.id, original.revision, current => ({
+      ...current, status: 'failed', error_code: 'PROCESS_EXIT_FAILED', error_message: 'older attempt',
+    }))
+
+    const status = await service.getStatus()
+    expect(status.steps[0]).toMatchObject({ id: 'build', status: 'DONE' })
+  }, 30_000)
+
   test('canonical hashes ignore object insertion order without dropping nested fields', () => {
     expect(stableRuntimeHash({ a: { x: 1, y: 2 }, b: 3 })).toBe(stableRuntimeHash({ b: 3, a: { y: 2, x: 1 } }))
     expect(stableRuntimeHash({ a: { x: 1 } })).not.toBe(stableRuntimeHash({ a: { x: 2 } }))

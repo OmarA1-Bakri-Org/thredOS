@@ -64,6 +64,7 @@ const { POST: postRun } = await import('../../app/api/run/route')
 const { GET: getAgentCloudRegistration } = await import('../../app/api/agent-cloud/registration/route')
 const { GET: getAgentCloudPerformance } = await import('../../app/api/agent-cloud/performance/route')
 const { POST: postStop } = await import('../../app/api/stop/route')
+const { GET: getStatus } = await import('../../app/api/status/route')
 const { createSessionToken, THREDOS_SESSION_COOKIE } = await import('../../lib/auth/session')
 
 function makeRequest(url: string, init?: { method?: string; body?: unknown; token?: string }) {
@@ -83,6 +84,12 @@ function makeRequest(url: string, init?: { method?: string; body?: unknown; toke
 }
 
 describe('hosted route-local auth', () => {
+  test('status GET rejects unauthenticated access in hosted mode', async () => {
+    const response = await getStatus(makeRequest('http://localhost:3000/api/status'))
+    expect(response.status).toBe(401)
+    await expect(response.json()).resolves.toMatchObject({ code: 'UNAUTHORIZED' })
+  })
+
   test('sequence GET rejects unauthenticated access in hosted mode', async () => {
     const response = await getSequence(makeRequest('http://localhost:3000/api/sequence'))
     expect(response.status).toBe(401)

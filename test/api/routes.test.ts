@@ -5,6 +5,7 @@ import { join } from 'path'
 import YAML from 'yaml'
 import { writeMprocsMap } from '@/lib/mprocs/state'
 import { readSequence } from '@/lib/sequence/parser'
+import type { RuntimeServicePort } from '@/lib/api/runtime-request'
 
 // Set THREADOS_BASE_PATH before importing routes
 let basePath: string
@@ -14,6 +15,21 @@ async function setupTestSequence(seq: object) {
   await writeFile(join(basePath, '.threados/sequence.yaml'), YAML.stringify(seq))
   // Create prompts dir
   await mkdir(join(basePath, '.threados/prompts'), { recursive: true })
+}
+
+function controlAttempt(overrides: Record<string, unknown> = {}) {
+  return {
+    schema_version: 2, id: 'attempt-old', revision: 0, workflow_run_id: 'run-old',
+    sequence_id: 'test-seq', step_id: 'step-a', surface_id: 'thread-step-a',
+    execution_index: 1, attempt_number: 1, retry_of_attempt_id: null, status: 'running',
+    agent_ref: null, model: 'claude-code', side_effect_class: 'none', baseline_snapshot_id: null,
+    workspace_id: null, process_id: 'process-old', compiled_prompt_hash: 'sha256:prompt',
+    input_manifest_ref: null, output_manifest_ref: null, artifact_manifest_ref: null,
+    change_set_id: null, gate_decision_refs: [], created_at: '2026-07-16T00:00:00.000Z',
+    started_at: '2026-07-16T00:00:00.000Z', ended_at: null, last_heartbeat_at: null,
+    exit_code: null, signal: null, duration_ms: null, error_code: null, error_message: null,
+    ...overrides,
+  }
 }
 
 const baseSequence = {
@@ -40,6 +56,7 @@ describe.serial('API Routes', () => {
 
   afterEach(async () => {
     mock.restore()
+    delete globalThis.__THREADOS_RUNTIME_SERVICE__
     delete process.env.THREADOS_BASE_PATH
     await rm(basePath, { recursive: true, force: true })
   })
@@ -359,14 +376,10 @@ describe.serial('API Routes', () => {
   })
 
   test('POST /api/stop valid step works when process control succeeds', async () => {
-    mock.module('@/lib/mprocs/client', () => ({
-      MprocsClient: class {
-        async stopProcess() {
-          return { success: true, exitCode: 0 }
-        }
-      },
-    }))
-    await writeMprocsMap(basePath, { 'step-a': 0 })
+    globalThis.__THREADOS_RUNTIME_SERVICE__ = {
+      findLatestAttempt: async () => controlAttempt(),
+      cancelAttempt: async () => controlAttempt({ status: 'cancelled', ended_at: '2026-07-16T00:00:01.000Z' }),
+    } as unknown as RuntimeServicePort
 
     const { POST } = await import('@/app/api/stop/route')
     const req = new Request('http://localhost/api/stop', {
@@ -379,14 +392,13 @@ describe.serial('API Routes', () => {
   })
 
   test('POST /api/restart valid step works when process control succeeds', async () => {
-    mock.module('@/lib/mprocs/client', () => ({
-      MprocsClient: class {
-        async restartProcess() {
-          return { success: true, exitCode: 0 }
-        }
-      },
-    }))
-    await writeMprocsMap(basePath, { 'step-a': 0 })
+    globalThis.__THREADOS_RUNTIME_SERVICE__ = {
+      findLatestAttempt: async () => controlAttempt({ status: 'failed', ended_at: '2026-07-16T00:00:01.000Z' }),
+      retryAttempt: async () => controlAttempt({
+        id: 'attempt-retry', workflow_run_id: 'run-retry', status: 'pending', process_id: null,
+        attempt_number: 2, retry_of_attempt_id: 'attempt-old', started_at: null,
+      }),
+    } as unknown as RuntimeServicePort
 
     const { POST } = await import('@/app/api/restart/route')
     const req = new Request('http://localhost/api/restart', {

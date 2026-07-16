@@ -17,6 +17,7 @@ import { readSequence } from '../sequence/parser'
 import { readRuntimeEventLog } from '../thread-surfaces/runtime-event-log'
 import { appendTraceEvent } from '../traces/writer'
 import { readThreadSurfaceState } from '../thread-surfaces/repository'
+import { reconcileState } from '../reconciliation/reconciler'
 import { allowShellModel } from '../hosted'
 import { AttemptRepository } from './attempt-repository'
 import { CommandRepository } from './command-repository'
@@ -111,6 +112,19 @@ function defaults(basePath: string): RuntimeServiceDependencies {
       })
     },
     appendTrace: appendTraceEvent,
+    // Compatibility-only projection repair. Canonical V2 run/attempt/process truth is never
+    // inferred from mprocs; PR-07 supplies canonical process reconciliation.
+    reconcile: async path => {
+      const result = await reconcileState(path)
+      return {
+        checked: result.checked,
+        changes: result.changes.map(change => ({
+          entityType: 'legacy-step' as const, entityId: change.stepId,
+          from: change.from, to: change.to, reason: change.reason,
+        })),
+        errors: result.errors,
+      }
+    },
     projections: createRuntimeProjections(basePath),
   }
 }

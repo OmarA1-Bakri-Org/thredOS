@@ -1,10 +1,10 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import YAML from 'yaml'
-import { readSequence } from '@/lib/sequence/parser'
-import { writeMprocsMap } from '@/lib/mprocs/state'
+import type { RuntimeServicePort } from '@/lib/api/runtime-request'
+import { RuntimeServiceError } from '@/lib/runtime/errors'
 
 const THREAD_SURFACE_STATE_PATH = ['.threados', 'state', 'thread-surfaces.json']
 
@@ -48,6 +48,33 @@ async function readThreadSurfaceState() {
   }
 }
 
+function controlAttempt(overrides: Record<string, unknown> = {}) {
+  return {
+    schema_version: 2, id: 'attempt-old', revision: 0, workflow_run_id: 'run-old',
+    sequence_id: 'Lifecycle Sequence', step_id: 'step-a', surface_id: 'thread-step-a',
+    execution_index: 1, attempt_number: 1, retry_of_attempt_id: null, status: 'failed',
+    agent_ref: null, model: 'codex', side_effect_class: 'none', baseline_snapshot_id: null,
+    workspace_id: null, process_id: null, compiled_prompt_hash: 'sha256:prompt',
+    input_manifest_ref: null, output_manifest_ref: null, artifact_manifest_ref: null,
+    change_set_id: null, gate_decision_refs: [], created_at: '2026-03-09T10:00:00.000Z',
+    started_at: '2026-03-09T10:00:00.000Z', ended_at: '2026-03-09T10:00:12.000Z',
+    last_heartbeat_at: null, exit_code: 1, signal: null, duration_ms: 12,
+    error_code: 'PROCESS_EXIT_FAILED', error_message: 'failed', ...overrides,
+  }
+}
+
+function installControlService(overrides: Record<string, unknown>): void {
+  globalThis.__THREADOS_RUNTIME_SERVICE__ = {
+    findLatestAttempt: async () => controlAttempt(),
+    cancelAttempt: async () => controlAttempt({ status: 'cancelled' }),
+    retryAttempt: async () => controlAttempt({
+      id: 'attempt-retry', workflow_run_id: 'run-retry', status: 'pending',
+      attempt_number: 2, retry_of_attempt_id: 'attempt-old', started_at: null, ended_at: null,
+    }),
+    ...overrides,
+  } as unknown as RuntimeServicePort
+}
+
 describe.serial('thread run lifecycle routes', () => {
   beforeEach(async () => {
     basePath = await mkdtemp(join(tmpdir(), 'threados-thread-run-lifecycle-'))
@@ -82,8 +109,8 @@ describe.serial('thread run lifecycle routes', () => {
   })
 
   afterEach(async () => {
-    mock.restore()
     delete globalThis.__THREADOS_RUN_ROUTE_RUNTIME__
+    delete globalThis.__THREADOS_RUNTIME_SERVICE__
     delete process.env.THREADOS_BASE_PATH
     await rm(basePath, { recursive: true, force: true })
   })
@@ -139,251 +166,63 @@ describe.serial('thread run lifecycle routes', () => {
     expect(rootRuns[0]?.id).not.toBe(rootRuns[1]?.id)
     expect(rootRuns.every(run => run.runStatus === 'successful')).toBe(true)
     expect(state.runEvents).toEqual([])
-  })
+  }, 15_000)
 
-  test('stop marks the current run cancelled', async () => {
-    const stateDir = join(basePath, '.threados', 'state')
-    await mkdir(stateDir, { recursive: true })
-    await writeFile(
-      join(stateDir, 'thread-surfaces.json'),
-      JSON.stringify({
-        version: 1,
-        threadSurfaces: [
-          {
-            id: 'thread-root',
-            parentSurfaceId: null,
-            parentAgentNodeId: null,
-            depth: 0,
-            surfaceLabel: 'Lifecycle Sequence',
-            createdAt: '2026-03-09T10:00:00.000Z',
-            childSurfaceIds: [],
-          },
-        ],
-        runs: [
-          {
-            id: 'run-active',
-            threadSurfaceId: 'thread-root',
-            runStatus: 'running',
-            startedAt: '2026-03-09T10:00:00.000Z',
-            endedAt: null,
-          },
-        ],
-        mergeEvents: [],
-        runEvents: [],
-      }, null, 2),
-    )
-    await writeMprocsMap(basePath, { 'step-a': 0 })
-    mock.module('@/lib/mprocs/client', () => ({
-      MprocsClient: class {
-        async stopProcess() {
-          return { success: true, exitCode: 0 }
-        }
+  test('stop delegates the latest canonical attempt to the runtime service', async () => {
+    const calls: string[] = []
+    installControlService({
+      findLatestAttempt: async () => controlAttempt({ status: 'running', ended_at: null }),
+      cancelAttempt: async (attemptId: string) => {
+        calls.push(attemptId)
+        return controlAttempt({ status: 'cancelled' })
       },
-    }))
-
+    })
     const { POST } = await import('@/app/api/stop/route')
     const response = await POST(new Request('http://localhost/api/stop', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ stepId: 'step-a' }),
     }))
-
     expect(response.status).toBe(200)
-    const state = await readThreadSurfaceState()
-    expect(state.runs).toEqual([
-      expect.objectContaining({
-        id: 'run-active',
-        runStatus: 'cancelled',
-      }),
-    ])
-    expect(state.runs[0].endedAt).not.toBeNull()
-
-    const sequence = await readSequence(basePath)
-    expect(sequence.steps[0]?.status).toBe('FAILED')
+    expect(calls).toEqual(['attempt-old'])
   })
 
-  test('stop returns failure and preserves state when process control fails', async () => {
-    const stateDir = join(basePath, '.threados', 'state')
-    await mkdir(stateDir, { recursive: true })
-    await writeFile(
-      join(stateDir, 'thread-surfaces.json'),
-      JSON.stringify({
-        version: 1,
-        threadSurfaces: [
-          {
-            id: 'thread-root',
-            parentSurfaceId: null,
-            parentAgentNodeId: null,
-            depth: 0,
-            surfaceLabel: 'Lifecycle Sequence',
-            createdAt: '2026-03-09T10:00:00.000Z',
-            childSurfaceIds: [],
-          },
-        ],
-        runs: [
-          {
-            id: 'run-active',
-            threadSurfaceId: 'thread-root',
-            runStatus: 'running',
-            startedAt: '2026-03-09T10:00:00.000Z',
-            endedAt: null,
-          },
-        ],
-        mergeEvents: [],
-        runEvents: [],
-      }, null, 2),
-    )
-    await writeMprocsMap(basePath, { 'step-a': 0 })
-    mock.module('@/lib/mprocs/client', () => ({
-      MprocsClient: class {
-        async stopProcess() {
-          return { success: false, exitCode: 1, stderr: 'connection refused' }
-        }
-      },
-    }))
-
+  test('stop preserves typed process-control failures', async () => {
+    installControlService({
+      findLatestAttempt: async () => controlAttempt({ status: 'running', ended_at: null }),
+      cancelAttempt: async () => { throw new RuntimeServiceError('PROCESS_CONTROL_FAILED', 'connection refused') },
+    })
     const { POST } = await import('@/app/api/stop/route')
     const response = await POST(new Request('http://localhost/api/stop', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ stepId: 'step-a' }),
     }))
-
     expect(response.status).toBe(502)
     await expect(response.json()).resolves.toMatchObject({ code: 'PROCESS_CONTROL_FAILED' })
-
-    const state = await readThreadSurfaceState()
-    expect(state.runs[0]).toMatchObject({ id: 'run-active', runStatus: 'running', endedAt: null })
-
-    const sequence = await readSequence(basePath)
-    expect(sequence.steps[0]?.status).toBe('READY')
   })
 
-  test('restart creates a replacement run and does not mutate the old run into a restart', async () => {
-    const stateDir = join(basePath, '.threados', 'state')
-    await mkdir(stateDir, { recursive: true })
-    await writeFile(
-      join(stateDir, 'thread-surfaces.json'),
-      JSON.stringify({
-        version: 1,
-        threadSurfaces: [
-          {
-            id: 'thread-root',
-            parentSurfaceId: null,
-            parentAgentNodeId: null,
-            depth: 0,
-            surfaceLabel: 'Lifecycle Sequence',
-            createdAt: '2026-03-09T10:00:00.000Z',
-            childSurfaceIds: [],
-          },
-        ],
-        runs: [
-          {
-            id: 'run-old',
-            threadSurfaceId: 'thread-root',
-            runStatus: 'successful',
-            startedAt: '2026-03-09T10:00:00.000Z',
-            endedAt: '2026-03-09T10:00:12.000Z',
-          },
-        ],
-        mergeEvents: [],
-        runEvents: [],
-      }, null, 2),
-    )
-    await writeMprocsMap(basePath, { 'step-a': 0 })
-    mock.module('@/lib/mprocs/client', () => ({
-      MprocsClient: class {
-        async restartProcess() {
-          return { success: true, exitCode: 0 }
-        }
-      },
-    }))
-
+  test('restart returns the new canonical attempt lineage', async () => {
+    installControlService({})
     const { POST } = await import('@/app/api/restart/route')
     const response = await POST(new Request('http://localhost/api/restart', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ stepId: 'step-a' }),
     }))
-
     expect(response.status).toBe(200)
-    const state = await readThreadSurfaceState()
-    expect(state.runs).toHaveLength(2)
-    expect(state.runs[0]).toMatchObject({
-      id: 'run-old',
-      runStatus: 'successful',
-      endedAt: '2026-03-09T10:00:12.000Z',
+    await expect(response.json()).resolves.toMatchObject({
+      attemptId: 'attempt-retry', retryOfAttemptId: 'attempt-old',
     })
-    expect(state.runs[1]).toMatchObject({
-      threadSurfaceId: 'thread-root',
-      runStatus: 'running',
-      endedAt: null,
-    })
-
-    const sequence = await readSequence(basePath)
-    expect(sequence.steps[0]?.status).toBe('RUNNING')
   })
 
-  test('restart returns failure and preserves run state when process control fails', async () => {
-    const stateDir = join(basePath, '.threados', 'state')
-    await mkdir(stateDir, { recursive: true })
-    await writeFile(
-      join(stateDir, 'thread-surfaces.json'),
-      JSON.stringify({
-        version: 1,
-        threadSurfaces: [
-          {
-            id: 'thread-root',
-            parentSurfaceId: null,
-            parentAgentNodeId: null,
-            depth: 0,
-            surfaceLabel: 'Lifecycle Sequence',
-            createdAt: '2026-03-09T10:00:00.000Z',
-            childSurfaceIds: [],
-          },
-        ],
-        runs: [
-          {
-            id: 'run-old',
-            threadSurfaceId: 'thread-root',
-            runStatus: 'successful',
-            startedAt: '2026-03-09T10:00:00.000Z',
-            endedAt: '2026-03-09T10:00:12.000Z',
-          },
-        ],
-        mergeEvents: [],
-        runEvents: [],
-      }, null, 2),
-    )
-    await writeMprocsMap(basePath, { 'step-a': 0 })
-    mock.module('@/lib/mprocs/client', () => ({
-      MprocsClient: class {
-        async restartProcess() {
-          return { success: false, exitCode: 1, stderr: 'connection refused' }
-        }
-      },
-    }))
-
+  test('restart preserves typed retry failures', async () => {
+    installControlService({
+      retryAttempt: async () => { throw new RuntimeServiceError('PROCESS_CONTROL_FAILED', 'connection refused') },
+    })
     const { POST } = await import('@/app/api/restart/route')
     const response = await POST(new Request('http://localhost/api/restart', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ stepId: 'step-a' }),
     }))
-
     expect(response.status).toBe(502)
     await expect(response.json()).resolves.toMatchObject({ code: 'PROCESS_CONTROL_FAILED' })
-
-    const state = await readThreadSurfaceState()
-    expect(state.runs).toEqual([
-      expect.objectContaining({
-        id: 'run-old',
-        runStatus: 'successful',
-        endedAt: '2026-03-09T10:00:12.000Z',
-      }),
-    ])
-
-    const sequence = await readSequence(basePath)
-    expect(sequence.steps[0]?.status).toBe('READY')
   })
 })

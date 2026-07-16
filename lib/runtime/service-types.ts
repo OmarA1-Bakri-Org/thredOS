@@ -11,11 +11,14 @@ import type { ProcessRepository } from './process-repository'
 import type { RunRepository } from './run-repository'
 import type { RuntimeCommandContext } from './command-schema'
 import type { StepAttempt, WorkflowRun } from './schema'
+import type { ProcessRecord, StepAttemptStatus, WorkflowRunStatus } from './schema'
 export interface StartRunRequest {
   sequence_id: string
   target: import('./schema').WorkflowRunTarget
   strategy: import('./schema').WorkflowRunStrategy
   max_concurrency: number
+  /** Compatibility-only: legacy group/runnable requests historically succeed with no work. */
+  allow_empty?: boolean
 }
 export { type RuntimeCommandContext }
 
@@ -56,7 +59,72 @@ export interface RuntimeServiceDependencies {
   enforceExecutablePolicy(input: { payload: ExecutablePayload; policy: PolicyConfig; confirmed: boolean; approvals: Approval[]; targetRefs: string[]; basePath: string }): PolicyResult
   recordApproval(input: { basePath: string; runId: string; context: RuntimeCommandContext; targetRef: string; payload: ExecutablePayload; policy: PolicyConfig; policySnapshotHash: string }): Promise<void>
   appendTrace(basePath: string, runId: string, event: TraceEvent): Promise<void>
+  reconcile?(basePath: string): Promise<RuntimeReconciliationReport | void>
   projections: RuntimeProjectionPort
+}
+
+export interface RunProjection {
+  run: WorkflowRun
+  attempts: StepAttempt[]
+}
+
+export interface AttemptProjection {
+  attempt: StepAttempt
+  process: ProcessRecord | null
+}
+
+export interface LatestAttemptQuery {
+  sequenceId: string
+  stepId: string
+  statuses?: StepAttemptStatus[]
+}
+
+export interface RuntimeRunQuery {
+  sequenceId?: string
+  status?: WorkflowRunStatus
+}
+
+export interface RuntimeReconciliationReport {
+  checked: number
+  changes: Array<{ entityType: 'run' | 'attempt' | 'process' | 'legacy-step'; entityId: string; from: string; to: string; reason: string }>
+  errors: string[]
+}
+
+export interface SequenceStatusProjection {
+  name: string
+  version: string
+  thread_type?: string
+  steps: Array<{
+    id: string
+    name: string
+    type: Step['type']
+    status: Step['status']
+    model: string
+    dependsOn: string[]
+    processIndex?: number
+    processId?: string
+    groupId?: string
+    fusionCandidates?: boolean
+    fusionSynth?: boolean
+  }>
+  gates: Array<{
+    id: string
+    name: string
+    status: Sequence['gates'][number]['status']
+    dependsOn: string[]
+    description?: string
+    acceptance_conditions?: string[]
+    required_review?: boolean
+  }>
+  summary: {
+    total: number
+    ready: number
+    running: number
+    done: number
+    failed: number
+    blocked: number
+    needsReview: number
+  }
 }
 
 export interface RuntimeServiceOptions {

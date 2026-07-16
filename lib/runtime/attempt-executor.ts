@@ -194,9 +194,18 @@ export class AttemptExecutor {
       const artifactRef = `.threados/runs/${run.id}/surfaces/${surfaceId}/artifact.manifest.json`
       const completionGates = this.deps.evaluateCompletionGates({ step, result, artifactManifestPresent: true })
       await this.deps.persistGateDecisions(this.basePath, run.id, surfaceId, completionGates, run.policy_snapshot_hash)
+      for (const decision of completionGates) {
+        await this.deps.appendTrace(this.basePath, run.id, {
+          ts: decision.decided_at, run_id: run.id, surface_id: surfaceId, actor: context.actor,
+          event_type: decision.status === 'PASS' ? 'gate-evaluated' : 'gate-blocked', payload_ref: decision.id,
+          policy_ref: run.policy_snapshot_hash,
+        })
+      }
       const completionPassed = completionGates.every(decision => decision.status === 'PASS')
       const runtimeEvents = await this.deps.readRuntimeEvents(this.basePath, run.id, step.id)
-      const status = result.status === 'SUCCESS' ? (completionPassed ? 'completed' : 'needs_review') : 'failed'
+      const status = result.exitCode === 42
+        ? 'needs_review'
+        : result.status === 'SUCCESS' ? (completionPassed ? 'completed' : 'needs_review') : 'failed'
       await this.deps.appendTrace(this.basePath, run.id, {
         ts: result.endTime.toISOString(), run_id: run.id, surface_id: surfaceId, actor: context.actor,
         event_type: status === 'completed' ? 'step-completed' : 'step-failed', payload_ref: artifactRef,
