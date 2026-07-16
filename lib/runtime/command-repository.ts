@@ -82,6 +82,32 @@ export class CommandRepository {
     }
   }
 
+  async complete(
+    commandId: string,
+    outcome: { status: 'completed'; resultRef: string } | { status: 'failed'; errorCode: string; errorMessage: string },
+    completedAt = new Date().toISOString(),
+  ): Promise<RuntimeCommandReceipt> {
+    assertSafePathSegment(commandId, 'command id')
+    const path = await lookupCommandRecordPath(this.basePath, commandId)
+    if (!path) throw new RuntimeRepositoryError('RUNTIME_COMMAND_NOT_FOUND', `command ${commandId} was not found`)
+    const completed = await withExclusiveFileLock(`${path}.lock`, async () => {
+      const current = await readReceipt(path)
+      if (current.status !== 'accepted') return current
+      const next = RuntimeCommandReceiptSchema.parse({
+        ...current,
+        status: outcome.status,
+        result_ref: outcome.status === 'completed' ? outcome.resultRef : current.result_ref,
+        error_code: outcome.status === 'failed' ? outcome.errorCode : null,
+        error_message: outcome.status === 'failed' ? outcome.errorMessage : null,
+        completed_at: completedAt,
+      })
+      await writeFileAtomic(path, `${JSON.stringify(next, null, 2)}\n`, { allowedRoot: this.basePath })
+      return next
+    }, { allowedRoot: this.basePath })
+    await refreshRuntimeIndexBestEffort(this.basePath)
+    return completed
+  }
+
   async findByIdempotencyKey(key: string): Promise<RuntimeCommandReceipt | null> {
     return (await this.listReceipts()).find(receipt => receipt.idempotency_key === key) ?? null
   }

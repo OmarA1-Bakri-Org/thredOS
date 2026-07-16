@@ -1,0 +1,70 @@
+import type { Approval, GateDecision, TraceEvent } from '../contracts/schemas'
+import type { PolicyConfig, PolicyResult, ExecutablePayload } from '../policy/schema'
+import type { DispatchOptions } from '../runner/dispatch'
+import type { RunnerConfig, RunResult } from '../runner/wrapper'
+import type { Sequence, Step } from '../sequence/schema'
+import type { RuntimeDelegationEvent } from '../thread-surfaces/runtime-event-log'
+import type { AttemptRepository } from './attempt-repository'
+import type { CommandRepository } from './command-repository'
+import type { ProcessRepository } from './process-repository'
+import type { RunRepository } from './run-repository'
+import type { RuntimeCommandContext } from './command-schema'
+import type { StepAttempt, WorkflowRun } from './schema'
+export interface StartRunRequest {
+  sequence_id: string
+  target: import('./schema').WorkflowRunTarget
+  strategy: import('./schema').WorkflowRunStrategy
+  max_concurrency: number
+}
+export { type RuntimeCommandContext }
+
+export interface RuntimeRepositories {
+  runs: RunRepository
+  attempts: AttemptRepository
+  processes: ProcessRepository
+  commands: CommandRepository
+}
+
+export interface RuntimeProjectionPort {
+  beginRun(input: { run: WorkflowRun; sequence: Sequence }): Promise<void>
+  beginAttempt(input: { run: WorkflowRun; attempt: StepAttempt; step: Step }): Promise<void>
+  finalizeAttempt(input: { run: WorkflowRun; attempt: StepAttempt; step: Step; runtimeEvents: RuntimeDelegationEvent[] }): Promise<void>
+  finalizeRun(input: { run: WorkflowRun; attempts: StepAttempt[] }): Promise<void>
+}
+
+export interface RuntimeServiceDependencies {
+  now(): string
+  newId(prefix: 'run' | 'attempt' | 'process' | 'command'): string
+  loadSequence(basePath: string): Promise<Sequence>
+  loadPolicy(basePath: string): Promise<PolicyConfig>
+  validateSequence(sequence: Sequence): void
+  validatePrompt(basePath: string, stepId: string): Promise<boolean>
+  compilePrompt(input: { basePath: string; sequence: Sequence; step: Step; runId: string }): Promise<string>
+  prepareArtifacts?(input: { basePath: string; runId: string; surfaceId: string; step: Step; compiledPrompt: string; createdAt: string }): Promise<void>
+  dispatch(model: Step['model'], options: DispatchOptions): Promise<RunnerConfig>
+  runStep(config: RunnerConfig): Promise<RunResult>
+  saveArtifacts(basePath: string, result: RunResult, input: { surfaceId: string; compiledPrompt: string; step: Step }): Promise<string>
+  readRuntimeEvents(basePath: string, runId: string, stepId: string): Promise<RuntimeDelegationEvent[]>
+  readApprovals(basePath: string, runId: string): Promise<Approval[]>
+  evaluatePreGates(input: { step: Step; sequence: Sequence; policy: PolicyConfig; approvalPresent: boolean }): GateDecision[]
+  evaluateCompletionGates(input: { step: Step; result: RunResult; artifactManifestPresent: boolean }): GateDecision[]
+  persistGateDecisions(basePath: string, runId: string, surfaceId: string, decisions: GateDecision[], policyRef: string): Promise<void>
+  enforceBatchPolicy(input: { policy: PolicyConfig; stepCount: number; confirmed: boolean; basePath: string }): PolicyResult
+  enforceExecutablePolicy(input: { payload: ExecutablePayload; policy: PolicyConfig; confirmed: boolean; approvals: Approval[]; targetRefs: string[]; basePath: string }): PolicyResult
+  recordApproval(input: { basePath: string; runId: string; context: RuntimeCommandContext; targetRef: string; payload: ExecutablePayload; policy: PolicyConfig }): Promise<void>
+  appendTrace(basePath: string, runId: string, event: TraceEvent): Promise<void>
+  projections: RuntimeProjectionPort
+}
+
+export interface RuntimeServiceOptions {
+  basePath: string
+  scheduler: import('./scheduler').SequentialScheduler
+  repositories: RuntimeRepositories
+  dependencies: RuntimeServiceDependencies
+}
+
+export interface CompletedRunResult {
+  run: WorkflowRun
+  attempts: StepAttempt[]
+  replayed: boolean
+}

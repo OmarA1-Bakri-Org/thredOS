@@ -237,6 +237,8 @@ describe('runtime commands and errors', () => {
 
   test('exports every locked runtime error code through a schema', () => {
     expect(Object.values(RuntimeErrorCode)).toEqual([
+      'INVALID_RUNTIME_TRANSITION',
+      'PARALLEL_RUNTIME_UNAVAILABLE',
       'IDEMPOTENCY_CONFLICT',
       'RUN_NOT_FOUND',
       'ATTEMPT_NOT_FOUND',

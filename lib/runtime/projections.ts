@@ -1,0 +1,119 @@
+import { ThreadSurfaceStateConflictError } from '../errors'
+import { ROOT_THREAD_SURFACE_ID } from '../thread-surfaces/constants'
+import { completeRun, createReplacementRun, createRootThreadSurfaceRun } from '../thread-surfaces/mutations'
+import { provisionAllChildSequences, type PendingChildSequence } from '../thread-surfaces/provision-child-sequence'
+import {
+  readThreadSurfaceState, withThreadSurfaceStateRevision, writeThreadSurfaceState, type ThreadSurfaceState,
+} from '../thread-surfaces/repository'
+import { beginStepRunIfSurfaceExists, finalizeStepRunWithRuntimeEvents, type StepRunScope } from '../thread-surfaces/step-run-runtime'
+import type { RuntimeProjectionPort } from './service-types'
+
+async function mutateProjection<T>(
+  basePath: string,
+  build: (current: ThreadSurfaceState) => { state: ThreadSurfaceState; result: T } | null,
+): Promise<T | null> {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const current = await readThreadSurfaceState(basePath)
+    const mutation = build(current)
+    if (!mutation) return null
+    try {
+      await writeThreadSurfaceState(basePath, withThreadSurfaceStateRevision(current, mutation.state))
+      return mutation.result
+    } catch (error) {
+      if (!(error instanceof ThreadSurfaceStateConflictError) || attempt === 2) throw error
+    }
+  }
+  return null
+}
+
+export function createRuntimeProjections(basePath: string): RuntimeProjectionPort {
+  return {
+    async beginRun({ run, sequence }) {
+      await mutateProjection(basePath, current => {
+        if (current.runs.some(item => item.workflowRunId === run.id || item.id === run.id)) return null
+        const executionIndex = current.runs.length + 1
+        const result = current.threadSurfaces.some(surface => surface.id === ROOT_THREAD_SURFACE_ID)
+          ? createReplacementRun(current, { threadSurfaceId: ROOT_THREAD_SURFACE_ID, runId: run.id, startedAt: run.created_at, executionIndex })
+          : createRootThreadSurfaceRun(current, {
+              surfaceId: ROOT_THREAD_SURFACE_ID, surfaceLabel: sequence.name, createdAt: run.created_at,
+              runId: run.id, startedAt: run.created_at, executionIndex,
+            })
+        return {
+          state: {
+            ...result.state,
+            threadSurfaces: result.state.threadSurfaces.map(surface => surface.id === ROOT_THREAD_SURFACE_ID
+              ? { ...surface, workflowRunId: run.id }
+              : surface),
+            runs: result.state.runs.map(item => item.id === run.id ? { ...item, workflowRunId: run.id } : item),
+          },
+          result: undefined,
+        }
+      })
+    },
+
+    async beginAttempt({ run, attempt, step }) {
+      await mutateProjection(basePath, current => {
+        if (current.runs.some(item => item.attemptId === attempt.id || item.id === attempt.id)) return null
+        const result = beginStepRunIfSurfaceExists(current, step, {
+          now: attempt.created_at, nextRunId: attempt.id, executionIndex: attempt.execution_index,
+        })
+        if (!result.stepRun) return null
+        return {
+          state: {
+            ...result.state,
+            runs: result.state.runs.map(item => item.id === attempt.id
+              ? { ...item, workflowRunId: run.id, attemptId: attempt.id }
+              : item),
+          },
+          result: undefined,
+        }
+      })
+    },
+
+    async finalizeAttempt({ run, attempt, step, runtimeEvents }) {
+      const pending = await mutateProjection<PendingChildSequence[]>(basePath, current => {
+        const projected = current.runs.find(item => item.attemptId === attempt.id || item.id === attempt.id)
+        if (!projected || projected.endedAt != null) return null
+        const stepRun: StepRunScope = {
+          runId: projected.id, startedAt: projected.startedAt,
+          executionIndex: projected.executionIndex ?? attempt.execution_index,
+          threadSurfaceId: projected.threadSurfaceId,
+        }
+        let childRun = 0
+        let event = 0
+        let merge = 0
+        const finalized = finalizeStepRunWithRuntimeEvents(current, {
+          step, stepRun, success: attempt.status === 'completed', endedAt: attempt.ended_at ?? run.ended_at ?? run.created_at,
+          runtimeEvents,
+          nextRunId: () => `${attempt.id}-child-${++childRun}`,
+          nextEventId: () => `${attempt.id}-event-${++event}`,
+          nextMergeId: () => `${attempt.id}-merge-${++merge}`,
+        })
+        return {
+          state: {
+            ...finalized.state,
+            runs: finalized.state.runs.map(item => item.id === attempt.id
+              ? { ...item, workflowRunId: run.id, attemptId: attempt.id }
+              : item),
+          },
+          result: finalized.pendingChildSequences,
+        }
+      })
+      if (pending && pending.length > 0) await provisionAllChildSequences(basePath, pending)
+    },
+
+    async finalizeRun({ run }) {
+      await mutateProjection(basePath, current => {
+        const projected = current.runs.find(item => item.workflowRunId === run.id || item.id === run.id)
+        if (!projected || projected.endedAt != null) return null
+        return {
+          state: completeRun(current, {
+            runId: projected.id, runStatus: run.status === 'successful' ? 'successful' : 'failed',
+            endedAt: run.ended_at ?? run.created_at, runSummary: run.summary ?? undefined,
+          }).state,
+          result: undefined,
+        }
+      })
+    },
+  }
+}
