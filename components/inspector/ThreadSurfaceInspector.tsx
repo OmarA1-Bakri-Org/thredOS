@@ -116,8 +116,27 @@ export function ThreadSurfaceInspector({
             <div className="mt-1.5 break-all text-xs font-medium text-white">{detail.threadSurfaceId}</div>
           </div>
           <div className="border border-slate-800/90 bg-[#08101d] px-3 py-2.5">
-            <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Run</div>
+            <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Surface run</div>
             <div className="mt-1.5 break-all text-xs font-medium text-white">{detail.runId ?? '—'}</div>
+          </div>
+          <div className="border border-slate-800/90 bg-[#08101d] px-3 py-2.5">
+            <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Workflow run</div>
+            <div className="mt-1.5 break-all text-xs font-medium text-white">{detail.workflowRunId ?? '—'}</div>
+          </div>
+          <div className="border border-slate-800/90 bg-[#08101d] px-3 py-2.5">
+            <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Attempt</div>
+            <div className="mt-1.5 break-all text-xs font-medium text-white">{detail.attemptId ?? '—'}</div>
+          </div>
+          <div className="border border-slate-800/90 bg-[#08101d] px-3 py-2.5">
+            <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Runtime truth</div>
+            <div className="mt-1.5 text-white">
+              {detail.workflowRunStatus ?? '—'} · {detail.attemptStatus ?? '—'} · {detail.processStatus ?? 'no process'}
+            </div>
+            {detail.runtimeSource ? (
+              <div className="mt-1 font-mono text-[9px] uppercase tracking-[0.14em] text-slate-500">
+                {detail.runtimeSource}
+              </div>
+            ) : null}
           </div>
           <div className="border border-slate-800/90 bg-[#08101d] px-3 py-2.5">
             <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Role</div>

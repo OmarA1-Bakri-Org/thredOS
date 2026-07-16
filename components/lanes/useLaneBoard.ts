@@ -19,6 +19,12 @@ export interface LaneBoardDisplayRow extends LaneBoardRow {
   depth: number
   childCount: number
   isCollapsed: boolean
+  workflowRunId?: string
+  attemptId?: string
+  runtimeSource?: RunScope['runtimeSource']
+  workflowRunStatus?: RunScope['workflowRunStatus']
+  attemptStatus?: RunScope['attemptStatus']
+  processStatus?: RunScope['processStatus']
 }
 
 export interface LaneBoardMergeGroup {
@@ -45,6 +51,7 @@ export function useLaneBoard(args: LaneBoardModelArgs): LaneBoardModel {
 
 export function createLaneBoardModel({ threadSurfaces, runs, mergeEvents, runIds, draftSurfaceOrder = [], expandedChildSurfaceIds }: LaneBoardModelArgs): LaneBoardModel {
   const projection = projectLaneBoard({ threadSurfaces, runs, mergeEvents, runIds })
+  const runById = new Map(runs.map(run => [run.id, run]))
   const projectionOrder = new Map(projection.rows.map((row, index) => [row.threadSurfaceId, index]))
   const draftOrder = new Map(draftSurfaceOrder.map((surfaceId, index) => [surfaceId, index]))
   const mergeEventIdBySignature = new Map(mergeEvents.map(event => [getMergeEventSignature(event), event.id]))
@@ -52,6 +59,12 @@ export function createLaneBoardModel({ threadSurfaces, runs, mergeEvents, runIds
   const sortedRows = projection.rows
     .map<LaneBoardDisplayRow>(row => ({
       ...row,
+      workflowRunId: runById.get(row.runId)?.workflowRunId,
+      attemptId: runById.get(row.runId)?.attemptId,
+      runtimeSource: runById.get(row.runId)?.runtimeSource,
+      workflowRunStatus: runById.get(row.runId)?.workflowRunStatus,
+      attemptStatus: runById.get(row.runId)?.attemptStatus,
+      processStatus: runById.get(row.runId)?.processStatus,
       isMergeSource: row.laneTerminalState === 'merged',
       parentThreadSurfaceId: null,
       depth: 0,

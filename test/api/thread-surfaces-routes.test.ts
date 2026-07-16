@@ -5,6 +5,7 @@ import { join } from 'path'
 import YAML from 'yaml'
 import { writeThreadSurfaceState } from '@/lib/thread-surfaces/repository'
 import { normalizeThreadSurface, type MergeEvent, type RunScope, type ThreadSurface } from '@/lib/thread-surfaces/types'
+import type { RuntimeServicePort } from '@/lib/api/runtime-request'
 
 let basePath: string
 
@@ -91,6 +92,7 @@ describe.serial('thread surface read routes', () => {
   })
 
   afterEach(async () => {
+    delete globalThis.__THREADOS_RUNTIME_SERVICE__
     delete process.env.THREADOS_BASE_PATH
     await rm(basePath, { recursive: true, force: true })
   })
@@ -183,6 +185,62 @@ describe.serial('thread surface read routes', () => {
     const filteredRes = await GET(new Request('http://localhost/api/thread-runs?threadSurfaceId=thread-research'))
     expect(filteredRes.status).toBe(200)
     expect((await filteredRes.json()).runs).toEqual([runs[1]])
+  })
+
+  test('GET /api/thread-runs overlays canonical workflow, attempt, and process truth', async () => {
+    await writeThreadSurfaceState(basePath, {
+      version: 1,
+      threadSurfaces,
+      runs: [{
+        ...runs[1],
+        id: 'attempt-1',
+        workflowRunId: 'workflow-run-1',
+        attemptId: 'attempt-1',
+      }],
+      mergeEvents: [],
+      runEvents: [],
+    })
+    globalThis.__THREADOS_RUNTIME_SERVICE__ = {
+      listRuns: async () => [{
+        source: 'v2',
+        schemaVersion: 2,
+        run: {
+          id: 'workflow-run-1',
+          status: 'interrupted',
+        },
+        attempts: [{ id: 'attempt-1' }],
+      }] as never,
+      inspectAttempt: async () => ({
+        source: 'v2',
+        schemaVersion: 2,
+        attempt: {
+          id: 'attempt-1',
+          workflow_run_id: 'workflow-run-1',
+          status: 'interrupted',
+        },
+        process: {
+          id: 'process-1',
+          status: 'lost',
+        },
+      }) as never,
+    } as unknown as RuntimeServicePort
+
+    const { GET } = await import('@/app/api/thread-runs/route')
+    const response = await GET(new Request('http://localhost/api/thread-runs'))
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toMatchObject({
+      runs: [{
+        id: 'attempt-1',
+        runStatus: 'failed',
+        workflowRunId: 'workflow-run-1',
+        attemptId: 'attempt-1',
+        runtimeSource: 'v2',
+        workflowRunStatus: 'interrupted',
+        attemptStatus: 'interrupted',
+        processStatus: 'lost',
+      }],
+    })
   })
 
   test('GET /api/thread-merges returns merge events and filters by runId', async () => {

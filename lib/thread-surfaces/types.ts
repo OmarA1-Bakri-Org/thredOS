@@ -11,6 +11,10 @@ export interface RuntimeLinkRefs {
   workspaceId?: string
   snapshotId?: string
   changeSetId?: string
+  runtimeSource?: 'v2' | 'legacy'
+  workflowRunStatus?: import('../runtime/schema').WorkflowRunStatus
+  attemptStatus?: import('../runtime/schema').StepAttemptStatus
+  processStatus?: import('../runtime/schema').ProcessStatus
 }
 
 export const LaneTerminalStateValues = ['completed', 'failed', 'cancelled', 'merged'] as const

@@ -15,6 +15,12 @@ export interface ThreadSurfaceFocusedDetail {
   allowedWriteScopes?: string[]
   runId: string | null
   runStatus: RunScope['runStatus'] | null
+  workflowRunId?: string | null
+  attemptId?: string | null
+  runtimeSource?: RunScope['runtimeSource'] | null
+  workflowRunStatus?: RunScope['workflowRunStatus'] | null
+  attemptStatus?: RunScope['attemptStatus'] | null
+  processStatus?: RunScope['processStatus'] | null
   executionIndex: number | null
   runSummary: string | null
   runNotes: string | null
@@ -101,6 +107,12 @@ function buildRunFields(displayRun: RunScope | null, row: LaneBoardDisplayRow | 
   return {
     runId: displayRun?.id ?? null,
     runStatus: displayRun?.runStatus ?? null,
+    workflowRunId: displayRun?.workflowRunId ?? row?.workflowRunId ?? null,
+    attemptId: displayRun?.attemptId ?? row?.attemptId ?? null,
+    runtimeSource: displayRun?.runtimeSource ?? row?.runtimeSource ?? null,
+    workflowRunStatus: displayRun?.workflowRunStatus ?? row?.workflowRunStatus ?? null,
+    attemptStatus: displayRun?.attemptStatus ?? row?.attemptStatus ?? null,
+    processStatus: displayRun?.processStatus ?? row?.processStatus ?? null,
     executionIndex: displayRun?.executionIndex ?? row?.executionIndex ?? null,
     runSummary: displayRun?.runSummary ?? null,
     runNotes: displayRun?.runNotes ?? null,

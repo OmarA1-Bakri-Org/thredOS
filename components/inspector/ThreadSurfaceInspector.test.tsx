@@ -51,6 +51,12 @@ const detail: ThreadSurfaceFocusedDetail = {
   allowedWriteScopes: ['thread-synthesis'],
   runId: 'run-synthesis',
   runStatus: 'successful',
+  workflowRunId: 'workflow-run-synthesis',
+  attemptId: 'attempt-synthesis',
+  runtimeSource: 'v2',
+  workflowRunStatus: 'successful',
+  attemptStatus: 'completed',
+  processStatus: 'exited',
   executionIndex: 20,
   runSummary: 'Synthesis merged research and outreach into a unified brief.',
   runNotes: 'Merge quality stayed high after the second pass.',
@@ -85,6 +91,15 @@ describe('ThreadSurfaceInspector', () => {
     expect(collectByTestId(panel, 'thread-surface-workflow-context')).toHaveLength(1)
     expect(collectByTestId(panel, 'workflow-step-context-panel')).toHaveLength(1)
     expect(collectByTestId(panel, 'workflow-blueprint-panel')).toHaveLength(1)
+  })
+
+  test('separates surface, workflow, attempt, and process provenance', () => {
+    const markup = renderToStaticMarkup(ThreadSurfaceInspector({ detail }))
+    expect(markup).toContain('Surface run')
+    expect(markup).toContain('workflow-run-synthesis')
+    expect(markup).toContain('attempt-synthesis')
+    expect(markup).toContain('successful · completed · exited')
+    expect(markup).toContain('v2')
   })
 
   test('renders role, runStatus, and executionIndex badges', () => {

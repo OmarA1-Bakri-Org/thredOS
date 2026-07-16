@@ -618,4 +618,32 @@ describe('createLaneBoardModel', () => {
       },
     ])
   })
+
+  test('carries canonical workflow, attempt, and process truth onto topology rows', () => {
+    const linkedRun = {
+      ...multiThreadState.runs[0],
+      workflowRunId: 'workflow-run-1',
+      attemptId: 'attempt-1',
+      runtimeSource: 'v2' as const,
+      workflowRunStatus: 'interrupted' as const,
+      attemptStatus: 'interrupted' as const,
+      processStatus: 'lost' as const,
+    }
+    const laneBoard = createLaneBoardModel({
+      threadSurfaces: multiThreadState.threadSurfaces,
+      runs: [linkedRun],
+      mergeEvents: [],
+      runIds: [linkedRun.id],
+    })
+
+    expect(laneBoard.rows[0]).toMatchObject({
+      runId: linkedRun.id,
+      workflowRunId: 'workflow-run-1',
+      attemptId: 'attempt-1',
+      runtimeSource: 'v2',
+      workflowRunStatus: 'interrupted',
+      attemptStatus: 'interrupted',
+      processStatus: 'lost',
+    })
+  })
 })
