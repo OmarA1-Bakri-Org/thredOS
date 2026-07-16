@@ -112,6 +112,38 @@ Result: 44 passed, 0 failed, 144 assertions. `bun run typecheck`, `bun run lint`
 
 Three post-correction exact full-suite attempts completed with no Task 6 failure but encountered unrelated process-test instability under concurrent workspace load: 1642/2, 1643/1, and 1643/1. The final failures were in `lib/runner/wrapper.test.ts` (`successful command`, then `custom env vars`); that complete file passed immediately in isolation with 19 passed and 0 failed. `lib/seqctl/commands/init.test.ts`, which accounted for the first attempt's two failures, likewise passed in isolation with 3 passed and 0 failed. The earlier pre-review full-suite run remains 1638 passed and 0 failed; the corrected exact full suite has not yet produced a zero-failure run.
 
+## Third-review atomic boundary correction
+
+A second independent rejection identified that a valid live lock owner could still be stolen solely because its timestamp was old, and that path validation occurred after lock metadata or temp content had already been written. The third correction keeps valid live owners authoritative regardless of age; the stale threshold applies only to malformed/no-owner lock files, while a valid dead owner remains recoverable.
+
+The correction also captures the exact parent identity before each exclusive open, then verifies the opened file identity and unchanged parent before writing the first byte. A race after the precheck can therefore create at most an empty owned entry. That exact empty entry is removed without a broad external search. After any write begins, relocated-entry cleanup is restricted to a bounded no-follow traversal inside the allowed runtime root (4,096 entries, depth 16) and matches the opened device/inode identity. Tests inspect and restore renamed `.moved` directories and require them to contain no owned lock or temp artifacts.
+
+For final replacement, the temp handle remains open across the last precheck and rename, and the destination is checked for containment and source identity after the operation. On Windows, renaming a directory containing the open source handle is rejected by the operating system (`EPERM`/`EACCES`); the test records that platform protection. On platforms that allow the relocation, the same hook exercises the post-precheck gap and cleanup locates only the matching in-root source. Portable Node filesystem APIs do not provide a cross-platform directory-handle-relative rename primitive, so an uninstrumented hostile swap in the final kernel-call interval can only be detected by the post-operation checks, not made impossible in user space.
+
+Third-cycle RED evidence:
+
+```text
+bun test lib/runtime/repositories.test.ts
+```
+
+Result: 19 passed, 2 failed. An ancient valid live-PID lock was incorrectly recovered, and the post-open boundary hook was absent so the guarded create unexpectedly resolved. After moving the deterministic Windows test to the permitted after-precheck/before-open boundary, `bun test lib/fs/atomic.test.ts lib/runtime/repositories.test.ts` failed 3 tests because those new boundary stages were not implemented.
+
+Third-cycle final validation:
+
+```text
+bun test lib/fs/atomic.test.ts \
+  lib/runtime/repositories.test.ts \
+  lib/runtime/legacy-projection.test.ts \
+  lib/thread-surfaces/repository.test.ts \
+  lib/exports/bundler.test.ts
+```
+
+Result: 50 passed, 0 failed, 154 expectations. `bun run typecheck`, `bun run lint`, and the fresh-repository exit fixture all exited 0.
+
+The first bounded post-correction exact `bun test` attempt exceeded 180 seconds and left its child process running after the shell timeout. Profiling found no atomic-path slowdown: the atomic/repository/thread-surface trio passed 39/39 in 4.71 seconds, and `bun test lib` completed 1,042 tests in 23.94 seconds with only the known `runStep > custom env vars` process-spawn flake. Process inspection found the timed-out full-suite child plus a separate orphaned repository-test process that predated this correction and had accumulated more than 3,300 CPU seconds; both confirmed test orphans were terminated.
+
+With the workspace idle, the exact full suite completed in 65.19 seconds: 1,646 passed and one unrelated `runStep > successful command` process test failed. No Task 6 test failed. A subsequent isolated wrapper-file run passed `successful command` but encountered the sibling `custom env vars` flake with Windows `ENOTCONN`; that exact failing case then passed alone. This report therefore does not claim a post-third-review full-suite green run, but the 180-second timeout was not reproduced and the Task 6 normal path remained within its prior timing envelope.
+
 ## Path drift and compatibility
 
 - The plan allowed modifications to `lib/runner/artifacts.ts`; none were needed because legacy artifact writing remains untouched and export discovery can discriminate the canonical `run.json` schema.

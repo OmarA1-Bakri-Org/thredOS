@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { mkdir, mkdtemp, readFile, readdir, rename, rm, stat, symlink, writeFile } from 'fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rename, rm, stat, symlink, unlink, utimes, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import type { ProcessRecord, RuntimeCommandReceipt, StepAttempt, WorkflowRun } from './schema'
@@ -331,13 +331,13 @@ describe('atomic runtime repositories', () => {
     expect((await new ProcessRepository(basePath).get('process-01'))?.id).toBe('process-01')
   })
 
-  test('live locks fail closed while dead and expired owners are recovered', async () => {
+  test('valid live locks never expire while dead owners and stale malformed locks recover', async () => {
     const lockPath = join(basePath, 'record.json.lock')
-    await writeFile(lockPath, JSON.stringify({ pid: process.pid, created_at_ms: Date.now(), token: 'live' }))
+    await writeFile(lockPath, JSON.stringify({ pid: process.pid, created_at_ms: 0, token: 'long-lived' }))
     await expect(withExclusiveFileLock(lockPath, async () => undefined, {
       allowedRoot: basePath,
       timeoutMs: 20,
-      staleAfterMs: 60_000,
+      staleAfterMs: 1,
     })).rejects.toMatchObject({ code: 'RUNTIME_LOCK_TIMEOUT' })
 
     await writeFile(lockPath, JSON.stringify({ pid: 2_147_483_647, created_at_ms: Date.now(), token: 'dead' }))
@@ -347,12 +347,14 @@ describe('atomic runtime repositories', () => {
       staleAfterMs: 60_000,
     })).resolves.toBe('dead-recovered')
 
-    await writeFile(lockPath, JSON.stringify({ pid: process.pid, created_at_ms: 0, token: 'expired' }))
-    await expect(withExclusiveFileLock(lockPath, async () => 'stale-recovered', {
+    await writeFile(lockPath, '{malformed')
+    const old = new Date(0)
+    await utimes(lockPath, old, old)
+    await expect(withExclusiveFileLock(lockPath, async () => 'malformed-recovered', {
       allowedRoot: basePath,
       timeoutMs: 100,
       staleAfterMs: 1,
-    })).resolves.toBe('stale-recovered')
+    })).resolves.toBe('malformed-recovered')
   })
 
   test('authoritative commit succeeds even when the derived-index lock is unavailable', async () => {
@@ -366,8 +368,10 @@ describe('atomic runtime repositories', () => {
     expect(JSON.parse(await readFile(join(basePath, '.threados/runs/run-01/run.json'), 'utf-8')).id).toBe('run-01')
   })
 
-  test('root-aware atomic boundaries reject verified-parent swaps before lock, temp, and rename', async () => {
+  test('repository lock creation revalidates the parent after its final precheck', async () => {
     const outside = await mkdtemp(join(tmpdir(), 'threados-runtime-toctou-outside-'))
+    const runDirectory = join(basePath, '.threados/runs/run-01')
+    const moved = `${runDirectory}.moved`
     const swap = async (directory: string): Promise<void> => {
       await rename(directory, `${directory}.moved`)
       await symlink(outside, directory, 'junction')
@@ -376,41 +380,18 @@ describe('atomic runtime repositories', () => {
       const repository = new RunRepository(basePath)
       let swapped = false
       setAtomicBoundaryHookForTests(async context => {
-        if (!swapped && context.stage === 'before-lock-open' && context.targetPath.endsWith('run.json.lock')) {
+        if (!swapped && context.stage === 'after-lock-precheck-before-open' && context.targetPath.endsWith('run.json.lock')) {
           swapped = true
-          await swap(join(basePath, '.threados/runs/run-01'))
+          await swap(runDirectory)
         }
       })
       await expect(repository.create(run())).rejects.toThrow()
+      expect(swapped).toBe(true)
       expect(await readdir(outside)).toEqual([])
-
-      setAtomicBoundaryHookForTests(null)
-      const secondBase = await mkdtemp(join(tmpdir(), 'threados-runtime-toctou-temp-'))
-      await new RunRepository(secondBase).create(run())
-      let tempHookCalled = false
-      setAtomicBoundaryHookForTests(async context => {
-        if (!tempHookCalled && context.stage === 'before-temp-open' && context.targetPath.endsWith('attempt.json')) {
-          tempHookCalled = true
-          await swap(join(secondBase, '.threados/runs/run-01/attempts/attempt-01'))
-        }
-      })
-      await expect(new AttemptRepository(secondBase).create(attempt('attempt-01', 1))).rejects.toThrow()
-      expect(tempHookCalled).toBe(true)
-
-      setAtomicBoundaryHookForTests(null)
-      const thirdBase = await mkdtemp(join(tmpdir(), 'threados-runtime-toctou-rename-'))
-      let renameHookCalled = false
-      setAtomicBoundaryHookForTests(async context => {
-        if (!renameHookCalled && context.stage === 'before-final-rename' && context.targetPath.endsWith('command-01.json')) {
-          renameHookCalled = true
-          await swap(join(thirdBase, '.threados/state/runtime-commands'))
-        }
-      })
-      await expect(new CommandRepository(thirdBase).createOrReplay(receipt())).rejects.toThrow()
-      expect(renameHookCalled).toBe(true)
-      expect(await readdir(outside)).toEqual([])
-      await rm(secondBase, { recursive: true, force: true })
-      await rm(thirdBase, { recursive: true, force: true })
+      expect((await readdir(moved))
+        .filter(name => name.endsWith('.lock'))).toEqual([])
+      await unlink(runDirectory)
+      await rename(moved, runDirectory)
     } finally {
       setAtomicBoundaryHookForTests(null)
       await rm(outside, { recursive: true, force: true })
