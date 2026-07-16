@@ -116,9 +116,23 @@ async function repairAcceptedReceipts(
           }, now)
           continue
         }
+        const childStart = receipts.find(candidate =>
+          candidate.idempotency_key === `retry-start:${receipt.id}`
+          && candidate.command_type === 'start-run')
         const childRun = runs.get(binding.childRunId)
-          ?? await repositories.runs.get(binding.childRunId)
-        const durableAttempt = childRun?.attempt_ids
+        if (!childRun) {
+          await repositories.commands.complete(receipt.id, {
+            status: 'failed',
+            errorCode: childStart?.status === 'failed'
+              ? childStart.error_code ?? 'PROCESS_LOST'
+              : 'PROCESS_LOST',
+            errorMessage: childStart?.status === 'failed'
+              ? childStart.error_message ?? 'Retry child start failed without durable attempt lineage'
+              : `Retry child run ${binding.childRunId} was missing or quarantined during recovery`,
+          }, now)
+          continue
+        }
+        const durableAttempt = childRun.attempt_ids
           .map(attemptId => attempts.get(attemptId))
           .find((attempt): attempt is StepAttempt =>
             attempt !== undefined
@@ -142,9 +156,6 @@ async function repairAcceptedReceipts(
           }, now)
           continue
         }
-        const childStart = receipts.find(candidate =>
-          candidate.idempotency_key === `retry-start:${receipt.id}`
-          && candidate.command_type === 'start-run')
         if (childStart?.status === 'failed') {
           await repositories.commands.complete(receipt.id, {
             status: 'failed',
@@ -155,16 +166,24 @@ async function repairAcceptedReceipts(
         }
         await repositories.commands.complete(receipt.id, {
           status: 'failed',
-          errorCode: childRun?.error_code ?? 'PROCESS_LOST',
-          errorMessage: childRun?.error_message ?? 'Retry child run has no durable attempt lineage',
+          errorCode: childRun.error_code ?? 'PROCESS_LOST',
+          errorMessage: childRun.error_message ?? 'Retry child run has no durable attempt lineage',
         }, now)
         continue
       }
 
       if (!receipt.result_ref) continue
       if (receipt.command_type === 'start-run' || receipt.command_type === 'cancel-run') {
-        const run = runs.get(receipt.result_ref) ?? await repositories.runs.get(receipt.result_ref)
-        if (!run || !TERMINAL_RUN_STATUSES.has(run.status)) continue
+        const run = runs.get(receipt.result_ref)
+        if (!run) {
+          await repositories.commands.complete(receipt.id, {
+            status: 'failed',
+            errorCode: 'PROCESS_LOST',
+            errorMessage: `Run ${receipt.result_ref} was missing or quarantined during recovery`,
+          }, now)
+          continue
+        }
+        if (!TERMINAL_RUN_STATUSES.has(run.status)) continue
         if (inconsistentRunIds.has(run.id)) {
           await repositories.commands.complete(receipt.id, {
             status: 'failed',
@@ -191,8 +210,15 @@ async function repairAcceptedReceipts(
 
       if (receipt.command_type === 'cancel-attempt') {
         const attempt = attempts.get(receipt.result_ref)
-          ?? await repositories.attempts.get(receipt.result_ref)
-        if (!attempt || !TERMINAL_ATTEMPT_STATUSES.has(attempt.status)) continue
+        if (!attempt) {
+          await repositories.commands.complete(receipt.id, {
+            status: 'failed',
+            errorCode: 'PROCESS_LOST',
+            errorMessage: `Attempt ${receipt.result_ref} was missing or quarantined during recovery`,
+          }, now)
+          continue
+        }
+        if (!TERMINAL_ATTEMPT_STATUSES.has(attempt.status)) continue
         if (attempt.status === 'cancelled') {
           await repositories.commands.complete(receipt.id, {
             status: 'completed',
@@ -232,7 +258,8 @@ export async function reconcileCanonicalRuntime(
   report.errors.push(...physical.errors)
   const attempts = new Map(physical.attempts)
   const runs = new Map(physical.runs)
-  const processes = [...physical.processes.values()]
+  const processesById = new Map(physical.processes)
+  const processes = [...processesById.values()]
   const managedAttemptIds = new Set<string>()
   const inconsistentRunIds = new Set<string>()
   const missingReservedAttemptsByRun = new Map<string, string>()
@@ -292,19 +319,13 @@ export async function reconcileCanonicalRuntime(
       }
     }
 
-    try {
-      const owner = await repositories.attempts.get(processRecord.attempt_id)
-      if (!owner) {
-        report.errors.push(`Process ${processRecord.id} references missing attempt ${processRecord.attempt_id}`)
-      } else if (owner.workflow_run_id !== processRecord.workflow_run_id) {
-        report.errors.push(
-          `Process ${processRecord.id} ownership does not match attempt ${owner.id}`,
-        )
-      } else {
-        attempts.set(owner.id, owner)
-      }
-    } catch (error) {
-      report.errors.push(`Failed to inspect owner of process ${processRecord.id}: ${message(error)}`)
+    const owner = attempts.get(processRecord.attempt_id)
+    if (!owner) {
+      report.errors.push(`Process ${processRecord.id} references missing or quarantined attempt ${processRecord.attempt_id}`)
+    } else if (owner.workflow_run_id !== processRecord.workflow_run_id) {
+      report.errors.push(
+        `Process ${processRecord.id} ownership does not match attempt ${owner.id}`,
+      )
     }
   }
 
@@ -337,13 +358,9 @@ export async function reconcileCanonicalRuntime(
       )
     }
     if (owner.process_id) {
-      try {
-        const processRecord = await repositories.processes.get(owner.process_id)
-        if (!processRecord) {
-          report.errors.push(`Attempt ${owner.id} references missing process ${owner.process_id}`)
-        }
-      } catch (error) {
-        report.errors.push(`Failed to inspect process for attempt ${owner.id}: ${message(error)}`)
+      const processRecord = processesById.get(owner.process_id)
+      if (!processRecord) {
+        report.errors.push(`Attempt ${owner.id} references missing or quarantined process ${owner.process_id}`)
       }
     }
     try {
@@ -374,19 +391,15 @@ export async function reconcileCanonicalRuntime(
 
     let missingReservedAttempt: string | null = null
     for (const attemptId of run.attempt_ids) {
-      try {
-        const referenced = attempts.get(attemptId) ?? await repositories.attempts.get(attemptId)
-        if (!referenced) {
-          missingReservedAttempt ??= attemptId
-          missingReservedAttemptsByRun.set(run.id, attemptId)
-          report.errors.push(
-            `Run ${run.id} references reserved attempt ${attemptId} whose record is missing`,
-          )
-        } else if (referenced.workflow_run_id !== run.id) {
-          report.errors.push(`Run ${run.id} references attempt ${attemptId} owned by ${referenced.workflow_run_id}`)
-        }
-      } catch (error) {
-        report.errors.push(`Failed to inspect attempt ${attemptId} referenced by run ${run.id}: ${message(error)}`)
+      const referenced = attempts.get(attemptId)
+      if (!referenced) {
+        missingReservedAttempt ??= attemptId
+        missingReservedAttemptsByRun.set(run.id, attemptId)
+        report.errors.push(
+          `Run ${run.id} references reserved attempt ${attemptId} whose record is missing`,
+        )
+      } else if (referenced.workflow_run_id !== run.id) {
+        report.errors.push(`Run ${run.id} references attempt ${attemptId} owned by ${referenced.workflow_run_id}`)
       }
     }
 

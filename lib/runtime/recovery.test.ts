@@ -592,6 +592,12 @@ describe('reconcileCanonicalRuntime', () => {
 
     await mkdir(join(runsRoot, 'malformed-run'), { recursive: true })
     await writeFile(join(runsRoot, 'malformed-run', 'run.json'), '{not-json')
+    await repos.commands.createOrReplay(receipt({
+      id: 'malformed-run-retry',
+      idempotency_key: 'malformed-run-retry-key',
+      command_type: 'retry-attempt',
+      result_ref: formatRetryBinding('original-attempt', 'malformed-run'),
+    }))
 
     const report = await reconcileCanonicalRuntime(repos.basePath, { now: () => NOW })
 
@@ -606,6 +612,11 @@ describe('reconcileCanonicalRuntime', () => {
     expect((await repos.attempts.get('attempt-1'))?.status).toBe('interrupted')
     expect((await repos.runs.get('run-1'))?.status).toBe('interrupted')
     expect(await repos.processes.get('corrupt-process')).toBeNull()
+    expect(await repos.commands.get('malformed-run-retry')).toMatchObject({
+      status: 'failed',
+      error_code: 'PROCESS_LOST',
+      completed_at: NOW,
+    })
   })
 
   test('quarantines duplicate attempt identities across valid runs', async () => {
@@ -628,6 +639,12 @@ describe('reconcileCanonicalRuntime', () => {
         process_id: null,
       })))
     }
+    await repos.commands.createOrReplay(receipt({
+      id: 'duplicate-attempt-cancel',
+      idempotency_key: 'duplicate-attempt-cancel-key',
+      command_type: 'cancel-attempt',
+      result_ref: 'duplicate-attempt',
+    }))
 
     const report = await reconcileCanonicalRuntime(repos.basePath, { now: () => NOW })
 
@@ -644,6 +661,11 @@ describe('reconcileCanonicalRuntime', () => {
       )).text()) as StepAttempt
       expect(physical.status).toBe('running')
     }
+    expect(await repos.commands.get('duplicate-attempt-cancel')).toMatchObject({
+      status: 'failed',
+      error_code: 'PROCESS_LOST',
+      completed_at: NOW,
+    })
     expect((await repos.processes.get('process-1'))?.status).toBe('lost')
   }, 30_000)
 
@@ -707,6 +729,12 @@ describe('reconcileCanonicalRuntime', () => {
       workflow_run_id: 'missing-run-record',
       attempt_id: 'orphan-attempt',
     })))
+    await repos.commands.createOrReplay(receipt({
+      id: 'missing-run-retry',
+      idempotency_key: 'missing-run-retry-key',
+      command_type: 'retry-attempt',
+      result_ref: formatRetryBinding('original-attempt', 'missing-run-record'),
+    }))
 
     const report = await reconcileCanonicalRuntime(repos.basePath, { now: () => NOW })
 
@@ -717,6 +745,11 @@ describe('reconcileCanonicalRuntime', () => {
     ]))
     const physical = JSON.parse(await Bun.file(join(directory, 'attempt.json')).text()) as StepAttempt
     expect(physical.status).toBe('running')
+    expect(await repos.commands.get('missing-run-retry')).toMatchObject({
+      status: 'failed',
+      error_code: 'PROCESS_LOST',
+      completed_at: NOW,
+    })
     expect((await repos.processes.get('process-1'))?.status).toBe('lost')
   }, 30_000)
 
