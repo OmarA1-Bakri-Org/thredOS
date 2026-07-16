@@ -5,6 +5,7 @@ import { cpSync } from 'fs'
 import { tmpdir } from 'os'
 import { dirname, join, resolve } from 'path'
 import { spawnSync } from 'child_process'
+import { findBunPath } from '../verify/runtime-helpers.mjs'
 
 const root = process.cwd()
 
@@ -18,27 +19,6 @@ function resolveNativeLinuxTmpRoot() {
     return '/tmp'
   }
   return resolvedTmp
-}
-
-function findBunPath() {
-  const explicit = process.env.BUN_BIN
-  if (explicit && existsSync(explicit)) {
-    return explicit
-  }
-
-  const home = process.env.HOME
-  const bundled = home ? join(home, '.bun', 'bin', 'bun') : null
-  if (bundled && existsSync(bundled)) {
-    return bundled
-  }
-
-  const fromPath = spawnSync('bash', ['-lc', 'command -v bun'], { encoding: 'utf8' })
-  if (fromPath.status === 0) {
-    const resolvedPath = fromPath.stdout.trim()
-    if (resolvedPath) return resolvedPath
-  }
-
-  return null
 }
 
 function run(command, args, options = {}) {
@@ -111,7 +91,7 @@ function installDependencies(tempDir) {
 }
 
 function buildInTemp(tempDir) {
-  run('node', ['./node_modules/next/dist/bin/next', 'build'], { cwd: tempDir })
+  run(process.execPath, ['./node_modules/next/dist/bin/next', 'build'], { cwd: tempDir })
 }
 
 function syncBuildOutputBack(tempDir) {
@@ -129,7 +109,7 @@ function syncBuildOutputBack(tempDir) {
 }
 
 if (!isUnsupportedMountPath(root)) {
-  run('node', ['./node_modules/next/dist/bin/next', 'build'], { cwd: root })
+  run(process.execPath, ['./node_modules/next/dist/bin/next', 'build'], { cwd: root })
   process.exit(0)
 }
 

@@ -2,6 +2,7 @@ import { writeFile } from 'fs/promises'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import { randomUUID } from 'crypto'
+import { spawn } from 'child_process'
 import { AgentNotFoundError } from '../errors'
 import type { RunnerConfig } from './wrapper'
 import type { ModelType } from '../sequence/schema'
@@ -158,10 +159,25 @@ const dispatchers: Record<string, AgentDispatcher> = {
   },
 }
 
+type ProcessLookup = (command: string, args: string[]) => Promise<number | null>
+
+const runProcessLookup: ProcessLookup = async (command, args) => await new Promise(resolve => {
+  const child = spawn(command, args, {
+    shell: false,
+    stdio: 'ignore',
+    windowsHide: true,
+  })
+  child.once('error', () => resolve(null))
+  child.once('exit', code => resolve(code))
+})
+
 /**
  * Check if an agent's CLI binary is available on PATH.
  */
-export async function checkAgentAvailable(model: ModelType): Promise<boolean> {
+export async function checkAgentAvailable(
+  model: ModelType,
+  lookup: ProcessLookup = runProcessLookup,
+): Promise<boolean> {
   const dispatcher = dispatchers[model]
   if (!dispatcher) return false
 
@@ -170,13 +186,8 @@ export async function checkAgentAvailable(model: ModelType): Promise<boolean> {
 
   try {
     const isWindows = process.platform === 'win32'
-    const checkCmd = isWindows ? 'where' : 'which'
-    const proc = Bun.spawn([checkCmd, dispatcher.binary], {
-      stdout: 'pipe',
-      stderr: 'pipe',
-    })
-    await proc.exited
-    return proc.exitCode === 0
+    const checkCmd = isWindows ? 'where.exe' : 'which'
+    return await lookup(checkCmd, [dispatcher.binary]) === 0
   } catch {
     return false
   }

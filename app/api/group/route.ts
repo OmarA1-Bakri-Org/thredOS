@@ -45,6 +45,7 @@ export async function POST(request: Request) {
       if (!step) throw new StepNotFoundError(id)
       step.group_id = groupId
       step.type = 'p'
+      step.kind = 'p'
     }
     validateDAG(seq)
     await writeSequence(bp, seq)

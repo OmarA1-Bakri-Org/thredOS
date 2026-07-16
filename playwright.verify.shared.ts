@@ -1,4 +1,5 @@
 import { defineConfig, devices, type PlaywrightTestConfig } from '@playwright/test'
+import { createPlaywrightServerSettings } from './scripts/verify/runtime-helpers.mjs'
 
 type VerifyMode = 'local' | 'ci' | 'release-live'
 
@@ -8,8 +9,6 @@ interface VerifyConfigOptions {
   webServerCommand?: string
 }
 
-const PORT = process.env.PLAYWRIGHT_PORT ?? '4301'
-const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? `http://localhost:${PORT}`
 const ARTIFACTS_DIR = process.env.PLAYWRIGHT_ARTIFACTS_DIR ?? 'test-results/verify/manual'
 const REPORT_PATH = process.env.PLAYWRIGHT_JSON_REPORT_PATH ?? `${ARTIFACTS_DIR}/playwright-report.json`
 const STORAGE_STATE_PATH = process.env.PLAYWRIGHT_STORAGE_STATE_PATH ?? `${ARTIFACTS_DIR}/auth-storage-state.json`
@@ -19,6 +18,12 @@ export function createVerifyConfig({
   testMatch,
   webServerCommand,
 }: VerifyConfigOptions): PlaywrightTestConfig {
+  const serverSettings = createPlaywrightServerSettings({ mode, env: process.env, platform: process.platform })
+  if (!serverSettings.baseURL) {
+    throw new Error(`PLAYWRIGHT_BASE_URL is required for ${mode} verification`)
+  }
+  const baseURL = serverSettings.baseURL
+
   return defineConfig({
     testDir: './test/ui',
     testMatch,
@@ -34,7 +39,7 @@ export function createVerifyConfig({
     ],
     globalSetup: './test/ui/global-verify-setup.ts',
     use: {
-      baseURL: BASE_URL,
+      baseURL,
       storageState: STORAGE_STATE_PATH,
       trace: 'retain-on-failure',
       video: 'retain-on-failure',
@@ -54,14 +59,8 @@ export function createVerifyConfig({
       webServer: {
         command: webServerCommand,
         cwd: process.cwd(),
-        env: {
-          ...process.env,
-          PATH: [`${process.env.HOME}/.bun/bin`, process.env.PATH]
-            .filter(Boolean)
-            .join(':'),
-          SystemRoot: process.env.SystemRoot ?? 'C:\\Windows',
-        },
-        url: `${BASE_URL}/app`,
+        env: serverSettings.env,
+        url: `${baseURL}/app`,
         reuseExistingServer: false,
         timeout: 240_000,
       },

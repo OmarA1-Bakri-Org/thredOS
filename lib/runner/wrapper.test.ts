@@ -10,16 +10,17 @@ async function importActualWrapper() {
 async function expectParentEnvKeyFiltered(key: string): Promise<void> {
   const { runStep } = await importActualWrapper()
   const previous = process.env[key]
-  process.env[key] = 'sentinel-placeholder'
+  const sentinel = `sentinel-${key}-${Date.now()}-${Math.random()}`
+  process.env[key] = sentinel
 
   try {
     const result = await runStep({
       stepId: `filter-${key.toLowerCase()}`,
       runId: 'run-filter',
       command: process.execPath,
-      args: ['-e', `process.stdout.write(process.env[${JSON.stringify(key)}] === undefined ? "ABSENT" : "PRESENT")`],
+      args: ['-e', `process.stdout.write(process.env[${JSON.stringify(key)}] === ${JSON.stringify(sentinel)} ? "LEAKED" : "FILTERED")`],
     })
-    expect(result.stdout).toBe('ABSENT')
+    expect(result.stdout).toBe('FILTERED')
   } finally {
     if (previous === undefined) {
       delete process.env[key]
@@ -29,7 +30,7 @@ async function expectParentEnvKeyFiltered(key: string): Promise<void> {
   }
 }
 
-describe('runStep', () => {
+describe.serial('runStep', () => {
   test('successful command', async () => {
     const { runStep } = await importActualWrapper()
     const result = await runStep({

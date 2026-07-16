@@ -18,8 +18,8 @@ describe('fusion create', () => {
   test('creates fusion with candidates and synth', async () => {
     const seq = makeSequence({
       steps: [
-        makeStep({ id: 'c1', type: 'f' }),
-        makeStep({ id: 'c2', type: 'f' }),
+        makeStep({ id: 'c1' }),
+        makeStep({ id: 'c2' }),
       ],
     })
     await writeTestSequence(tempDir, seq)
@@ -28,9 +28,12 @@ describe('fusion create', () => {
     const c1 = result.steps.find(s => s.id === 'c1')!
     expect(c1.fusion_candidates).toBe(true)
     expect(c1.type).toBe('f')
+    expect(c1.kind).toBe('f')
     const synth = result.steps.find(s => s.id === 'synth-1')!
     expect(synth).toBeDefined()
     expect(synth.fusion_synth).toBe(true)
+    expect(synth.type).toBe('f')
+    expect(synth.kind).toBe('f')
     expect(synth.depends_on).toContain('c1')
     expect(synth.depends_on).toContain('c2')
   })

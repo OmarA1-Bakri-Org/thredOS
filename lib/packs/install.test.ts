@@ -6,6 +6,7 @@ import YAML from 'yaml'
 import { readLibraryCatalog } from '../library/repository'
 import { writePrompt, validatePromptExists, readPrompt } from '../prompts/manager'
 import { readSequence, writeSequence } from '../sequence/parser'
+import type { Sequence } from '../sequence/schema'
 import { readThreadSurfaceState } from '../thread-surfaces/repository'
 // @ts-expect-error Bun query import used to isolate module cache in tests
 const { installPack } = await import('./install.ts?pack-install-suite') as { installPack: typeof import('./install').installPack }
@@ -61,7 +62,7 @@ beforeEach(async () => {
       status: 'READY',
     }],
     gates: [],
-  } as any)
+  } satisfies Sequence)
   await writePrompt(basePath, 'old-step', '# Old Step\n\nlegacy prompt\n')
 })
 
@@ -98,7 +99,9 @@ describe('installPack', () => {
     expect(sequence.steps[0].prompt_ref?.path).toBe('.threados/prompts/alpha.md')
 
     const surfaces = await readThreadSurfaceState(basePath)
-    expect(surfaces.threadSurfaces.map(surface => surface.id)).toEqual(['thread-root', 'thread-alpha', 'thread-beta'])
+    const surfaceIds = surfaces.threadSurfaces.map(surface => surface.id)
+    expect(surfaceIds).toHaveLength(3)
+    expect([...surfaceIds].sort()).toEqual(['thread-alpha', 'thread-beta', 'thread-root'])
 
     expect(await validatePromptExists(basePath, 'alpha')).toBe(true)
     expect(await validatePromptExists(basePath, 'beta')).toBe(true)

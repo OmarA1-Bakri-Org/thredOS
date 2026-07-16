@@ -165,6 +165,7 @@ function applyEditFields(step: Step, body: EditBody): NextResponse | null {
     const result = validateField(StepTypeSchema, body.type, 'step type')
     if (result instanceof NextResponse) return result
     step.type = result
+    step.kind = result
   }
 
   if (body.model) {
@@ -193,6 +194,7 @@ function applyEditFields(step: Step, body: EditBody): NextResponse | null {
 
   if (body.assignedAgentId !== undefined) {
     step.assigned_agent_id = body.assignedAgentId ?? undefined
+    step.agent_ref = body.assignedAgentId
   }
 
   return null

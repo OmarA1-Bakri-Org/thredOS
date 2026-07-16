@@ -4,6 +4,7 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import YAML from 'yaml'
 import { writeMprocsMap } from '@/lib/mprocs/state'
+import { readSequence } from '@/lib/sequence/parser'
 
 // Set THREADOS_BASE_PATH before importing routes
 let basePath: string
@@ -293,6 +294,12 @@ describe.serial('API Routes', () => {
     const res = await POST(req)
     expect(res.status).toBe(200)
     expect((await res.json()).success).toBe(true)
+    const sequence = await readSequence(basePath)
+    for (const stepId of ['p-1', 'p-2']) {
+      const step = sequence.steps.find(candidate => candidate.id === stepId)
+      expect(step?.type).toBe('p')
+      expect(step?.kind).toBe('p')
+    }
   })
 
   test('POST /api/fusion create works', async () => {
@@ -304,6 +311,12 @@ describe.serial('API Routes', () => {
     const res = await POST(req)
     expect(res.status).toBe(200)
     expect((await res.json()).success).toBe(true)
+    const sequence = await readSequence(basePath)
+    for (const stepId of ['step-a', 'step-b', 'synth-1']) {
+      const step = sequence.steps.find(candidate => candidate.id === stepId)
+      expect(step?.type).toBe('f')
+      expect(step?.kind).toBe('f')
+    }
   })
 
   test('GET /api/audit returns entries', async () => {
@@ -394,6 +407,20 @@ describe.serial('API Routes', () => {
     const res = await POST(req)
     expect(res.status).toBe(200)
     expect((await res.json()).success).toBe(true)
+  })
+
+  test('POST /api/step type edit keeps kind and type synchronized after reload', async () => {
+    const { POST } = await import('@/app/api/step/route')
+    const res = await POST(new Request('http://localhost/api/step', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'edit', stepId: 'step-a', type: 'p' }),
+    }))
+
+    expect(res.status).toBe(200)
+    const sequence = await readSequence(basePath)
+    expect(sequence.steps[0].type).toBe('p')
+    expect(sequence.steps[0].kind).toBe('p')
   })
 
   test('POST /api/gate approve nonexistent returns error', async () => {

@@ -1,14 +1,13 @@
 import { mkdir, writeFile } from 'fs/promises'
 import { dirname, join } from 'path'
-import { request as playwrightRequest } from '@playwright/test'
+import { request as playwrightRequest, type FullConfig } from '@playwright/test'
 
-const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? `http://localhost:${process.env.PLAYWRIGHT_PORT ?? '4301'}`
 const ARTIFACTS_DIR = process.env.PLAYWRIGHT_ARTIFACTS_DIR ?? 'test-results/verify/manual'
 const STORAGE_STATE_PATH = process.env.PLAYWRIGHT_STORAGE_STATE_PATH ?? join(ARTIFACTS_DIR, 'auth-storage-state.json')
 
-async function seedAuthenticatedStorageState() {
+async function seedAuthenticatedStorageState(baseURL: string) {
   const context = await playwrightRequest.newContext({
-    baseURL: BASE_URL,
+    baseURL,
   })
 
   try {
@@ -39,8 +38,8 @@ async function seedAuthenticatedStorageState() {
   }
 }
 
-async function probe(pathname: string) {
-  const url = new URL(pathname, BASE_URL).toString()
+async function probe(pathname: string, baseURL: string) {
+  const url = new URL(pathname, baseURL).toString()
   let lastStatus = 0
   let lastLocation: string | null = null
 
@@ -65,14 +64,17 @@ async function probe(pathname: string) {
   throw new Error(`Readiness probe failed for ${url} (last status: ${lastStatus}${lastLocation ? `, location: ${lastLocation}` : ''})`)
 }
 
-export default async function globalSetup() {
-  await seedAuthenticatedStorageState()
+export default async function globalSetup(config: FullConfig) {
+  const baseURL = config.projects[0]?.use.baseURL
+    ?? process.env.PLAYWRIGHT_BASE_URL
+    ?? `http://127.0.0.1:${process.env.PLAYWRIGHT_PORT ?? '4301'}`
+  await seedAuthenticatedStorageState(baseURL)
   const readiness = {
     generatedAt: new Date().toISOString(),
-    baseUrl: BASE_URL,
+    baseUrl: baseURL,
     checks: await Promise.all([
-      probe('/'),
-      probe('/app'),
+      probe('/', baseURL),
+      probe('/app', baseURL),
     ]),
   }
 

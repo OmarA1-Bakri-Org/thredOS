@@ -40,10 +40,14 @@ describe('StepSchema', () => {
     expect(result.success).toBe(false)
   })
 
-  test('rejects missing prompt_file', () => {
+  test('derives compatibility prompt_file and prompt_ref when prompt_file is missing', () => {
     const { prompt_file: _pf, ...noPF } = validStep
     const result = StepSchema.safeParse(noPF)
-    expect(result.success).toBe(false)
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect(result.data.prompt_file).toBe('.threados/prompts/my-step-1.md')
+      expect(result.data.prompt_ref.path).toBe(result.data.prompt_file)
+    }
   })
 
   test('validates enum type values', () => {

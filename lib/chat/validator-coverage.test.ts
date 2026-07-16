@@ -545,6 +545,7 @@ describe('ActionValidator.apply — additional coverage', () => {
     const seq = await readSequence(testDir)
     expect(seq.steps[0].group_id).toBe('grp-1')
     expect(seq.steps[0].type).toBe('p')
+    expect(seq.steps[0].kind).toBe('p')
     expect(seq.steps[1].group_id).toBe('grp-1')
   })
 
@@ -559,9 +560,11 @@ describe('ActionValidator.apply — additional coverage', () => {
     const seq = await readSequence(testDir)
     expect(seq.steps[0].fusion_candidates).toBe(true)
     expect(seq.steps[0].type).toBe('f')
+    expect(seq.steps[0].kind).toBe('f')
     const synthStep = seq.steps.find(s => s.id === 'synth-12')
     expect(synthStep).toBeDefined()
     expect(synthStep?.fusion_synth).toBe(true)
+    expect(synthStep?.kind).toBe('f')
   })
 
   test('apply step add with invalid step schema returns error', async () => {

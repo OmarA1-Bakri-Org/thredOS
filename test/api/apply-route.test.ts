@@ -68,18 +68,20 @@ describe.serial('apply route proof', () => {
     expect(approvals.map(entry => entry.status)).toEqual(['pending', 'approved'])
     expect(approvals[1]).toMatchObject({
       action_type: 'side_effect',
-      target_ref: 'chat-apply:1',
       requested_by: 'local@thredos',
       approved_by: 'local@thredos',
       status: 'approved',
     })
+    expect(approvals[1].target_ref).toMatch(
+      /^chat-apply:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}:1$/,
+    )
 
     const traces = await readTraceEvents(basePath, runId)
     expect(traces.map(entry => entry.event_type)).toEqual(['approval-requested', 'approval-resolved'])
     expect(traces[0]).toMatchObject({
       actor: 'api:apply',
-      surface_id: 'chat-apply:1',
     })
+    expect(traces[0].surface_id).toBe(approvals[1].target_ref)
 
     const sequence = await readSequence(basePath)
     expect(sequence.steps.some(step => step.id === 'build')).toBe(true)

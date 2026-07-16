@@ -3,6 +3,7 @@
 import { createWriteStream, existsSync, mkdirSync } from 'fs'
 import { dirname, join } from 'path'
 import { spawn } from 'child_process'
+import { defaultVerificationPort } from './runtime-helpers.mjs'
 
 const mode = process.argv[2]
 
@@ -12,7 +13,7 @@ if (!['local', 'ci'].includes(mode ?? '')) {
 }
 
 const root = process.cwd()
-const port = process.env.PLAYWRIGHT_PORT ?? (mode === 'local' ? '4301' : '4302')
+const port = process.env.PLAYWRIGHT_PORT ?? String(defaultVerificationPort(mode))
 const serverLogPath = process.env.PLAYWRIGHT_SERVER_LOG_PATH ?? join(root, 'test-results', 'verify', `${mode}-server.log`)
 const buildLogPath = process.env.PLAYWRIGHT_BUILD_LOG_PATH ?? join(root, 'test-results', 'verify', `${mode}-build.log`)
 

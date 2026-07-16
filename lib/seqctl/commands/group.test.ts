@@ -27,6 +27,7 @@ describe('group parallelize', () => {
     for (const s of result.steps) {
       expect(s.group_id).toBe(gid)
       expect(s.type).toBe('p')
+      expect(s.kind).toBe('p')
     }
   })
 })

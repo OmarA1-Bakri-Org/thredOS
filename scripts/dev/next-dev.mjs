@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 
-import { existsSync, mkdtempSync, rmSync } from 'fs'
+import { mkdtempSync, rmSync } from 'fs'
 import { cpSync } from 'fs'
 import { tmpdir } from 'os'
 import { join, resolve } from 'path'
 import { spawn, spawnSync } from 'child_process'
+import { findBunPath } from '../verify/runtime-helpers.mjs'
 
 const root = process.cwd()
 const host = process.env.THREDOS_DEV_HOST ?? '0.0.0.0'
@@ -29,23 +30,6 @@ function makeTempDir() {
     return result.stdout.trim()
   }
   return mkdtempSync(prefix)
-}
-
-function findBunPath() {
-  const explicit = process.env.BUN_BIN
-  if (explicit && existsSync(explicit)) return explicit
-
-  const home = process.env.HOME
-  const bundled = home ? join(home, '.bun', 'bin', 'bun') : null
-  if (bundled && existsSync(bundled)) return bundled
-
-  const fromPath = spawnSync('bash', ['-lc', 'command -v bun'], { encoding: 'utf8' })
-  if (fromPath.status === 0) {
-    const resolvedPath = fromPath.stdout.trim()
-    if (resolvedPath) return resolvedPath
-  }
-
-  throw new Error('Bun is required for dev:wsl but was not found on PATH or at ~/.bun/bin/bun')
 }
 
 function syncWorkspaceToTemp(tempDir) {
@@ -85,6 +69,9 @@ function syncWorkspaceToTemp(tempDir) {
 
 function installDependencies(tempDir) {
   const bunPath = findBunPath()
+  if (!bunPath) {
+    throw new Error('Bun is required for dev:wsl but was not found in the configured install or on PATH')
+  }
   const result = spawnSync(bunPath, ['install', '--frozen-lockfile'], {
     cwd: tempDir,
     stdio: 'inherit',
@@ -97,7 +84,7 @@ function installDependencies(tempDir) {
 }
 
 function spawnNextDev(cwd, cleanup) {
-  const child = spawn('node', ['./node_modules/next/dist/bin/next', 'dev', '--hostname', host, '--port', port], {
+  const child = spawn(process.execPath, ['./node_modules/next/dist/bin/next', 'dev', '--hostname', host, '--port', port], {
     cwd,
     env: process.env,
     stdio: 'inherit',

@@ -39,7 +39,7 @@ function registrationBody() {
     description: 'Canonical reviewer agent',
     builderId: 'builder-1',
     builderName: 'Builder',
-    model: 'claude-code',
+    model: 'codex',
     role: 'reviewer',
     promptRef: {
       id: 'review-prompt',

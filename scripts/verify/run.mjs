@@ -4,7 +4,13 @@ import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, write
 import { dirname, join, resolve } from 'path'
 import { spawnSync } from 'child_process'
 import { tmpdir } from 'os'
-import { createServer } from 'net'
+import {
+  findBunPath,
+  prependEnvironmentPath,
+  prependPath,
+  releasePortReservation,
+  reserveVerificationPort,
+} from './runtime-helpers.mjs'
 
 const mode = process.argv[2]
 const root = process.cwd()
@@ -183,64 +189,6 @@ function ensureBinary(description, binaryPath) {
   if (!existsSync(binaryPath)) {
     throw new Error(`${description} not found at ${binaryPath}`)
   }
-}
-
-async function claimPort(port) {
-  return await new Promise((resolve, reject) => {
-    const server = createServer()
-    server.unref()
-    server.on('error', error => {
-      if (error && error.code !== 'EADDRINUSE' && error.code !== 'EACCES') {
-        reject(error)
-        return
-      }
-      resolve(null)
-    })
-    server.listen({ host: '127.0.0.1', port }, () => {
-      const address = server.address()
-      const claimed = typeof address === 'object' && address ? address.port : null
-      resolve({ server, port: claimed })
-    })
-  })
-}
-
-async function resolvePlaywrightPort(modeName, explicitPort) {
-  if (explicitPort) return { server: null, port: explicitPort }
-
-  const preferredPort = modeName === 'local' ? 4301 : modeName === 'ci' ? 4302 : 4303
-  const preferredClaim = await claimPort(preferredPort)
-  if (preferredClaim && preferredClaim.port) {
-    return { server: preferredClaim.server, port: String(preferredClaim.port) }
-  }
-
-  const fallbackClaim = await claimPort(0)
-  if (!fallbackClaim || !fallbackClaim.port) {
-    throw new Error('Failed to allocate a verification port')
-  }
-
-  console.warn(`[verify:${modeName}] port ${preferredPort} is busy; using ephemeral port ${fallbackClaim.port} instead`)
-  return { server: fallbackClaim.server, port: String(fallbackClaim.port) }
-}
-
-function findBunPath() {
-  const explicit = process.env.BUN_BIN
-  if (explicit && existsSync(explicit)) {
-    return explicit
-  }
-
-  const home = process.env.HOME
-  const bundled = home ? join(home, '.bun', 'bin', 'bun') : null
-  if (bundled && existsSync(bundled)) {
-    return bundled
-  }
-
-  const fromPath = spawnSync('bash', ['-lc', 'command -v bun'], { encoding: 'utf8' })
-  if (fromPath.status === 0) {
-    const resolvedPath = fromPath.stdout.trim()
-    if (resolvedPath) return resolvedPath
-  }
-
-  return null
 }
 
 const REQUIRED_BROWSER_LIBS = ['libnspr4.so', 'libnss3.so', 'libnssutil3.so', 'libasound.so.2']
@@ -468,7 +416,7 @@ function writeManifest(env, artifactsDir, modeName, workspacePath, exitStatus) {
 }
 
 try {
-  const env = {
+  let env = {
     ...process.env,
   }
 
@@ -498,9 +446,9 @@ try {
   mkdirSync(artifactsDir, { recursive: true })
 
   const browserLibraries = ensureBrowserLibraries()
-  env.PATH = [dirname(bunPath), env.PATH].filter(Boolean).join(':')
+  env = prependEnvironmentPath(env, dirname(bunPath))
   if (browserLibraries.ldLibraryPath) {
-    env.LD_LIBRARY_PATH = [browserLibraries.ldLibraryPath, env.LD_LIBRARY_PATH].filter(Boolean).join(':')
+    env.LD_LIBRARY_PATH = prependPath(browserLibraries.ldLibraryPath, env.LD_LIBRARY_PATH)
   }
 
   env.PLAYWRIGHT_ARTIFACTS_DIR = artifactsDir
@@ -508,9 +456,10 @@ try {
   env.PLAYWRIGHT_RUN_MANIFEST_PATH = join(artifactsDir, 'run-manifest.json')
   env.PLAYWRIGHT_SERVER_LOG_PATH = join(artifactsDir, 'server.log')
   env.PLAYWRIGHT_BUILD_LOG_PATH = join(artifactsDir, 'build.log')
-  const portAllocation = await resolvePlaywrightPort(mode, env.PLAYWRIGHT_PORT)
-  env.PLAYWRIGHT_PORT = portAllocation.port
-  const claimedServer = portAllocation.server
+  const portAllocation = await reserveVerificationPort(mode, env.PLAYWRIGHT_PORT)
+  if (portAllocation.port != null) {
+    env.PLAYWRIGHT_PORT = String(portAllocation.port)
+  }
 
   let workspacePath = null
   if (mode === 'release-live') {
@@ -523,7 +472,7 @@ try {
     workspacePath = prepareWorkspace(artifactsDir)
     env.THREDOS_BASE_PATH = workspacePath
     env.THREADOS_BASE_PATH = workspacePath
-    env.PLAYWRIGHT_BASE_URL = `http://localhost:${env.PLAYWRIGHT_PORT}`
+    env.PLAYWRIGHT_BASE_URL = `http://127.0.0.1:${env.PLAYWRIGHT_PORT}`
   }
 
   writeFileSync(join(artifactsDir, 'metadata.json'), `${JSON.stringify({
@@ -546,6 +495,8 @@ try {
     console.log(`[verify:${mode}] workspace: ${workspacePath}`)
   }
 
+  await releasePortReservation(portAllocation.reservation)
+
   const result = spawnSync(process.execPath, [
     'node_modules/playwright/cli.js',
     'test',
@@ -558,10 +509,6 @@ try {
   })
 
   writeManifest(env, artifactsDir, mode, workspacePath, result.status ?? 1)
-
-  if (claimedServer) {
-    claimedServer.close()
-  }
 
   if (result.error) {
     throw result.error

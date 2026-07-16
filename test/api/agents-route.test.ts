@@ -167,6 +167,7 @@ describe.serial('POST /api/step assignment sync', () => {
     const sequence = await readSequence(basePath)
     const step = sequence.steps.find(item => item.id === 'step-a')
     expect(step?.assigned_agent_id).toBe('agent-a')
+    expect(step?.agent_ref).toBe('agent-a')
     expect(step?.model).toBe('claude-code')
     expect(step?.role).toBe('builder')
     expect(step?.prompt_ref).toEqual({
@@ -180,7 +181,7 @@ describe.serial('POST /api/step assignment sync', () => {
     ])
   })
 
-  test('unassigning an agent clears only assigned_agent_id and preserves the synced loadout', async () => {
+  test('unassigning an agent clears both assignment aliases and preserves the synced loadout', async () => {
     const { POST: registerAgent } = await import('@/app/api/agents/route')
     const { POST: editStep } = await import('@/app/api/step/route')
 
@@ -217,6 +218,7 @@ describe.serial('POST /api/step assignment sync', () => {
     const sequence = await readSequence(basePath)
     const step = sequence.steps.find(item => item.id === 'step-a')
     expect(step?.assigned_agent_id).toBeUndefined()
+    expect(step?.agent_ref).toBeNull()
     expect(step?.model).toBe('claude-code')
     expect(step?.role).toBe('builder')
     expect(step?.prompt_ref).toEqual({

@@ -206,6 +206,7 @@ describe.serial('stepCommand', () => {
     const content = await readFile(join(basePath, '.threados/sequence.yaml'), 'utf8')
     const seq = YAML.parse(content)
     expect(seq.steps[0].type).toBe('p')
+    expect(seq.steps[0].kind).toBe('p')
     expect(seq.steps[0].model).toBe('codex')
   })
 

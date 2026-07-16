@@ -45,6 +45,20 @@ describe('checkAgentAvailable', () => {
     const available = await checkAgentAvailable('shell')
     expect(available).toBe(true)
   })
+
+  test('uses the injected Node-compatible process lookup', async () => {
+    const checks: Array<{ command: string; args: string[] }> = []
+    const available = await checkAgentAvailable('claude-code', async (command, args) => {
+      checks.push({ command, args })
+      return 0
+    })
+
+    expect(available).toBe(true)
+    expect(checks).toEqual([{
+      command: process.platform === 'win32' ? 'where.exe' : 'which',
+      args: ['claude'],
+    }])
+  })
 })
 
 describe('dispatch', () => {

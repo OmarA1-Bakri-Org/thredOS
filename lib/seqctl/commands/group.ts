@@ -36,6 +36,7 @@ export async function groupCommand(
         }
         step.group_id = groupId
         step.type = 'p'
+        step.kind = 'p'
       }
       // If we broke early due to error
       if (result!) break
