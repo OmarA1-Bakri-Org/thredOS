@@ -18,6 +18,7 @@ import { ProcessTimeoutError } from '../errors'
 import type { Approval } from '../contracts/schemas'
 import { executableSubjectDigest } from '../policy/executable'
 import type { RawProcessResult, RunningProcessHandle } from '../runner/process-handle'
+import type { RunResult } from '../runner/wrapper'
 import { createTestCompatibilityStartProcess } from './test-compatibility'
 
 const roots: string[] = []
@@ -341,6 +342,7 @@ describe('AttemptExecutor and lifecycle', () => {
   }, 30_000)
 
   test('verified controller timeout produces a timed_out attempt and exited process evidence', async () => {
+    const saved: RunResult[] = []
     const { basePath, service } = await make({
       startProcess: async config => ({
         processId: config.processId!,
@@ -358,11 +360,20 @@ describe('AttemptExecutor and lifecycle', () => {
         }),
       }),
       runStep: async () => { throw new ProcessTimeoutError('compatibility runner used', 5) },
+      saveArtifacts: async (_basePath, result) => {
+        saved.push(result)
+        return 'artifact'
+      },
     } as Partial<RuntimeServiceDependencies> & {
       startProcess: (config: Parameters<NonNullable<RuntimeServiceDependencies['startProcess']>>[0]) => Promise<RunningProcessHandle>
     })
     const out = await service.runAndWait(cmd, context)
-    expect(out.attempts[0]?.status).toBe('timed_out')
+    expect(out.attempts[0]).toMatchObject({
+      status: 'timed_out',
+      artifact_manifest_ref: `.threados/runs/${out.run.id}/surfaces/thread-x/artifact.manifest.json`,
+    })
+    expect(saved).toHaveLength(1)
+    expect(saved[0]).toMatchObject({ status: 'TIMEOUT', exitCode: null, stderr: 'timed out' })
     expect(out.run.status).toBe('failed')
     expect((await new ProcessRepository(basePath).list())[0]).toMatchObject({
       status: 'exited',

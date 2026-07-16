@@ -66,6 +66,11 @@ function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void; reje
   return { promise, resolve, reject }
 }
 
+interface OwnedMutation<T> {
+  requestHash: string
+  promise: Promise<T>
+}
+
 export class ThreadOSRuntimeService {
   private readonly basePath: string
   private readonly scheduler: RuntimeServiceOptions['scheduler']
@@ -76,6 +81,8 @@ export class ThreadOSRuntimeService {
   private readonly inFlightAttempts = new Map<string, Promise<{ run: WorkflowRun; attempt: StepAttempt }>>()
   private readonly inFlightAttemptCancellations = new Map<string, Promise<StepAttempt>>()
   private readonly inFlightRunCancellations = new Map<string, Promise<WorkflowRun>>()
+  private readonly attemptCancellationOwners = new Map<string, OwnedMutation<StepAttempt>>()
+  private readonly runCancellationOwners = new Map<string, OwnedMutation<WorkflowRun>>()
 
   constructor(options: RuntimeServiceOptions) {
     this.basePath = options.basePath
@@ -205,6 +212,32 @@ export class ThreadOSRuntimeService {
   async cancelAttempt(attemptId: string, rawContext: RuntimeCommandContext): Promise<StepAttempt> {
     const context = RuntimeCommandContextSchema.parse(rawContext)
     CancelAttemptCommandSchema.parse({ command_type: 'cancel-attempt', context, attempt_id: attemptId })
+    const requestHash = this.mutationRequestHash('cancel-attempt', attemptId, context)
+    const owner = this.attemptCancellationOwners.get(context.idempotencyKey)
+    if (owner) {
+      if (owner.requestHash !== requestHash) {
+        throw new RuntimeServiceError(
+          'IDEMPOTENCY_CONFLICT',
+          'idempotency key was already used for a different request payload',
+        )
+      }
+      return await owner.promise
+    }
+    const cancellation = this.cancelAttemptOwned(attemptId, context)
+    this.attemptCancellationOwners.set(context.idempotencyKey, { requestHash, promise: cancellation })
+    try {
+      return await cancellation
+    } finally {
+      if (this.attemptCancellationOwners.get(context.idempotencyKey)?.promise === cancellation) {
+        this.attemptCancellationOwners.delete(context.idempotencyKey)
+      }
+    }
+  }
+
+  private async cancelAttemptOwned(
+    attemptId: string,
+    context: RuntimeCommandContext,
+  ): Promise<StepAttempt> {
     const claim = await this.claimMutation('cancel-attempt', attemptId, context)
     if (claim.replayed) return await this.replayAttemptMutation(claim.receipt)
     const cancellation = this.executeAttemptCancellation(attemptId, claim.receipt.id)
@@ -231,11 +264,24 @@ export class ThreadOSRuntimeService {
         `attempt ${attemptId} has no canonical process`,
       )
     }
-    const control = await this.processController.cancel(attempt.process_id)
-    if (!control.success) {
-      return await this.failAttemptMutation(commandId, control.code, control.message)
+    let cancelled: StepAttempt
+    try {
+      cancelled = await this.cancelAttemptForRun(attempt.id)
+    } catch (error) {
+      const normalized = error instanceof RuntimeServiceError
+        ? error
+        : new RuntimeServiceError(
+            'PROCESS_CONTROL_FAILED',
+            error instanceof Error ? error.message : String(error),
+            error,
+          )
+      const code = normalized.code === 'ATTEMPT_NOT_FOUND'
+        || normalized.code === 'ATTEMPT_NOT_RUNNING'
+        || normalized.code === 'PROCESS_CONTROL_FAILED'
+        ? normalized.code
+        : 'PROCESS_CONTROL_FAILED'
+      return await this.failAttemptMutation(commandId, code, normalized.message)
     }
-    const cancelled = await this.waitForCancelledAttempt(attempt.id)
     if (cancelled.status !== 'cancelled') {
       return await this.failAttemptMutation(
         commandId,
@@ -253,6 +299,32 @@ export class ThreadOSRuntimeService {
   async cancelRun(runId: string, rawContext: RuntimeCommandContext): Promise<WorkflowRun> {
     const context = RuntimeCommandContextSchema.parse(rawContext)
     CancelRunCommandSchema.parse({ command_type: 'cancel-run', context, workflow_run_id: runId })
+    const requestHash = this.mutationRequestHash('cancel-run', runId, context)
+    const owner = this.runCancellationOwners.get(context.idempotencyKey)
+    if (owner) {
+      if (owner.requestHash !== requestHash) {
+        throw new RuntimeServiceError(
+          'IDEMPOTENCY_CONFLICT',
+          'idempotency key was already used for a different request payload',
+        )
+      }
+      return await owner.promise
+    }
+    const cancellation = this.cancelRunOwned(runId, context)
+    this.runCancellationOwners.set(context.idempotencyKey, { requestHash, promise: cancellation })
+    try {
+      return await cancellation
+    } finally {
+      if (this.runCancellationOwners.get(context.idempotencyKey)?.promise === cancellation) {
+        this.runCancellationOwners.delete(context.idempotencyKey)
+      }
+    }
+  }
+
+  private async cancelRunOwned(
+    runId: string,
+    context: RuntimeCommandContext,
+  ): Promise<WorkflowRun> {
     const claim = await this.claimMutation('cancel-run', runId, context)
     if (claim.replayed) return await this.replayRunCancellation(claim.receipt)
     const cancellation = this.executeRunCancellation(runId, claim.receipt.id)
@@ -286,6 +358,15 @@ export class ThreadOSRuntimeService {
     if (active.length === 0) {
       if (attempts.length === 0 || attempts.every(attempt => attempt.status === 'cancelled')) {
         const cancelled = await this.completeRunCancellation(run.id)
+        await this.repositories.commands.complete(commandId, {
+          status: 'completed',
+          resultRef: cancelled.id,
+        }, this.deps.now())
+        return cancelled
+      }
+      const execution = this.inFlight.get(run.id) ?? this.scheduler.get<CompletedRunResult>(run.id)
+      if (execution) {
+        const cancelled = await this.waitForCancelledRun(run.id)
         await this.repositories.commands.complete(commandId, {
           status: 'completed',
           resultRef: cancelled.id,
@@ -410,10 +491,7 @@ export class ThreadOSRuntimeService {
     const id = this.deps.newId('command')
     const receipt: RuntimeCommandReceipt = {
       schema_version: 1, id, idempotency_key: context.idempotencyKey, command_type: commandType,
-      request_hash: stableRuntimeHash({
-        commandType, targetId, actor: context.actor, interface: context.interface,
-        policyConfirmed: context.policyConfirmed,
-      }),
+      request_hash: this.mutationRequestHash(commandType, targetId, context),
       status: 'accepted', result_ref: initialResultRef, error_code: null, error_message: null,
       created_at: this.deps.now(), completed_at: null,
     }
@@ -426,6 +504,20 @@ export class ThreadOSRuntimeService {
       }
       throw error
     }
+  }
+
+  private mutationRequestHash(
+    commandType: 'cancel-run' | 'cancel-attempt' | 'retry-attempt',
+    targetId: string,
+    context: RuntimeCommandContext,
+  ): string {
+    return stableRuntimeHash({
+      commandType,
+      targetId,
+      actor: context.actor,
+      interface: context.interface,
+      policyConfirmed: context.policyConfirmed,
+    })
   }
 
   private receiptError(receipt: RuntimeCommandReceipt): RuntimeServiceError {
@@ -709,8 +801,24 @@ export class ThreadOSRuntimeService {
       if (process.status === 'exited' || process.status === 'lost') {
         return await this.waitForCancelledAttempt(attempt.id)
       }
+      if (
+        (process.status === 'planned' || process.status === 'starting')
+        && !this.processController.hasLiveHandle(attempt.process_id)
+      ) {
+        await new Promise(resolve => setTimeout(resolve, CONTROL_POLL_INTERVAL_MS))
+        continue
+      }
       const control = await this.processController.cancel(attempt.process_id)
       if (!control.success) {
+        const latest = await this.repositories.processes.get(attempt.process_id)
+        if (
+          latest
+          && (latest.status === 'planned' || latest.status === 'starting')
+          && !this.processController.hasLiveHandle(attempt.process_id)
+        ) {
+          await new Promise(resolve => setTimeout(resolve, CONTROL_POLL_INTERVAL_MS))
+          continue
+        }
         throw new RuntimeServiceError(control.code, control.message)
       }
       return await this.waitForCancelledAttempt(attempt.id)
@@ -875,6 +983,12 @@ export class ThreadOSRuntimeService {
       )
       let executionIndex = 0
       for (const step of steps) {
+        run = await this.repositories.runs.get(run.id) ?? run
+        if (run.status === 'cancelled' || run.cancellation_requested_at) {
+          if (run.status !== 'cancelled') run = await this.completeRunCancellation(run.id)
+          break
+        }
+        if (terminalRunStatuses.has(run.status)) break
         executionIndex++
         const attemptId = this.deps.newId('attempt')
         const attempt: StepAttempt = {
@@ -912,6 +1026,10 @@ export class ThreadOSRuntimeService {
         }
         run = outcome.run
         attempts.push(outcome.attempt)
+        if (outcome.attempt.status === 'cancelled') {
+          run = await this.completeRunCancellation(run.id)
+          break
+        }
       }
 
       run = await this.repositories.runs.get(run.id) ?? run
