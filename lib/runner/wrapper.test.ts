@@ -433,6 +433,8 @@ describe.serial('startProcess', () => {
     expect(result.callbackFailed).toEqual({
       code: 'PROCESS_CALLBACK_FAILED',
       message: 'persist output failed',
+      status: 'SUCCESS',
+      exitCode: 0,
     })
     expect(result.nonzeroExit).toEqual({
       status: 'FAILED',

@@ -416,6 +416,8 @@ async function failedCallbackProof(): Promise<object> {
   return {
     code: error?.code,
     message: error?.message,
+    status: error?.result?.status,
+    exitCode: error?.result?.exitCode,
   }
 }
 

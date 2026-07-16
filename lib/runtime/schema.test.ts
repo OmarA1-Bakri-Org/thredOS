@@ -134,18 +134,47 @@ describe('canonical runtime schemas', () => {
       pid: 101,
       command: 'codex',
       redacted_args: ['exec', '[REDACTED]'],
+      environment_keys: ['PATH', 'THREADOS_ATTEMPT_ID'],
       cwd: 'C:\\workspaces\\surface-01',
       status: 'running',
       launch_requested_at: timestamp,
       started_at: timestamp,
       ended_at: null,
       last_output_at: timestamp,
+      last_heartbeat_at: timestamp,
       cancellation_requested_at: null,
       exit_code: null,
       signal: null,
     })
     expect(process.attempt_id).not.toBe(process.workflow_run_id)
+    expect(process.environment_keys).toEqual(['PATH', 'THREADOS_ATTEMPT_ID'])
     expect(ProcessStatusSchema.safeParse('successful').success).toBe(false)
+  })
+
+  test('reads process records written before environment and heartbeat evidence existed', () => {
+    const legacyProcess = ProcessRecordSchema.parse({
+      schema_version: 1,
+      id: 'process-legacy',
+      revision: 0,
+      workflow_run_id: 'run-01',
+      attempt_id: 'attempt-01',
+      provider: 'local-process',
+      provider_handle: null,
+      pid: null,
+      command: 'codex',
+      redacted_args: [],
+      cwd: 'C:\\workspaces\\surface-01',
+      status: 'planned',
+      launch_requested_at: timestamp,
+      started_at: null,
+      ended_at: null,
+      last_output_at: null,
+      cancellation_requested_at: null,
+      exit_code: null,
+      signal: null,
+    })
+    expect(legacyProcess.environment_keys).toBeUndefined()
+    expect(legacyProcess.last_heartbeat_at).toBeUndefined()
   })
 
   test('validates command receipts and rejects noncanonical status', () => {
@@ -237,13 +266,18 @@ describe('runtime commands and errors', () => {
 
   test('exports every locked runtime error code through a schema', () => {
     expect(Object.values(RuntimeErrorCode)).toEqual([
+      'VALIDATION_ERROR',
+      'POLICY_DENIED',
+      'POLICY_CONFIRMATION_REQUIRED',
       'INVALID_RUNTIME_TRANSITION',
       'PARALLEL_RUNTIME_UNAVAILABLE',
       'IDEMPOTENCY_CONFLICT',
       'RUN_NOT_FOUND',
+      'RUNTIME_TARGET_NOT_FOUND',
       'ATTEMPT_NOT_FOUND',
       'ATTEMPT_NOT_RUNNING',
       'PROCESS_CONTROL_FAILED',
+      'PROCESS_CONTROL_DISABLED',
       'PROCESS_LOST',
       'SNAPSHOT_REQUIRED',
       'SNAPSHOT_SOURCE_CHANGED',
@@ -254,6 +288,11 @@ describe('runtime commands and errors', () => {
       'WORKSPACE_QUOTA_EXCEEDED',
       'WORKSPACE_NOT_FOUND',
       'WORKSPACE_NOT_CLEANABLE',
+      'RUNTIME_REVISION_CONFLICT',
+      'MERGE_CONFLICT',
+      'MERGE_PRECONDITION_FAILED',
+      'AGENT_UNAVAILABLE',
+      'INTERNAL_ERROR',
     ])
     expect(RuntimeErrorCodeSchema.safeParse('UNKNOWN_ERROR').success).toBe(false)
   })

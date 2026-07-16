@@ -68,7 +68,10 @@ export class ProcessSpawnError extends Error {
 export class ProcessCallbackError extends Error {
   readonly code = 'PROCESS_CALLBACK_FAILED'
 
-  constructor(message: string) {
+  constructor(
+    message: string,
+    readonly result: RawProcessResult,
+  ) {
     super(message)
     this.name = 'ProcessCallbackError'
   }
@@ -431,7 +434,7 @@ export async function createRunningProcessHandle(config: ProcessLaunchConfig): P
       if (resultSettled) return
       if (callbackFailure) {
         resultSettled = true
-        rejectResult(new ProcessCallbackError(callbackFailure.message))
+        rejectResult(new ProcessCallbackError(callbackFailure.message, rawResult))
         return
       }
       resultSettled = true
