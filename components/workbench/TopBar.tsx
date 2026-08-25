@@ -141,10 +141,10 @@ export function TopBar({
 
       <div className="flex flex-wrap items-center justify-end gap-2 lg:flex-nowrap">
         <div data-workbench-cluster="navigation" className={cn('flex items-center gap-2 border px-2 py-2', themeTokens.workbench.clusterSurface)}>
-          <Button type="button" asChild variant="outline" size="sm">
-            <Link href="/">
+          <Button type="button" asChild variant="outline" size="sm" className="w-9 px-0 2xl:w-auto 2xl:px-3">
+            <Link href="/" aria-label="Home">
               <Home className="h-3.5 w-3.5" />
-              Home
+              <span className="hidden 2xl:inline">Home</span>
             </Link>
           </Button>
           {canLogout ? (
@@ -152,10 +152,12 @@ export function TopBar({
               type="button"
               variant="outline"
               size="sm"
+              className="w-9 px-0 2xl:w-auto 2xl:px-3"
+              aria-label="Sign out"
               onClick={() => { window.location.href = '/api/auth/logout' }}
             >
               <LogOut className="h-3.5 w-3.5" />
-              Sign Out
+              <span className="hidden 2xl:inline">Sign Out</span>
             </Button>
           ) : null}
         </div>

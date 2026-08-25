@@ -167,14 +167,33 @@ test.describe('run-chat-runtime', () => {
         await expect(page.getByTestId('confirm-dialog')).toBeVisible()
       })
 
-      await evidence.withinBoundary('client -> API', 'dispatch the runnable frontier through the real run route', async () => {
+      await evidence.withinBoundary('client -> API', 'dispatch the runnable frontier through the canonical async runtime route', async () => {
         const runResponse = page.waitForResponse(response =>
-          response.url().endsWith('/api/run')
+          response.url().endsWith('/api/runs')
           && response.request().method() === 'POST'
           && response.ok(),
         )
         await page.getByTestId('confirm-dialog').getByRole('button', { name: 'Run all' }).click()
-        await runResponse
+        const response = await runResponse
+        expect(response.status()).toBe(202)
+        const projection = await response.json() as {
+          source?: string
+          run?: { id?: string; status?: string }
+        }
+        expect(projection.source).toBe('v2')
+        expect(projection.run?.id).toBeTruthy()
+        expect([
+          'pending',
+          'provisioning',
+          'running',
+          'awaiting_review',
+          'applying',
+          'successful',
+          'partially_successful',
+          'failed',
+          'cancelled',
+          'interrupted',
+        ]).toContain(projection.run?.status)
       })
 
       await evidence.withinBoundary('response -> UI', 'surface the recorded control-plane state and keep chat interactive', async () => {

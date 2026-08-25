@@ -110,7 +110,7 @@ mock.module('@/lib/ui/api', () => ({
     },
     isLoading: false,
   }),
-  useRunRunnable: () => ({ mutate: () => {}, isPending: false }),
+  useStartRun: () => ({ mutate: () => {}, isPending: false, error: null }),
   useRuns: () => ({
     data: [{ ...runtimeRun, attempts: [runtimeAttempt.attempt] }],
     isLoading: false,
@@ -190,9 +190,37 @@ afterAll(() => {
   mock.restore()
 })
 
-const { RunSection } = await import('./RunSection')
+const {
+  canCancelRun,
+  isActiveRunStatus,
+  RunSection,
+  selectionForStartedRun,
+} = await import('./RunSection')
 
 describe('RunSection', () => {
+  test('selects a newly started canonical run while it is still cancellable', () => {
+    const pendingRun = {
+      ...runtimeRun,
+      run: {
+        ...runtimeRun.run,
+        status: 'pending' as const,
+        attempt_ids: [],
+        started_at: null,
+      },
+      attempts: [],
+    }
+
+    expect(selectionForStartedRun(pendingRun)).toEqual({
+      runId: 'run-1',
+      attemptId: null,
+    })
+    expect(canCancelRun(pendingRun)).toBe(true)
+  })
+
+  test('keeps awaiting-review runs active for evidence polling', () => {
+    expect(isActiveRunStatus('awaiting_review')).toBe(true)
+  })
+
   test('renders trace, approvals, export, and reveal affordances for the active run', () => {
     const markup = renderToStaticMarkup(<RunSection />)
     expect(markup).toContain('data-testid="run-control-plane"')

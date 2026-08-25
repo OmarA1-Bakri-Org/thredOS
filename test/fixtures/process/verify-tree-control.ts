@@ -48,7 +48,9 @@ async function waitForPids(path: string): Promise<Record<'root' | 'child' | 'gra
     try {
       return JSON.parse(await readFile(path, 'utf8'))
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT' && !(error instanceof SyntaxError)) {
+        throw error
+      }
       await new Promise(resolveDelay => setTimeout(resolveDelay, 20))
     }
   }
@@ -58,12 +60,17 @@ async function waitForPids(path: string): Promise<Record<'root' | 'child' | 'gra
 async function readPidsIfPresent(
   path: string,
 ): Promise<Partial<Record<'root' | 'child' | 'grandchild', number>>> {
-  try {
-    return JSON.parse(await readFile(path, 'utf8'))
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return {}
-    throw error
+  const deadline = Date.now() + 500
+  while (Date.now() < deadline) {
+    try {
+      return JSON.parse(await readFile(path, 'utf8'))
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return {}
+      if (!(error instanceof SyntaxError)) throw error
+      await new Promise(resolveDelay => setTimeout(resolveDelay, 20))
+    }
   }
+  return {}
 }
 
 async function forceKillRecordedPids(
@@ -89,6 +96,7 @@ async function cancelProof(): Promise<object> {
       command: resolveNode(),
       args: [fileURLToPath(new URL('./process-tree.mjs', import.meta.url)), 'root', pidFile],
       cancellationGraceMs: 50,
+      forceKillWaitMs: 1_000,
     })
     handlePid = handle.pid
     const pids = await waitForPids(pidFile)
@@ -121,6 +129,7 @@ async function timeoutProof(): Promise<object> {
         args: [fileURLToPath(new URL('./process-tree.mjs', import.meta.url)), 'root', pidFile],
         timeout: 1_000,
         cancellationGraceMs: 50,
+        forceKillWaitMs: 1_000,
       })
     } catch (error) {
       timedOut = error instanceof ProcessTimeoutError

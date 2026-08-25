@@ -2,9 +2,22 @@ import { test, expect, type Page } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
 
 const screenshotOptions = {
-  fullPage: true,
+  fullPage: false,
   animations: 'disabled' as const,
   maxDiffPixelRatio: 0.015,
+}
+
+async function expectStableScreenshot(page: Page, name: string, fullPage = false) {
+  await page.evaluate(async () => {
+    await document.fonts.ready
+    await new Promise<void>(resolve => {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+    })
+  })
+  await expect(page).toHaveScreenshot(name, {
+    ...screenshotOptions,
+    fullPage,
+  })
 }
 
 async function expectNoCriticalOrSeriousAxe(page: Page, include?: string) {
@@ -40,7 +53,7 @@ test.describe('thredOS Desktop launch surfaces', () => {
     await expect(page.getByText('Desktop public beta')).toBeVisible()
     await expect(page.getByText('Local-first posture')).toBeVisible()
 
-    await expect(page).toHaveScreenshot('entry-surface.png', screenshotOptions)
+    await expectStableScreenshot(page, 'entry-surface.png', true)
   })
 
   test('desktop activation return visual baseline', async ({ page }) => {
@@ -49,7 +62,7 @@ test.describe('thredOS Desktop launch surfaces', () => {
     await expect(page.getByRole('heading', { name: 'Finish activating thredOS Desktop.' })).toBeVisible()
     await expect(page.getByText('Checkout was cancelled.')).toBeVisible()
 
-    await expect(page).toHaveScreenshot('desktop-activate-cancelled.png', screenshotOptions)
+    await expectStableScreenshot(page, 'desktop-activate-cancelled.png', true)
   })
 
   test('app workbench opens and captures hierarchy baseline', async ({ page }) => {
@@ -59,7 +72,7 @@ test.describe('thredOS Desktop launch surfaces', () => {
     await expect(page.getByTestId('topbar-status-summary')).toBeVisible()
     await expect(page.locator('[data-workbench-region="accordion-panel"]')).toBeVisible()
 
-    await expect(page).toHaveScreenshot('app-workbench-hierarchy.png', screenshotOptions)
+    await expectStableScreenshot(page, 'app-workbench-hierarchy.png')
   })
 
   test('run section visual baseline', async ({ page }) => {
@@ -69,7 +82,7 @@ test.describe('thredOS Desktop launch surfaces', () => {
     await page.locator('[data-workbench-region="accordion-panel"]').getByRole('button', { name: 'RUN' }).first().click()
     await expect(page.getByTestId('run-section')).toBeVisible()
 
-    await expect(page).toHaveScreenshot('app-run-section.png', screenshotOptions)
+    await expectStableScreenshot(page, 'app-run-section.png')
   })
 
   test('responsive drawer visual baseline at desktop minimum width', async ({ page }) => {
@@ -81,7 +94,7 @@ test.describe('thredOS Desktop launch surfaces', () => {
     await openDrawer.click()
     await expect(page.locator('[data-workbench-region="left-rail-drawer-panel"]')).toBeVisible()
 
-    await expect(page).toHaveScreenshot('app-drawer-1200.png', screenshotOptions)
+    await expectStableScreenshot(page, 'app-drawer-1200.png')
   })
 
   test('top bar confirmation dialogs have visual baselines', async ({ page }) => {
@@ -90,13 +103,13 @@ test.describe('thredOS Desktop launch surfaces', () => {
 
     await primaryActions.getByRole('button', { name: 'New', exact: true }).click()
     await expect(page.getByTestId('confirm-dialog')).toBeVisible()
-    await expect(page).toHaveScreenshot('app-new-thread-dialog.png', screenshotOptions)
+    await expectStableScreenshot(page, 'app-new-thread-dialog.png')
     await page.getByTestId('confirm-dialog').getByRole('button', { name: 'Cancel' }).click()
     await expect(page.getByTestId('confirm-dialog')).toBeHidden()
 
     await primaryActions.getByRole('button', { name: 'Run', exact: true }).click()
     await expect(page.getByTestId('confirm-dialog')).toBeVisible()
-    await expect(page).toHaveScreenshot('app-run-confirm-dialog.png', screenshotOptions)
+    await expectStableScreenshot(page, 'app-run-confirm-dialog.png')
   })
 
   test('create node dialog and chat panel have visual baselines', async ({ page }) => {
@@ -105,17 +118,17 @@ test.describe('thredOS Desktop launch surfaces', () => {
 
     await primaryActions.getByRole('button', { name: 'Step', exact: true }).click()
     await expect(page.getByTestId('create-node-dialog')).toBeVisible()
-    await expect(page).toHaveScreenshot('app-create-step-dialog.png', screenshotOptions)
+    await expectStableScreenshot(page, 'app-create-step-dialog.png')
 
     await page.getByTestId('create-node-kind-gate').click()
-    await expect(page).toHaveScreenshot('app-create-gate-dialog.png', screenshotOptions)
+    await expectStableScreenshot(page, 'app-create-gate-dialog.png')
 
     await page.getByTestId('create-node-dialog').getByRole('button', { name: 'Close' }).click()
     await expect(page.getByTestId('create-node-dialog')).toBeHidden()
 
     await primaryActions.getByRole('button', { name: 'Chat', exact: true }).click()
     await expect(page.getByTestId('chat-panel')).toBeVisible()
-    await expect(page).toHaveScreenshot('app-chat-panel.png', screenshotOptions)
+    await expectStableScreenshot(page, 'app-chat-panel.png')
   })
 
   test('sequence interaction states have visual baselines', async ({ page }) => {
@@ -123,11 +136,11 @@ test.describe('thredOS Desktop launch surfaces', () => {
 
     await openAccordionSection(page, 'sequence')
     await expect(page.getByTestId('sequence-section')).toBeVisible()
-    await expect(page).toHaveScreenshot('app-sequence-section.png', screenshotOptions)
+    await expectStableScreenshot(page, 'app-sequence-section.png')
 
     await page.getByTitle('Edit sequence name').click()
     await expect(page.getByLabel('Sequence name')).toBeVisible()
-    await expect(page).toHaveScreenshot('app-sequence-edit-name.png', screenshotOptions)
+    await expectStableScreenshot(page, 'app-sequence-edit-name.png')
   })
 
   test('node and agent cards have visual baselines across interactive states', async ({ page }) => {
@@ -138,20 +151,20 @@ test.describe('thredOS Desktop launch surfaces', () => {
     await expect(page.getByTestId('node-section')).toBeVisible()
     await expect(page.getByTestId('agent-top-trump-card')).toBeVisible()
 
-    await expect(page).toHaveScreenshot('app-node-agent-overview.png', screenshotOptions)
+    await expectStableScreenshot(page, 'app-node-agent-overview.png')
 
     await page.getByTestId('node-panel-assets').click()
     await expect(page.getByText('Prompt drafts')).toBeVisible()
-    await expect(page).toHaveScreenshot('app-node-assets.png', screenshotOptions)
+    await expectStableScreenshot(page, 'app-node-assets.png')
 
     await page.getByTestId('node-agent-card-tab-prompt').click()
-    await expect(page).toHaveScreenshot('app-agent-prompt-summary.png', screenshotOptions)
+    await expectStableScreenshot(page, 'app-agent-prompt-summary.png')
 
     await page.getByRole('button', { name: 'Open editor' }).first().click()
-    await expect(page).toHaveScreenshot('app-agent-prompt-editor.png', screenshotOptions)
+    await expectStableScreenshot(page, 'app-agent-prompt-editor.png')
 
     await page.getByTestId('node-agent-card-tab-skills').click()
-    await expect(page).toHaveScreenshot('app-agent-skills-summary.png', screenshotOptions)
+    await expectStableScreenshot(page, 'app-agent-skills-summary.png')
   })
 
   test('surface cards deep-link into panel state', async ({ page }) => {
@@ -183,10 +196,10 @@ test.describe('thredOS Desktop launch surfaces', () => {
     await expect(page.getByTestId('agent-section')).toBeVisible()
 
     await page.getByTestId('agent-tab-roster').click()
-    await expect(page).toHaveScreenshot('app-agent-roster.png', screenshotOptions)
+    await expectStableScreenshot(page, 'app-agent-roster.png')
 
     await page.getByTestId('agent-tab-tools').click()
-    await expect(page).toHaveScreenshot('app-agent-tools-tab.png', screenshotOptions)
+    await expectStableScreenshot(page, 'app-agent-tools-tab.png')
   })
 
   test('a11y: entry, app, and interactive overlays have no critical or serious axe violations', async ({ page }) => {

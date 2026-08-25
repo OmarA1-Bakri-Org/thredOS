@@ -1,15 +1,50 @@
 import { describe, expect, test, afterEach } from 'bun:test'
+import { QueryClient } from '@tanstack/react-query'
 import type { MergeEvent, RunScope, ThreadSurface } from '@/lib/thread-surfaces/types'
 import {
+  cacheStartedRunProjection,
   fetchJson,
   hasActiveRuntimeRuns,
   postJson,
   RuntimeApiError,
+  runtimeEvidenceRefetchInterval,
+  startRuntimeRun,
   unwrapThreadMergesResponse,
   unwrapThreadRunsResponse,
   unwrapThreadSurfacesResponse,
 } from './api'
 import type { RunProjection } from '@/lib/runtime/service-types'
+
+function runtimeProjection(status: RunProjection['run']['status']): RunProjection {
+  return {
+    source: 'v2',
+    schemaVersion: 2,
+    run: {
+      schema_version: 2,
+      id: `run-${status}`,
+      revision: 0,
+      sequence_id: 'sequence-1',
+      sequence_snapshot_hash: 'sha256:sequence',
+      target: { kind: 'runnable' },
+      strategy: 'sequential',
+      status,
+      max_concurrency: 1,
+      policy_snapshot_hash: 'sha256:policy',
+      baseline_snapshot_id: null,
+      attempt_ids: [],
+      created_by: 'operator',
+      created_via: 'api',
+      created_at: '2026-07-16T00:00:00.000Z',
+      started_at: null,
+      ended_at: null,
+      cancellation_requested_at: null,
+      summary: null,
+      error_code: null,
+      error_message: null,
+    },
+    attempts: [],
+  }
+}
 
 describe('thread surface api response unwrappers', () => {
   test('unwrapThreadSurfacesResponse returns the surface list from the route payload', () => {
@@ -312,44 +347,92 @@ describe('fetchJson', () => {
 })
 
 describe('runtime query polling', () => {
-  const projection = (status: RunProjection['run']['status']): RunProjection => ({
-    source: 'v2',
-    schemaVersion: 2,
-    run: {
-      schema_version: 2,
-      id: `run-${status}`,
-      revision: 0,
-      sequence_id: 'sequence-1',
-      sequence_snapshot_hash: 'sha256:sequence',
-      target: { kind: 'runnable' },
-      strategy: 'sequential',
-      status,
-      max_concurrency: 1,
-      policy_snapshot_hash: 'sha256:policy',
-      baseline_snapshot_id: null,
-      attempt_ids: [],
-      created_by: 'operator',
-      created_via: 'api',
-      created_at: '2026-07-16T00:00:00.000Z',
-      started_at: null,
-      ended_at: null,
-      cancellation_requested_at: null,
-      summary: null,
-      error_code: null,
-      error_message: null,
-    },
-    attempts: [],
-  })
-
   test('polls only while at least one canonical run is active', () => {
     expect(hasActiveRuntimeRuns([
-      projection('successful'),
-      projection('interrupted'),
+      runtimeProjection('successful'),
+      runtimeProjection('interrupted'),
     ])).toBe(false)
     expect(hasActiveRuntimeRuns([
-      projection('successful'),
-      projection('running'),
+      runtimeProjection('successful'),
+      runtimeProjection('running'),
     ])).toBe(true)
+  })
+
+  test('polls runtime evidence while its selected run is active', () => {
+    expect(runtimeEvidenceRefetchInterval(true)).toBe(1_000)
+    expect(runtimeEvidenceRefetchInterval(false)).toBe(false)
+  })
+})
+
+describe('canonical runtime start', () => {
+  const originalFetch = globalThis.fetch
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+  })
+
+  test('returns and caches a pending run before process completion', async () => {
+    const pending = runtimeProjection('pending')
+    let capturedUrl = ''
+    let capturedBody: unknown
+    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+      capturedUrl = String(url)
+      capturedBody = JSON.parse(String(init?.body))
+      return new Response(JSON.stringify(pending), { status: 202 })
+    }) as unknown as typeof fetch
+
+    const started = await startRuntimeRun({
+      sequence_id: '$current',
+      target: { kind: 'runnable' },
+      policy_confirmed: true,
+    })
+    const queryClient = new QueryClient()
+    cacheStartedRunProjection(queryClient, started)
+
+    expect(capturedUrl).toBe('/api/runs')
+    expect(capturedBody).toEqual({
+      sequence_id: '$current',
+      target: { kind: 'runnable' },
+      strategy: 'sequential',
+      max_concurrency: 1,
+      policy_confirmed: true,
+    })
+    expect(queryClient.getQueryData<RunProjection>(['run', pending.run.id])).toEqual(pending)
+    expect(queryClient.getQueryData<RunProjection[]>(['runs', {}])).toEqual([pending])
+    expect(hasActiveRuntimeRuns(queryClient.getQueryData<RunProjection[]>(['runs', {}]))).toBe(true)
+  })
+
+  test('starts a step target through the same canonical async endpoint', async () => {
+    const pending = {
+      ...runtimeProjection('pending'),
+      run: {
+        ...runtimeProjection('pending').run,
+        id: 'run-step',
+        target: { kind: 'step' as const, step_id: 'step-1' },
+      },
+    }
+    let capturedBody: unknown
+    globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+      capturedBody = JSON.parse(String(init?.body))
+      return new Response(JSON.stringify(pending), { status: 202 })
+    }) as unknown as typeof fetch
+
+    const started = await startRuntimeRun({
+      sequence_id: '$current',
+      target: { kind: 'step', step_id: 'step-1' },
+      policy_confirmed: true,
+    })
+    const queryClient = new QueryClient()
+    cacheStartedRunProjection(queryClient, started)
+
+    expect(capturedBody).toEqual({
+      sequence_id: '$current',
+      target: { kind: 'step', step_id: 'step-1' },
+      strategy: 'sequential',
+      max_concurrency: 1,
+      policy_confirmed: true,
+    })
+    expect(queryClient.getQueryData<RunProjection>(['run', 'run-step'])).toEqual(pending)
   })
 })
 

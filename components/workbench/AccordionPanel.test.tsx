@@ -87,6 +87,7 @@ mock.module('@/lib/ui/api', () => ({
     isLoading: false,
   }),
   useRunRunnable: () => ({ mutate: () => {}, isPending: false }),
+  useStartRun: () => ({ mutate: () => {}, isPending: false, error: null }),
   useRuns: () => ({ data: [], isLoading: false, isFetching: false, error: null }),
   useRun: () => ({ data: null, isFetching: false, error: null }),
   useRunAttempts: () => ({ data: [], isFetching: false, error: null }),

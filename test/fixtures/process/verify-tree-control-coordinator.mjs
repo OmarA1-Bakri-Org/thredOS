@@ -7,7 +7,9 @@ const bunExecutable = process.argv[2]
 if (!bunExecutable) throw new Error('Bun executable argument is required')
 
 const workerPath = fileURLToPath(new URL('./verify-tree-control.ts', import.meta.url))
-const WORKER_TIMEOUT_MS = 20_000
+// Windows control can consume two independently bounded taskkill attempts plus
+// death observation. Leave scheduling headroom when the repository suite is busy.
+const WORKER_TIMEOUT_MS = 60_000
 const MAX_DIAGNOSTIC_BYTES = 1024 * 1024
 const defaultModes = [
   'cancel',

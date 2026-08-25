@@ -106,6 +106,14 @@ describe('TopBar', () => {
     expect(markup).not.toContain('Thread Chat')
   })
 
+  test('compacts navigation labels below 2XL to protect the operator header', () => {
+    const markup = renderToStaticMarkup(<TopBar />)
+
+    expect(markup).toContain('aria-label="Home"')
+    expect(markup).toContain('<span class="hidden 2xl:inline">Home</span>')
+    expect(markup).toContain('2xl:w-auto')
+  })
+
   test('renders preview variant badge when concept review mode is enabled', () => {
     const markup = renderToStaticMarkup(<TopBar uiVariant="industrial-systems" previewMode />)
 

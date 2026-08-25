@@ -5,6 +5,7 @@ import { dirname, join, resolve } from 'path'
 import { spawnSync } from 'child_process'
 import { tmpdir } from 'os'
 import {
+  buildRelayVerificationArgs,
   findBunPath,
   prependEnvironmentPath,
   prependPath,
@@ -13,10 +14,11 @@ import {
 } from './runtime-helpers.mjs'
 
 const mode = process.argv[2]
+const playwrightArgs = process.argv.slice(3)
 const root = process.cwd()
 
-if (!['local', 'ci', 'release-live'].includes(mode ?? '')) {
-  console.error('Usage: node scripts/verify/run.mjs <local|ci|release-live>')
+if (!['local', 'ci', 'ui', 'release-live'].includes(mode ?? '')) {
+  console.error('Usage: node scripts/verify/run.mjs <local|ci|ui|release-live>')
   process.exit(1)
 }
 
@@ -150,7 +152,7 @@ function syncVerifyArtifactsBack(tempRoot, sourceRoot) {
   }
 }
 
-function relayVerificationThroughNativeTemp(modeName, sourceRoot, bunPath) {
+function relayVerificationThroughNativeTemp(modeName, sourceRoot, bunPath, forwardedPlaywrightArgs) {
   const tempRoot = makeTempVerifyDir()
 
   console.warn(`[verify:${modeName}] relaying through native Linux temp copy because ${sourceRoot} is on /mnt/*`)
@@ -161,14 +163,18 @@ function relayVerificationThroughNativeTemp(modeName, sourceRoot, bunPath) {
     syncRepoToTemp(sourceRoot, tempRoot)
     installTempDependencies(tempRoot, bunPath)
 
-    const result = spawnSync(process.execPath, ['scripts/verify/run.mjs', modeName], {
+    const result = spawnSync(
+      process.execPath,
+      buildRelayVerificationArgs(modeName, forwardedPlaywrightArgs),
+      {
       cwd: tempRoot,
       env: {
         ...process.env,
         THREDOS_VERIFY_NATIVE_RELAY: '1',
       },
       stdio: 'inherit',
-    })
+      },
+    )
 
     syncVerifyArtifactsBack(tempRoot, sourceRoot)
 
@@ -420,7 +426,7 @@ try {
     ...process.env,
   }
 
-  const envFile = mode === 'local'
+  const envFile = mode === 'local' || mode === 'ui'
     ? join(root, '.env.verify.local')
     : mode === 'ci'
       ? join(root, '.env.verify.ci')
@@ -438,8 +444,8 @@ try {
     throw new Error('Bun is required for verification bootstrap but was not found on PATH or at ~/.bun/bin/bun')
   }
 
-  if ((mode === 'local' || mode === 'ci') && isUnsupportedMountPath(root) && process.env.THREDOS_VERIFY_NATIVE_RELAY !== '1') {
-    process.exit(relayVerificationThroughNativeTemp(mode, root, bunPath))
+  if ((mode === 'local' || mode === 'ci' || mode === 'ui') && isUnsupportedMountPath(root) && process.env.THREDOS_VERIFY_NATIVE_RELAY !== '1') {
+    process.exit(relayVerificationThroughNativeTemp(mode, root, bunPath, playwrightArgs))
   }
 
   const artifactsDir = join(root, 'test-results', 'verify', mode, timestamp())
@@ -487,6 +493,8 @@ try {
     ? 'playwright.dev-verify.config.ts'
     : mode === 'ci'
       ? 'playwright.config.ts'
+      : mode === 'ui'
+        ? 'playwright.ui.config.ts'
       : 'playwright.release-live.config.ts'
 
   console.log(`[verify:${mode}] artifacts: ${artifactsDir}`)
@@ -502,6 +510,7 @@ try {
     'test',
     '--config',
     configPath,
+    ...playwrightArgs,
   ], {
     cwd: root,
     env,

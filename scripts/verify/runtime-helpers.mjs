@@ -60,9 +60,14 @@ export function prependEnvironmentPath(env, directory, platform = process.platfo
   }
 }
 
+export function buildRelayVerificationArgs(mode, playwrightArgs = []) {
+  return ['scripts/verify/run.mjs', mode, ...playwrightArgs]
+}
+
 export function defaultVerificationPort(mode) {
   if (mode === 'local') return 4301
   if (mode === 'ci') return 4302
+  if (mode === 'ui') return 4303
   return null
 }
 

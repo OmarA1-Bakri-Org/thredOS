@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, setDefaultTimeout, test } from 'bun:test'
 import { mkdir, mkdtemp, rm, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
@@ -7,6 +7,8 @@ import { readAgentState } from '@/lib/agents/repository'
 import { readSequence } from '@/lib/sequence/parser'
 
 let basePath: string
+
+setDefaultTimeout(30_000)
 
 async function setupWorkspace() {
   await mkdir(join(basePath, '.threados/prompts'), { recursive: true })

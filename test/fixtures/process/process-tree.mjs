@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import { writeFile } from 'node:fs/promises'
+import { rename, writeFile } from 'node:fs/promises'
 
 const mode = process.argv[2] ?? 'root'
 const pidFile = process.argv[3]
@@ -19,11 +19,13 @@ if (mode === 'leaf') {
     detached: false,
     stdio: 'ignore',
   })
-  await writeFile(pidFile, JSON.stringify({
+  const stagedPidFile = `${pidFile}.${process.pid}.tmp`
+  await writeFile(stagedPidFile, JSON.stringify({
     root: rootPid,
     child: process.pid,
     grandchild: leaf.pid,
   }), 'utf8')
+  await rename(stagedPidFile, pidFile)
   setInterval(() => {}, 60_000)
 } else {
   if (!pidFile) throw new Error('root mode requires a PID file')

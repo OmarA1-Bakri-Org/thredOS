@@ -243,6 +243,76 @@ describe.serial('thread surface read routes', () => {
     })
   })
 
+  test('GET /api/thread-runs preserves compatibility runs when one attempt reference is stale', async () => {
+    const staleRun: RunScope = {
+      ...runs[0],
+      id: 'legacy-run',
+      attemptId: 'missing-attempt',
+    }
+    const canonicalRun: RunScope = {
+      ...runs[1],
+      id: 'attempt-1',
+      workflowRunId: 'workflow-run-1',
+      attemptId: 'attempt-1',
+    }
+    await writeThreadSurfaceState(basePath, {
+      version: 1,
+      threadSurfaces,
+      runs: [staleRun, canonicalRun],
+      mergeEvents: [],
+      runEvents: [],
+    })
+    globalThis.__THREADOS_RUNTIME_SERVICE__ = {
+      listRuns: async () => [{
+        source: 'v2',
+        schemaVersion: 2,
+        run: {
+          id: 'workflow-run-1',
+          status: 'running',
+        },
+        attempts: [{ id: 'attempt-1' }],
+      }] as never,
+      inspectAttempt: async (attemptId: string) => {
+        if (attemptId === 'missing-attempt') {
+          throw Object.assign(new Error('attempt missing-attempt was not found'), {
+            code: 'ATTEMPT_NOT_FOUND',
+          })
+        }
+        return {
+          source: 'v2',
+          schemaVersion: 2,
+          attempt: {
+            id: 'attempt-1',
+            workflow_run_id: 'workflow-run-1',
+            status: 'running',
+          },
+          process: {
+            id: 'process-1',
+            status: 'running',
+          },
+        } as never
+      },
+    } as unknown as RuntimeServicePort
+
+    const { GET } = await import('@/app/api/thread-runs/route')
+    const response = await GET(new Request('http://localhost/api/thread-runs'))
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toEqual({
+      runs: [
+        staleRun,
+        {
+          ...canonicalRun,
+          runtimeSource: 'v2',
+          workflowRunStatus: 'running',
+          runStatus: 'running',
+          attemptStatus: 'running',
+          processStatus: 'running',
+        },
+      ],
+    })
+  })
+
   test('GET /api/thread-merges returns merge events and filters by runId', async () => {
     const { GET } = await import('@/app/api/thread-merges/route')
 

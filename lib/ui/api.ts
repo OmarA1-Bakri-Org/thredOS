@@ -1,6 +1,6 @@
 'use client'
 
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import type { Sequence } from '@/lib/sequence/schema'
 import type { SequenceStatus } from '@/app/api/status/route'
 import type { MergeEvent, RunScope, ThreadSurface, ThreadSkillBadge } from '@/lib/thread-surfaces/types'
@@ -11,7 +11,7 @@ import type { PromptRef, SkillRef } from '@/lib/library/types'
 import type { ActivationSession } from '@/lib/local-first/types'
 import type { LocalWorkspace } from '@/lib/local-first/types'
 import { resolveSkillsForAgent } from '@/lib/thread-surfaces/projections'
-import type { WorkflowRunStatus } from '@/lib/runtime/schema'
+import type { WorkflowRunStatus, WorkflowRunStrategy, WorkflowRunTarget } from '@/lib/runtime/schema'
 import type { AttemptProjection, RunProjection, RuntimeRunQuery } from '@/lib/runtime/service-types'
 
 interface ThreadSurfacesResponse {
@@ -28,6 +28,14 @@ interface ThreadMergesResponse {
 
 interface RunsResponse {
   runs: RunProjection[]
+}
+
+export interface StartRuntimeRunInput {
+  sequence_id: string
+  target: WorkflowRunTarget
+  strategy?: WorkflowRunStrategy
+  max_concurrency?: number
+  policy_confirmed?: boolean
 }
 
 export interface RunAttemptsResponse {
@@ -263,6 +271,35 @@ export function useAttempt(attemptId: string | null) {
   })
 }
 
+export function startRuntimeRun(input: StartRuntimeRunInput): Promise<RunProjection> {
+  return postJson<RunProjection>('/api/runs', {
+    strategy: 'sequential',
+    max_concurrency: 1,
+    ...input,
+  })
+}
+
+export function cacheStartedRunProjection(qc: QueryClient, projection: RunProjection): void {
+  qc.setQueryData(['run', projection.run.id], projection)
+  qc.setQueryData<RunProjection[]>(['runs', {}], current => {
+    const others = (current ?? []).filter(item => item.run.id !== projection.run.id)
+    return [projection, ...others]
+  })
+}
+
+function recordStartedRun(qc: QueryClient, projection: RunProjection): void {
+  cacheStartedRunProjection(qc, projection)
+  invalidateRuntimeQueries(qc)
+}
+
+export function useStartRun() {
+  const qc = useQueryClient()
+  return useMutation<RunProjection, RuntimeApiError, StartRuntimeRunInput>({
+    mutationFn: startRuntimeRun,
+    onSuccess: projection => recordStartedRun(qc, projection),
+  })
+}
+
 export function useCancelRun() {
   const qc = useQueryClient()
   return useMutation<RunProjection, RuntimeApiError, string>({
@@ -324,21 +361,29 @@ export function useThreadMerges(runId?: string | null) {
 
 export function useRunStep() {
   const qc = useQueryClient()
-  return useMutation({
+  return useMutation<RunProjection, RuntimeApiError, string | { stepId: string; confirmPolicy?: boolean }>({
     mutationFn: (input: string | { stepId: string; confirmPolicy?: boolean }) => {
       const payload = typeof input === 'string' ? { stepId: input } : input
-      return postJson('/api/run', payload)
+      return startRuntimeRun({
+        sequence_id: '$current',
+        target: { kind: 'step', step_id: payload.stepId },
+        policy_confirmed: payload.confirmPolicy === true,
+      })
     },
-    onSuccess: () => invalidateRuntimeQueries(qc),
+    onSuccess: projection => recordStartedRun(qc, projection),
     onError: (error) => { console.error('Run step failed:', error) },
   })
 }
 
 export function useRunRunnable() {
   const qc = useQueryClient()
-  return useMutation({
-    mutationFn: (input?: { confirmPolicy?: boolean }) => postJson('/api/run', { mode: 'runnable', ...input }),
-    onSuccess: () => invalidateRuntimeQueries(qc),
+  return useMutation<RunProjection, RuntimeApiError, { confirmPolicy?: boolean } | undefined>({
+    mutationFn: input => startRuntimeRun({
+      sequence_id: '$current',
+      target: { kind: 'runnable' },
+      policy_confirmed: input?.confirmPolicy === true,
+    }),
+    onSuccess: projection => recordStartedRun(qc, projection),
     onError: (error) => { console.error('Run runnable failed:', error) },
   })
 }
@@ -836,21 +881,29 @@ export function useGateDecisions(runId: string | null, subjectRef?: string | nul
   })
 }
 
-export function useTraces(runId: string | null) {
+export function runtimeEvidenceRefetchInterval(runIsActive: boolean): number | false {
+  return runIsActive ? 1_000 : false
+}
+
+export function useTraces(runId: string | null, runIsActive = false) {
   return useQuery({
     queryKey: ['traces', runId],
     queryFn: () => fetchJson<{ events: unknown[] }>(`/api/traces?runId=${runId}`).then(r => r.events),
     enabled: !!runId,
+    refetchInterval: runtimeEvidenceRefetchInterval(runIsActive),
+    refetchOnMount: 'always',
   })
 }
 
 // ── V.1: Approvals ─────────────────────────────────────────────────
 
-export function useApprovals(runId: string | null) {
+export function useApprovals(runId: string | null, runIsActive = false) {
   return useQuery({
     queryKey: ['approvals', runId],
     queryFn: () => fetchJson<{ approvals: unknown[] }>(`/api/approvals?runId=${runId}`).then(r => r.approvals),
     enabled: !!runId,
+    refetchInterval: runtimeEvidenceRefetchInterval(runIsActive),
+    refetchOnMount: 'always',
   })
 }
 

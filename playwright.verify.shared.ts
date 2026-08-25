@@ -1,7 +1,7 @@
 import { defineConfig, devices, type PlaywrightTestConfig } from '@playwright/test'
 import { createPlaywrightServerSettings } from './scripts/verify/runtime-helpers.mjs'
 
-type VerifyMode = 'local' | 'ci' | 'release-live'
+type VerifyMode = 'local' | 'ci' | 'ui' | 'release-live'
 
 interface VerifyConfigOptions {
   mode: VerifyMode
@@ -48,7 +48,16 @@ export function createVerifyConfig({
     projects: [
       {
         name: 'chromium',
-        use: { ...devices['Desktop Chrome'] },
+        use: {
+          ...devices['Desktop Chrome'],
+          ...(mode === 'ui'
+            ? {
+                launchOptions: {
+                  args: ['--disable-gpu'],
+                },
+              }
+            : {}),
+        },
       },
     ],
     metadata: {

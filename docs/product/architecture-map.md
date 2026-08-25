@@ -125,6 +125,9 @@ API and CLI lifecycle handlers are guarded by
 `test/architecture/runtime-service-boundary.test.ts`, and
 `test/integration/runtime-interface-parity.test.ts` proves that a sequential
 attempt persists the same canonical state tree through either interface.
+`bun run verify:m0` repeats that parity proof, exercises real process
+cancellation, retry lineage, and restart recovery, then writes the canonical
+Milestone 0 evidence bundle under `test-results/verify/m0/`.
 
 ## Orchestration
 

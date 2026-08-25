@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { createServer, type Server } from 'net'
 import { readFile } from 'fs/promises'
 import {
+  buildRelayVerificationArgs,
   createPlaywrightServerSettings,
   defaultVerificationPort,
   findBunPath,
@@ -98,6 +99,19 @@ describe('prependPath', () => {
   })
 })
 
+describe('native verification relay arguments', () => {
+  test('preserves forwarded Playwright arguments', () => {
+    expect(buildRelayVerificationArgs('ui', ['--update-snapshots', '--grep', 'workbench']))
+      .toEqual([
+        'scripts/verify/run.mjs',
+        'ui',
+        '--update-snapshots',
+        '--grep',
+        'workbench',
+      ])
+  })
+})
+
 describe('verification port lifecycle', () => {
   test('releases a claimed probe port before Playwright starts', async () => {
     const allocation = await reserveVerificationPort('local', '0')
@@ -112,6 +126,10 @@ describe('verification port lifecycle', () => {
   test('leaves release-live external and unreserved', async () => {
     const allocation = await reserveVerificationPort('release-live')
     expect(allocation).toEqual({ port: null, reservation: null })
+  })
+
+  test('assigns direct UI verification its own stable port', () => {
+    expect(defaultVerificationPort('ui')).toBe(4303)
   })
 })
 
@@ -149,16 +167,18 @@ describe('shared Playwright server settings', () => {
   })
 
   test('direct UI configuration includes its requested test and process.execPath launches Next', async () => {
-    const [packageBody, configBody, devConfigBody, devBody, buildBody, serverBody, globalSetupBody] = await Promise.all([
+    const [packageBody, configBody, devConfigBody, uiConfigBody, devBody, buildBody, serverBody, globalSetupBody] = await Promise.all([
       readFile('package.json', 'utf8'),
       readFile('playwright.config.ts', 'utf8'),
       readFile('playwright.dev-verify.config.ts', 'utf8'),
+      readFile('playwright.ui.config.ts', 'utf8'),
       readFile('scripts/dev/next-dev.mjs', 'utf8'),
       readFile('scripts/build/next-build.mjs', 'utf8'),
       readFile('scripts/verify/web-server.mjs', 'utf8'),
       readFile('test/ui/global-verify-setup.ts', 'utf8'),
     ])
-    expect(JSON.parse(packageBody).scripts['test:ui']).toContain('main-page.e2e.ts')
+    expect(JSON.parse(packageBody).scripts['test:ui']).toContain('scripts/verify/run.mjs ui')
+    expect(uiConfigBody).toContain('main-page.e2e.ts')
     expect(configBody).toContain('main-page.e2e.ts')
     expect(configBody).toContain('process.execPath')
     expect(devConfigBody).toContain('process.execPath')

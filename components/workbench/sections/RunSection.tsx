@@ -22,8 +22,8 @@ import {
   useRetryAttempt,
   useRun,
   useRunAttempts,
-  useRunRunnable,
   useRuns,
+  useStartRun,
   useStatus,
   useThreadMerges,
   useThreadRuns,
@@ -53,8 +53,13 @@ const ACTIVE_RUN_STATUSES = new Set<WorkflowRunStatus>([
   'pending',
   'provisioning',
   'running',
+  'awaiting_review',
   'applying',
 ])
+
+export function isActiveRunStatus(status: WorkflowRunStatus): boolean {
+  return ACTIVE_RUN_STATUSES.has(status)
+}
 
 export function canCancelRun(projection: RunProjection | null): boolean {
   return projection?.source === 'v2' && CANCELLABLE_RUN_STATUSES.has(projection.run.status)
@@ -71,6 +76,16 @@ export function canCancelAttempt(projection: AttemptProjection | null): boolean 
 export function canRetryAttempt(projection: AttemptProjection | null): boolean {
   return projection?.source === 'v2'
     && RETRYABLE_ATTEMPT_STATUSES.has(projection.attempt.status)
+}
+
+export function selectionForStartedRun(projection: RunProjection): {
+  runId: string
+  attemptId: string | null
+} {
+  return {
+    runId: projection.run.id,
+    attemptId: projection.attempts.at(-1)?.id ?? null,
+  }
 }
 
 function formatTimestamp(value: string | null): string {
@@ -185,7 +200,7 @@ export function RuntimeRunConsole({
   onSelectRun,
   onSelectAttempt,
 }: RuntimeRunConsoleProps) {
-  const activeCount = runs.filter(item => ACTIVE_RUN_STATUSES.has(item.run.status)).length
+  const activeCount = runs.filter(item => isActiveRunStatus(item.run.status)).length
   const successfulCount = runs.filter(item => item.run.status === 'successful').length
   const failedCount = runs.filter(item =>
     ['failed', 'cancelled', 'interrupted'].includes(item.run.status),
@@ -505,7 +520,7 @@ export function RunSection() {
   const [confirmRun, setConfirmRun] = useState(false)
   const [localRunId, setLocalRunId] = useState<string | null>(null)
   const [localAttemptId, setLocalAttemptId] = useState<string | null>(null)
-  const runRunnable = useRunRunnable()
+  const startRun = useStartRun()
   const cancelRun = useCancelRun()
   const cancelAttempt = useCancelAttempt()
   const retryAttempt = useRetryAttempt()
@@ -568,7 +583,7 @@ export function RunSection() {
   const controlError = cancelRun.error
     ?? cancelAttempt.error
     ?? retryAttempt.error
-    ?? (runRunnable.error instanceof Error ? runRunnable.error : null)
+    ?? (startRun.error instanceof Error ? startRun.error : null)
   const queryError = runtimeRuns.error instanceof Error
     ? runtimeRuns.error
     : runQuery.error instanceof Error
@@ -578,8 +593,9 @@ export function RunSection() {
         : null
 
   const activeSurfaceId = focusedDetail?.threadSurfaceId ?? selectedThreadSurfaceId ?? null
-  const { data: traceEvents } = useTraces(activeRunId)
-  const { data: approvals } = useApprovals(activeRunId)
+  const runIsActive = activeRun != null && isActiveRunStatus(activeRun.run.status)
+  const { data: traceEvents } = useTraces(activeRunId, runIsActive)
+  const { data: approvals } = useApprovals(activeRunId, runIsActive)
   const exportPath = (exportBundle.data as { exportPath?: string } | undefined)?.exportPath ?? null
   const exportError = exportBundle.error instanceof Error ? exportBundle.error : null
   const recentTraceEvents = [...((traceEvents ?? []) as Array<{
@@ -612,7 +628,7 @@ export function RunSection() {
         isRefreshing={runtimeRuns.isFetching || runQuery.isFetching || attemptsQuery.isFetching}
         queryError={queryError}
         controlError={controlError}
-        runAllPending={runRunnable.isPending}
+        runAllPending={startRun.isPending}
         cancelRunPending={cancelRun.isPending}
         cancelAttemptPending={cancelAttempt.isPending}
         retryAttemptPending={retryAttempt.isPending}
@@ -777,7 +793,19 @@ export function RunSection() {
         onCancel={() => setConfirmRun(false)}
         onConfirm={() => {
           setConfirmRun(false)
-          runRunnable.mutate({ confirmPolicy: true })
+          startRun.mutate({
+            sequence_id: '$current',
+            target: { kind: 'runnable' },
+            strategy: 'sequential',
+            max_concurrency: 1,
+            policy_confirmed: true,
+          }, {
+            onSuccess: projection => {
+              const selection = selectionForStartedRun(projection)
+              setLocalRunId(selection.runId)
+              setLocalAttemptId(selection.attemptId)
+            },
+          })
         }}
       />
     </div>

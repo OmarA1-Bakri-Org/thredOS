@@ -14,6 +14,13 @@ function compatibilityRunStatus(status: WorkflowRunStatus): RunStatus {
   return 'failed'
 }
 
+function isMissingAttempt(error: unknown): boolean {
+  return typeof error === 'object'
+    && error !== null
+    && 'code' in error
+    && error.code === 'ATTEMPT_NOT_FOUND'
+}
+
 async function enrichRuntimeTruth(basePath: string, runs: RunScope[]): Promise<RunScope[]> {
   if (!runs.some(run => run.workflowRunId || run.attemptId)) return runs
   const service = await getApiRuntimeService(basePath)
@@ -25,9 +32,14 @@ async function enrichRuntimeTruth(basePath: string, runs: RunScope[]): Promise<R
       if (runs.some(run => run.id === attempt.id)) attemptIds.add(attempt.id)
     }
   }
-  const attemptProjections = await Promise.all(
-    [...attemptIds].map(attemptId => service.inspectAttempt(attemptId)),
-  )
+  const attemptProjections = (await Promise.all([...attemptIds].map(async attemptId => {
+    try {
+      return await service.inspectAttempt(attemptId)
+    } catch (error) {
+      if (isMissingAttempt(error)) return null
+      throw error
+    }
+  }))).filter(projection => projection !== null)
   const attemptById = new Map(
     attemptProjections.map(projection => [projection.attempt.id, projection]),
   )

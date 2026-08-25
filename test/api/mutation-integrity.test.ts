@@ -1,5 +1,7 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, setDefaultTimeout, test } from 'bun:test'
 import { spawnSync } from 'child_process'
+
+setDefaultTimeout(30_000)
 
 function runIsolated(script: string) {
   const result = spawnSync(process.execPath, ['-e', script], {

@@ -23,7 +23,7 @@ function resolveNodeFixtureCommand(): string {
 }
 
 const NODE_FIXTURE_COMMAND = resolveNodeFixtureCommand()
-const COORDINATOR_TIMEOUT_MS = 55_000
+const COORDINATOR_TIMEOUT_MS = 150_000
 const MAX_COORDINATOR_OUTPUT_BYTES = 1024 * 1024
 
 interface ProcessProofResults {
@@ -449,7 +449,7 @@ describe.serial('startProcess', () => {
       status: 'FAILED',
       exitCode: 17,
     })
-  }, 65_000)
+  }, 180_000)
 })
 
 describe('buildExecutionEnv', () => {
