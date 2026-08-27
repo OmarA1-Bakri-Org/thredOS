@@ -25,6 +25,7 @@ import {
   inspectRuntimeRunProjection,
   listRuntimeRunProjections,
 } from './projections'
+import { deriveTerminalRunOutcome } from './run-outcome'
 import type { RuntimeCommandReceipt, StepAttempt, WorkflowRun, WorkflowRunTarget } from './schema'
 
 function targetRef(target: WorkflowRunTarget): string {
@@ -1054,19 +1055,25 @@ export class ThreadOSRuntimeService {
         }, this.deps.now()).catch(() => undefined)
         return { run, attempts, replayed: false }
       }
-      const cancelled = attempts.some(attempt => attempt.status === 'cancelled')
-      const successful = !cancelled && attempts.every(attempt => attempt.status === 'completed')
-      const terminal = cancelled ? 'cancelled' : successful ? 'successful' : 'failed'
-      run = await transitionRun(this.repositories.runs, run, terminal, {
-        ended_at: this.deps.now(), summary: `${attempts.length} attempt(s)`,
-        error_code: successful || cancelled ? null : 'RUN_ATTEMPT_FAILED',
-        error_message: successful || cancelled ? null : 'One or more attempts did not complete',
+      const terminalOutcome = deriveTerminalRunOutcome(attempts)
+      run = await transitionRun(this.repositories.runs, run, terminalOutcome.status, {
+        ended_at: this.deps.now(),
+        summary: `${attempts.length} attempt(s)`,
+        error_code: terminalOutcome.errorCode,
+        error_message: terminalOutcome.errorMessage,
       })
       await this.deps.projections.finalizeRun({ run, attempts }).catch(() => undefined)
-      await this.repositories.commands.complete(commandId, successful
-        ? { status: 'completed', resultRef: run.id }
-        : { status: 'failed', errorCode: run.error_code ?? 'RUN_ATTEMPT_FAILED', errorMessage: run.error_message ?? 'Run failed' },
-      this.deps.now())
+      await this.repositories.commands.complete(
+        commandId,
+        terminalOutcome.status === 'successful'
+          ? { status: 'completed', resultRef: run.id }
+          : {
+              status: 'failed',
+              errorCode: run.error_code ?? terminalOutcome.errorCode ?? 'RUNTIME_EXECUTION_FAILED',
+              errorMessage: run.error_message ?? terminalOutcome.errorMessage ?? 'Run failed',
+            },
+        this.deps.now(),
+      )
       return { run, attempts, replayed: false }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)

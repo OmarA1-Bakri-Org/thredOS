@@ -20,7 +20,7 @@ export async function POST(request: Request) {
     assertRuntimeProcessControlsAllowed()
     const { stepId } = BodySchema.parse(await request.json())
     const service = await getApiRuntimeService(getBasePath())
-    const attempt = await service.findLatestAttempt({ sequenceId: '$current', stepId })
+    const attempt = await service.findLatestAttempt({ sequenceId: '$current', stepId, statuses: ['running'] })
     if (!attempt) throw new RuntimeServiceError('ATTEMPT_NOT_RUNNING', `Step '${stepId}' has no attempt to stop`)
     await service.cancelAttempt(attempt.id, context)
     await auditLog('stop', stepId, { attemptId: attempt.id })

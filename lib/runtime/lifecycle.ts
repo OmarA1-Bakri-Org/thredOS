@@ -9,7 +9,7 @@ import type {
 const runTransitions: Record<WorkflowRunStatus, ReadonlySet<WorkflowRunStatus>> = {
   pending: new Set(['provisioning', 'failed', 'cancelled', 'interrupted']),
   provisioning: new Set(['running', 'failed', 'cancelled', 'interrupted']),
-  running: new Set(['successful', 'failed', 'cancelled', 'interrupted']),
+  running: new Set(['successful', 'awaiting_review', 'partially_successful', 'failed', 'cancelled', 'interrupted']),
   awaiting_review: new Set(), applying: new Set(), partially_successful: new Set(),
   successful: new Set(), failed: new Set(), cancelled: new Set(), interrupted: new Set(),
 }
