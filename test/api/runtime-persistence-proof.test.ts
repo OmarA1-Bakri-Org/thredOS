@@ -255,7 +255,25 @@ describe.serial('runtime persistence proof', () => {
         revealState: 'revealed',
       }),
     ]))
-    expect(persistedBundle.approvals.map((approval: { status: string }) => approval.status)).toEqual(['pending', 'approved'])
+    const bundledApprovals = persistedBundle.approvals as Array<{
+      status: string
+      subject_digest: string | null
+      payload_ref: string | null
+      policy_ref: string | null
+      precondition_hash: string | null
+      expires_at: string | null
+    }>
+    expect(bundledApprovals.map(approval => approval.status)).toEqual(['pending', 'approved', 'approved'])
+    expect(bundledApprovals[2]).toMatchObject({
+      status: 'approved',
+      consumed_at: expect.any(String),
+      consumed_by: 'runtime:api',
+      subject_digest: bundledApprovals[1].subject_digest,
+      payload_ref: bundledApprovals[1].payload_ref,
+      policy_ref: bundledApprovals[1].policy_ref,
+      precondition_hash: bundledApprovals[1].precondition_hash,
+      expires_at: bundledApprovals[1].expires_at,
+    })
     expect(persistedBundle.artifact_manifests).toContain(`.threados/runs/${runId}/step-a/status.json`)
     expect(typeof persistedBundle.timing_summary.stepCount).toBe('number')
     expect(typeof persistedBundle.timing_summary.successfulSteps).toBe('number')
