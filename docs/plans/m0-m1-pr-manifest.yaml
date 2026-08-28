@@ -1,0 +1,290 @@
+schema_version: 1
+document_version: '1.1'
+status: final
+document: thredOS M0-M1 PR manifest
+date: '2026-07-15'
+repository: OmarA1-Bakri-Org/thredOS
+authority:
+  product: docs/product/canonical-prd-worktree-free-parallel-runtime.md
+  contributor_rules: AGENTS.md
+  implementation: docs/plans/m0-m1-repository-implementation-plan.md
+parent_prd: docs/product/canonical-prd-worktree-free-parallel-runtime.md
+implementation_plan: docs/plans/m0-m1-repository-implementation-plan.md
+supersedes: all earlier M0-M1 PR manifests in this project
+locked_constraints:
+- No production runtime invocation of git worktree
+- App and CLI must delegate to one ThreadOSRuntimeService
+- WorkflowRun and StepAttempt are separate durable entities
+- Persist attempt and launch request before process spawn
+- Stop/cancel must control the real process truthfully
+- Write and execute attempts require verified Surface Workspaces by M1
+- Copy provider emits THREADOS_SCOPED, never HOST_ENFORCED
+- Real bounded concurrency is activated in M3, not M0-M1
+global_validation:
+  every_pr:
+  - bun run typecheck
+  - bun run lint
+  - targeted bun test commands
+  milestone_close:
+  - bun run check
+  - bun run build
+  - bun test:ui
+  - bun run verify:local
+prs:
+- id: PR-01
+  milestone: M0
+  branch: feat/runtime-contracts-v2
+  title: Canonical runtime and workspace contracts
+  depends_on: []
+  creates:
+  - lib/runtime/schema.ts
+  - lib/runtime/command-schema.ts
+  - lib/runtime/error-codes.ts
+  - lib/workspaces/schema.ts
+  - lib/changesets/schema.ts
+  - lib/merge/schema.ts
+  modifies:
+  - lib/contracts/schemas.ts
+  - lib/thread-surfaces/types.ts
+  gate: Canonical schemas validate representative V2 and legacy-compatible records; runtime behavior unchanged.
+- id: PR-02
+  milestone: M0
+  branch: feat/runtime-repositories-v2
+  title: Atomic runtime repositories and idempotency
+  depends_on:
+  - PR-01
+  creates:
+  - lib/runtime/paths.ts
+  - lib/runtime/run-repository.ts
+  - lib/runtime/attempt-repository.ts
+  - lib/runtime/process-repository.ts
+  - lib/runtime/command-repository.ts
+  - lib/runtime/runtime-index.ts
+  - lib/runtime/legacy-projection.ts
+  modifies:
+  - lib/fs/atomic.ts
+  - lib/thread-surfaces/repository.ts
+  - lib/runner/artifacts.ts
+  - lib/exports/bundler.ts
+  gate: One run with two attempts survives fresh repository reads without overwrite; idempotency replay is safe.
+- id: PR-03
+  milestone: M0
+  branch: feat/runtime-service-v2
+  title: Shared runtime service and sequential scheduler
+  depends_on:
+  - PR-02
+  creates:
+  - lib/runtime/service.ts
+  - lib/runtime/service-types.ts
+  - lib/runtime/factory.ts
+  - lib/runtime/scheduler.ts
+  - lib/runtime/attempt-executor.ts
+  - lib/runtime/lifecycle.ts
+  - lib/runtime/errors.ts
+  - lib/runtime/projections.ts
+  modifies:
+  - lib/runner/artifacts.ts
+  - lib/thread-surfaces/step-run-runtime.ts
+  - lib/thread-surfaces/mutations.ts
+  - lib/gates/engine.ts
+  - lib/approvals/runtime.ts
+  - lib/traces/writer.ts
+  gate: Service completes one sequential mock attempt with canonical run, attempt, process, gates, traces, surfaces
+    and artifacts.
+- id: PR-04
+  milestone: M0
+  branch: refactor/api-runtime-service
+  title: API cutover to shared runtime service
+  depends_on:
+  - PR-03
+  creates:
+  - lib/api/runtime-request.ts
+  - app/api/runs/route.ts
+  - app/api/runs/[runId]/route.ts
+  - app/api/runs/[runId]/cancel/route.ts
+  - app/api/attempts/[attemptId]/route.ts
+  - app/api/attempts/[attemptId]/cancel/route.ts
+  - app/api/attempts/[attemptId]/retry/route.ts
+  modifies:
+  - app/api/run/route.ts
+  - app/api/stop/route.ts
+  - app/api/restart/route.ts
+  - app/api/status/route.ts
+  - lib/api-helpers.ts
+  gate: Compatibility and resource APIs delegate; no route owns lifecycle logic.
+- id: PR-05
+  milestone: M0
+  branch: refactor/cli-runtime-service
+  title: CLI cutover and stable runtime JSON
+  depends_on:
+  - PR-04
+  creates:
+  - lib/seqctl/commands/attempt.ts
+  - lib/seqctl/formatters/runtime.ts
+  - lib/seqctl/runtime-json-schema.ts
+  modifies:
+  - lib/seqctl/index.ts
+  - lib/seqctl/commands/run.ts
+  - lib/seqctl/commands/control.ts
+  - lib/seqctl/commands/status.ts
+  - lib/seqctl/commands/group.ts
+  - lib/seqctl/commands/mprocs.ts
+  gate: CLI/API fixture operations produce equivalent state and truthful exit codes.
+- id: PR-06
+  milestone: M0
+  branch: feat/truthful-process-control
+  title: Truthful process control, retry and recovery
+  depends_on:
+  - PR-05
+  creates:
+  - lib/runner/process-handle.ts
+  - lib/runtime/process-controller.ts
+  - lib/runtime/recovery.ts
+  - test/fixtures/process/long-running.mjs
+  - test/fixtures/process/exit-with-code.mjs
+  - test/fixtures/process/write-heartbeat.mjs
+  modifies:
+  - lib/runner/wrapper.ts
+  - lib/runtime/attempt-executor.ts
+  - lib/runtime/service.ts
+  - lib/reconciliation/reconciler.ts
+  - lib/mprocs/state.ts
+  gate: Real fixture process can be cancelled, retried as a new attempt, and reconciled after service restart.
+- id: PR-07
+  milestone: M0
+  branch: feat/runtime-operator-projections
+  title: Runtime projections, operator controls and M0 proof
+  depends_on:
+  - PR-06
+  creates:
+  - app/api/runs/[runId]/attempts/route.ts
+  - test/architecture/runtime-service-boundary.test.ts
+  - test/integration/runtime-interface-parity.test.ts
+  modifies:
+  - lib/runtime/projections.ts
+  - lib/ui/api.ts
+  - components/workbench/sections/RunSection.tsx
+  - components/lanes/useLaneBoard.ts
+  - components/inspector/ThreadSurfaceInspector.tsx
+  - app/api/thread-runs/route.ts
+  - app/api/status/route.ts
+  gate: M0 evidence proves one runtime path, truthful control and no stale running state.
+- id: PR-08
+  milestone: M1
+  branch: feat/workspace-config-paths
+  title: Workspace configuration, external paths and exclusions
+  depends_on:
+  - PR-07
+  creates:
+  - lib/workspaces/config-schema.ts
+  - lib/workspaces/config.ts
+  - lib/workspaces/paths.ts
+  - lib/workspaces/exclusions.ts
+  - lib/workspaces/repository.ts
+  modifies:
+  - package.json
+  - lib/local-first/types.ts
+  - lib/local-first/workspace.ts
+  - app/api/desktop/workspace/route.ts
+  - lib/policy/schema.ts
+  gate: Every local workspace resolves a safe external runtime root and deterministic exclusion policy hash.
+- id: PR-09
+  milestone: M1
+  branch: feat/immutable-snapshot-engine
+  title: Immutable baseline snapshot engine
+  depends_on:
+  - PR-08
+  creates:
+  - lib/workspaces/manifest.ts
+  - lib/workspaces/hash.ts
+  - lib/workspaces/snapshot.ts
+  - lib/workspaces/snapshot-repository.ts
+  - test/integration/snapshot-dirty-git.test.ts
+  - test/integration/snapshot-non-git.test.ts
+  modifies:
+  - lib/workspaces/schema.ts
+  - lib/workspaces/paths.ts
+  - lib/traces/writer.ts
+  - lib/contracts/schemas.ts
+  gate: Dirty Git and non-Git fixtures produce verified immutable snapshots with stable manifest hashes.
+- id: PR-10
+  milestone: M1
+  branch: feat/copy-workspace-provider
+  title: Portable copy provider and workspace manager
+  depends_on:
+  - PR-09
+  creates:
+  - lib/workspaces/providers/provider.ts
+  - lib/workspaces/providers/copy.ts
+  - lib/workspaces/manager.ts
+  - lib/workspaces/quotas.ts
+  - lib/workspaces/retention.ts
+  - lib/workspaces/doctor.ts
+  modifies:
+  - lib/workspaces/repository.ts
+  - lib/workspaces/schema.ts
+  - lib/runtime/attempt-repository.ts
+  - lib/thread-surfaces/types.ts
+  - lib/thread-surfaces/repository.ts
+  - lib/traces/writer.ts
+  gate: Two independent verified workspace roots materialize from one snapshot with no hardlinks or Git operations.
+- id: PR-11
+  milestone: M1
+  branch: feat/isolated-attempt-dispatch
+  title: Bind write attempts to isolated workspaces
+  depends_on:
+  - PR-10
+  creates:
+  - lib/runtime/workspace-planner.ts
+  - lib/workspaces/bootstrap.ts
+  - test/integration/isolated-attempt-dispatch.test.ts
+  - test/integration/canonical-workspace-unchanged.test.ts
+  - test/integration/two-identical-baselines.test.ts
+  modifies:
+  - lib/runtime/service.ts
+  - lib/runtime/scheduler.ts
+  - lib/runtime/attempt-executor.ts
+  - lib/runner/dispatch.ts
+  - lib/runner/wrapper.ts
+  - lib/runner/prompt-compiler.ts
+  - lib/gates/engine.ts
+  - lib/gates/rules.ts
+  - lib/sequence/schema.ts
+  - lib/seqctl/commands/step.ts
+  - app/api/step/route.ts
+  gate: Two representative write attempts use the same snapshot, separate workspaces and leave canonical project
+    unchanged.
+- id: PR-12
+  milestone: M1
+  branch: feat/workspace-operator-surface
+  title: Workspace API, CLI, UI, doctor and M1 proof
+  depends_on:
+  - PR-11
+  creates:
+  - app/api/workspaces/route.ts
+  - app/api/workspaces/[workspaceId]/route.ts
+  - app/api/workspaces/[workspaceId]/retain/route.ts
+  - app/api/workspaces/[workspaceId]/clean/route.ts
+  - app/api/workspaces/doctor/route.ts
+  - lib/seqctl/commands/workspace.ts
+  - components/inspector/WorkspaceInspector.tsx
+  - test/architecture/no-git-worktree-runtime.test.ts
+  - test/integration/m1-workspace-release-proof.test.ts
+  - test/ui/workspace-inspector.e2e.ts
+  - scripts/verify/m1-workspace-proof.mjs
+  modifies:
+  - lib/seqctl/index.ts
+  - lib/ui/api.ts
+  - components/workbench/sections/RunSection.tsx
+  - components/inspector/ThreadSurfaceInspector.tsx
+  - components/inspector/StepInspector.tsx
+  - components/command/CreateNodeDialog.tsx
+  - components/lanes/useLaneBoard.ts
+  - lib/exports/bundler.ts
+  - package.json
+  - README.md
+  - docs/cli-reference.md
+  - docs/product/current-state.md
+  - docs/product/architecture-map.md
+  gate: M1 evidence proves same baseline, distinct workspaces, canonical unchanged, dirty/non-Git support and no
+    worktree invocation.
