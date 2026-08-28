@@ -61,3 +61,10 @@ The green baseline does not cover the known runtime-status, chat/apply ownership
 - `bun run lint` — passed.
 - `git diff --check` for task-owned paths — passed.
 - Specification and TypeScript/verifier-quality reviews — approved after AST origin proof and fail-closed traversal/import analysis.
+
+## Phase 0 integrated M0 proof
+
+- First full proof iteration found two stale test assumptions: review-required runs expected `failed`, and an exact approval fixture omitted payload/policy binding. Production behavior remained aligned with the repaired contracts.
+- Repaired focused regression: 53 passed, 0 failed.
+- Final `bun run verify:m0`: 50 focused tests passed; full repository 1,927 passed, 0 failed across 228 files; production build passed.
+- Evidence: `test-results/verify/m0/2026-08-28T02-50-29-900Z/m0-proof`.

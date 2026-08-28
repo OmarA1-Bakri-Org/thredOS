@@ -161,7 +161,7 @@ describe('AttemptExecutor and lifecycle', () => {
     const { service } = await make({ evaluateCompletionGates: () => [{ id: 'g', subject_type: 'step', subject_ref: 'x', gate_type: 'completion_contract_pass', status: 'BLOCK', reason_codes: ['contract'], evidence_refs: [], decided_by: 'threados', decided_at: '2026-01-01T00:00:00.000Z' }] })
     const out = await service.runAndWait(cmd, context)
     expect(out.attempts[0]?.status).toBe('needs_review')
-    expect(out.run.status).toBe('failed')
+    expect(out.run.status).toBe('awaiting_review')
   }, 30_000)
 
   test('failure after run creation and before spawn remains as recoverable canonical state', async () => {
@@ -298,6 +298,8 @@ describe('AttemptExecutor and lifecycle', () => {
     const approval = (subjectDigest: string): Approval => ({
       id: 'approval-1', action_type: 'run', target_ref: 'step:x', requested_by: 't', status: 'approved',
       approved_by: 't', approved_at: '2026-01-01T00:00:00.000Z', notes: null, subject_digest: subjectDigest,
+      payload_ref: subjectDigest,
+      policy_ref: 'sha256:1111111111111111111111111111111111111111111111111111111111111111',
     })
 
     let exactApprovals: Approval[] = []
