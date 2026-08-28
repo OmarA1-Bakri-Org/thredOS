@@ -81,7 +81,7 @@ describe.serial('run route approval proof', () => {
     expect(body.success).toBe(true)
 
     const approvals = await readApprovals(basePath, body.runId)
-    expect(approvals.map(entry => entry.status)).toEqual(['pending', 'approved'])
+    expect(approvals.map(entry => entry.status)).toEqual(['pending', 'approved', 'approved'])
     expect(approvals[1]).toMatchObject({
       action_type: 'run',
       target_ref: 'step:step-safe',
@@ -89,6 +89,16 @@ describe.serial('run route approval proof', () => {
       approved_by: 'local@thredos',
       status: 'approved',
       subject_digest: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
+      consumed_at: null,
+      consumed_by: null,
+    })
+    expect(approvals[2]).toMatchObject({
+      action_type: 'run',
+      target_ref: 'step:step-safe',
+      status: 'approved',
+      subject_digest: approvals[1].subject_digest,
+      consumed_at: expect.any(String),
+      consumed_by: 'runtime:api',
     })
 
     const traces = await readTraceEvents(basePath, body.runId)

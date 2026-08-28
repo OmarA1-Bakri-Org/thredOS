@@ -1,8 +1,8 @@
 import { randomUUID } from 'crypto'
 import { realpath } from 'fs/promises'
 import { resolve } from 'path'
-import { readApprovals } from '../approvals/repository'
-import { recordApprovedApprovalLifecycle } from '../approvals/runtime'
+import { consumeApproval, readApprovals } from '../approvals/repository'
+import { recordConsumedApprovalLifecycle } from '../approvals/runtime'
 import { appendGateDecision } from '../gates/repository'
 import { evaluateStepCompletionGates, evaluateStepGates } from '../gates/engine'
 import { approvalMatchesExecutableSubject, enforceExecutablePayload, executableSubjectDigest } from '../policy/executable'
@@ -42,8 +42,9 @@ export interface RuntimeFactoryOptions {
 const instances = new Map<string, Promise<ThreadOSRuntimeService>>()
 
 function defaults(basePath: string): RuntimeServiceDependencies {
+  const now = () => new Date().toISOString()
   return {
-    now: () => new Date().toISOString(),
+    now,
     newId: prefix => `${prefix}-${randomUUID()}`,
     loadSequence: readSequence,
     loadPolicy: async path => (await PolicyEngine.load(path)).getConfig(),
@@ -82,6 +83,12 @@ function defaults(basePath: string): RuntimeServiceDependencies {
     }),
     readRuntimeEvents: async (path, runId, stepId) => (await readRuntimeEventLog(path, runId, stepId)).events,
     readApprovals,
+    consumeApproval: async ({ basePath: path, runId, approvalId, targetRefs, subjectDigest, consumedAt, consumedBy }) => await consumeApproval(
+      path,
+      runId,
+      approvalId,
+      { targetRefs, subjectDigest, consumedAt, consumedBy },
+    ),
     evaluatePreGates: ({ step, sequence, policy, approvalPresent, surfaceClass, revealState }) => evaluateStepGates(step, sequence.steps, sequence.gates, {
       policyMode: policy.mode, sideEffectMode: policy.side_effect_mode, crossSurfaceReads: policy.cross_surface_reads,
       surfaceClass, revealState, isDependency: true, inputManifestPresent: true, approvalPresent,
@@ -110,8 +117,9 @@ function defaults(basePath: string): RuntimeServiceDependencies {
     },
     recordApproval: async ({ basePath: path, runId, context, targetRef, payload, policy, policySnapshotHash }) => {
       const digest = executableSubjectDigest(payload, path, policy)
-      await recordApprovedApprovalLifecycle({
+      await recordConsumedApprovalLifecycle({
         basePath: path, runId, actionType: 'run', targetRef, requestedBy: context.actor,
+        consumedBy: `runtime:${context.interface}`,
         resolvedBy: context.actor, actor: `runtime:${context.interface}`,
         notes: 'Confirmation bound to exact executable subject.', payloadRef: digest,
         policyRef: policySnapshotHash, subjectDigest: digest,

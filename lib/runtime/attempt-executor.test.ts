@@ -293,6 +293,107 @@ describe('AttemptExecutor and lifecycle', () => {
     expect(recorded).toEqual([first.run.policy_snapshot_hash])
   }, 30_000)
 
+  test('exact SAFE approval is consumed before any process record or spawn', async () => {
+    const order: string[] = []
+    const exactPolicy = PolicyConfigSchema.parse({ mode: 'SAFE', side_effect_mode: 'free' })
+    let approvals: Approval[] = []
+    const noConfirmContext = { ...context, policyConfirmed: false }
+    const { basePath, service } = await make({
+      loadPolicy: async () => exactPolicy,
+      readApprovals: async () => approvals,
+      consumeApproval: async input => {
+        order.push(`consume:${input.approvalId}`)
+        return {
+          ...approvals[0]!,
+          consumed_at: input.consumedAt,
+          consumed_by: input.consumedBy,
+        }
+      },
+      startProcess: async config => {
+        order.push(`start:${config.processId}`)
+        return {
+          processId: config.processId!,
+          pid: 333,
+          result: Promise.resolve(rawResult()),
+          cancel: async signal => ({
+            success: true,
+            signal: signal ?? 'SIGTERM',
+            escalated: false,
+          }),
+        } satisfies RunningProcessHandle
+      },
+      runStep: async () => { throw new Error('compatibility runner must not be used') },
+    } as Partial<RuntimeServiceDependencies> & {
+      startProcess: (config: Parameters<NonNullable<RuntimeServiceDependencies['startProcess']>>[0]) => Promise<RunningProcessHandle>
+    })
+    const digest = executableSubjectDigest({ command: 'sh', args: [], cwd: basePath }, basePath, exactPolicy)
+    approvals = [{
+      id: 'approval-exact-consume',
+      action_type: 'run',
+      target_ref: 'step:x',
+      requested_by: 'reviewer',
+      status: 'approved',
+      approved_by: 'reviewer',
+      approved_at: '2026-01-01T00:00:00.000Z',
+      notes: null,
+      subject_digest: digest,
+      payload_ref: digest,
+      policy_ref: 'sha256:1111111111111111111111111111111111111111111111111111111111111111',
+      consumed_at: null,
+      consumed_by: null,
+    }]
+
+    const out = await service.runAndWait(cmd, noConfirmContext)
+    expect(out.run.status).toBe('successful')
+    expect(order).toEqual([`consume:${approvals[0]!.id}`, `start:${out.attempts[0]!.process_id}`])
+    expect(await new ProcessRepository(basePath).list()).toHaveLength(1)
+  }, 30_000)
+
+  test('exact SAFE approval consumption failure stops before any process record or spawn', async () => {
+    let spawns = 0
+    const exactPolicy = PolicyConfigSchema.parse({ mode: 'SAFE', side_effect_mode: 'free' })
+    let approvals: Approval[] = []
+    const noConfirmContext = { ...context, policyConfirmed: false }
+    const { basePath, service } = await make({
+      loadPolicy: async () => exactPolicy,
+      readApprovals: async () => approvals,
+      consumeApproval: async () => { throw new Error('approval already consumed elsewhere') },
+      startProcess: async () => {
+        spawns++
+        throw new Error('must not spawn')
+      },
+      runStep: async () => { throw new Error('compatibility runner must not be used') },
+    } as Partial<RuntimeServiceDependencies> & {
+      startProcess: (config: Parameters<NonNullable<RuntimeServiceDependencies['startProcess']>>[0]) => Promise<RunningProcessHandle>
+    })
+    const digest = executableSubjectDigest({ command: 'sh', args: [], cwd: basePath }, basePath, exactPolicy)
+    approvals = [{
+      id: 'approval-exact-fail',
+      action_type: 'run',
+      target_ref: 'step:x',
+      requested_by: 'reviewer',
+      status: 'approved',
+      approved_by: 'reviewer',
+      approved_at: '2026-01-01T00:00:00.000Z',
+      notes: null,
+      subject_digest: digest,
+      payload_ref: digest,
+      policy_ref: 'sha256:1111111111111111111111111111111111111111111111111111111111111111',
+      consumed_at: null,
+      consumed_by: null,
+    }]
+
+    const out = await service.runAndWait(cmd, noConfirmContext)
+    expect(out.attempts[0]).toMatchObject({
+      status: 'failed',
+      error_code: 'APPROVAL_CONSUMPTION_FAILED',
+      error_message: 'approval already consumed elsewhere',
+      process_id: null,
+    })
+    expect(await new ProcessRepository(basePath).list()).toEqual([])
+    expect(spawns).toBe(0)
+  }, 30_000)
+
   test('confirmed SAFE execution records only when payload and policy lack an exact approval', async () => {
     const existingPolicy = PolicyConfigSchema.parse({ mode: 'SAFE', side_effect_mode: 'free' })
     const approval = (subjectDigest: string): Approval => ({

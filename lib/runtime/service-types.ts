@@ -56,6 +56,20 @@ export interface RuntimeServiceDependencies {
   saveArtifacts(basePath: string, result: RunResult, input: { surfaceId: string; compiledPrompt: string; step: Step }): Promise<string>
   readRuntimeEvents(basePath: string, runId: string, stepId: string): Promise<RuntimeDelegationEvent[]>
   readApprovals(basePath: string, runId: string): Promise<Approval[]>
+  /**
+   * Compatibility-only optional hook. Production runtime wiring must provide
+   * this when an exact approval can satisfy SAFE execution without an explicit
+   * command-context confirmation.
+   */
+  consumeApproval?(input: {
+    basePath: string
+    runId: string
+    approvalId: string
+    targetRefs: string[]
+    subjectDigest: string
+    consumedAt: string
+    consumedBy: string
+  }): Promise<Approval>
   evaluatePreGates(input: { step: Step; sequence: Sequence; policy: PolicyConfig; approvalPresent: boolean; surfaceClass: SurfaceClass; revealState: RevealState }): GateDecision[]
   evaluateCompletionGates(input: { step: Step; result: RunResult; artifactManifestPresent: boolean }): GateDecision[]
   persistGateDecisions(basePath: string, runId: string, surfaceId: string, decisions: GateDecision[], policyRef: string): Promise<void>

@@ -284,6 +284,7 @@ describe('runtime commands and errors', () => {
       'PROCESS_CONTROL_FAILED',
       'PROCESS_CONTROL_DISABLED',
       'PROCESS_LOST',
+      'APPROVAL_CONSUMPTION_FAILED',
       'SNAPSHOT_REQUIRED',
       'SNAPSHOT_SOURCE_CHANGED',
       'SNAPSHOT_SOURCE_BUSY',

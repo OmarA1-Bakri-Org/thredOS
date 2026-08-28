@@ -1,7 +1,10 @@
 import { randomUUID } from 'crypto'
 import { type Approval, type TraceEvent } from '@/lib/contracts/schemas'
 import { assertRuntimeApprovalBinding } from '@/lib/approvals/binding'
-import { appendApprovalLifecycle } from '@/lib/approvals/repository'
+import {
+  appendApprovalLifecycle,
+  appendConsumedApprovalLifecycle,
+} from '@/lib/approvals/repository'
 import { appendTraceEvent } from '@/lib/traces/writer'
 
 interface RecordApprovedApprovalLifecycleInput {
@@ -19,6 +22,10 @@ interface RecordApprovedApprovalLifecycleInput {
   subjectDigest?: string | null
   preconditionHash?: string | null
   expiresAt?: string | null
+}
+
+interface RecordConsumedApprovalLifecycleInput extends RecordApprovedApprovalLifecycleInput {
+  consumedBy: string
 }
 
 type ApprovalTraceAppender = typeof appendTraceEvent
@@ -126,6 +133,106 @@ export async function recordApprovedApprovalLifecycle({
   }
 
   const approval = await appendApprovalLifecycle(basePath, runId, pendingApproval, approvedApproval)
+  const evidence = await appendApprovalTraceEvidence({
+    basePath,
+    runId,
+    events: [
+      {
+        ts: requestedAt,
+        run_id: runId,
+        surface_id: targetRef,
+        actor,
+        event_type: 'approval-requested',
+        payload_ref: pendingApproval.payload_ref ?? null,
+        policy_ref: pendingApproval.policy_ref ?? null,
+      },
+      {
+        ts: resolvedAt,
+        run_id: runId,
+        surface_id: targetRef,
+        actor,
+        event_type: 'approval-resolved',
+        payload_ref: approvedApproval.payload_ref ?? null,
+        policy_ref: approvedApproval.policy_ref ?? null,
+      },
+    ],
+  })
+
+  return {
+    approval,
+    ...evidence,
+  }
+}
+
+export async function recordConsumedApprovalLifecycle({
+  basePath,
+  runId,
+  actionType,
+  targetRef,
+  requestedBy,
+  resolvedBy,
+  consumedBy,
+  actor,
+  notes = null,
+  payloadRef = null,
+  policyRef = null,
+  approvalId = `apr-${randomUUID()}`,
+  subjectDigest = null,
+  preconditionHash = null,
+  expiresAt = null,
+}: RecordConsumedApprovalLifecycleInput): Promise<ApprovalLifecycleCommitResult> {
+  const requestedAt = new Date().toISOString()
+  const resolvedAt = new Date().toISOString()
+  const consumedAt = new Date().toISOString()
+
+  assertRuntimeApprovalBinding({
+    actionType,
+    subjectDigest,
+    payloadRef,
+    policyRef,
+    preconditionHash,
+    expiresAt,
+  })
+
+  const pendingApproval: Approval = {
+    id: approvalId,
+    action_type: actionType,
+    target_ref: targetRef,
+    requested_by: requestedBy,
+    status: 'pending',
+    approved_by: null,
+    approved_at: null,
+    notes: null,
+    subject_digest: subjectDigest,
+    payload_ref: payloadRef,
+    policy_ref: policyRef,
+    precondition_hash: preconditionHash,
+    expires_at: expiresAt,
+    consumed_at: null,
+    consumed_by: null,
+  }
+
+  const approvedApproval: Approval = {
+    ...pendingApproval,
+    status: 'approved',
+    approved_by: resolvedBy ?? requestedBy,
+    approved_at: resolvedAt,
+    notes,
+  }
+
+  const consumedApproval: Approval = {
+    ...approvedApproval,
+    consumed_at: consumedAt,
+    consumed_by: consumedBy,
+  }
+
+  const approval = await appendConsumedApprovalLifecycle(
+    basePath,
+    runId,
+    pendingApproval,
+    approvedApproval,
+    consumedApproval,
+  )
   const evidence = await appendApprovalTraceEvidence({
     basePath,
     runId,

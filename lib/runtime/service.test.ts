@@ -22,10 +22,13 @@ import type {
 import { ProcessControlError } from '../runner/process-handle'
 import { createTestCompatibilityStartProcess } from './test-compatibility'
 import { formatRetryBinding, parseRetryBinding, parseUnboundRetry } from './retry-binding'
+import { readApprovals } from '../approvals/repository'
+import { setAtomicBeforeRenameHookForTests } from '../fs/atomic'
 
 const roots: string[] = []
 afterEach(async () => {
   clearRuntimeServiceFactoryForTests()
+  setAtomicBeforeRenameHookForTests(null)
   await Promise.all(roots.splice(0).map(path => rm(path, { recursive: true, force: true })))
 })
 
@@ -1386,6 +1389,94 @@ describe('ThreadOSRuntimeService', () => {
     await first.reconcile()
     expect((await runs.get('stale-run'))?.revision).toBe(revision)
   })
+
+  test('factory confirmed SAFE approval lifecycle fails atomically, retries cleanly, and is consumed before spawn', async () => {
+    const basePath = await mkdtemp(join(tmpdir(), 'threados-factory-approval-'))
+    roots.push(basePath)
+    let starts = 0
+    const service = await getThreadOSRuntimeService(basePath, {
+      dependencies: {
+        loadSequence: async () => sequence(),
+        loadPolicy: async () => PolicyConfigSchema.parse({ mode: 'SAFE', side_effect_mode: 'free' }),
+        validateSequence: () => undefined,
+        validatePrompt: async () => true,
+        compilePrompt: async () => 'compiled prompt',
+        prepareArtifacts: async () => undefined,
+        resolveGateSurface: async () => ({ surfaceClass: 'shared', revealState: null }),
+        allowModelExecution: () => ({ allowed: true }),
+        dispatch: async (_model, options) => ({
+          stepId: options.stepId,
+          runId: options.runId,
+          command: 'sh',
+          args: [],
+          cwd: basePath,
+        }),
+        saveArtifacts: async () => '.threados/runs/artifact',
+        readRuntimeEvents: async () => [],
+        persistGateDecisions: async () => undefined,
+        projections: {
+          beginRun: async () => undefined,
+          beginAttempt: async () => undefined,
+          finalizeAttempt: async () => undefined,
+          finalizeRun: async () => undefined,
+        },
+        startProcess: async config => {
+          starts++
+          const approvals = await readApprovals(basePath, config.runId)
+          expect(approvals.map(approval => approval.status)).toEqual(['pending', 'approved', 'approved'])
+          expect(approvals[1]).toMatchObject({ consumed_at: null, consumed_by: null })
+          expect(approvals[2]).toMatchObject({
+            consumed_at: expect.any(String),
+            consumed_by: 'runtime:system',
+            subject_digest: approvals[1]?.subject_digest,
+          })
+          return {
+            processId: config.processId!,
+            pid: 512,
+            result: Promise.resolve(rawResult(config.runId, { stepId: config.stepId })),
+            cancel: async signal => ({
+              success: true,
+              signal: signal ?? 'SIGTERM',
+              escalated: false,
+            }),
+          } satisfies RunningProcessHandle
+        },
+      },
+    })
+
+    setAtomicBeforeRenameHookForTests(async target => {
+      if (target.endsWith('approvals.ndjson')) throw new Error('injected approvals rename failure')
+    })
+
+    const failed = await service.runAndWait(request, {
+      ...context,
+      idempotencyKey: 'confirmed-safe-approval-fail',
+    })
+    expect(failed.run.status).toBe('failed')
+    expect(failed.attempts[0]).toMatchObject({
+      status: 'failed',
+      error_code: 'APPROVAL_CONSUMPTION_FAILED',
+      process_id: null,
+    })
+    await expect(readApprovals(basePath, failed.run.id)).resolves.toEqual([])
+    expect(await new ProcessRepository(basePath).list()).toEqual([])
+    expect(starts).toBe(0)
+
+    setAtomicBeforeRenameHookForTests(null)
+
+    const succeeded = await service.runAndWait(request, {
+      ...context,
+      idempotencyKey: 'confirmed-safe-approval-retry',
+    })
+    expect(succeeded.run.status).toBe('successful')
+    expect(starts).toBe(1)
+    const approvals = await readApprovals(basePath, succeeded.run.id)
+    expect(approvals.map(approval => approval.status)).toEqual(['pending', 'approved', 'approved'])
+    expect(approvals[2]).toMatchObject({
+      consumed_at: expect.any(String),
+      consumed_by: 'runtime:system',
+    })
+  }, 30_000)
 
   test('concurrent replay waits for the accepted run to finish instead of returning pending', async () => {
     const { basePath, repositories, service } = await fixture()

@@ -4,8 +4,10 @@ import { readTraceEvents } from '@/lib/traces/reader'
 import { cleanTempDir, createTempDir } from '../../test/helpers/setup'
 import {
   recordApprovedApprovalLifecycle,
+  recordConsumedApprovalLifecycle,
   setApprovalTraceAppenderForTests,
 } from './runtime'
+import { setAtomicBeforeRenameHookForTests } from '@/lib/fs/atomic'
 
 let tmpDir: string
 
@@ -16,6 +18,7 @@ describe.serial('recordApprovedApprovalLifecycle', () => {
 
   afterEach(async () => {
     setApprovalTraceAppenderForTests(null)
+    setAtomicBeforeRenameHookForTests(null)
     await cleanTempDir(tmpDir)
   })
 
@@ -127,5 +130,61 @@ describe.serial('recordApprovedApprovalLifecycle', () => {
     ])
     await expect(readTraceEvents(tmpDir, 'run-trace-failure')).resolves.toEqual([])
     errorSpy.mockRestore()
+  })
+
+  test('recordConsumedApprovalLifecycle persists pending, approved, and consumed entries in one committed lifecycle', async () => {
+    const result = await recordConsumedApprovalLifecycle({
+      basePath: tmpDir,
+      runId: 'run-consumed-binding',
+      actionType: 'run',
+      targetRef: 'step:build',
+      requestedBy: 'agent-alpha',
+      resolvedBy: 'reviewer@example.com',
+      consumedBy: 'runtime:test',
+      actor: 'runtime:test',
+      notes: 'Confirmed and consumed exact binding.',
+      payloadRef: 'payloads/run-binding.json',
+      policyRef: 'sha256:fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210',
+      subjectDigest: 'sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+      preconditionHash: 'sha256:00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff',
+      expiresAt: '2026-08-28T12:00:00.000Z',
+    })
+
+    expect(result.approval).toMatchObject({
+      status: 'approved',
+      consumed_at: expect.any(String),
+      consumed_by: 'runtime:test',
+    })
+    const approvals = await readApprovals(tmpDir, 'run-consumed-binding')
+    expect(approvals.map(approval => approval.status)).toEqual(['pending', 'approved', 'approved'])
+    expect(approvals[1]).toMatchObject({ consumed_at: null, consumed_by: null })
+    expect(approvals[2]).toMatchObject({
+      consumed_at: expect.any(String),
+      consumed_by: 'runtime:test',
+      subject_digest: approvals[1].subject_digest,
+    })
+  })
+
+  test('recordConsumedApprovalLifecycle atomic failure leaves no approval residue', async () => {
+    setAtomicBeforeRenameHookForTests(async target => {
+      if (target.endsWith('approvals.ndjson')) throw new Error('injected approvals rename failure')
+    })
+
+    await expect(recordConsumedApprovalLifecycle({
+      basePath: tmpDir,
+      runId: 'run-consumed-failure',
+      actionType: 'run',
+      targetRef: 'step:build',
+      requestedBy: 'agent-alpha',
+      resolvedBy: 'reviewer@example.com',
+      consumedBy: 'runtime:test',
+      actor: 'runtime:test',
+      payloadRef: 'payloads/run-binding.json',
+      policyRef: 'sha256:fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210',
+      subjectDigest: 'sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+    })).rejects.toThrow('injected approvals rename failure')
+
+    await expect(readApprovals(tmpDir, 'run-consumed-failure')).resolves.toEqual([])
+    await expect(readTraceEvents(tmpDir, 'run-consumed-failure')).resolves.toEqual([])
   })
 })

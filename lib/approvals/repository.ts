@@ -1,6 +1,8 @@
 import { mkdir } from 'fs/promises'
 import { ApprovalSchema, type Approval } from '@/lib/contracts/schemas'
 import { withExclusiveFileLock, writeFileAtomic } from '@/lib/fs/atomic'
+import { hasExactApprovalBinding, isApprovalExpired } from '@/lib/approvals/binding'
+import { approvalMatchesExecutableSubject } from '@/lib/policy/executable'
 import {
   assertSafePathSegment,
   resolveExistingPathWithinRoot,
@@ -52,7 +54,7 @@ async function resolveExistingApprovalsPaths(basePath: string, runId: string): P
   }
 }
 
-function foldApprovals(entries: Approval[]): Approval[] {
+export function foldApprovals(entries: Approval[]): Approval[] {
   const indexById = new Map<string, number>()
   const folded: Approval[] = []
 
@@ -95,18 +97,89 @@ async function readApprovalsFile(filePath: string): Promise<Approval[]> {
   }
 }
 
+function assertApprovalLifecycleIdentity(entries: Approval[]): void {
+  const [first, ...rest] = entries
+  if (!first) throw new Error('Approval lifecycle requires at least one record')
+  for (const entry of rest) {
+    if (entry.id !== first.id) {
+      throw new Error('Approval lifecycle records must preserve one approval id')
+    }
+  }
+}
+
+function assertConsumedLifecycle(
+  pendingApproval: Approval,
+  approvedApproval: Approval,
+  consumedApproval: Approval,
+): void {
+  assertApprovalLifecycleIdentity([pendingApproval, approvedApproval, consumedApproval])
+  if (pendingApproval.status !== 'pending') {
+    throw new Error('Approval lifecycle must start with a pending record')
+  }
+  if (approvedApproval.status !== 'approved') {
+    throw new Error('Consumed approval lifecycle must include an approved record before consumption')
+  }
+  if (consumedApproval.status !== 'approved') {
+    throw new Error('Consumed approval lifecycle terminal record must remain approved')
+  }
+  if (!hasExactApprovalBinding(approvedApproval) || !hasExactApprovalBinding(consumedApproval)) {
+    throw new Error('Consumed approval lifecycle requires exact runtime approval binding')
+  }
+  if (approvedApproval.consumed_at != null || approvedApproval.consumed_by != null) {
+    throw new Error('Approved approval must remain unconsumed before the terminal consumed record')
+  }
+  if (consumedApproval.consumed_at == null || consumedApproval.consumed_by == null) {
+    throw new Error('Consumed approval lifecycle terminal record requires consumed_at and consumed_by')
+  }
+  const preservedFields: Array<keyof Approval> = [
+    'action_type',
+    'target_ref',
+    'requested_by',
+    'approved_by',
+    'approved_at',
+    'notes',
+    'subject_digest',
+    'payload_ref',
+    'policy_ref',
+    'precondition_hash',
+    'expires_at',
+  ]
+  for (const field of preservedFields) {
+    if (approvedApproval[field] !== consumedApproval[field]) {
+      throw new Error(`Consumed approval lifecycle must preserve approved field ${field}`)
+    }
+  }
+}
+
 export class ApprovalResolutionError extends Error {
   constructor(
     public readonly code:
       | 'APPROVAL_ALREADY_EXISTS'
       | 'APPROVAL_NOT_FOUND'
+      | 'APPROVAL_NOT_APPROVED'
       | 'APPROVAL_ALREADY_RESOLVED'
+      | 'APPROVAL_ALREADY_CONSUMED'
       | 'APPROVAL_EXPIRED'
       | 'APPROVAL_BINDING_MISMATCH',
     message: string,
   ) {
     super(message)
     this.name = 'ApprovalResolutionError'
+  }
+}
+
+export class ApprovalConsumptionError extends Error {
+  constructor(
+    public readonly code:
+      | 'APPROVAL_NOT_FOUND'
+      | 'APPROVAL_NOT_APPROVED'
+      | 'APPROVAL_ALREADY_CONSUMED'
+      | 'APPROVAL_EXPIRED'
+      | 'APPROVAL_BINDING_MISMATCH',
+    message: string,
+  ) {
+    super(message)
+    this.name = 'ApprovalConsumptionError'
   }
 }
 
@@ -159,9 +232,7 @@ export async function appendApprovalLifecycle(
 
     const validatedPending = ApprovalSchema.parse(pendingApproval)
     const validatedTerminal = ApprovalSchema.parse(terminalApproval)
-    if (validatedPending.id !== validatedTerminal.id) {
-      throw new Error('Approval lifecycle records must preserve one approval id')
-    }
+    assertApprovalLifecycleIdentity([validatedPending, validatedTerminal])
     if (validatedPending.status !== 'pending') {
       throw new Error('Approval lifecycle must start with a pending record')
     }
@@ -175,6 +246,38 @@ export async function appendApprovalLifecycle(
       basePath,
     )
     return validatedTerminal
+  }, { allowedRoot: basePath })
+}
+
+export async function appendConsumedApprovalLifecycle(
+  basePath: string,
+  runId: string,
+  pendingApproval: Approval,
+  approvedApproval: Approval,
+  consumedApproval: Approval,
+): Promise<Approval> {
+  assertSafePathSegment(runId, 'run id')
+  const filePath = await resolveApprovalsFilePath(basePath, runId)
+  const lockPath = await resolveApprovalsLockPath(basePath, runId)
+
+  return await withExclusiveFileLock(lockPath, async () => {
+    const approvals = await readApprovalsFile(filePath)
+    const currentApproval = foldApprovals(approvals).find(entry => entry.id === pendingApproval.id) ?? null
+    if (currentApproval) {
+      throw new ApprovalResolutionError('APPROVAL_ALREADY_EXISTS', 'Approval already exists')
+    }
+
+    const validatedPending = ApprovalSchema.parse(pendingApproval)
+    const validatedApproved = ApprovalSchema.parse(approvedApproval)
+    const validatedConsumed = ApprovalSchema.parse(consumedApproval)
+    assertConsumedLifecycle(validatedPending, validatedApproved, validatedConsumed)
+
+    await writeApprovalsSnapshot(
+      filePath,
+      [...approvals, validatedPending, validatedApproved, validatedConsumed],
+      basePath,
+    )
+    return validatedConsumed
   }, { allowedRoot: basePath })
 }
 
@@ -213,5 +316,63 @@ export async function resolvePendingApproval(
       basePath,
     )
     return resolvedApproval
+  }, { allowedRoot: basePath })
+}
+
+export interface ConsumeApprovalInput {
+  targetRefs: string[]
+  subjectDigest: string
+  consumedAt: string
+  consumedBy: string
+}
+
+export async function consumeApproval(
+  basePath: string,
+  runId: string,
+  approvalId: string,
+  input: ConsumeApprovalInput,
+): Promise<Approval> {
+  assertSafePathSegment(runId, 'run id')
+  const filePath = await resolveApprovalsFilePath(basePath, runId)
+  const lockPath = await resolveApprovalsLockPath(basePath, runId)
+
+  return await withExclusiveFileLock(lockPath, async () => {
+    const approvals = await readApprovalsFile(filePath)
+    const currentApproval = foldApprovals(approvals).find(entry => entry.id === approvalId) ?? null
+
+    if (!currentApproval) {
+      throw new ApprovalConsumptionError('APPROVAL_NOT_FOUND', 'Approval not found')
+    }
+    if (currentApproval.status !== 'approved') {
+      throw new ApprovalConsumptionError('APPROVAL_NOT_APPROVED', 'Approval is not approved')
+    }
+    if (currentApproval.consumed_at != null) {
+      throw new ApprovalConsumptionError('APPROVAL_ALREADY_CONSUMED', 'Approval already consumed')
+    }
+    if (isApprovalExpired(currentApproval)) {
+      throw new ApprovalConsumptionError('APPROVAL_EXPIRED', 'Approval expired')
+    }
+    if (!approvalMatchesExecutableSubject(
+      currentApproval,
+      input.targetRefs,
+      input.subjectDigest,
+    )) {
+      throw new ApprovalConsumptionError(
+        'APPROVAL_BINDING_MISMATCH',
+        'Approval does not match the expected executable subject',
+      )
+    }
+
+    const consumedApproval = ApprovalSchema.parse({
+      ...currentApproval,
+      consumed_at: input.consumedAt,
+      consumed_by: input.consumedBy,
+    })
+    await writeApprovalsSnapshot(
+      filePath,
+      [...approvals, consumedApproval],
+      basePath,
+    )
+    return consumedApproval
   }, { allowedRoot: basePath })
 }

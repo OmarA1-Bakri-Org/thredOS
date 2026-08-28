@@ -9,7 +9,9 @@ import { createTempDir, cleanTempDir } from '../../test/helpers/setup'
 import {
   appendApproval,
   appendApprovalLifecycle,
+  ApprovalConsumptionError,
   ApprovalResolutionError,
+  consumeApproval,
   readApprovals,
   resolvePendingApproval,
 } from './repository'
@@ -169,6 +171,122 @@ describe('approval repository', () => {
     expect(results).toHaveLength(2)
     expect(results[0]).toMatchObject({ id: 'approval-lifecycle', status: 'pending' })
     expect(results[1]).toMatchObject({ id: 'approval-lifecycle', status: 'approved' })
+  })
+
+  test('concurrent approval consumption has exactly one winner and appends one consumed record', async () => {
+    const approved = makeApproval({
+      id: 'approval-consume-concurrent',
+      status: 'approved',
+      approved_by: 'reviewer@example.com',
+      approved_at: '2026-08-28T10:00:00.000Z',
+      target_ref: 'step:build',
+      subject_digest: 'sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+      payload_ref: 'payloads/run-build.json',
+      policy_ref: 'sha256:fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210',
+      consumed_at: null,
+      consumed_by: null,
+    })
+    await appendApproval(tmpDir, runId, approved)
+
+    const attempts = await Promise.allSettled([
+      consumeApproval(tmpDir, runId, approved.id, {
+        targetRefs: ['step:build'],
+        subjectDigest: approved.subject_digest!,
+        consumedAt: '2026-08-28T10:01:00.000Z',
+        consumedBy: 'runtime:system',
+      }),
+      consumeApproval(tmpDir, runId, approved.id, {
+        targetRefs: ['step:build'],
+        subjectDigest: approved.subject_digest!,
+        consumedAt: '2026-08-28T10:01:01.000Z',
+        consumedBy: 'runtime:api',
+      }),
+    ])
+
+    expect(attempts.filter(attempt => attempt.status === 'fulfilled')).toHaveLength(1)
+    expect(attempts.filter(attempt => attempt.status === 'rejected')).toHaveLength(1)
+    const rejected = attempts.find(attempt => attempt.status === 'rejected')
+    expect(rejected?.reason).toBeInstanceOf(ApprovalConsumptionError)
+    expect((rejected?.reason as ApprovalConsumptionError).code).toBe('APPROVAL_ALREADY_CONSUMED')
+
+    const results = await readApprovals(tmpDir, runId)
+    expect(results).toHaveLength(2)
+    expect(results[0]).toMatchObject({ id: approved.id, status: 'approved', consumed_at: null })
+    expect(results[1]).toMatchObject({
+      id: approved.id,
+      status: 'approved',
+      consumed_at: expect.any(String),
+      consumed_by: expect.stringMatching(/^runtime:/),
+    })
+  })
+
+  test('approval consumption fails closed for mismatched, expired, and unbound approvals', async () => {
+    const mismatch = makeApproval({
+      id: 'approval-consume-mismatch',
+      status: 'approved',
+      approved_by: 'reviewer@example.com',
+      approved_at: '2026-08-28T10:00:00.000Z',
+      target_ref: 'step:build',
+      subject_digest: 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      payload_ref: 'payloads/run-build.json',
+      policy_ref: 'sha256:1111111111111111111111111111111111111111111111111111111111111111',
+      consumed_at: null,
+      consumed_by: null,
+    })
+    await appendApproval(tmpDir, runId, mismatch)
+    await expect(consumeApproval(tmpDir, runId, mismatch.id, {
+      targetRefs: ['step:build'],
+      subjectDigest: 'sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+      consumedAt: '2026-08-28T10:01:00.000Z',
+      consumedBy: 'runtime:system',
+    })).rejects.toMatchObject({
+      name: 'ApprovalConsumptionError',
+      code: 'APPROVAL_BINDING_MISMATCH',
+    })
+
+    const expired = makeApproval({
+      id: 'approval-consume-expired',
+      status: 'approved',
+      approved_by: 'reviewer@example.com',
+      approved_at: '2026-08-28T10:00:00.000Z',
+      target_ref: 'step:build',
+      subject_digest: 'sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+      payload_ref: 'payloads/run-build.json',
+      policy_ref: 'sha256:2222222222222222222222222222222222222222222222222222222222222222',
+      expires_at: '2026-08-27T10:00:00.000Z',
+      consumed_at: null,
+      consumed_by: null,
+    })
+    await appendApproval(tmpDir, runId, expired)
+    await expect(consumeApproval(tmpDir, runId, expired.id, {
+      targetRefs: ['step:build'],
+      subjectDigest: expired.subject_digest!,
+      consumedAt: '2026-08-28T10:01:00.000Z',
+      consumedBy: 'runtime:system',
+    })).rejects.toMatchObject({
+      name: 'ApprovalConsumptionError',
+      code: 'APPROVAL_EXPIRED',
+    })
+
+    const unbound = makeApproval({
+      id: 'approval-consume-unbound',
+      status: 'approved',
+      approved_by: 'reviewer@example.com',
+      approved_at: '2026-08-28T10:00:00.000Z',
+      target_ref: 'step:build',
+      consumed_at: null,
+      consumed_by: null,
+    })
+    await appendApproval(tmpDir, runId, unbound)
+    await expect(consumeApproval(tmpDir, runId, unbound.id, {
+      targetRefs: ['step:build'],
+      subjectDigest: 'sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd',
+      consumedAt: '2026-08-28T10:01:00.000Z',
+      consumedBy: 'runtime:system',
+    })).rejects.toMatchObject({
+      name: 'ApprovalConsumptionError',
+      code: 'APPROVAL_BINDING_MISMATCH',
+    })
   })
 
   test('readApprovals waits for the per-run lock and never parses partial NDJSON writes', async () => {

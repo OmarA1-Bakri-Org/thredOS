@@ -1,4 +1,5 @@
 import { createHash } from 'crypto'
+import { ApprovalConsumptionError } from '../approvals/repository'
 import { approvalMatchesExecutableSubject, executableSubjectDigest } from '../policy/executable'
 import type { ExecutablePayload, PolicyConfig } from '../policy/schema'
 import type { Sequence, Step } from '../sequence/schema'
@@ -8,6 +9,7 @@ import { ProcessControlError } from '../runner/process-handle'
 import type { RunnerConfig, RunResult } from '../runner/wrapper'
 import { transitionAttempt, transitionRun } from './lifecycle'
 import type { ProcessController } from './process-controller'
+import { RuntimeErrorCode } from './error-codes'
 import { RuntimeRepositoryError } from './run-repository'
 import type { RuntimeCommandContext, RuntimeRepositories, RuntimeServiceDependencies } from './service-types'
 import type { StepAttempt, WorkflowRun } from './schema'
@@ -128,7 +130,7 @@ export class AttemptExecutor {
       const payload = payloadFrom(runnerConfig, this.basePath)
       const targetRefs = [`step:${step.id}`, input.targetRef]
       const subjectDigest = executableSubjectDigest(payload, this.basePath, policy)
-      const exactApprovalPresent = approvals.some(approval =>
+      const exactApproval = approvals.find(approval =>
         approvalMatchesExecutableSubject(approval, targetRefs, subjectDigest))
       const executablePolicy = this.deps.enforceExecutablePolicy({
         payload, policy, confirmed: context.policyConfirmed, approvals,
@@ -142,11 +144,51 @@ export class AttemptExecutor {
         await this.deps.projections.finalizeAttempt({ run, attempt, step, runtimeEvents: [] }).catch(() => undefined)
         return { run, attempt }
       }
-      if (context.policyConfirmed && policy.mode === 'SAFE' && !exactApprovalPresent) {
-        await this.deps.recordApproval({
-          basePath: this.basePath, runId: run.id, context, targetRef: `step:${step.id}`,
-          payload, policy, policySnapshotHash: run.policy_snapshot_hash,
-        })
+      if (!context.policyConfirmed && policy.mode === 'SAFE' && exactApproval) {
+        if (!this.deps.consumeApproval) {
+          attempt = await transitionAttempt(this.repositories.attempts, attempt, 'failed', {
+            ended_at: this.deps.now(),
+            error_code: RuntimeErrorCode.APPROVAL_CONSUMPTION_FAILED,
+            error_message: 'Exact approval consumption is unavailable',
+          })
+          await this.deps.projections.finalizeAttempt({ run, attempt, step, runtimeEvents: [] }).catch(() => undefined)
+          return { run, attempt }
+        }
+        try {
+          await this.deps.consumeApproval({
+            basePath: this.basePath,
+            runId: run.id,
+            approvalId: exactApproval.id,
+            targetRefs,
+            subjectDigest,
+            consumedAt: this.deps.now(),
+            consumedBy: `runtime:${context.interface}`,
+          })
+        } catch (error) {
+          attempt = await transitionAttempt(this.repositories.attempts, attempt, 'failed', {
+            ended_at: this.deps.now(),
+            error_code: RuntimeErrorCode.APPROVAL_CONSUMPTION_FAILED,
+            error_message: error instanceof Error ? error.message : String(error),
+          })
+          await this.deps.projections.finalizeAttempt({ run, attempt, step, runtimeEvents: [] }).catch(() => undefined)
+          return { run, attempt }
+        }
+      }
+      if (context.policyConfirmed && policy.mode === 'SAFE' && !exactApproval) {
+        try {
+          await this.deps.recordApproval({
+            basePath: this.basePath, runId: run.id, context, targetRef: `step:${step.id}`,
+            payload, policy, policySnapshotHash: run.policy_snapshot_hash,
+          })
+        } catch (error) {
+          attempt = await transitionAttempt(this.repositories.attempts, attempt, 'failed', {
+            ended_at: this.deps.now(),
+            error_code: RuntimeErrorCode.APPROVAL_CONSUMPTION_FAILED,
+            error_message: error instanceof Error ? error.message : String(error),
+          })
+          await this.deps.projections.finalizeAttempt({ run, attempt, step, runtimeEvents: [] }).catch(() => undefined)
+          return { run, attempt }
+        }
       }
 
       const cancelledBeforeProcess = await this.observeRunCancellation(run.id, attempt.id)
@@ -269,7 +311,10 @@ export class AttemptExecutor {
       run = await this.repositories.runs.get(run.id) ?? run
       attempt = await this.repositories.attempts.get(attempt.id) ?? attempt
       attempt = await transitionAttempt(this.repositories.attempts, attempt, 'failed', {
-        ended_at: this.deps.now(), error_code: 'ATTEMPT_PREPARATION_FAILED',
+        ended_at: this.deps.now(),
+        error_code: error instanceof ApprovalConsumptionError
+          ? RuntimeErrorCode.APPROVAL_CONSUMPTION_FAILED
+          : 'ATTEMPT_PREPARATION_FAILED',
         error_message: error instanceof Error ? error.message : String(error),
       })
       await this.deps.projections.finalizeAttempt({ run, attempt, step, runtimeEvents: [] }).catch(() => undefined)

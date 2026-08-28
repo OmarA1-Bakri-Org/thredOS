@@ -8,7 +8,7 @@ Close the verified Milestone 0 correctness and ownership defects without changin
 
 Phase 0 closeout gate:
 
-M0 proof is green. Run the UI proof, local proof, production worktree scan, and final independent Phase 0 review.
+M0 proof, UI proof, and local proof are green. Final approval-consumption repair is implemented and reviewed; rerun the integrated M0 proof before closing Phase 0.
 
 ## Completed
 
@@ -27,6 +27,8 @@ M0 proof is green. Run the UI proof, local proof, production worktree scan, and 
 - Phase 0 Task 5: replaced the incomplete fixed lifecycle allowlist with recursive AST-based discovery, explicit classification, fail-closed traversal reporting, chat/apply rejection proof, and adversarial import/origin/shadowing coverage.
 - Task 5 strict TDD, specification review, TypeScript/verifier-quality review, and coordinator verification passed.
 - Integrated `bun run verify:m0` passed after one repaired stale-fixture iteration: 50 focused tests, 1,927 full-suite tests across 228 files, typecheck, lint, and production build.
+- UI proof passed 12/12 and local operator-flow proof passed 11/11.
+- Final independent review found exact approvals were replayable. Atomic consume-on-use, pre-spawn failure handling, and confirmed-approval atomic `pending -> approved -> consumed` persistence were implemented and approved by spec and TypeScript/concurrency reviewers.
 
 ## Boundaries
 
@@ -41,7 +43,7 @@ Resume by re-reading `10-intent.md`, this checkpoint, the canonical authority se
 
 ## Next
 
-Run UI/local proofs and the final Phase 0 review; repair any regression before advancing to PR-08.
+Rerun `bun run verify:m0` on the approval-consumption repair, then close Phase 0 only if the full proof remains green.
 
 ## Drift decision
 

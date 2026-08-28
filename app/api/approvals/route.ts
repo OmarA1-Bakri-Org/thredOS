@@ -11,6 +11,7 @@ import { appendApprovalTraceEvidence } from '@/lib/approvals/runtime'
 import {
   ApprovalResolutionError,
   appendApproval,
+  foldApprovals,
   readApprovals,
   resolvePendingApproval,
 } from '@/lib/approvals/repository'
@@ -27,26 +28,6 @@ function isSafeRunId(runId: string): boolean {
   } catch {
     return false
   }
-}
-
-function foldApprovals(entries: Approval[]): Approval[] {
-  const indexById = new Map<string, number>()
-  const folded: Approval[] = []
-
-  for (const entry of entries) {
-    const existingIndex = indexById.get(entry.id)
-    if (existingIndex == null) {
-      indexById.set(entry.id, folded.length)
-      folded.push(entry)
-      continue
-    }
-    folded[existingIndex] = {
-      ...folded[existingIndex],
-      ...entry,
-    }
-  }
-
-  return folded
 }
 
 const FileSafeRunIdSchema = z.string().min(1).refine(isSafeRunId, {
@@ -124,6 +105,8 @@ function approvalResolutionErrorResponse(error: ApprovalResolutionError): NextRe
       return NextResponse.json({ error: error.message, code: error.code }, { status: 409 })
     case 'APPROVAL_NOT_FOUND':
       return NextResponse.json({ error: error.message, code: error.code }, { status: 404 })
+    case 'APPROVAL_NOT_APPROVED':
+    case 'APPROVAL_ALREADY_CONSUMED':
     case 'APPROVAL_ALREADY_RESOLVED':
     case 'APPROVAL_EXPIRED':
     case 'APPROVAL_BINDING_MISMATCH':

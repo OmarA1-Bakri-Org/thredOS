@@ -68,3 +68,14 @@ The green baseline does not cover the known runtime-status, chat/apply ownership
 - Repaired focused regression: 53 passed, 0 failed.
 - Final `bun run verify:m0`: 50 focused tests passed; full repository 1,927 passed, 0 failed across 228 files; production build passed.
 - Evidence: `test-results/verify/m0/2026-08-28T02-50-29-900Z/m0-proof`.
+- UI evidence: `test-results/verify/ui/2026-08-28T02-56-55-223Z` — 12/12 passed.
+- Local evidence: `test-results/verify/local/2026-08-28T02-58-53-343Z` — 11/11 passed.
+
+## Final approval consumption repair
+
+- Final independent review identified replayable exact approvals because consumption fields were never mutated.
+- Atomic repository consumption now has exactly one concurrent winner and validates current exact subject, expiry, action type, target, and digest.
+- Existing exact approvals are consumed before process binding/spawn; missing or failed consumption blocks with `APPROVAL_CONSUMPTION_FAILED`.
+- Newly confirmed SAFE approvals persist `pending -> approved -> consumed` in one atomic replacement; injected failure leaves no approval or process residue and retry succeeds.
+- Coordinator focused regression: 86 passed, 0 failed; typecheck and lint passed.
+- Specification/security and TypeScript/concurrency reviews — approved.
