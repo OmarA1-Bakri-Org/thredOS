@@ -25,11 +25,72 @@ describe('executable policy binding', () => {
       requested_by: 'tester', status: 'approved', approved_by: 'tester',
       approved_at: '2026-07-16T00:00:00.000Z', notes: null,
       subject_digest: digestA,
+      payload_ref: 'payloads/run-a.json',
+      policy_ref: 'sha256:1111111111111111111111111111111111111111111111111111111111111111',
+      consumed_at: null,
     }
 
     expect(digestB).not.toBe(digestA)
     expect(approvalMatchesExecutableSubject(approval, ['step:same-step'], digestA)).toBe(true)
     expect(approvalMatchesExecutableSubject(approval, ['step:same-step'], digestB)).toBe(false)
+  })
+
+  test('expired, consumed, and unbound approvals do not authorize executable payloads', () => {
+    const approval: Approval = {
+      id: 'approval-b',
+      action_type: 'run',
+      target_ref: 'step:same-step',
+      requested_by: 'tester',
+      status: 'approved',
+      approved_by: 'tester',
+      approved_at: '2026-07-16T00:00:00.000Z',
+      notes: null,
+      subject_digest: 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      payload_ref: 'payloads/run-b.json',
+      policy_ref: 'sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+      consumed_at: null,
+    }
+
+    expect(approvalMatchesExecutableSubject({
+      ...approval,
+      expires_at: '2026-08-27T00:00:00.000Z',
+    }, ['step:same-step'], approval.subject_digest!)).toBe(false)
+    expect(approvalMatchesExecutableSubject({
+      ...approval,
+      consumed_at: '2026-08-28T00:00:00.000Z',
+    }, ['step:same-step'], approval.subject_digest!)).toBe(false)
+    expect(approvalMatchesExecutableSubject({
+      ...approval,
+      payload_ref: null,
+    }, ['step:same-step'], approval.subject_digest!)).toBe(false)
+  })
+
+  test('exact-looking reveal and gate_override approvals never authorize execution', () => {
+    const exactLookingApproval: Approval = {
+      id: 'approval-c',
+      action_type: 'reveal',
+      target_ref: 'step:same-step',
+      requested_by: 'tester',
+      status: 'approved',
+      approved_by: 'tester',
+      approved_at: '2026-07-16T00:00:00.000Z',
+      notes: null,
+      subject_digest: 'sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+      payload_ref: 'payloads/reveal.json',
+      policy_ref: 'sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd',
+      consumed_at: null,
+    }
+
+    expect(approvalMatchesExecutableSubject(
+      exactLookingApproval,
+      ['step:same-step'],
+      exactLookingApproval.subject_digest!,
+    )).toBe(false)
+    expect(approvalMatchesExecutableSubject(
+      { ...exactLookingApproval, action_type: 'gate_override' },
+      ['step:same-step'],
+      exactLookingApproval.subject_digest!,
+    )).toBe(false)
   })
 
   test('ordinary agent prompt content is not scanned as a shell script', () => {

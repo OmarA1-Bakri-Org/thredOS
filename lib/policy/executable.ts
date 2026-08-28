@@ -1,6 +1,11 @@
 import { createHash } from 'crypto'
 import { relative } from 'path'
 import type { Approval } from '@/lib/contracts/schemas'
+import {
+  hasExactApprovalBinding,
+  isApprovalExpired,
+  isRuntimeAffectingApprovalAction,
+} from '@/lib/approvals/binding'
 import { PolicyEngine } from './engine'
 import type { ExecutablePayload, PolicyConfig, PolicyResult } from './schema'
 
@@ -83,7 +88,11 @@ export function approvalMatchesExecutableSubject(
   targetRefs: string[],
   subjectDigest: string,
 ): boolean {
-  return approval.status === 'approved'
+  return isRuntimeAffectingApprovalAction(approval.action_type)
+    && approval.status === 'approved'
+    && hasExactApprovalBinding(approval)
     && targetRefs.includes(approval.target_ref)
     && approval.subject_digest === subjectDigest
+    && !isApprovalExpired(approval)
+    && approval.consumed_at == null
 }

@@ -5,7 +5,6 @@ import { getBasePath } from '@/lib/config'
 import { jsonError, requireRequestSession } from '@/lib/api-helpers'
 import { allowChatApply } from '@/lib/hosted'
 import { applyRateLimit } from '@/lib/rate-limit'
-import { recordApprovedApprovalLifecycle } from '@/lib/approvals/runtime'
 
 const ApplyBodySchema = z.object({
   actions: z.array(z.object({
@@ -17,8 +16,8 @@ const ApplyBodySchema = z.object({
 
 export async function POST(request: Request) {
   try {
-    const session = requireRequestSession(request)
-    if ('status' in session) return session
+    const sessionResult = requireRequestSession(request)
+    if ('status' in sessionResult) return sessionResult
 
     const rateLimited = applyRateLimit(request, {
       bucket: 'chat-apply',
@@ -44,7 +43,6 @@ export async function POST(request: Request) {
     }
 
     const { actions } = parsed.data as { actions: ProposedAction[] }
-    const surfaceId = randomUUID()
     const runId = parsed.data.runId ?? `chat-apply-${randomUUID()}`
 
     // Cap the number of actions to prevent abuse
@@ -55,23 +53,6 @@ export async function POST(request: Request) {
     const basePath = getBasePath()
     const validator = new ActionValidator(basePath)
     const result = await validator.apply(actions)
-
-    if (result.success) {
-      try {
-        await recordApprovedApprovalLifecycle({
-          basePath,
-          runId,
-          actionType: 'side_effect',
-          targetRef: `chat-apply:${surfaceId}:${actions.length}`,
-          requestedBy: session.email,
-          resolvedBy: session.email,
-          actor: 'api:apply',
-          notes: `Applied ${result.appliedCount} reviewed chat action(s); ${result.rejectedCount} rejected.`,
-        })
-      } catch (lifecycleError) {
-        console.error('[apply.POST] lifecycle persistence failed after apply commit', lifecycleError)
-      }
-    }
 
     return Response.json({ ...result, runId })
   } catch {

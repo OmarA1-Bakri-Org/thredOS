@@ -6,9 +6,10 @@ Close the verified Milestone 0 correctness and ownership defects without changin
 
 ## Active slice
 
-Phase 0 Task 3:
+Phase 0 Task 4:
 
-Bind approval resolution to exact reviewed evidence without duplicating executable-policy authority.
+1. Render trace and approval retrieval failures as unavailable evidence.
+2. Make lifecycle-interface discovery exhaustive and fail on unclassified handlers.
 
 ## Completed
 
@@ -20,6 +21,8 @@ Bind approval resolution to exact reviewed evidence without duplicating executab
 - Task 1 strict TDD, specification review, TypeScript-quality review, and coordinator verification passed.
 - Phase 0 Task 2: removed chat/apply runtime-control and lifecycle-field bypasses, constrained structured and fallback parsers, and made full/partial/rejected apply results and audit evidence truthful.
 - Task 2 strict TDD, specification review, TypeScript-quality review, and coordinator verification passed.
+- Phase 0 Task 3: added exact/unbound approval binding, atomic approval lifecycle and resolution, trusted resolver identity, honest public authority projection, expiry/consumption enforcement in the sole matcher, and explicit committed trace-projection failure evidence.
+- Task 3 strict TDD, specification/security review, TypeScript-quality review, and coordinator verification passed.
 
 ## Boundaries
 
@@ -34,7 +37,7 @@ Resume by re-reading `10-intent.md`, this checkpoint, the canonical authority se
 
 ## Next
 
-Create the minimal failing tests for exact approval evidence binding, trusted resolver identity, and unbound approval visibility.
+Create the minimal failing tests for unavailable runtime evidence UI and unclassified lifecycle-interface discovery.
 
 ## Drift decision
 

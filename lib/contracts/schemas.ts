@@ -112,6 +112,9 @@ export type GateDecision = z.infer<typeof GateDecisionSchema>
 export const ApprovalStatusSchema = z.enum(['pending', 'approved', 'rejected'])
 export type ApprovalStatus = z.infer<typeof ApprovalStatusSchema>
 
+export const Sha256DigestSchema = z.string().regex(/^sha256:[a-f0-9]{64}$/)
+export type Sha256Digest = z.infer<typeof Sha256DigestSchema>
+
 export const ApprovalSchema = z.object({
   id: z.string().min(1),
   action_type: z.enum(['run', 'reveal', 'side_effect', 'gate_override']),
@@ -121,7 +124,13 @@ export const ApprovalSchema = z.object({
   approved_by: z.string().nullable(),
   approved_at: z.string().nullable(),
   notes: z.string().nullable(),
-  subject_digest: z.string().regex(/^sha256:[a-f0-9]{64}$/).nullable().optional(),
+  subject_digest: Sha256DigestSchema.nullable().optional(),
+  payload_ref: z.string().min(1).nullable().optional(),
+  policy_ref: z.string().min(1).nullable().optional(),
+  precondition_hash: Sha256DigestSchema.nullable().optional(),
+  expires_at: z.string().datetime().nullable().optional(),
+  consumed_at: z.string().datetime().nullable().optional(),
+  consumed_by: z.string().nullable().optional(),
 })
 export type Approval = z.infer<typeof ApprovalSchema>
 

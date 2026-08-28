@@ -186,7 +186,7 @@ describe('GateDecisionSchema', () => {
 })
 
 describe('ApprovalSchema', () => {
-  it('validates a pending Approval', () => {
+  it('validates a legacy pending Approval without exact binding fields', () => {
     const result = ApprovalSchema.safeParse({
       id: 'approval-001',
       action_type: 'run',
@@ -204,7 +204,7 @@ describe('ApprovalSchema', () => {
     }
   })
 
-  it('validates an approved Approval', () => {
+  it('validates an exact approved Approval with additive binding evidence', () => {
     const result = ApprovalSchema.safeParse({
       id: 'approval-002',
       action_type: 'reveal',
@@ -214,6 +214,13 @@ describe('ApprovalSchema', () => {
       approved_by: 'user-alice',
       approved_at: '2026-03-28T11:00:00Z',
       notes: 'Reviewed and approved.',
+      subject_digest: 'sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+      payload_ref: 'payloads/reveal-001.json',
+      policy_ref: 'sha256:fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210',
+      precondition_hash: 'sha256:00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff',
+      expires_at: '2026-03-29T11:00:00Z',
+      consumed_at: null,
+      consumed_by: null,
     })
     expect(result.success).toBe(true)
   })

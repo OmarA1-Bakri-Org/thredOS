@@ -37,7 +37,7 @@ describe.serial('apply route proof', () => {
     await rm(basePath, { recursive: true, force: true })
   })
 
-  test('POST records approval lifecycle and trace events for reviewed chat apply actions', async () => {
+  test('POST applies reviewed chat actions without fabricating approval lifecycle records', async () => {
     const runId = 'run-chat-apply-proof'
     const { POST } = await import('@/app/api/apply/route')
     const response = await POST(new Request('http://localhost/api/apply', {
@@ -70,27 +70,17 @@ describe.serial('apply route proof', () => {
     expect(body.runId).toBe(runId)
 
     const approvals = await readApprovals(basePath, runId)
-    expect(approvals.map(entry => entry.status)).toEqual(['pending', 'approved'])
-    expect(approvals[1]).toMatchObject({
-      action_type: 'side_effect',
-      requested_by: 'local@thredos',
-      approved_by: 'local@thredos',
-      status: 'approved',
-      notes: 'Applied 1 reviewed chat action(s); 0 rejected.',
-    })
-    expect(approvals[1].target_ref).toMatch(
-      /^chat-apply:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}:1$/,
-    )
+    expect(approvals).toEqual([])
 
     const traces = await readTraceEvents(basePath, runId)
-    expect(traces.map(entry => entry.event_type)).toEqual(['approval-requested', 'approval-resolved'])
-    expect(traces[0]).toMatchObject({
-      actor: 'api:apply',
-    })
-    expect(traces[0].surface_id).toBe(approvals[1].target_ref)
+    expect(traces).toEqual([])
 
     const sequence = await readSequence(basePath)
     expect(sequence.steps.some(step => step.id === 'build')).toBe(true)
+
+    expect(await audit.readAll(basePath)).toEqual([
+      expect.objectContaining({ action: 'step add', result: 'applied' }),
+    ])
   })
 
   test('POST returns 400 for invalid chat-apply payloads', async () => {

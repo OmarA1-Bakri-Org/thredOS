@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto'
-import type { Approval } from '@/lib/contracts/schemas'
-import { appendApproval } from '@/lib/approvals/repository'
+import { type Approval, type TraceEvent } from '@/lib/contracts/schemas'
+import { assertRuntimeApprovalBinding } from '@/lib/approvals/binding'
+import { appendApprovalLifecycle } from '@/lib/approvals/repository'
 import { appendTraceEvent } from '@/lib/traces/writer'
 
 interface RecordApprovedApprovalLifecycleInput {
@@ -16,6 +17,58 @@ interface RecordApprovedApprovalLifecycleInput {
   policyRef?: string | null
   approvalId?: string
   subjectDigest?: string | null
+  preconditionHash?: string | null
+  expiresAt?: string | null
+}
+
+type ApprovalTraceAppender = typeof appendTraceEvent
+const APPROVAL_TRACE_PERSIST_FAILED = 'APPROVAL_TRACE_PERSIST_FAILED' as const
+const APPROVAL_TRACE_PERSIST_FAILED_MESSAGE = 'Approval committed, but approval trace projection persistence failed.'
+
+export interface ApprovalCommitEvidence {
+  commit_status: 'committed'
+  trace_status: 'persisted' | 'failed'
+  warning_code?: typeof APPROVAL_TRACE_PERSIST_FAILED
+  warning?: string
+}
+
+export interface ApprovalLifecycleCommitResult extends ApprovalCommitEvidence {
+  approval: Approval
+}
+
+let traceAppenderForTests: ApprovalTraceAppender | null = null
+
+export function setApprovalTraceAppenderForTests(appender: ApprovalTraceAppender | null): void {
+  traceAppenderForTests = appender
+}
+
+function getTraceAppender(): ApprovalTraceAppender {
+  return traceAppenderForTests ?? appendTraceEvent
+}
+
+export async function appendApprovalTraceEvidence(input: {
+  basePath: string
+  runId: string
+  events: TraceEvent[]
+}): Promise<ApprovalCommitEvidence> {
+  try {
+    const traceAppender = getTraceAppender()
+    for (const event of input.events) {
+      await traceAppender(input.basePath, input.runId, event)
+    }
+    return {
+      commit_status: 'committed',
+      trace_status: 'persisted',
+    }
+  } catch (error) {
+    console.error('[approvals] Trace persistence failed after approval commit', error)
+    return {
+      commit_status: 'committed',
+      trace_status: 'failed',
+      warning_code: APPROVAL_TRACE_PERSIST_FAILED,
+      warning: APPROVAL_TRACE_PERSIST_FAILED_MESSAGE,
+    }
+  }
 }
 
 export async function recordApprovedApprovalLifecycle({
@@ -31,9 +84,20 @@ export async function recordApprovedApprovalLifecycle({
   policyRef = null,
   approvalId = `apr-${randomUUID()}`,
   subjectDigest = null,
-}: RecordApprovedApprovalLifecycleInput): Promise<Approval> {
+  preconditionHash = null,
+  expiresAt = null,
+}: RecordApprovedApprovalLifecycleInput): Promise<ApprovalLifecycleCommitResult> {
   const requestedAt = new Date().toISOString()
   const resolvedAt = new Date().toISOString()
+
+  assertRuntimeApprovalBinding({
+    actionType,
+    subjectDigest,
+    payloadRef,
+    policyRef,
+    preconditionHash,
+    expiresAt,
+  })
 
   const pendingApproval: Approval = {
     id: approvalId,
@@ -45,6 +109,12 @@ export async function recordApprovedApprovalLifecycle({
     approved_at: null,
     notes: null,
     subject_digest: subjectDigest,
+    payload_ref: payloadRef,
+    policy_ref: policyRef,
+    precondition_hash: preconditionHash,
+    expires_at: expiresAt,
+    consumed_at: null,
+    consumed_by: null,
   }
 
   const approvedApproval: Approval = {
@@ -55,27 +125,34 @@ export async function recordApprovedApprovalLifecycle({
     notes,
   }
 
-  await appendApproval(basePath, runId, pendingApproval)
-  await appendTraceEvent(basePath, runId, {
-    ts: requestedAt,
-    run_id: runId,
-    surface_id: targetRef,
-    actor,
-    event_type: 'approval-requested',
-    payload_ref: payloadRef ?? approvalId,
-    policy_ref: policyRef,
+  const approval = await appendApprovalLifecycle(basePath, runId, pendingApproval, approvedApproval)
+  const evidence = await appendApprovalTraceEvidence({
+    basePath,
+    runId,
+    events: [
+      {
+        ts: requestedAt,
+        run_id: runId,
+        surface_id: targetRef,
+        actor,
+        event_type: 'approval-requested',
+        payload_ref: pendingApproval.payload_ref ?? null,
+        policy_ref: pendingApproval.policy_ref ?? null,
+      },
+      {
+        ts: resolvedAt,
+        run_id: runId,
+        surface_id: targetRef,
+        actor,
+        event_type: 'approval-resolved',
+        payload_ref: approvedApproval.payload_ref ?? null,
+        policy_ref: approvedApproval.policy_ref ?? null,
+      },
+    ],
   })
 
-  await appendApproval(basePath, runId, approvedApproval)
-  await appendTraceEvent(basePath, runId, {
-    ts: resolvedAt,
-    run_id: runId,
-    surface_id: targetRef,
-    actor,
-    event_type: 'approval-resolved',
-    payload_ref: payloadRef ?? approvalId,
-    policy_ref: policyRef,
-  })
-
-  return approvedApproval
+  return {
+    approval,
+    ...evidence,
+  }
 }
