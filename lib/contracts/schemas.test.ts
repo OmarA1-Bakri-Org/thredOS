@@ -271,6 +271,23 @@ describe('TraceEventSchema', () => {
     },
   )
 
+  it.each([
+    'workspace-provision-started',
+    'workspace-ready',
+    'workspace-retained',
+    'workspace-cleaned',
+  ] as const)('validates the %s evidence event', eventType => {
+    expect(TraceEventSchema.safeParse({
+      ts: '2026-08-28T10:00:00Z',
+      run_id: 'run-workspace',
+      surface_id: 'surface-workspace',
+      actor: 'threados-runtime',
+      event_type: eventType,
+      payload_ref: '.threados/workspaces/records/workspace-001.json',
+      policy_ref: null,
+    }).success).toBe(true)
+  })
+
   it('rejects a TraceEvent with an invalid event_type', () => {
     const result = TraceEventSchema.safeParse({
       ts: '2026-03-28T10:00:00Z',

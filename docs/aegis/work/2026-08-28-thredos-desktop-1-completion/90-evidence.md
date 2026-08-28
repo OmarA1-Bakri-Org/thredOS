@@ -110,3 +110,15 @@ The green baseline does not cover the known runtime-status, chat/apply ownership
 - First full repository check exposed one unrelated Windows approval-lock flake and one non-reproducing snapshot symlink failure; both were rerun repeatedly before accepting evidence.
 - Final `bun run check`: 2,026 passed, 0 failed, 5,472 assertions across 234 files; lint and typecheck passed.
 - Final spec, security, and TypeScript/cross-platform reviews approved with no remaining material findings.
+
+## PR-10 portable copy provider and workspace manager
+
+- RED/review iterations found and closed derived-index authority inversion, partial migration, concurrent active and retained quota races, unowned promotion cleanup, swallowed persistence/cleanup failures, delete-before-intent cleanup, unsafe doctor roots, Windows directory-link typing, absent workspace trace producers, and unstable attempt-ref replay.
+- Canonical records now migrate atomically behind a separate durable canonical-mode marker; missing records fail closed and derived index writes cannot invalidate canonical commits.
+- Workspace provisioning reserves projected bytes and active capacity under one repository lock, copies only from the canonical content-addressed snapshot tree, restores manifest modes, uses independent files, and publishes only after verification.
+- Cleanup persists `cleaning` before deletion, retains quota accounting through recovery-required states, and releases reservation only after `cleaned`; provider retry resumes a durable cleaning intent.
+- Attempt `workspace.ref.json` bindings are exact, atomic, path-safe, idempotent across timestamp reconstruction, and remain separate from PR-11 dispatch.
+- Final focused verification: 111 passed, 0 failed (81 workspace/contract tests plus 30 runtime repository tests); typecheck, lint, manifest YAML parse, and diff check passed.
+- The aggregate gate exposed three legacy cross-file harness defects: lock-generation turnover, process-global fault/env hooks, and module-mock/exit-code leakage. Exact lock turnover is now retry-safe and passed atomic/snapshot stress 160/160; the canonical test runner executes one exact file per short Bun process and one isolated CLI test now resets `process.exitCode`.
+- Final `bun run check` — passed: lint, typecheck, and all 239 discovered repository test files exited successfully under exact-file process isolation (`CHECK_TEST_FILES=239 STATUS=PASS`).
+- Final specification, security, and TypeScript/cross-platform reviews approved with no remaining material findings.

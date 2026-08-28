@@ -209,7 +209,7 @@ describe('surface workspace schema', () => {
     root_path: 'C:\\threados\\workspaces\\workspace-01',
     status: 'ready' as const,
     retention_policy: 'retain_on_failure' as const,
-    manifest_hash: 'sha256:manifest',
+    manifest_hash: `sha256:${'a'.repeat(64)}`,
     file_count: 10,
     total_bytes: 1000,
     created_at: timestamp,
@@ -246,5 +246,39 @@ describe('surface workspace schema', () => {
       'failed',
     ])
     expect(SurfaceWorkspaceStatusSchema.safeParse('deleted').success).toBe(false)
+  })
+
+  test('binds ready evidence and truthful terminal timestamps to lifecycle state', () => {
+    expect(SurfaceWorkspaceSchema.safeParse({
+      ...workspace,
+      status: 'planned',
+    }).success).toBe(false)
+    expect(SurfaceWorkspaceSchema.safeParse({
+      ...workspace,
+      status: 'ready',
+      manifest_hash: null,
+    }).success).toBe(false)
+    expect(SurfaceWorkspaceSchema.safeParse({
+      ...workspace,
+      status: 'failed',
+      manifest_hash: null,
+      ready_at: null,
+      file_count: 0,
+      total_bytes: 0,
+      error_code: null,
+    }).success).toBe(false)
+    expect(SurfaceWorkspaceSchema.safeParse({
+      ...workspace,
+      status: 'cleaned',
+      cleaned_at: null,
+    }).success).toBe(false)
+  })
+
+  test('requires copy workspaces to use truthful directory-scoped isolation', () => {
+    expect(SurfaceWorkspaceSchema.safeParse({
+      ...workspace,
+      provider: 'copy',
+      isolation_label: 'HOST_ENFORCED',
+    }).success).toBe(false)
   })
 })

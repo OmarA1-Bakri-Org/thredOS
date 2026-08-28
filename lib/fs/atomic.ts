@@ -65,6 +65,25 @@ export class RuntimeLockTimeoutError extends Error {
   }
 }
 
+class LockGenerationChangedError extends Error {
+  constructor(lockPath: string, cause?: unknown) {
+    super(`Refusing replaced lock metadata: ${lockPath}`)
+    this.name = 'LockGenerationChangedError'
+    if (cause !== undefined) this.cause = cause
+  }
+}
+
+async function verifyLockGeneration(
+  lockPath: string,
+  expected: Awaited<ReturnType<FileHandle['stat']>>,
+): Promise<void> {
+  try {
+    await verifyFileIdentity(lockPath, expected)
+  } catch (error) {
+    throw new LockGenerationChangedError(lockPath, error)
+  }
+}
+
 function hasCode(error: unknown, code: string): boolean {
   return error instanceof Error && 'code' in error && error.code === code
 }
@@ -251,14 +270,14 @@ async function readLockOwner(
     })
     await verifyParentIdentity(allowedRoot, lockPath, parentIdentity)
     if (!sameFileIdentity(opened, expected)) {
-      throw new Error(`Refusing replaced lock metadata: ${lockPath}`)
+      throw new LockGenerationChangedError(lockPath)
     }
-    await verifyFileIdentity(lockPath, opened)
+    await verifyLockGeneration(lockPath, opened)
     if (Number(opened.size) > MAX_LOCK_METADATA_BYTES) return { owner: null, stat: opened }
     const buffer = Buffer.allocUnsafe(MAX_LOCK_METADATA_BYTES + 1)
     const { bytesRead } = await handle.read(buffer, 0, buffer.byteLength, 0)
     await verifyParentIdentity(allowedRoot, lockPath, parentIdentity)
-    await verifyFileIdentity(lockPath, opened)
+    await verifyLockGeneration(lockPath, opened)
     if (bytesRead > MAX_LOCK_METADATA_BYTES) return { owner: null, stat: opened }
     let value: unknown
     try {
@@ -298,7 +317,7 @@ async function recoverOrphanedLock(
     : !isProcessAlive(observed.owner.pid)
   if (!recoverable) return false
   await verifyParentWithinRoot(allowedRoot, lockPath)
-  await verifyFileIdentity(lockPath, observed.stat)
+  await verifyLockGeneration(lockPath, observed.stat)
   await unlink(lockPath)
   return true
 }
@@ -318,6 +337,7 @@ export async function withExclusiveFileLock<T>(
   let handle: FileHandle | undefined
   let ownedStat: Awaited<ReturnType<FileHandle['stat']>> | undefined
   let metadataWriteStarted = false
+  let generationChange: LockGenerationChangedError | null = null
 
   while (!handle) {
     try {
@@ -346,8 +366,18 @@ export async function withExclusiveFileLock<T>(
       }
       metadataWriteStarted = false
       if (!hasCode(error, 'EEXIST')) throw error
-      if (await recoverOrphanedLock(lockPath, normalized.allowedRoot, staleAfterMs)) continue
-      if (Date.now() >= deadline) throw new RuntimeLockTimeoutError(lockPath)
+      if (generationChange == null) {
+        try {
+          if (await recoverOrphanedLock(lockPath, normalized.allowedRoot, staleAfterMs)) continue
+        } catch (recoveryError) {
+          if (!(recoveryError instanceof LockGenerationChangedError)) throw recoveryError
+          generationChange = recoveryError
+        }
+      }
+      if (Date.now() >= deadline) {
+        if (generationChange) throw generationChange
+        throw new RuntimeLockTimeoutError(lockPath)
+      }
       await pause(5)
     }
   }

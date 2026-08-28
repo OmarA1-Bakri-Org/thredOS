@@ -80,6 +80,39 @@ export async function attemptRecordPath(basePath: string, runId: string, attempt
   return await resolvePathWithinRoot(await ensureAttemptDirectory(basePath, runId, attemptId), 'attempt.json')
 }
 
+export async function lookupAttemptRecordPath(
+  basePath: string,
+  runId: string,
+  attemptId: string,
+): Promise<string | null> {
+  assertSafePathSegment(runId, 'run id')
+  assertSafePathSegment(attemptId, 'attempt id')
+  return await existingOrNull(basePath, '.threados', 'runs', runId, 'attempts', attemptId, 'attempt.json')
+}
+
+export async function attemptWorkspaceRefPath(
+  basePath: string,
+  runId: string,
+  attemptId: string,
+): Promise<string> {
+  assertSafePathSegment(runId, 'run id')
+  assertSafePathSegment(attemptId, 'attempt id')
+  return await resolvePathWithinRoot(
+    await resolveExistingPathWithinRoot(basePath, '.threados', 'runs', runId, 'attempts', attemptId),
+    'workspace.ref.json',
+  )
+}
+
+export async function lookupAttemptWorkspaceRefPath(
+  basePath: string,
+  runId: string,
+  attemptId: string,
+): Promise<string | null> {
+  assertSafePathSegment(runId, 'run id')
+  assertSafePathSegment(attemptId, 'attempt id')
+  return await existingOrNull(basePath, '.threados', 'runs', runId, 'attempts', attemptId, 'workspace.ref.json')
+}
+
 export async function lookupAttemptsDirectory(basePath: string, runId: string): Promise<string | null> {
   assertSafePathSegment(runId, 'run id')
   return await existingOrNull(basePath, '.threados', 'runs', runId, 'attempts')

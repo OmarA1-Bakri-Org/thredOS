@@ -31,6 +31,7 @@ mock.module('@/lib/ui/api', () => ({
   useRemoveStep: noopMutation,
   useCloneStep: noopMutation,
   useInsertGate: noopMutation,
+  useRemoveGate: noopMutation,
   useAddDep: noopMutation,
   useRemoveDep: noopMutation,
   useAgentPerformance: () => ({ data: null, isLoading: false }),

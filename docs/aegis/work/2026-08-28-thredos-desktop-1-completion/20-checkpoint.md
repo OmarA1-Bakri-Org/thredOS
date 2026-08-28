@@ -35,6 +35,7 @@ Implement the canonical dirty/non-Git-safe snapshot algorithm only after the PR-
 - PR-08 correction: safe external runtime roots, strict workspace config, authoritative exclusions, validated identity state, atomic workspace repository records, and factual docs passed the focused gate and two-stage review.
 - PR-09 Task A: deterministic portable manifests, safe integer accounting, immutable lifecycle records, corruption-safe generation publication, stable manifest references, and workflow-compatible snapshot schemas were committed as `d4ade45` after independent spec and TypeScript/security approval.
 - PR-09 Task B: clean/dirty Git and non-Git capture, bounded no-follow streaming copies, source-race retry, symlink and runtime-namespace containment, content-addressed read-only trees, workflow-run-scoped reuse, trace evidence, and factual architecture/current-state documentation passed the canonical focused gate and full repository check.
+- PR-10: portable-copy provider, manager-owned workspace lifecycle, atomic active/retained quota reservation, M1-safe retention, recoverable cleanup, workspace doctor, canonical per-workspace records, exact attempt workspace references, and workspace lifecycle traces passed focused verification and three-lane review.
 
 ## Boundaries
 
@@ -49,7 +50,7 @@ Resume by re-reading `10-intent.md`, this checkpoint, the canonical authority se
 
 ## Next
 
-Commit and read back the approved PR-09 Task B paths, then start PR-10 portable-copy provider and workspace-manager TDD.
+Commit and read back the approved PR-10 paths, then start PR-11 isolated workspace planning and dispatch TDD.
 
 ## Drift decision
 

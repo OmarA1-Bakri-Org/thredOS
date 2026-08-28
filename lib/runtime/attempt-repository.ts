@@ -1,8 +1,16 @@
 import { readdir } from 'fs/promises'
+import { z } from 'zod'
 import { withExclusiveFileLock, writeFileAtomic } from '../fs/atomic'
 import { assertSafePathSegment, resolveExistingPathWithinRoot } from '../security/safe-path'
 import { readTextFileNoFollow } from '../security/safe-io'
-import { attemptRecordPath, ensureRunsRoot, lookupAttemptsDirectory } from './paths'
+import {
+  attemptRecordPath,
+  attemptWorkspaceRefPath,
+  ensureRunsRoot,
+  lookupAttemptRecordPath,
+  lookupAttemptsDirectory,
+  lookupAttemptWorkspaceRefPath,
+} from './paths'
 import { RuntimeRepositoryError } from './run-repository'
 import { StepAttemptSchema, type StepAttempt } from './schema'
 import {
@@ -15,12 +23,88 @@ import {
 
 export type AttemptMutation = (current: StepAttempt) => StepAttempt
 
+export const AttemptWorkspaceRefSchema = z.object({
+  schema_version: z.literal(1),
+  workflow_run_id: z.string().min(1),
+  attempt_id: z.string().min(1),
+  workspace_id: z.string().min(1),
+  snapshot_id: z.string().min(1),
+  manifest_hash: z.string().regex(/^sha256:[a-f0-9]{64}$/),
+  bound_at: z.string().datetime(),
+}).strict().superRefine((reference, context) => {
+  for (const [field, label] of [
+    ['workflow_run_id', 'run id'],
+    ['attempt_id', 'attempt id'],
+    ['workspace_id', 'workspace id'],
+    ['snapshot_id', 'snapshot id'],
+  ] as const) {
+    try {
+      assertSafePathSegment(reference[field], label)
+    } catch (error) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [field],
+        message: error instanceof Error ? error.message : `${label} must be a file-safe identifier`,
+      })
+    }
+  }
+})
+export type AttemptWorkspaceRef = z.infer<typeof AttemptWorkspaceRefSchema>
+
 function isMissing(error: unknown): boolean {
   return error instanceof Error && 'code' in error && error.code === 'ENOENT'
 }
 
 async function readAttemptFile(path: string): Promise<StepAttempt> {
   return StepAttemptSchema.parse(JSON.parse(await readTextFileNoFollow(path)))
+}
+
+async function readWorkspaceRefFile(path: string): Promise<AttemptWorkspaceRef> {
+  return AttemptWorkspaceRefSchema.parse(JSON.parse(await readTextFileNoFollow(path)))
+}
+
+function workspaceRefsMatch(left: AttemptWorkspaceRef, right: AttemptWorkspaceRef): boolean {
+  return left.schema_version === right.schema_version
+    && left.workflow_run_id === right.workflow_run_id
+    && left.attempt_id === right.attempt_id
+    && left.workspace_id === right.workspace_id
+    && left.snapshot_id === right.snapshot_id
+    && left.manifest_hash === right.manifest_hash
+}
+
+function assertWorkspaceRefMatchesAttempt(
+  attempt: StepAttempt,
+  reference: AttemptWorkspaceRef,
+): void {
+  if (
+    attempt.workspace_id != null && attempt.workspace_id !== reference.workspace_id
+    || attempt.baseline_snapshot_id != null && attempt.baseline_snapshot_id !== reference.snapshot_id
+  ) {
+    throw new RuntimeRepositoryError(
+      'ATTEMPT_WORKSPACE_REF_IDENTITY_MISMATCH',
+      `workspace reference does not match persisted attempt ${attempt.id}`,
+    )
+  }
+}
+
+async function readMatchingAttempt(
+  path: string,
+  runId: string,
+  attemptId: string,
+): Promise<StepAttempt> {
+  let attempt: StepAttempt
+  try {
+    attempt = await readAttemptFile(path)
+  } catch (error) {
+    if (isMissing(error)) {
+      throw new RuntimeRepositoryError('ATTEMPT_NOT_FOUND', `attempt ${attemptId} was not found`)
+    }
+    throw error
+  }
+  if (attempt.id !== attemptId || attempt.workflow_run_id !== runId) {
+    throw new RuntimeRepositoryError('ATTEMPT_NOT_FOUND', `attempt ${attemptId} was not found`)
+  }
+  return attempt
 }
 
 export class AttemptRepository {
@@ -82,6 +166,71 @@ export class AttemptRepository {
       attempts.push(attempt)
     }
     return attempts.sort((left, right) => left.id.localeCompare(right.id))
+  }
+
+  async getWorkspaceRef(runId: string, attemptId: string): Promise<AttemptWorkspaceRef | null> {
+    assertSafePathSegment(runId, 'run id')
+    assertSafePathSegment(attemptId, 'attempt id')
+    const path = await lookupAttemptWorkspaceRefPath(this.basePath, runId, attemptId)
+    if (!path) return null
+    const reference = await readWorkspaceRefFile(path)
+    if (reference.workflow_run_id !== runId || reference.attempt_id !== attemptId) {
+      throw new RuntimeRepositoryError(
+        'ATTEMPT_WORKSPACE_REF_IDENTITY_MISMATCH',
+        `workspace reference identity does not match attempt ${attemptId}`,
+      )
+    }
+    const attemptPath = await lookupAttemptRecordPath(this.basePath, runId, attemptId)
+    if (!attemptPath) {
+      throw new RuntimeRepositoryError('ATTEMPT_NOT_FOUND', `attempt ${attemptId} was not found`)
+    }
+    const attempt = await readMatchingAttempt(attemptPath, runId, attemptId)
+    assertWorkspaceRefMatchesAttempt(attempt, reference)
+    return reference
+  }
+
+  async bindWorkspaceRef(value: AttemptWorkspaceRef): Promise<AttemptWorkspaceRef> {
+    const reference = AttemptWorkspaceRefSchema.parse(value)
+    const attemptPath = await lookupAttemptRecordPath(
+      this.basePath,
+      reference.workflow_run_id,
+      reference.attempt_id,
+    )
+    if (!attemptPath) {
+      throw new RuntimeRepositoryError('ATTEMPT_NOT_FOUND', `attempt ${reference.attempt_id} was not found`)
+    }
+    const owner = await readMatchingAttempt(
+      attemptPath,
+      reference.workflow_run_id,
+      reference.attempt_id,
+    )
+    assertWorkspaceRefMatchesAttempt(owner, reference)
+
+    const path = await attemptWorkspaceRefPath(
+      this.basePath,
+      reference.workflow_run_id,
+      reference.attempt_id,
+    )
+    return await withExclusiveFileLock(`${path}.lock`, async () => {
+      const currentOwner = await readMatchingAttempt(
+        attemptPath,
+        reference.workflow_run_id,
+        reference.attempt_id,
+      )
+      assertWorkspaceRefMatchesAttempt(currentOwner, reference)
+      try {
+        const existing = await readWorkspaceRefFile(path)
+        if (workspaceRefsMatch(existing, reference)) return existing
+        throw new RuntimeRepositoryError(
+          'ATTEMPT_WORKSPACE_REF_CONFLICT',
+          `attempt ${reference.attempt_id} is already bound to workspace ${existing.workspace_id}`,
+        )
+      } catch (error) {
+        if (!isMissing(error)) throw error
+      }
+      await writeFileAtomic(path, `${JSON.stringify(reference, null, 2)}\n`, { allowedRoot: this.basePath })
+      return reference
+    }, { allowedRoot: this.basePath })
   }
 
   async update(attemptId: string, expectedRevision: number, mutate: AttemptMutation): Promise<StepAttempt> {

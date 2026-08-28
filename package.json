@@ -20,7 +20,7 @@
     "typecheck": "tsc --noEmit",
     "test": "bun test",
     "test:ui": "node scripts/verify/run.mjs ui",
-    "check": "bun run lint && bun run typecheck && bun test",
+    "check": "bun run lint && bun run typecheck && bun scripts/verify/check-tests.ts",
     "verify:local": "node scripts/verify/run.mjs local",
     "verify:m0": "bun scripts/verify/m0-runtime-proof.ts",
     "verify:ci": "node scripts/verify/run.mjs ci",

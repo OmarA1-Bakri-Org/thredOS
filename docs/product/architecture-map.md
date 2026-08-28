@@ -113,7 +113,8 @@ Supporting modules:
 - `lib/thread-surfaces/` for topology, compatibility history, and merge projections
 - `lib/workspaces/config*.ts`, `paths.ts`, and `exclusions.ts` for the Milestone 1 workspace policy boundary: validated human-authored config, external runtime-root resolution, deterministic exclusion hashes, and caller-supplied hard-excluded roots such as the resolved runtime data root
 - `lib/workspaces/hash.ts`, `manifest.ts`, `snapshot.ts`, and `snapshot-repository.ts` for immutable baseline capture: normalized byte-stable manifests, bounded no-follow source copies, source-race retries, content-addressed external trees, workflow-run-scoped reuse, and atomic project-local snapshot metadata generations behind a stable manifest reference
-- `lib/workspaces/repository.ts` for revision-checked generated Surface Workspace records; portable-copy materialization remains the downstream PR-10 responsibility
+- `lib/workspaces/providers/copy.ts` and `manager.ts` for manifest-driven portable-copy provisioning, verified `THREADOS_SCOPED` roots, lifecycle traces, retention, and cleanup; `quotas.ts` reserves active and retained capacity from canonical records and `doctor.ts` audits workspace storage without taking over process recovery
+- `lib/workspaces/repository.ts` for canonical per-workspace records, closed lifecycle transitions, atomic legacy migration, and a rebuildable derived index; `lib/runtime/attempt-repository.ts` owns the exact atomic `workspace.ref.json` binding used by downstream dispatch
 
 `lib/local-first/workspace.ts` joins the existing local workspace identity to
 that boundary. Each local workspace projection resolves a runtime data root

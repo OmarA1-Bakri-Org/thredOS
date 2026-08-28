@@ -317,12 +317,71 @@ export const SurfaceWorkspaceSchema = z.object({
     'retain_on_failure',
     'retain_always',
   ]),
-  manifest_hash: z.string().nullable(),
+  manifest_hash: Sha256DigestSchema.nullable(),
   file_count: SafeNonNegativeIntegerSchema,
   total_bytes: SafeNonNegativeIntegerSchema,
+  reserved_bytes: SafeNonNegativeIntegerSchema.optional(),
   created_at: z.string().datetime(),
   ready_at: z.string().datetime().nullable(),
   cleaned_at: z.string().datetime().nullable(),
-  error_code: z.string().nullable(),
+  error_code: z.string().min(1).nullable(),
+}).superRefine((workspace, context) => {
+  if (workspace.provider === 'copy' && workspace.isolation_label !== 'THREADOS_SCOPED') {
+    addCustomIssue(context, ['isolation_label'], 'copy workspaces must use THREADOS_SCOPED isolation')
+  }
+
+  const hasManifest = workspace.manifest_hash != null
+  const hasReadyAt = workspace.ready_at != null
+  const hasReadyEvidence = hasManifest && hasReadyAt
+  const hasNoReadyEvidence = !hasManifest && !hasReadyAt
+  if (!hasReadyEvidence && !hasNoReadyEvidence) {
+    addCustomIssue(context, [], 'workspace manifest_hash and ready_at must be present or absent together')
+  }
+
+  if (workspace.status === 'planned' || workspace.status === 'materializing') {
+    if (!hasNoReadyEvidence || workspace.file_count !== 0 || workspace.total_bytes !== 0) {
+      addCustomIssue(context, [], `${workspace.status} workspaces must not include ready-state evidence`)
+    }
+    if (workspace.cleaned_at != null || workspace.error_code != null) {
+      addCustomIssue(context, [], `${workspace.status} workspaces must not include terminal-state evidence`)
+    }
+    return
+  }
+
+  if (['ready', 'active', 'frozen', 'retained'].includes(workspace.status)) {
+    if (!hasReadyEvidence) addCustomIssue(context, [], `${workspace.status} workspaces require verified manifest evidence`)
+    if (workspace.cleaned_at != null || workspace.error_code != null) {
+      addCustomIssue(context, [], `${workspace.status} workspaces must not include terminal-state evidence`)
+    }
+    return
+  }
+
+  if (workspace.status === 'failed') {
+    if (workspace.error_code == null) addCustomIssue(context, ['error_code'], 'failed workspaces require error_code')
+    if (workspace.cleaned_at != null) addCustomIssue(context, ['cleaned_at'], 'failed workspaces must not include cleaned_at')
+    if (hasNoReadyEvidence && (workspace.file_count !== 0 || workspace.total_bytes !== 0)) {
+      addCustomIssue(context, [], 'failed workspaces without ready evidence must not include materialized counts')
+    }
+    return
+  }
+
+  if (workspace.status === 'cleaning') {
+    if (workspace.cleaned_at != null || workspace.error_code != null) {
+      addCustomIssue(context, [], 'cleaning workspaces must not include terminal-state evidence')
+    }
+    if (hasNoReadyEvidence && (workspace.file_count !== 0 || workspace.total_bytes !== 0)) {
+      addCustomIssue(context, [], 'cleaning workspaces without ready evidence must not include materialized counts')
+    }
+    return
+  }
+
+  if (workspace.cleaned_at == null) addCustomIssue(context, ['cleaned_at'], 'cleaned workspaces require cleaned_at')
+  if ((workspace.reserved_bytes ?? 0) !== 0) {
+    addCustomIssue(context, ['reserved_bytes'], 'cleaned workspaces must release reserved bytes')
+  }
+  if (workspace.error_code != null) addCustomIssue(context, ['error_code'], 'cleaned workspaces must not include error_code')
+  if (hasNoReadyEvidence && (workspace.file_count !== 0 || workspace.total_bytes !== 0)) {
+    addCustomIssue(context, [], 'cleaned workspaces without ready evidence must not include materialized counts')
+  }
 })
 export type SurfaceWorkspace = z.infer<typeof SurfaceWorkspaceSchema>

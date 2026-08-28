@@ -183,6 +183,7 @@ prs:
   - lib/workspaces/repository.ts
   modifies:
   - package.json
+  - scripts/verify/check-tests.ts
   - lib/local-first/types.ts
   - lib/local-first/workspace.ts
   - app/api/desktop/workspace/route.ts
@@ -214,6 +215,9 @@ prs:
   - lib/security/safe-io.test.ts
   - lib/contracts/schemas.ts
   - lib/contracts/schemas.test.ts
+  - lib/fs/atomic.ts
+  - lib/fs/atomic.test.ts
+  - package.json
   - lib/workspaces/schema.test.ts
   gate: Dirty Git and non-Git fixtures produce verified immutable snapshots with stable manifest hashes.
 - id: PR-10
@@ -229,13 +233,21 @@ prs:
   - lib/workspaces/quotas.ts
   - lib/workspaces/retention.ts
   - lib/workspaces/doctor.ts
+  - lib/workspaces/providers/copy.test.ts
+  - lib/workspaces/manager.test.ts
+  - lib/workspaces/quotas.test.ts
+  - lib/workspaces/retention.test.ts
+  - lib/workspaces/doctor.test.ts
   modifies:
   - lib/workspaces/repository.ts
+  - lib/workspaces/repository.test.ts
   - lib/workspaces/schema.ts
+  - lib/workspaces/schema.test.ts
   - lib/runtime/attempt-repository.ts
-  - lib/thread-surfaces/types.ts
-  - lib/thread-surfaces/repository.ts
-  - lib/traces/writer.ts
+  - lib/runtime/paths.ts
+  - lib/runtime/repositories.test.ts
+  - lib/contracts/schemas.ts
+  - lib/contracts/schemas.test.ts
   gate: Two independent verified workspace roots materialize from one snapshot with no hardlinks or Git operations.
 - id: PR-11
   milestone: M1

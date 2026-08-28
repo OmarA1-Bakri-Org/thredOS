@@ -4,7 +4,7 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import type { ProcessRecord, RuntimeCommandReceipt, StepAttempt, WorkflowRun } from './schema'
 import { RunRepository } from './run-repository'
-import { AttemptRepository } from './attempt-repository'
+import { AttemptRepository, type AttemptWorkspaceRef } from './attempt-repository'
 import { CommandRepository } from './command-repository'
 import { ProcessRepository } from './process-repository'
 import { rebuildRuntimeIndex } from './runtime-index'
@@ -77,6 +77,19 @@ function attempt(id: string, attemptNumber: number): StepAttempt {
     duration_ms: null,
     error_code: null,
     error_message: null,
+  }
+}
+
+function workspaceRef(overrides: Partial<AttemptWorkspaceRef> = {}): AttemptWorkspaceRef {
+  return {
+    schema_version: 1,
+    workflow_run_id: 'run-01',
+    attempt_id: 'attempt-01',
+    workspace_id: 'workspace-01',
+    snapshot_id: 'snapshot-01',
+    manifest_hash: `sha256:${'a'.repeat(64)}`,
+    bound_at: timestamp,
+    ...overrides,
   }
 }
 
@@ -153,6 +166,7 @@ describe('atomic runtime repositories', () => {
     expect(await new RunRepository(basePath).list()).toEqual([])
     expect(await new AttemptRepository(basePath).get('missing-attempt')).toBeNull()
     expect(await new AttemptRepository(basePath).listForRun('missing-run')).toEqual([])
+    expect(await new AttemptRepository(basePath).getWorkspaceRef('missing-run', 'missing-attempt')).toBeNull()
     expect(await new ProcessRepository(basePath).get('missing-process')).toBeNull()
     expect(await new ProcessRepository(basePath).list()).toEqual([])
     expect(await new CommandRepository(basePath).get('missing-command')).toBeNull()
@@ -213,6 +227,175 @@ describe('atomic runtime repositories', () => {
     const before = await readFile(join(basePath, '.threados/runs/run-01/run.json'), 'utf-8')
     await new AttemptRepository(basePath).create(attempt('attempt-01', 1))
     expect(await readFile(join(basePath, '.threados/runs/run-01/run.json'), 'utf-8')).toBe(before)
+  })
+
+  test('attempt workspace refs bind once without mutating the owning attempt and exact replay is idempotent', async () => {
+    await new RunRepository(basePath).create(run())
+    const repository = new AttemptRepository(basePath)
+    await repository.create(attempt('attempt-01', 1))
+    const attemptPath = join(basePath, '.threados/runs/run-01/attempts/attempt-01/attempt.json')
+    const attemptBytes = await readFile(attemptPath, 'utf-8')
+
+    expect(await repository.bindWorkspaceRef(workspaceRef())).toEqual(workspaceRef())
+    expect(await repository.bindWorkspaceRef(workspaceRef({
+      bound_at: '2026-07-16T00:01:00.000Z',
+    }))).toEqual(workspaceRef())
+    const refPath = join(basePath, '.threados/runs/run-01/attempts/attempt-01/workspace.ref.json')
+    const firstBytes = await readFile(refPath, 'utf-8')
+    expect(await new AttemptRepository(basePath).getWorkspaceRef('run-01', 'attempt-01')).toEqual(workspaceRef())
+    expect(await repository.bindWorkspaceRef(workspaceRef())).toEqual(workspaceRef())
+    expect(await readFile(refPath, 'utf-8')).toBe(firstBytes)
+    expect(await readFile(attemptPath, 'utf-8')).toBe(attemptBytes)
+  })
+
+  test('attempt workspace ref reads fail closed when the owning attempt is missing or identities drift', async () => {
+    await new RunRepository(basePath).create(run())
+    const repository = new AttemptRepository(basePath)
+    await repository.create(attempt('attempt-01', 1))
+    await repository.bindWorkspaceRef(workspaceRef())
+    const attemptDirectory = join(basePath, '.threados/runs/run-01/attempts/attempt-01')
+    const refPath = join(attemptDirectory, 'workspace.ref.json')
+
+    await writeFile(refPath, `${JSON.stringify(workspaceRef({ attempt_id: 'attempt-02' }))}\n`)
+    await expect(repository.getWorkspaceRef('run-01', 'attempt-01')).rejects.toMatchObject({
+      code: 'ATTEMPT_WORKSPACE_REF_IDENTITY_MISMATCH',
+    })
+
+    await writeFile(refPath, `${JSON.stringify(workspaceRef())}\n`)
+    await unlink(join(attemptDirectory, 'attempt.json'))
+    await expect(repository.getWorkspaceRef('run-01', 'attempt-01')).rejects.toMatchObject({
+      code: 'ATTEMPT_NOT_FOUND',
+    })
+  })
+
+  test('attempt workspace refs remain aligned with non-null attempt workspace bindings', async () => {
+    await new RunRepository(basePath).create(run())
+    const repository = new AttemptRepository(basePath)
+    await repository.create(attempt('attempt-01', 1))
+    await repository.bindWorkspaceRef(workspaceRef())
+    await repository.update('attempt-01', 0, current => ({
+      ...current,
+      workspace_id: 'workspace-other',
+      baseline_snapshot_id: 'snapshot-01',
+    }))
+
+    await expect(repository.getWorkspaceRef('run-01', 'attempt-01')).rejects.toMatchObject({
+      code: 'ATTEMPT_WORKSPACE_REF_IDENTITY_MISMATCH',
+    })
+  })
+
+  test('attempt workspace refs require the owning attempt identity and reject unsafe ids', async () => {
+    await new RunRepository(basePath).create(run())
+    const repository = new AttemptRepository(basePath)
+    await repository.create(attempt('attempt-01', 1))
+
+    await expect(repository.bindWorkspaceRef(workspaceRef({ attempt_id: 'missing-attempt' })))
+      .rejects.toMatchObject({ code: 'ATTEMPT_NOT_FOUND' })
+    await expect(repository.bindWorkspaceRef(workspaceRef({ workflow_run_id: 'other-run' })))
+      .rejects.toMatchObject({ code: 'ATTEMPT_NOT_FOUND' })
+    for (const ref of [
+      workspaceRef({ workflow_run_id: '../run' }),
+      workspaceRef({ attempt_id: '../attempt' }),
+      workspaceRef({ workspace_id: '../workspace' }),
+      workspaceRef({ snapshot_id: '../snapshot' }),
+    ]) {
+      await expect(repository.bindWorkspaceRef(ref)).rejects.toThrow('file-safe identifier')
+    }
+    await expect(repository.bindWorkspaceRef({
+      ...workspaceRef(),
+      unexpected: true,
+    } as AttemptWorkspaceRef)).rejects.toThrow()
+    await expect(repository.bindWorkspaceRef(workspaceRef({ manifest_hash: 'sha256:short' })))
+      .rejects.toThrow()
+  })
+
+  test('attempt workspace ref conflicts fail closed under sequential and concurrent duplicate binds', async () => {
+    await new RunRepository(basePath).create(run())
+    const repository = new AttemptRepository(basePath)
+    await repository.create(attempt('attempt-01', 1))
+    await repository.bindWorkspaceRef(workspaceRef())
+
+    await expect(repository.bindWorkspaceRef(workspaceRef({ workspace_id: 'workspace-02' })))
+      .rejects.toMatchObject({ code: 'ATTEMPT_WORKSPACE_REF_CONFLICT' })
+    expect(await repository.getWorkspaceRef('run-01', 'attempt-01')).toEqual(workspaceRef())
+
+    await repository.create(attempt('attempt-02', 2))
+    const results = await Promise.allSettled([
+      new AttemptRepository(basePath).bindWorkspaceRef(workspaceRef({ attempt_id: 'attempt-02' })),
+      new AttemptRepository(basePath).bindWorkspaceRef(workspaceRef({
+        attempt_id: 'attempt-02',
+        workspace_id: 'workspace-02',
+      })),
+    ])
+    expect(results.filter(result => result.status === 'fulfilled')).toHaveLength(1)
+    expect(results.filter(result => result.status === 'rejected')).toHaveLength(1)
+    expect(results.find(result => result.status === 'rejected')).toMatchObject({
+      reason: { code: 'ATTEMPT_WORKSPACE_REF_CONFLICT' },
+    })
+  })
+
+  test('attempt workspace ref binding rejects escaping symlinks', async () => {
+    const outside = await mkdtemp(join(tmpdir(), 'threados-workspace-ref-outside-'))
+    try {
+      await new RunRepository(basePath).create(run())
+      const repository = new AttemptRepository(basePath)
+      await repository.create(attempt('attempt-01', 1))
+      const outsideRef = join(outside, 'workspace.ref.json')
+      await writeFile(outsideRef, `${JSON.stringify(workspaceRef())}\n`)
+      await symlink(
+        outsideRef,
+        join(basePath, '.threados/runs/run-01/attempts/attempt-01/workspace.ref.json'),
+        'file',
+      )
+
+      await expect(repository.getWorkspaceRef('run-01', 'attempt-01')).rejects.toThrow()
+      await expect(repository.bindWorkspaceRef(workspaceRef())).rejects.toThrow()
+      expect(JSON.parse(await readFile(outsideRef, 'utf-8'))).toEqual(workspaceRef())
+    } finally {
+      await rm(outside, { recursive: true, force: true })
+    }
+  })
+
+  test('injected attempt workspace ref write failure preserves attempt bytes and leaves no residue', async () => {
+    await new RunRepository(basePath).create(run())
+    const repository = new AttemptRepository(basePath)
+    await repository.create(attempt('attempt-01', 1))
+    const attemptDirectory = join(basePath, '.threados/runs/run-01/attempts/attempt-01')
+    const attemptPath = join(attemptDirectory, 'attempt.json')
+    const refPath = join(attemptDirectory, 'workspace.ref.json')
+    const attemptBytes = await readFile(attemptPath, 'utf-8')
+    setAtomicBeforeRenameHookForTests(async target => {
+      if (target === refPath) throw new Error('injected workspace ref failure')
+    })
+
+    await expect(repository.bindWorkspaceRef(workspaceRef())).rejects.toThrow('injected workspace ref failure')
+    expect(await readFile(attemptPath, 'utf-8')).toBe(attemptBytes)
+    await expect(readFile(refPath, 'utf-8')).rejects.toMatchObject({ code: 'ENOENT' })
+    expect((await readdir(attemptDirectory)).filter(name => name.endsWith('.tmp') || name.endsWith('.lock'))).toEqual([])
+  })
+
+  test('attempt workspace ref binding revalidates ownership inside the bind lock', async () => {
+    await new RunRepository(basePath).create(run())
+    const repository = new AttemptRepository(basePath)
+    await repository.create(attempt('attempt-01', 1))
+    const attemptDirectory = join(basePath, '.threados/runs/run-01/attempts/attempt-01')
+    const attemptPath = join(attemptDirectory, 'attempt.json')
+    let removed = false
+    setAtomicBoundaryHookForTests(async context => {
+      if (
+        !removed
+        && context.stage === 'after-lock-precheck-before-open'
+        && context.targetPath.endsWith('workspace.ref.json.lock')
+      ) {
+        removed = true
+        await unlink(attemptPath)
+      }
+    })
+
+    await expect(repository.bindWorkspaceRef(workspaceRef())).rejects.toMatchObject({ code: 'ATTEMPT_NOT_FOUND' })
+    expect(removed).toBe(true)
+    expect(await repository.getWorkspaceRef('run-01', 'attempt-01')).toBeNull()
+    expect((await readdir(attemptDirectory)).filter(name => name.endsWith('.tmp') || name.endsWith('.lock'))).toEqual([])
   })
 
   test('process records live under their owning attempt and use revision CAS', async () => {

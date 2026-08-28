@@ -1345,6 +1345,9 @@ lib/security/safe-io.ts
 lib/security/safe-io.test.ts
 lib/contracts/schemas.ts
 lib/contracts/schemas.test.ts
+lib/fs/atomic.ts
+lib/fs/atomic.test.ts
+package.json
 lib/workspaces/schema.test.ts
 ```
 
@@ -1425,6 +1428,7 @@ lib/workspaces/manager.ts
 lib/workspaces/quotas.ts
 lib/workspaces/retention.ts
 lib/workspaces/doctor.ts
+lib/workspaces/doctor.test.ts
 lib/workspaces/manager.test.ts
 lib/workspaces/quotas.test.ts
 lib/workspaces/retention.test.ts
@@ -1434,11 +1438,14 @@ lib/workspaces/retention.test.ts
 
 ```text
 lib/workspaces/repository.ts
+lib/workspaces/repository.test.ts
 lib/workspaces/schema.ts
+lib/workspaces/schema.test.ts
 lib/runtime/attempt-repository.ts
-lib/thread-surfaces/types.ts
-lib/thread-surfaces/repository.ts
-lib/traces/writer.ts
+lib/runtime/paths.ts
+lib/runtime/repositories.test.ts
+lib/contracts/schemas.ts
+lib/contracts/schemas.test.ts
 ```
 
 ### Provider contract
@@ -1478,6 +1485,10 @@ interface SurfaceWorkspaceProvider {
 | User-selected `retain_always` | Retain |
 
 Because Change Sets arrive in Milestone 2, M1 must not auto-delete successful write workspaces immediately.
+
+Workspace quota reservation is persisted on the planned workspace record and created under the same repository lock as the quota precondition. Canonical per-workspace records are authoritative after an atomic legacy-index migration; `index.json` remains rebuildable projection data. Attempt linkage is persisted separately as an exact, path-safe `workspace.ref.json` without dispatching the attempt in PR-10.
+
+The repository check discovers exact test-file paths and executes each file in its own short Bun process because legacy tests intentionally mutate process-global hooks, environment state, and module mocks. Exact-file process isolation avoids cross-file interference and a confirmed long-process panic in Bun 1.3.7. Focused suites remain parallelizable in separate processes; the canonical aggregate favors deterministic evidence over unsafe cross-file interference.
 
 ### Tests
 

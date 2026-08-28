@@ -17,6 +17,23 @@ afterEach(async () => {
 })
 
 describe('writeFileAtomic', () => {
+  test('serializes high-contention lock generations without treating owner turnover as tampering', async () => {
+    const lockPath = join(tempDir, 'contended.lock')
+    let counter = 0
+
+    await Promise.all(Array.from({ length: 16 }, () => withExclusiveFileLock(
+      lockPath,
+      async () => {
+        const observed = counter
+        await Promise.resolve()
+        counter = observed + 1
+      },
+      { allowedRoot: tempDir, timeoutMs: 5_000 },
+    )))
+
+    expect(counter).toBe(16)
+  })
+
   test('writes file successfully', async () => {
     const filePath = join(tempDir, 'test.txt')
     await writeFileAtomic(filePath, 'hello world')

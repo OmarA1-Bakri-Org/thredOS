@@ -11,6 +11,7 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
+  process.exitCode = 0
   await cleanTempDir(tempDir)
 })
 

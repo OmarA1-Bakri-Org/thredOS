@@ -155,6 +155,10 @@ export const TraceEventTypeSchema = z.enum([
   'snapshot-created',
   'snapshot-reused',
   'snapshot-failed',
+  'workspace-provision-started',
+  'workspace-ready',
+  'workspace-retained',
+  'workspace-cleaned',
 ])
 export type TraceEventType = z.infer<typeof TraceEventTypeSchema>
 
