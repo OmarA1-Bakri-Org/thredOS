@@ -8,6 +8,7 @@ thredOS is a local-first application with one visible product entry and several 
 - local API routes in `app/api/`
 - CLI control plane in `lib/seqctl/`
 - shared application runtime in `lib/runtime/`, with process adapters in `lib/runner/` and compatibility projections in `lib/thread-surfaces/`
+- workspace configuration and isolation foundations in `lib/workspaces/` and `lib/local-first/`
 - safety and traceability in `lib/policy/` and `lib/audit/`
 
 `app/page.tsx` is the top-level switch:
@@ -110,6 +111,15 @@ Supporting modules:
 - `lib/runner/` for provider dispatch, process launch adapters, wrapper logic, and artifact handling behind runtime ports
 - `lib/mprocs/` for optional observability and legacy compatibility, not runtime truth
 - `lib/thread-surfaces/` for topology, compatibility history, and merge projections
+- `lib/workspaces/config*.ts`, `paths.ts`, and `exclusions.ts` for the Milestone 1 workspace policy boundary: validated human-authored config, external runtime-root resolution, deterministic exclusion hashes, and caller-supplied hard-excluded roots such as the resolved runtime data root
+- `lib/workspaces/repository.ts` for revision-checked generated Surface Workspace records; snapshot capture and workspace materialization remain downstream PR-09/PR-10 responsibilities
+
+`lib/local-first/workspace.ts` joins the existing local workspace identity to
+that boundary. Each local workspace projection resolves a runtime data root
+outside the canonical project plus snapshot/workspace roots namespaced by both
+workspace identity and canonical-project digest, and an exclusion-policy hash.
+`.threados/workspace.yaml` remains human-authored input;
+generated workspace records remain repository-owned.
 
 The main execution path is:
 

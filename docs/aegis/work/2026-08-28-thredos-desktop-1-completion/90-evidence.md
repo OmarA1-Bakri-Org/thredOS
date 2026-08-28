@@ -90,3 +90,11 @@ The green baseline does not cover the known runtime-status, chat/apply ownership
 - UI proof: `test-results/verify/ui/2026-08-28T04-06-42-869Z` — 12/12 passed.
 - Local proof: `test-results/verify/local/2026-08-28T04-08-22-974Z` — 11/11 passed.
 - Production worktree invocation scan — no matches.
+
+## PR-08
+
+- RED: write containment, retention default, duplicate quota owner, required-include authority/traversal, and malformed identity-state tests failed on the prior implementation.
+- GREEN coordinator PR-08 suite: 54 passed, 0 failed across seven workspace/local-first/policy/API files.
+- `bun run typecheck` — passed.
+- `bun run lint` — passed.
+- Specification and TypeScript/security quality reviews — approved after explicit user exclusions, required ancestor traversal, and strict persisted-identity validation.

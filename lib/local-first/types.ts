@@ -25,6 +25,13 @@ export interface LocalWorkspace {
   id: string
   label: string
   basePath: string
+  runtimeDataRoot: string
+  runtimeNamespace: string
+  snapshotRoot: string
+  surfaceWorkspaceRoot: string
+  exclusionPolicyHash: string
+  workspaceConfigVersion: 1
+  workspaceProvider: 'auto' | 'copy' | 'overlayfs' | 'container'
   createdAt: string
   lastOpenedAt: string
   runtimeTarget: 'desktop' | 'node'

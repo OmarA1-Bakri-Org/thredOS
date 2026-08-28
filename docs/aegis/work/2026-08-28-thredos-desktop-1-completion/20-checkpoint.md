@@ -6,9 +6,9 @@ Close the verified Milestone 0 correctness and ownership defects without changin
 
 ## Active slice
 
-PR-08 correction and closeout:
+PR-09 immutable baseline snapshot engine:
 
-Repair the unlanded workspace configuration/path/exclusion foundation, run its gate, complete two-stage review, and commit only task-owned PR-08 paths.
+Implement the canonical dirty/non-Git-safe snapshot algorithm only after the PR-08 commit is read back and green.
 
 ## Completed
 
@@ -32,6 +32,7 @@ Repair the unlanded workspace configuration/path/exclusion foundation, run its g
 - Final post-consumption `bun run verify:m0` passed: 50 focused tests, 1,934 full-suite tests across 228 files, typecheck, lint, and production build.
 - Post-consumption UI proof passed 12/12; post-consumption local proof passed 11/11.
 - Phase 0 status: complete for the authorized M0 correctness boundary; this is not M1 or Desktop 1.0 completion.
+- PR-08 correction: safe external runtime roots, strict workspace config, authoritative exclusions, validated identity state, atomic workspace repository records, and factual docs passed the focused gate and two-stage review.
 
 ## Boundaries
 
@@ -46,7 +47,7 @@ Resume by re-reading `10-intent.md`, this checkpoint, the canonical authority se
 
 ## Next
 
-Re-read the PR-08 dirty diff against the TaskStartSnapshot, preserve unrelated hunks, write failing correction tests, and execute the PR-08 gate.
+Commit and read back PR-08 task-owned paths, then start PR-09 with a new Slice Card and strict snapshot TDD.
 
 ## Drift decision
 

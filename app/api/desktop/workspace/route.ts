@@ -2,12 +2,29 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireRequestSession } from '@/lib/api-helpers'
 import { getBasePath } from '@/lib/config'
-import { ensureLocalWorkspace, readLocalWorkspace, writeLocalWorkspace } from '@/lib/local-first/workspace'
+import {
+  ensureLocalWorkspace,
+  projectLocalWorkspace,
+  readLocalWorkspace,
+  readLocalWorkspaceIdentity,
+  writeLocalWorkspace,
+} from '@/lib/local-first/workspace'
 import { applyRateLimit } from '@/lib/rate-limit'
+import { loadWorkspaceConfig, writeWorkspaceConfig } from '@/lib/workspaces/config'
+import { WorkspaceConfigSchema } from '@/lib/workspaces/config-schema'
 
 const BodySchema = z.object({
   label: z.string().min(1).optional(),
   runtimeTarget: z.enum(['desktop', 'node']).optional(),
+  runtimeDataRoot: z.string().trim().min(1).nullable().optional(),
+}).superRefine((body, context) => {
+  if (body.runtimeDataRoot !== undefined && (body.label !== undefined || body.runtimeTarget !== undefined)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['runtimeDataRoot'],
+      message: 'runtimeDataRoot must be updated independently from label or runtimeTarget',
+    })
+  }
 })
 
 export async function GET(request: Request) {
@@ -34,6 +51,25 @@ export async function POST(request: Request) {
   }
 
   const basePath = getBasePath()
+  if (parsed.data.runtimeDataRoot !== undefined) {
+    const current = await readLocalWorkspaceIdentity(basePath)
+    const currentConfig = await loadWorkspaceConfig(basePath)
+    const nextConfig = WorkspaceConfigSchema.parse({
+      ...currentConfig,
+      runtime_data_root: parsed.data.runtimeDataRoot,
+    })
+    let projectedWorkspace
+    try {
+      projectedWorkspace = await projectLocalWorkspace(basePath, current, nextConfig)
+    } catch (error) {
+      return NextResponse.json({
+        error: error instanceof Error ? error.message : String(error),
+        code: 'INVALID_RUNTIME_DATA_ROOT',
+      }, { status: 400 })
+    }
+    await writeWorkspaceConfig(basePath, nextConfig)
+    return NextResponse.json({ workspace: projectedWorkspace })
+  }
   const current = await readLocalWorkspace(basePath)
   const nextWorkspace = {
     ...current,

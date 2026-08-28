@@ -35,6 +35,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "elkjs": "^0.11.1",
+    "ignore": "^7.0.6",
     "lucide-react": "^0.562.0",
     "motion": "^12.36.0",
     "next": "16.1.2",
