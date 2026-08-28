@@ -12,7 +12,6 @@ import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { useUIStore } from '@/lib/ui/store'
 import {
-  RuntimeApiError,
   useApprovals,
   useAttempt,
   useCancelAttempt,
@@ -32,6 +31,11 @@ import {
 } from '@/lib/ui/api'
 import { createLaneBoardModel } from '@/components/lanes/useLaneBoard'
 import { resolveThreadSurfaceFocusedDetail } from '@/components/canvas/threadSurfaceFocus'
+import {
+  RuntimeErrorNotice,
+  RuntimeEvidenceState,
+  runtimeEvidenceMetricValue,
+} from './RuntimeEvidenceState'
 import type { AttemptProjection, RunProjection, SequenceStatusProjection } from '@/lib/runtime/service-types'
 import type { StepAttemptStatus, WorkflowRunStatus } from '@/lib/runtime/schema'
 
@@ -134,25 +138,6 @@ function Metric({
     <div className="border-l border-slate-800 pl-3 first:border-l-0 first:pl-0">
       <dt className="font-mono text-[9px] uppercase tracking-[0.16em] text-slate-500">{label}</dt>
       <dd data-testid={testId} className={`mt-1 text-base font-semibold ${tone}`}>{value}</dd>
-    </div>
-  )
-}
-
-function RuntimeErrorNotice({ error }: { error: Error | null }) {
-  if (!error) return null
-  const code = 'code' in error && typeof error.code === 'string'
-    ? error.code
-    : error instanceof RuntimeApiError
-      ? error.code
-      : 'CLIENT_ERROR'
-  return (
-    <div
-      role="alert"
-      data-testid="runtime-control-error"
-      className="border border-rose-500/35 bg-rose-500/10 px-3 py-2.5 text-xs leading-relaxed text-rose-100"
-    >
-      <span className="font-mono font-semibold">{code}</span>
-      <span className="text-rose-200"> · {error.message}</span>
     </div>
   )
 }
@@ -516,6 +501,21 @@ function latestAttempt(projections: AttemptProjection[] | undefined): AttemptPro
     : null
 }
 
+function isEvidenceLoading(query: {
+  data: unknown[] | undefined
+  error: Error | null
+  isLoading?: boolean
+  isFetching?: boolean
+  isPending?: boolean
+}): boolean {
+  if (query.error) return false
+  return Boolean(
+    query.isLoading
+    || query.isPending
+    || (query.isFetching && typeof query.data === 'undefined'),
+  )
+}
+
 export function RunSection() {
   const [confirmRun, setConfirmRun] = useState(false)
   const [localRunId, setLocalRunId] = useState<string | null>(null)
@@ -594,16 +594,34 @@ export function RunSection() {
 
   const activeSurfaceId = focusedDetail?.threadSurfaceId ?? selectedThreadSurfaceId ?? null
   const runIsActive = activeRun != null && isActiveRunStatus(activeRun.run.status)
-  const { data: traceEvents } = useTraces(activeRunId, runIsActive)
-  const { data: approvals } = useApprovals(activeRunId, runIsActive)
+  const traceQuery = useTraces(activeRunId, runIsActive)
+  const approvalsQuery = useApprovals(activeRunId, runIsActive)
+  const traceEvents = traceQuery.data ?? []
+  const approvals = approvalsQuery.data ?? []
+  const traceError = traceQuery.error instanceof Error ? traceQuery.error : null
+  const approvalError = approvalsQuery.error instanceof Error ? approvalsQuery.error : null
+  const traceIsLoading = isEvidenceLoading({
+    data: traceQuery.data as unknown[] | undefined,
+    error: traceError,
+    isLoading: traceQuery.isLoading,
+    isFetching: traceQuery.isFetching,
+    isPending: 'isPending' in traceQuery ? traceQuery.isPending : undefined,
+  })
+  const approvalIsLoading = isEvidenceLoading({
+    data: approvalsQuery.data as unknown[] | undefined,
+    error: approvalError,
+    isLoading: approvalsQuery.isLoading,
+    isFetching: approvalsQuery.isFetching,
+    isPending: 'isPending' in approvalsQuery ? approvalsQuery.isPending : undefined,
+  })
   const exportPath = (exportBundle.data as { exportPath?: string } | undefined)?.exportPath ?? null
   const exportError = exportBundle.error instanceof Error ? exportBundle.error : null
-  const recentTraceEvents = [...((traceEvents ?? []) as Array<{
+  const recentTraceEvents = [...(traceEvents as Array<{
     event_type?: string
     ts?: string
     actor?: string
   }>)].slice(-4).reverse()
-  const recentApprovals = [...((approvals ?? []) as Array<{
+  const recentApprovals = [...(approvals as Array<{
     id: string
     action_type?: string
     status?: string
@@ -689,53 +707,61 @@ export function RunSection() {
           </div>
 
           <dl className="grid grid-cols-2 gap-3 border-y border-slate-800 py-3">
-            <Metric label="Trace events" value={traceEvents?.length ?? 0} testId="run-trace-count" />
-            <Metric label="Approvals" value={approvals?.length ?? 0} testId="run-approval-count" />
+            <Metric
+              label="Trace events"
+              value={runtimeEvidenceMetricValue(traceEvents, traceError, traceIsLoading)}
+              testId="run-trace-count"
+            />
+            <Metric
+              label="Approvals"
+              value={runtimeEvidenceMetricValue(approvals, approvalError, approvalIsLoading)}
+              testId="run-approval-count"
+            />
           </dl>
 
           <div className="grid gap-4 lg:grid-cols-2">
-            <div data-testid="run-trace-events">
-              <div className="font-mono text-[9px] uppercase tracking-[0.18em] text-slate-500">
-                Recent trace
-              </div>
-              <div className="mt-2 divide-y divide-slate-800 border-y border-slate-800">
-                {recentTraceEvents.length === 0 ? (
-                  <div className="py-3 text-xs text-slate-500">No trace events recorded yet.</div>
-                ) : recentTraceEvents.map((event, index) => (
-                  <div
-                    key={`${event.ts ?? 'ts'}-${event.event_type ?? 'event'}-${index}`}
-                    className="py-2 text-xs text-slate-200"
-                  >
-                    <div className="font-mono uppercase tracking-[0.12em] text-slate-300">
-                      {event.event_type ?? 'unknown'}
-                    </div>
-                    <div className="mt-1 text-slate-500">
-                      {event.actor ?? 'threados'} · {event.ts ?? '—'}
-                    </div>
+            <RuntimeEvidenceState
+              kind="trace"
+              label="Trace"
+              error={traceError}
+              isLoading={traceIsLoading}
+              isEmpty={traceEvents.length === 0}
+              emptyMessage="No trace events recorded yet."
+            >
+              {recentTraceEvents.map((event, index) => (
+                <div
+                  key={`${event.ts ?? 'ts'}-${event.event_type ?? 'event'}-${index}`}
+                  className="py-2 text-xs text-slate-200"
+                >
+                  <div className="font-mono uppercase tracking-[0.12em] text-slate-300">
+                    {event.event_type ?? 'unknown'}
                   </div>
-                ))}
-              </div>
-            </div>
-            <div data-testid="run-approval-events">
-              <div className="font-mono text-[9px] uppercase tracking-[0.18em] text-slate-500">
-                Recent approvals
-              </div>
-              <div className="mt-2 divide-y divide-slate-800 border-y border-slate-800">
-                {recentApprovals.length === 0 ? (
-                  <div className="py-3 text-xs text-slate-500">No approvals recorded yet.</div>
-                ) : recentApprovals.map(approval => (
-                  <div key={approval.id} className="py-2 text-xs text-slate-200">
-                    <div className="font-mono uppercase tracking-[0.12em] text-slate-300">
-                      {approval.action_type ?? 'approval'}
-                    </div>
-                    <div className="mt-1 text-slate-500">
-                      {approval.status ?? 'pending'}
-                      {approval.approved_by ? ` · ${approval.approved_by}` : ''}
-                    </div>
+                  <div className="mt-1 text-slate-500">
+                    {event.actor ?? 'threados'} · {event.ts ?? '—'}
                   </div>
-                ))}
-              </div>
-            </div>
+                </div>
+              ))}
+            </RuntimeEvidenceState>
+            <RuntimeEvidenceState
+              kind="approval"
+              label="Approval"
+              error={approvalError}
+              isLoading={approvalIsLoading}
+              isEmpty={approvals.length === 0}
+              emptyMessage="No approvals recorded yet."
+            >
+              {recentApprovals.map(approval => (
+                <div key={approval.id} className="py-2 text-xs text-slate-200">
+                  <div className="font-mono uppercase tracking-[0.12em] text-slate-300">
+                    {approval.action_type ?? 'approval'}
+                  </div>
+                  <div className="mt-1 text-slate-500">
+                    {approval.status ?? 'pending'}
+                    {approval.approved_by ? ` · ${approval.approved_by}` : ''}
+                  </div>
+                </div>
+              ))}
+            </RuntimeEvidenceState>
           </div>
 
           {exportPath ? (

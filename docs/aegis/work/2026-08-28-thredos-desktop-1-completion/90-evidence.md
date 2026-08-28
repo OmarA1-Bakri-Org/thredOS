@@ -42,3 +42,12 @@ The green baseline does not cover the known runtime-status, chat/apply ownership
 - `git diff --check` for task-owned paths — passed.
 - Specification/security review — approved after exact binding, atomic resolve/lifecycle, locked reads, honest public projection, and no fabricated chat-apply approvals.
 - TypeScript-quality review — approved after runtime action-type enforcement, sanitized trace warnings, synchronous locked transitions, explicit committed trace status, and failure-atomic full-file replacement.
+
+## Phase 0 Task 4
+
+- RED: evidence-state tests proved query errors and pending undefined data were rendered as authoritative empty/zero state.
+- GREEN coordinator regression: 17 passed, 0 failed across RuntimeEvidenceState and RunSection tests.
+- `bun run typecheck` — passed.
+- `bun run lint` — passed.
+- `git diff --check` for task-owned paths — passed.
+- Specification and React/TypeScript-quality reviews — approved after explicit `error -> loading -> empty -> data` precedence and non-authoritative metrics.

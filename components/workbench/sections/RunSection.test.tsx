@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, mock, test } from 'bun:test'
+import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
 
 const realApi = await import('@/lib/ui/api')
@@ -94,6 +94,34 @@ const runtimeAttempt = {
   },
 }
 
+let traceQueryState: {
+  data: Array<{ event_type: string; ts: string; actor: string }> | undefined
+  error: Error | null
+  isLoading: boolean
+  isFetching: boolean
+  isPending: boolean
+} = {
+  data: [{ event_type: 'step-started', ts: '2026-04-16T00:00:00.000Z', actor: 'threados' }],
+  error: null,
+  isLoading: false,
+  isFetching: false,
+  isPending: false,
+}
+
+let approvalQueryState: {
+  data: Array<{ id: string; action_type: string; status: string; approved_by: string | null }> | undefined
+  error: Error | null
+  isLoading: boolean
+  isFetching: boolean
+  isPending: boolean
+} = {
+  data: [{ id: 'apr-1', action_type: 'reveal', status: 'pending', approved_by: null }],
+  error: null,
+  isLoading: false,
+  isFetching: false,
+  isPending: false,
+}
+
 mock.module('@/lib/ui/store', () => ({
   useUIStore: (selector: (state: { selectedThreadSurfaceId: string | null; selectedRunId: string | null }) => unknown) =>
     selector({ selectedThreadSurfaceId: 'thread-step-1', selectedRunId: 'run-1' }),
@@ -168,10 +196,18 @@ mock.module('@/lib/ui/api', () => ({
   }),
   useThreadMerges: () => ({ data: [] }),
   useTraces: () => ({
-    data: [{ event_type: 'step-started', ts: '2026-04-16T00:00:00.000Z', actor: 'threados' }],
+    data: traceQueryState.data,
+    error: traceQueryState.error,
+    isLoading: traceQueryState.isLoading,
+    isFetching: traceQueryState.isFetching,
+    isPending: traceQueryState.isPending,
   }),
   useApprovals: () => ({
-    data: [{ id: 'apr-1', action_type: 'reveal', status: 'pending', approved_by: null }],
+    data: approvalQueryState.data,
+    error: approvalQueryState.error,
+    isLoading: approvalQueryState.isLoading,
+    isFetching: approvalQueryState.isFetching,
+    isPending: approvalQueryState.isPending,
   }),
   useExportBundle: () => ({
     mutate: () => {},
@@ -198,6 +234,23 @@ const {
 } = await import('./RunSection')
 
 describe('RunSection', () => {
+  beforeEach(() => {
+    traceQueryState = {
+      data: [{ event_type: 'step-started', ts: '2026-04-16T00:00:00.000Z', actor: 'threados' }],
+      error: null,
+      isLoading: false,
+      isFetching: false,
+      isPending: false,
+    }
+    approvalQueryState = {
+      data: [{ id: 'apr-1', action_type: 'reveal', status: 'pending', approved_by: null }],
+      error: null,
+      isLoading: false,
+      isFetching: false,
+      isPending: false,
+    }
+  })
+
   test('selects a newly started canonical run while it is still cancellable', () => {
     const pendingRun = {
       ...runtimeRun,
@@ -221,7 +274,7 @@ describe('RunSection', () => {
     expect(isActiveRunStatus('awaiting_review')).toBe(true)
   })
 
-  test('renders trace, approvals, export, and reveal affordances for the active run', () => {
+  test('renders normal trace and approval evidence for the active run', () => {
     const markup = renderToStaticMarkup(<RunSection />)
     expect(markup).toContain('data-testid="run-control-plane"')
     expect(markup).toContain('data-testid="run-export-button"')
@@ -233,5 +286,94 @@ describe('RunSection', () => {
     expect(markup).toContain('.threados/exports/run-1/bundle.json')
     expect(markup).toContain('step-started')
     expect(markup).toContain('reveal')
+    expect(markup).not.toContain('Trace evidence unavailable.')
+    expect(markup).not.toContain('Approval evidence unavailable.')
+  })
+
+  test('renders trace evidence as unavailable instead of an authoritative empty state when the query fails', () => {
+    traceQueryState = {
+      data: [],
+      error: Object.assign(new Error('trace index unavailable'), { code: 'TRACE_QUERY_FAILED' }),
+      isLoading: false,
+      isFetching: false,
+      isPending: false,
+    }
+
+    const markup = renderToStaticMarkup(<RunSection />)
+    expect(markup).toContain('Trace evidence unavailable.')
+    expect(markup).toContain('TRACE_QUERY_FAILED')
+    expect(markup).toContain('trace index unavailable')
+    expect(markup).toContain('data-testid="run-trace-count"')
+    expect(markup).toContain('data-testid="run-trace-events-error"')
+    expect(markup).toContain('Unavailable')
+    expect(markup).not.toContain('No trace events recorded yet.')
+  })
+
+  test('renders approval evidence as unavailable instead of an authoritative empty state when the query fails', () => {
+    approvalQueryState = {
+      data: [],
+      error: Object.assign(new Error('approval ledger offline'), { code: 'APPROVAL_QUERY_FAILED' }),
+      isLoading: false,
+      isFetching: false,
+      isPending: false,
+    }
+
+    const markup = renderToStaticMarkup(<RunSection />)
+    expect(markup).toContain('Approval evidence unavailable.')
+    expect(markup).toContain('APPROVAL_QUERY_FAILED')
+    expect(markup).toContain('approval ledger offline')
+    expect(markup).toContain('data-testid="run-approval-count"')
+    expect(markup).toContain('data-testid="run-approval-events-error"')
+    expect(markup).toContain('Unavailable')
+    expect(markup).not.toContain('No approvals recorded yet.')
+  })
+
+  test('renders true empty states only when evidence queries succeed with no records', () => {
+    traceQueryState = {
+      data: [],
+      error: null,
+      isLoading: false,
+      isFetching: false,
+      isPending: false,
+    }
+    approvalQueryState = {
+      data: [],
+      error: null,
+      isLoading: false,
+      isFetching: false,
+      isPending: false,
+    }
+
+    const markup = renderToStaticMarkup(<RunSection />)
+    expect(markup).toContain('No trace events recorded yet.')
+    expect(markup).toContain('No approvals recorded yet.')
+    expect(markup).not.toContain('Trace evidence unavailable.')
+    expect(markup).not.toContain('Approval evidence unavailable.')
+  })
+
+  test('renders explicit loading evidence when trace and approval queries are pending without data', () => {
+    traceQueryState = {
+      data: undefined,
+      error: null,
+      isLoading: true,
+      isFetching: true,
+      isPending: true,
+    }
+    approvalQueryState = {
+      data: undefined,
+      error: null,
+      isLoading: false,
+      isFetching: true,
+      isPending: false,
+    }
+
+    const markup = renderToStaticMarkup(<RunSection />)
+    expect(markup).toContain('Loading trace evidence…')
+    expect(markup).toContain('Loading approval evidence…')
+    expect(markup).toContain('data-testid="run-trace-count"')
+    expect(markup).toContain('data-testid="run-approval-count"')
+    expect(markup).toContain('Loading')
+    expect(markup).not.toContain('No trace events recorded yet.')
+    expect(markup).not.toContain('No approvals recorded yet.')
   })
 })
