@@ -15,7 +15,7 @@ describe('workspace snapshot schemas', () => {
     const entry = SnapshotEntrySchema.parse({
       path: 'src/index.ts',
       kind: 'file',
-      sha256: 'sha256:file',
+      sha256: 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
       size_bytes: 42,
       mode: 0o644,
       symlink_target: null,
@@ -23,7 +23,7 @@ describe('workspace snapshot schemas', () => {
     expect(SnapshotManifestSchema.safeParse({
       schema_version: 1,
       snapshot_id: 'snapshot-01',
-      root_manifest_hash: 'sha256:root',
+      root_manifest_hash: 'sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
       entries: [entry],
     }).success).toBe(true)
   })
@@ -46,9 +46,150 @@ describe('workspace snapshot schemas', () => {
       created_at: timestamp,
       verified_at: null,
       error_code: null,
+      directory_count: 0,
+      symlink_count: 0,
+      blocked_symlink_paths: [],
+      source_retry_count: 0,
     })
     expect(snapshot.content_root).toBeNull()
     expect(WorkspaceSnapshotStatusSchema.safeParse('active').success).toBe(false)
+  })
+
+  test('rejects non-canonical blocked symlink path evidence', () => {
+    expect(WorkspaceSnapshotSchema.safeParse({
+      schema_version: 1,
+      id: 'snapshot-01',
+      local_workspace_id: 'local-01',
+      source_root: 'C:\\project',
+      content_root: null,
+      manifest_ref: null,
+      status: 'failed',
+      root_manifest_hash: null,
+      exclusion_policy_hash: 'sha256:exclude',
+      file_count: 0,
+      total_bytes: 0,
+      git_head: null,
+      git_dirty: null,
+      created_at: timestamp,
+      verified_at: null,
+      error_code: 'SNAPSHOT_SYMLINK_ESCAPE',
+      directory_count: 0,
+      symlink_count: 0,
+      blocked_symlink_paths: ['cafe\u0301/link'],
+      source_retry_count: 0,
+    }).success).toBe(false)
+  })
+
+  test('enforces kind-specific snapshot entry semantics', () => {
+    expect(SnapshotEntrySchema.safeParse({
+      path: 'src/folder',
+      kind: 'directory',
+      sha256: 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      size_bytes: 0,
+      mode: 0o755,
+      symlink_target: null,
+    }).success).toBe(false)
+
+    expect(SnapshotEntrySchema.safeParse({
+      path: 'src/link',
+      kind: 'symlink',
+      sha256: null,
+      size_bytes: 0,
+      mode: 0o777,
+      symlink_target: null,
+    }).success).toBe(false)
+  })
+
+  test('accepts nested safe symlink targets and rejects escaping targets', () => {
+    expect(SnapshotEntrySchema.safeParse({
+      path: 'src/nested/link',
+      kind: 'symlink',
+      sha256: null,
+      size_bytes: 0,
+      mode: 0o777,
+      symlink_target: '../../README.md',
+    }).success).toBe(true)
+
+    expect(SnapshotEntrySchema.safeParse({
+      path: 'src/nested/link',
+      kind: 'symlink',
+      sha256: null,
+      size_bytes: 0,
+      mode: 0o777,
+      symlink_target: '../../../escape.md',
+    }).success).toBe(false)
+
+    expect(SnapshotEntrySchema.safeParse({
+      path: 'src/link',
+      kind: 'symlink',
+      sha256: null,
+      size_bytes: 0,
+      mode: 0o777,
+      symlink_target: '../../../../escape.md',
+    }).success).toBe(false)
+  })
+
+  test('rejects duplicate and non-portable manifest entry paths', () => {
+    expect(SnapshotManifestSchema.safeParse({
+      schema_version: 1,
+      snapshot_id: 'snapshot-01',
+      root_manifest_hash: 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      entries: [
+        {
+          path: 'src/index.ts',
+          kind: 'file',
+          sha256: 'sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+          size_bytes: 10,
+          mode: 0o644,
+          symlink_target: null,
+        },
+        {
+          path: 'src\\index.ts',
+          kind: 'file',
+          sha256: 'sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+          size_bytes: 10,
+          mode: 0o644,
+          symlink_target: null,
+        },
+      ],
+    }).success).toBe(false)
+  })
+
+  test('rejects unsafe numeric precision and non-canonical Unicode', () => {
+    expect(SnapshotEntrySchema.safeParse({
+      path: 'cafe\u0301.txt',
+      kind: 'file',
+      sha256: 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      size_bytes: 1,
+      mode: 0o644,
+      symlink_target: null,
+    }).success).toBe(false)
+
+    expect(SnapshotEntrySchema.safeParse({
+      path: 'large.bin',
+      kind: 'file',
+      sha256: 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      size_bytes: Number.MAX_SAFE_INTEGER + 1,
+      mode: 0o644,
+      symlink_target: null,
+    }).success).toBe(false)
+  })
+
+  test.each([
+    'src/a?.txt',
+    'src/a*.txt',
+    'src/a|b.txt',
+    'src/a<b>.txt',
+    `src/${'a'.repeat(256)}.txt`,
+  ])('rejects Windows-incompatible portable path %s', path => {
+    expect(SnapshotEntrySchema.safeParse({
+      path,
+      kind: 'file',
+      sha256: 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      size_bytes: 1,
+      mode: 0o644,
+      symlink_target: null,
+    }).success).toBe(false)
   })
 })
 
