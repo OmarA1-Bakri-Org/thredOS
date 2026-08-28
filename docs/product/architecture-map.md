@@ -112,7 +112,8 @@ Supporting modules:
 - `lib/mprocs/` for optional observability and legacy compatibility, not runtime truth
 - `lib/thread-surfaces/` for topology, compatibility history, and merge projections
 - `lib/workspaces/config*.ts`, `paths.ts`, and `exclusions.ts` for the Milestone 1 workspace policy boundary: validated human-authored config, external runtime-root resolution, deterministic exclusion hashes, and caller-supplied hard-excluded roots such as the resolved runtime data root
-- `lib/workspaces/repository.ts` for revision-checked generated Surface Workspace records; snapshot capture and workspace materialization remain downstream PR-09/PR-10 responsibilities
+- `lib/workspaces/hash.ts`, `manifest.ts`, `snapshot.ts`, and `snapshot-repository.ts` for immutable baseline capture: normalized byte-stable manifests, bounded no-follow source copies, source-race retries, content-addressed external trees, workflow-run-scoped reuse, and atomic project-local snapshot metadata generations behind a stable manifest reference
+- `lib/workspaces/repository.ts` for revision-checked generated Surface Workspace records; portable-copy materialization remains the downstream PR-10 responsibility
 
 `lib/local-first/workspace.ts` joins the existing local workspace identity to
 that boundary. Each local workspace projection resolves a runtime data root

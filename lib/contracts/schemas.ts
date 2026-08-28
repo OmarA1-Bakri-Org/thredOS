@@ -152,6 +152,9 @@ export const TraceEventTypeSchema = z.enum([
   'spawn-child',
   'merge-into',
   'barrier-attested',
+  'snapshot-created',
+  'snapshot-reused',
+  'snapshot-failed',
 ])
 export type TraceEventType = z.infer<typeof TraceEventTypeSchema>
 

@@ -98,3 +98,15 @@ The green baseline does not cover the known runtime-status, chat/apply ownership
 - `bun run typecheck` — passed.
 - `bun run lint` — passed.
 - Specification and TypeScript/security quality reviews — approved after explicit user exclusions, required ancestor traversal, and strict persisted-identity validation.
+
+## PR-09 immutable snapshot engine
+
+- Task A focused gate: 81 workspace tests and 22 contract tests passed; typecheck, lint, and diff check passed.
+- Task A independent spec and TypeScript/security reviews approved after generation-pointer atomicity, NFC/portable paths, safe numeric accounting, terminal immutability, stable manifest dereferencing, corruption mapping, and ready-only reuse were proven.
+- Task A commit: `d4ade45 feat(workspaces): define immutable snapshot records`.
+- Task B RED/review iterations found and closed runtime-namespace junction poisoning, source directory swaps, discovery/copy identity races, whole-file buffering, unsafe reuse roots, cross-run reuse, untracked-policy drift, trace-evidence loss, and contained absolute-link handling.
+- Final Task B focused gate: 122 passed, 0 failed, 291 assertions across snapshot, manifest, repository, schema, safe-I/O, trace, contract, dirty-Git, clean-Git, and non-Git coverage; typecheck, lint, and diff check passed.
+- Repeat stability evidence: snapshot suite passed 95/95 across five reruns; approval/safe-I/O/snapshot concurrency subset passed 138/138 across three reruns.
+- First full repository check exposed one unrelated Windows approval-lock flake and one non-reproducing snapshot symlink failure; both were rerun repeatedly before accepting evidence.
+- Final `bun run check`: 2,026 passed, 0 failed, 5,472 assertions across 234 files; lint and typecheck passed.
+- Final spec, security, and TypeScript/cross-platform reviews approved with no remaining material findings.

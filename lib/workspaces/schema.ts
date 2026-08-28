@@ -208,6 +208,7 @@ export const WorkspaceSnapshotSchema = z.object({
   schema_version: z.literal(1),
   id: z.string().min(1),
   local_workspace_id: z.string().min(1),
+  workflow_run_id: z.string().min(1).nullable().optional(),
   source_root: z.string().min(1),
   content_root: z.string().nullable(),
   manifest_ref: z.string().nullable(),

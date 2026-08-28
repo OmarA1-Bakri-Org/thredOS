@@ -199,13 +199,22 @@ prs:
   - lib/workspaces/hash.ts
   - lib/workspaces/snapshot.ts
   - lib/workspaces/snapshot-repository.ts
+  - lib/workspaces/hash.test.ts
+  - lib/workspaces/manifest.test.ts
+  - lib/workspaces/snapshot.test.ts
+  - lib/workspaces/snapshot-repository.test.ts
+  - test/fixtures/workspaces/snapshot-project/
   - test/integration/snapshot-dirty-git.test.ts
   - test/integration/snapshot-non-git.test.ts
   modifies:
   - lib/workspaces/schema.ts
-  - lib/workspaces/paths.ts
   - lib/traces/writer.ts
+  - lib/traces/writer.test.ts
+  - lib/security/safe-io.ts
+  - lib/security/safe-io.test.ts
   - lib/contracts/schemas.ts
+  - lib/contracts/schemas.test.ts
+  - lib/workspaces/schema.test.ts
   gate: Dirty Git and non-Git fixtures produce verified immutable snapshots with stable manifest hashes.
 - id: PR-10
   milestone: M1

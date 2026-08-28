@@ -256,6 +256,21 @@ describe('TraceEventSchema', () => {
     expect(result.success).toBe(true)
   })
 
+  it.each(['snapshot-created', 'snapshot-reused', 'snapshot-failed'] as const)(
+    'validates the %s evidence event',
+    eventType => {
+      expect(TraceEventSchema.safeParse({
+        ts: '2026-08-28T10:00:00Z',
+        run_id: 'run-snapshot',
+        surface_id: 'snapshot-001',
+        actor: 'threados-runtime',
+        event_type: eventType,
+        payload_ref: '.threados/snapshots/snapshot-001/manifest.json',
+        policy_ref: 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      }).success).toBe(true)
+    },
+  )
+
   it('rejects a TraceEvent with an invalid event_type', () => {
     const result = TraceEventSchema.safeParse({
       ts: '2026-03-28T10:00:00Z',

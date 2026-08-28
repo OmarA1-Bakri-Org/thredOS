@@ -33,6 +33,7 @@ describe('workspace snapshot schemas', () => {
       schema_version: 1,
       id: 'snapshot-01',
       local_workspace_id: 'local-01',
+      workflow_run_id: 'run-01',
       source_root: 'C:\\project',
       content_root: null,
       manifest_ref: null,
@@ -52,6 +53,7 @@ describe('workspace snapshot schemas', () => {
       source_retry_count: 0,
     })
     expect(snapshot.content_root).toBeNull()
+    expect(snapshot.workflow_run_id).toBe('run-01')
     expect(WorkspaceSnapshotStatusSchema.safeParse('active').success).toBe(false)
   })
 

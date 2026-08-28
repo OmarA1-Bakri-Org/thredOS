@@ -175,8 +175,11 @@ PR-08 may be developed after PR-02, but it must not merge ahead of PR-07 unless 
 │               └── existing canonical surface-run artifacts
 ├── snapshots/
 │   └── <snapshotId>/
-│       ├── snapshot.json
-│       └── manifest.json
+│       ├── current.json
+│       ├── manifest.json
+│       └── generations/<generationId>/
+│           ├── metadata.json
+│           └── manifest.json
 ├── workspaces/
 │   └── index.json
 └── state/
@@ -1325,6 +1328,8 @@ lib/workspaces/snapshot.ts
 lib/workspaces/snapshot-repository.ts
 lib/workspaces/snapshot.test.ts
 lib/workspaces/manifest.test.ts
+lib/workspaces/hash.test.ts
+lib/workspaces/snapshot-repository.test.ts
 test/fixtures/workspaces/snapshot-project/
 test/integration/snapshot-dirty-git.test.ts
 test/integration/snapshot-non-git.test.ts
@@ -1334,9 +1339,13 @@ test/integration/snapshot-non-git.test.ts
 
 ```text
 lib/workspaces/schema.ts
-lib/workspaces/paths.ts
 lib/traces/writer.ts
+lib/traces/writer.test.ts
+lib/security/safe-io.ts
+lib/security/safe-io.test.ts
 lib/contracts/schemas.ts
+lib/contracts/schemas.test.ts
+lib/workspaces/schema.test.ts
 ```
 
 ### Snapshot algorithm
@@ -1354,6 +1363,8 @@ lib/contracts/schemas.ts
 11. Compute a deterministic root manifest hash over sorted normalized entries.
 12. Atomically rename the temporary snapshot directory into its final content-addressed location.
 13. Persist the project-local snapshot reference and append trace events.
+
+Project-local snapshot records use an atomic generation plus commit-pointer layout. `manifest.json` is the stable dereferenceable manifest reference; `current.json` selects one complete metadata/manifest generation so readers never observe a half-published pair. External snapshot bytes remain content-addressed under the resolved runtime data root.
 
 ### Required behavior
 

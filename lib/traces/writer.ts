@@ -14,6 +14,9 @@ export async function appendTraceEvent(
 ): Promise<void> {
   assertSafePathSegment(runId, 'run id')
   const validated = TraceEventSchema.parse(event)
+  if (validated.run_id !== runId) {
+    throw new Error('Trace event run_id must match the target run id')
+  }
   const threadosPath = await resolvePathWithinRoot(basePath, '.threados')
   await mkdir(threadosPath, { recursive: true })
   const threadosRoot = await resolveExistingPathWithinRoot(basePath, '.threados')

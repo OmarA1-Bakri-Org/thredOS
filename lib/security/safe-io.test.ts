@@ -1,11 +1,14 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { access, mkdir, mkdtemp, open, readFile, rm, symlink, writeFile } from 'fs/promises'
+import { createHash } from 'crypto'
+import { access, lstat, mkdir, mkdtemp, open, readFile, rm, symlink, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import {
   appendFileNoFollow,
   copyFileNoFollow,
+  hashFileNoFollow,
   readTextFileNoFollow,
+  setSafeIoAfterOpenHookForTests,
   setSafeIoBeforeOpenHookForTests,
   writeFileNoFollow,
 } from './safe-io'
@@ -51,6 +54,7 @@ describe('safe file I/O', () => {
 
   afterEach(async () => {
     setSafeIoBeforeOpenHookForTests(null)
+    setSafeIoAfterOpenHookForTests(null)
     await rm(root, { recursive: true, force: true })
   })
 
@@ -110,18 +114,28 @@ describe('safe file I/O', () => {
     expect(await readFile(external, 'utf-8')).toBe('outside sentinel')
   })
 
-  test('copies regular sources to new and existing regular destinations', async () => {
+  test('streams a regular source to a new destination and returns its byte count and digest', async () => {
     const source = join(inside, 'source.txt')
     const created = join(inside, 'copy-created.txt')
-    const existing = join(inside, 'copy-existing.txt')
     await writeFile(source, 'copied content')
-    await writeFile(existing, 'old destination content')
 
-    await copyFileNoFollow(source, created)
-    await copyFileNoFollow(source, existing)
+    const result = await copyFileNoFollow(source, created)
 
     expect(await readFile(created, 'utf-8')).toBe('copied content')
-    expect(await readFile(existing, 'utf-8')).toBe('copied content')
+    expect(result).toEqual({
+      sizeBytes: Buffer.byteLength('copied content'),
+      sha256: createHash('sha256').update('copied content').digest('hex'),
+    })
+  })
+
+  test('copy refuses to overwrite an existing destination', async () => {
+    const source = join(inside, 'exclusive-source.txt')
+    const destination = join(inside, 'exclusive-destination.txt')
+    await writeFile(source, 'new content')
+    await writeFile(destination, 'sentinel')
+
+    await expect(copyFileNoFollow(source, destination)).rejects.toMatchObject({ code: 'EEXIST' })
+    expect(await readFile(destination, 'utf-8')).toBe('sentinel')
   })
 
   test('copy rejects final symlinks for its source and destination', async () => {
@@ -139,6 +153,128 @@ describe('safe file I/O', () => {
     await expect(copyFileNoFollow(linkedSource, join(inside, 'copy.txt'))).rejects.toThrow()
     await expect(copyFileNoFollow(regularSource, linkedDestination)).rejects.toThrow()
     expect(await readFile(externalDestination, 'utf-8')).toBe('outside sentinel')
+  })
+
+  test('copy rejects a source that no longer matches the expected bigint identity', async () => {
+    const source = join(inside, 'identity-source.txt')
+    const destination = join(inside, 'identity-copy.txt')
+    await writeFile(source, 'original')
+    const expected = await lstat(source, { bigint: true })
+
+    await writeFile(source, 'replacement')
+
+    await expect(copyFileNoFollow(source, destination, {
+      expectedSource: {
+        dev: expected.dev,
+        ino: expected.ino,
+        size: expected.size,
+        mtimeNs: expected.mtimeNs,
+      },
+    })).rejects.toThrow('identity')
+    await expect(access(destination)).rejects.toThrow()
+  })
+
+  test('copy detects a source swap performed immediately before open', async () => {
+    const source = join(inside, 'raced-source.txt')
+    const destination = join(inside, 'raced-copy.txt')
+    await writeFile(source, 'original')
+    const expected = await lstat(source, { bigint: true })
+
+    let swapped = false
+    setSafeIoBeforeOpenHookForTests(async ({ operation, filePath }) => {
+      if (!swapped && operation === 'copy-source' && filePath === source) {
+        swapped = true
+        await rm(source)
+        await writeFile(source, 'replacement')
+      }
+    })
+
+    await expect(copyFileNoFollow(source, destination, {
+      expectedSource: {
+        dev: expected.dev,
+        ino: expected.ino,
+        size: expected.size,
+        mtimeNs: expected.mtimeNs,
+      },
+    })).rejects.toThrow('identity')
+    expect(swapped).toBe(true)
+    await expect(access(destination)).rejects.toThrow()
+  })
+
+  test('copy types a source swap performed after open as retryable source drift', async () => {
+    const source = join(inside, 'after-open-source.txt')
+    const destination = join(inside, 'after-open-copy.txt')
+    await writeFile(source, 'original')
+    const expected = await lstat(source, { bigint: true })
+
+    let swapped = false
+    setSafeIoAfterOpenHookForTests(async ({ operation, filePath }) => {
+      if (!swapped && operation === 'copy-source' && filePath === source) {
+        swapped = true
+        await rm(source)
+        await writeFile(source, 'replacement')
+      }
+    })
+
+    await expect(copyFileNoFollow(source, destination, {
+      expectedSource: {
+        dev: expected.dev,
+        ino: expected.ino,
+        size: expected.size,
+        mtimeNs: expected.mtimeNs,
+      },
+    })).rejects.toMatchObject({ code: 'SAFE_IO_SOURCE_CHANGED' })
+    expect(swapped).toBe(true)
+    await expect(access(destination)).rejects.toThrow()
+  })
+
+  test('copy enforces maxBytes before creating the destination', async () => {
+    const source = join(inside, 'bounded-source.txt')
+    const destination = join(inside, 'bounded-copy.txt')
+    await writeFile(source, 'too large')
+
+    await expect(copyFileNoFollow(source, destination, { maxBytes: 3 })).rejects.toThrow('maxBytes')
+    await expect(access(destination)).rejects.toThrow()
+  })
+
+  test('copy streams a multi-chunk file without whole-buffer file APIs', async () => {
+    const source = join(inside, 'large-source.bin')
+    const destination = join(inside, 'large-copy.bin')
+    const content = Buffer.alloc(1024 * 1024 + 17, 0x5a)
+    await writeFile(source, content)
+
+    const probe = await open(source, 'r')
+    const prototype = Object.getPrototypeOf(probe) as { readFile: (...args: unknown[]) => Promise<unknown> }
+    const originalReadFile = prototype.readFile
+    await probe.close()
+    prototype.readFile = async () => {
+      throw new Error('whole-buffer readFile must not be used')
+    }
+    try {
+      const result = await copyFileNoFollow(source, destination)
+      expect(result).toEqual({
+        sizeBytes: content.byteLength,
+        sha256: createHash('sha256').update(content).digest('hex'),
+      })
+      expect(await readFile(destination)).toEqual(content)
+    } finally {
+      prototype.readFile = originalReadFile
+    }
+  })
+
+  test('hashFileNoFollow streams a bounded regular file and rejects symlinks', async () => {
+    const source = join(inside, 'hash-source.bin')
+    const linked = join(inside, 'hash-link.bin')
+    const content = Buffer.alloc(256 * 1024 + 3, 0xa5)
+    await writeFile(source, content)
+    await symlink(source, linked, 'file')
+
+    expect(await hashFileNoFollow(source, content.byteLength)).toEqual({
+      sizeBytes: content.byteLength,
+      sha256: createHash('sha256').update(content).digest('hex'),
+    })
+    await expect(hashFileNoFollow(source, content.byteLength - 1)).rejects.toThrow('maxBytes')
+    await expect(hashFileNoFollow(linked)).rejects.toThrow()
   })
 
   test('a destination swapped to a symlink immediately before open is rejected safely', async () => {

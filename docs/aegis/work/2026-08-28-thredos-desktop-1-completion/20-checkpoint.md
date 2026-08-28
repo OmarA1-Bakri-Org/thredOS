@@ -33,6 +33,8 @@ Implement the canonical dirty/non-Git-safe snapshot algorithm only after the PR-
 - Post-consumption UI proof passed 12/12; post-consumption local proof passed 11/11.
 - Phase 0 status: complete for the authorized M0 correctness boundary; this is not M1 or Desktop 1.0 completion.
 - PR-08 correction: safe external runtime roots, strict workspace config, authoritative exclusions, validated identity state, atomic workspace repository records, and factual docs passed the focused gate and two-stage review.
+- PR-09 Task A: deterministic portable manifests, safe integer accounting, immutable lifecycle records, corruption-safe generation publication, stable manifest references, and workflow-compatible snapshot schemas were committed as `d4ade45` after independent spec and TypeScript/security approval.
+- PR-09 Task B: clean/dirty Git and non-Git capture, bounded no-follow streaming copies, source-race retry, symlink and runtime-namespace containment, content-addressed read-only trees, workflow-run-scoped reuse, trace evidence, and factual architecture/current-state documentation passed the canonical focused gate and full repository check.
 
 ## Boundaries
 
@@ -47,7 +49,7 @@ Resume by re-reading `10-intent.md`, this checkpoint, the canonical authority se
 
 ## Next
 
-Commit and read back PR-08 task-owned paths, then start PR-09 with a new Slice Card and strict snapshot TDD.
+Commit and read back the approved PR-09 Task B paths, then start PR-10 portable-copy provider and workspace-manager TDD.
 
 ## Drift decision
 

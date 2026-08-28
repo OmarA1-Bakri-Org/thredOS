@@ -90,6 +90,17 @@ describe('appendTraceEvent + readTraceEvents', () => {
     await expect(appendTraceEvent(tmpDir, 'run-abc', invalidEvent)).rejects.toThrow()
   })
 
+  it('rejects an event whose body is bound to a different run', async () => {
+    tmpDir = await createTempDir()
+
+    await expect(appendTraceEvent(
+      tmpDir,
+      'run-target',
+      makeTraceEvent({ run_id: 'run-other' }),
+    )).rejects.toThrow('run_id must match')
+    await expect(readTraceEvents(tmpDir, 'run-target')).resolves.toEqual([])
+  })
+
   it('stores events with payload_ref and policy_ref when provided', async () => {
     tmpDir = await createTempDir()
     const runId = 'run-with-refs'
