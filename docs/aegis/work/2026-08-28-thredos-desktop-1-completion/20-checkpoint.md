@@ -6,9 +6,9 @@ Close the verified Milestone 0 correctness and ownership defects without changin
 
 ## Active slice
 
-Phase 0 closeout gate:
+PR-08 correction and closeout:
 
-M0 proof, UI proof, and local proof are green. Final approval-consumption repair is implemented and reviewed; rerun the integrated M0 proof before closing Phase 0.
+Repair the unlanded workspace configuration/path/exclusion foundation, run its gate, complete two-stage review, and commit only task-owned PR-08 paths.
 
 ## Completed
 
@@ -29,6 +29,9 @@ M0 proof, UI proof, and local proof are green. Final approval-consumption repair
 - Integrated `bun run verify:m0` passed after one repaired stale-fixture iteration: 50 focused tests, 1,927 full-suite tests across 228 files, typecheck, lint, and production build.
 - UI proof passed 12/12 and local operator-flow proof passed 11/11.
 - Final independent review found exact approvals were replayable. Atomic consume-on-use, pre-spawn failure handling, and confirmed-approval atomic `pending -> approved -> consumed` persistence were implemented and approved by spec and TypeScript/concurrency reviewers.
+- Final post-consumption `bun run verify:m0` passed: 50 focused tests, 1,934 full-suite tests across 228 files, typecheck, lint, and production build.
+- Post-consumption UI proof passed 12/12; post-consumption local proof passed 11/11.
+- Phase 0 status: complete for the authorized M0 correctness boundary; this is not M1 or Desktop 1.0 completion.
 
 ## Boundaries
 
@@ -43,7 +46,7 @@ Resume by re-reading `10-intent.md`, this checkpoint, the canonical authority se
 
 ## Next
 
-Rerun `bun run verify:m0` on the approval-consumption repair, then close Phase 0 only if the full proof remains green.
+Re-read the PR-08 dirty diff against the TaskStartSnapshot, preserve unrelated hunks, write failing correction tests, and execute the PR-08 gate.
 
 ## Drift decision
 

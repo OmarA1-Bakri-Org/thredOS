@@ -79,3 +79,14 @@ The green baseline does not cover the known runtime-status, chat/apply ownership
 - Newly confirmed SAFE approvals persist `pending -> approved -> consumed` in one atomic replacement; injected failure leaves no approval or process residue and retry succeeds.
 - Coordinator focused regression: 86 passed, 0 failed; typecheck and lint passed.
 - Specification/security and TypeScript/concurrency reviews — approved.
+
+## Final Phase 0 closeout
+
+- `bun run verify:m0` — passed on current approval-consumption HEAD.
+- Focused proof: 50 passed, 0 failed.
+- Full repository: 1,934 passed, 0 failed, 5,249 assertions across 228 files.
+- Production build — passed.
+- M0 evidence: `test-results/verify/m0/2026-08-28T04-01-52-672Z/m0-proof`.
+- UI proof: `test-results/verify/ui/2026-08-28T04-06-42-869Z` — 12/12 passed.
+- Local proof: `test-results/verify/local/2026-08-28T04-08-22-974Z` — 11/11 passed.
+- Production worktree invocation scan — no matches.
