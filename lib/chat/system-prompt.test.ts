@@ -1,6 +1,7 @@
 import { describe, test, expect } from 'bun:test'
 import { buildSystemPrompt } from './system-prompt'
 import type { Sequence } from '../sequence/schema'
+import { CHAT_MUTATION_COMMANDS } from './commands'
 
 const mockSequence: Sequence = {
   version: '1.0',
@@ -52,10 +53,12 @@ describe('buildSystemPrompt', () => {
 
   test('includes available commands', () => {
     const prompt = buildSystemPrompt(mockSequence)
-    expect(prompt).toContain('step add')
-    expect(prompt).toContain('step remove')
-    expect(prompt).toContain('gate approve')
-    expect(prompt).toContain('dep add')
+    for (const command of CHAT_MUTATION_COMMANDS) {
+      expect(prompt).toContain(command)
+    }
+    expect(prompt).not.toContain('- **run**')
+    expect(prompt).not.toContain('- **stop**')
+    expect(prompt).not.toContain('- **restart**')
   })
 
   test('includes safety rules', () => {
@@ -69,5 +72,13 @@ describe('buildSystemPrompt', () => {
     expect(prompt).toContain('base')
     expect(prompt).toContain('fusion')
     expect(prompt).toContain('Long-autonomy')
+  })
+
+  test('directs runtime control to canonical workbench and CLI surfaces', () => {
+    const prompt = buildSystemPrompt(mockSequence)
+    expect(prompt).toContain('ThreadOSRuntimeService')
+    expect(prompt).toContain('workbench')
+    expect(prompt).toContain('CLI')
+    expect(prompt).toContain('until chat delegation exists')
   })
 })

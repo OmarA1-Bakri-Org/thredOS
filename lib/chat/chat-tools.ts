@@ -1,5 +1,6 @@
 import type { ChatCompletionTool, ChatCompletionMessageToolCall } from 'openai/resources/chat/completions'
 import type { ProposedAction } from './validator'
+import { CHAT_MUTATION_COMMANDS, isChatMutationCommand } from './commands'
 
 /**
  * Tool definition for the chat LLM to propose thredOS actions.
@@ -11,7 +12,7 @@ export const CHAT_TOOLS: ChatCompletionTool[] = [
     function: {
       name: 'propose_actions',
       description:
-        'Propose one or more thredOS actions (step add, step remove, run, etc.) for user review before applying.',
+        'Propose one or more thredOS sequence mutation actions for user review before applying.',
       parameters: {
         type: 'object',
         properties: {
@@ -23,8 +24,9 @@ export const CHAT_TOOLS: ChatCompletionTool[] = [
               properties: {
                 command: {
                   type: 'string',
+                  enum: [...CHAT_MUTATION_COMMANDS],
                   description:
-                    'The thredOS command (step add, step remove, step update, run, stop, restart, gate approve, gate block, dep add, dep remove, group create, fusion create)',
+                    `The thredOS sequence mutation command (${CHAT_MUTATION_COMMANDS.join(', ')})`,
                 },
                 args: {
                   type: 'object',
@@ -64,7 +66,12 @@ export function parseToolCallActions(
         typeof a === 'object' &&
         a !== null &&
         'command' in a &&
-        typeof (a as ProposedAction).command === 'string',
+        typeof (a as ProposedAction).command === 'string' &&
+        'args' in a &&
+        typeof (a as ProposedAction).args === 'object' &&
+        (a as ProposedAction).args !== null &&
+        !Array.isArray((a as ProposedAction).args) &&
+        isChatMutationCommand((a as ProposedAction).command),
     )
   } catch {
     return []

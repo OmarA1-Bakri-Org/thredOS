@@ -1,10 +1,11 @@
 import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
 import { ActionValidator } from './validator'
-import { writeSequence } from '../sequence/parser'
+import { readSequence, writeSequence } from '../sequence/parser'
 import { mkdir, rm } from 'fs/promises'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import type { Sequence } from '../sequence/schema'
+import { CHAT_MUTATION_COMMANDS } from './commands'
 
 let testDir: string
 
@@ -67,6 +68,23 @@ afterEach(async () => {
 })
 
 describe('ActionValidator.validate', () => {
+  test('accepts every canonical chat mutation command with its minimum required fields', async () => {
+    const v = new ActionValidator(testDir)
+    const result = await v.validate([
+      { command: CHAT_MUTATION_COMMANDS[0], args: { id: 'new', name: 'New', type: 'base', model: 'claude-code', prompt_file: 'p.md' } },
+      { command: CHAT_MUTATION_COMMANDS[1], args: { id: 'step-1' } },
+      { command: CHAT_MUTATION_COMMANDS[2], args: { id: 'step-1' } },
+      { command: CHAT_MUTATION_COMMANDS[3], args: { id: 'gate-1' } },
+      { command: CHAT_MUTATION_COMMANDS[4], args: { id: 'gate-1' } },
+      { command: CHAT_MUTATION_COMMANDS[5], args: { from: 'step-1', to: 'new' } },
+      { command: CHAT_MUTATION_COMMANDS[6], args: { from: 'step-1', to: 'new' } },
+      { command: CHAT_MUTATION_COMMANDS[7], args: { id: 'grp-1', step_ids: ['step-1', 'new'] } },
+      { command: CHAT_MUTATION_COMMANDS[8], args: { candidate_ids: ['step-1', 'new'], synth_id: 'synth-1' } },
+    ])
+    expect(result.valid).toBe(true)
+    expect(result.errors).toHaveLength(0)
+  })
+
   test('valid actions pass', async () => {
     const v = new ActionValidator(testDir)
     const result = await v.validate([
@@ -95,6 +113,13 @@ describe('ActionValidator.validate', () => {
     const result = await v.validate([{ command: 'dep add', args: { to: 'x' } }])
     expect(result.valid).toBe(false)
   })
+
+  test('step update rejects lifecycle status field during validation', async () => {
+    const v = new ActionValidator(testDir)
+    const result = await v.validate([{ command: 'step update', args: { id: 'step-1', status: 'RUNNING' } }])
+    expect(result.valid).toBe(false)
+    expect(result.errors).toEqual(['Invalid update field: status'])
+  })
 })
 
 describe('ActionValidator.dryRun', () => {
@@ -122,6 +147,18 @@ describe('ActionValidator.dryRun', () => {
     ])
     expect(result.valid).toBe(false)
     expect(result.errors[0]).toContain('already exists')
+  })
+
+  test('step update rejects lifecycle status field during dry run without mutating sequence', async () => {
+    const v = new ActionValidator(testDir)
+    const before = await readSequence(testDir)
+    const result = await v.dryRun([
+      { command: 'step update', args: { id: 'step-1', status: 'FAILED' } },
+    ])
+    expect(result.valid).toBe(false)
+    expect(result.diff).toBe('')
+    expect(result.errors).toEqual(['Invalid update field: status'])
+    expect(await readSequence(testDir)).toEqual(before)
   })
 })
 
@@ -172,43 +209,171 @@ describe('ActionValidator.apply', () => {
     expect(seq.steps).toHaveLength(1)
     expect(seq.steps[0].depends_on).toHaveLength(0)
   })
+
+  test('apply rejects lifecycle status field without mutating sequence', async () => {
+    const v = new ActionValidator(testDir)
+    const before = await readSequence(testDir)
+    const result = await v.apply([
+      { command: 'step update', args: { id: 'step-1', status: 'RUNNING' } },
+    ])
+    expect(result.success).toBe(false)
+    expect(result.status).toBe('rejected')
+    expect(result.appliedCount).toBe(0)
+    expect(result.rejectedCount).toBe(1)
+    expect(result.errors).toEqual(['Invalid update field: status'])
+    expect(result.results).toEqual([
+      {
+        action: 'step update',
+        status: 'rejected',
+        error: 'Invalid update field: status',
+      },
+    ])
+    expect(await readSequence(testDir)).toEqual(before)
+  })
+
+  test('apply persists allowed changes with a status-field rejection and reports partial batch truth in original order', async () => {
+    const v = new ActionValidator(testDir)
+    const result = await v.apply([
+      { command: 'step add', args: { id: 'step-2', name: 'Two', type: 'base', model: 'claude-code', prompt_file: 'p.md' } },
+      { command: 'step update', args: { id: 'step-1', status: 'FAILED' } },
+    ])
+
+    expect(result.success).toBe(false)
+    expect(result.status).toBe('partial')
+    expect(result.appliedCount).toBe(1)
+    expect(result.rejectedCount).toBe(1)
+    expect(result.errors).toEqual(['Invalid update field: status'])
+    expect(result.results).toEqual([
+      { action: 'step add', status: 'applied' },
+      { action: 'step update', status: 'rejected', error: 'Invalid update field: status' },
+    ])
+
+    const seq = await readSequence(testDir)
+    expect(seq.steps.some(step => step.id === 'step-2')).toBe(true)
+    expect(seq.steps.find(step => step.id === 'step-1')?.status).toBe('READY')
+
+    const audit = await import('../audit/logger')
+    expect(await audit.readAll(testDir)).toEqual([
+      expect.objectContaining({ action: 'step add', result: 'applied' }),
+      expect.objectContaining({ action: 'step update', result: 'rejected' }),
+    ])
+  })
 })
 
-describe('ActionValidator stop/restart/group/fusion commands', () => {
-  test('stop sets step status to FAILED', async () => {
+describe('ActionValidator runtime/group/fusion commands', () => {
+  test('run is rejected with stable chat delegation guidance', async () => {
+    const v = new ActionValidator(testDir)
+    const result = await v.validate([{ command: 'run', args: {} }])
+    expect(result.valid).toBe(false)
+    expect(result.errors).toEqual([
+      'Command "run" is not available in chat/apply. Use ThreadOSRuntimeService through the canonical workbench or CLI until chat delegation exists.',
+    ])
+  })
+
+  test('stop is rejected with runtime service guidance', async () => {
     await writeSequence(testDir, freshTwoStepSequence())
     const v = new ActionValidator(testDir)
     const result = await v.dryRun([{ command: 'stop', args: { step_id: 'step-b' } }])
-    expect(result.valid).toBe(true)
-    expect(result.diff).toContain('FAILED')
+    expect(result.valid).toBe(false)
+    expect(result.diff).toBe('')
+    expect(result.errors).toEqual([
+      'Command "stop" is not available in chat/apply. Use ThreadOSRuntimeService through the canonical workbench or CLI until chat delegation exists.',
+    ])
   })
 
-  test('stop with nonexistent step returns error', async () => {
+  test('stop rejection does not depend on step existence', async () => {
     const v = new ActionValidator(testDir)
     const result = await v.dryRun([{ command: 'stop', args: { step_id: 'nonexistent' } }])
     expect(result.valid).toBe(false)
-    expect(result.errors[0]).toContain('not found')
+    expect(result.errors).toEqual([
+      'Command "stop" is not available in chat/apply. Use ThreadOSRuntimeService through the canonical workbench or CLI until chat delegation exists.',
+    ])
   })
 
-  test('stop without step_id returns validation error', async () => {
-    const v = new ActionValidator(testDir)
-    const result = await v.validate([{ command: 'stop', args: {} }])
-    expect(result.valid).toBe(false)
-    expect(result.errors[0]).toContain('stop requires step_id')
-  })
-
-  test('restart sets step status to RUNNING', async () => {
+  test('restart is rejected with runtime service guidance', async () => {
     const v = new ActionValidator(testDir)
     const result = await v.dryRun([{ command: 'restart', args: { step_id: 'step-1' } }])
-    expect(result.valid).toBe(true)
-    expect(result.diff).toContain('RUNNING')
+    expect(result.valid).toBe(false)
+    expect(result.diff).toBe('')
+    expect(result.errors).toEqual([
+      'Command "restart" is not available in chat/apply. Use ThreadOSRuntimeService through the canonical workbench or CLI until chat delegation exists.',
+    ])
   })
 
-  test('restart with nonexistent step returns error', async () => {
+  test('restart rejection does not depend on step existence', async () => {
     const v = new ActionValidator(testDir)
     const result = await v.dryRun([{ command: 'restart', args: { step_id: 'nonexistent' } }])
     expect(result.valid).toBe(false)
-    expect(result.errors[0]).toContain('not found')
+    expect(result.errors).toEqual([
+      'Command "restart" is not available in chat/apply. Use ThreadOSRuntimeService through the canonical workbench or CLI until chat delegation exists.',
+    ])
+  })
+
+  test('apply rejects runtime commands without mutating sequence or writing applied audit results', async () => {
+    await writeSequence(testDir, freshTwoStepSequence())
+    const v = new ActionValidator(testDir)
+    const result = await v.apply([{ command: 'stop', args: { step_id: 'step-b' } }])
+    expect(result.success).toBe(false)
+    expect(result.status).toBe('rejected')
+    expect(result.appliedCount).toBe(0)
+    expect(result.rejectedCount).toBe(1)
+    expect(result.errors).toEqual([
+      'Command "stop" is not available in chat/apply. Use ThreadOSRuntimeService through the canonical workbench or CLI until chat delegation exists.',
+    ])
+    expect(result.results).toEqual([
+      {
+        action: 'stop',
+        status: 'rejected',
+        error: 'Command "stop" is not available in chat/apply. Use ThreadOSRuntimeService through the canonical workbench or CLI until chat delegation exists.',
+      },
+    ])
+
+    const [{ readSequence }, audit] = await Promise.all([
+      import('../sequence/parser'),
+      import('../audit/logger'),
+    ])
+    const seq = await readSequence(testDir)
+    expect(seq.steps.find(step => step.id === 'step-b')?.status).toBe('RUNNING')
+    expect(await audit.readAll(testDir)).toEqual([
+      expect.objectContaining({ action: 'stop', result: 'rejected' }),
+    ])
+  })
+
+  test('apply persists allowed changes with a runtime-control rejection and reports partial batch truth in original order', async () => {
+    await writeSequence(testDir, freshTwoStepSequence())
+    const v = new ActionValidator(testDir)
+    const result = await v.apply([
+      { command: 'step add', args: { id: 'step-c', name: 'Step C', type: 'base', model: 'claude-code', prompt_file: 'p.md' } },
+      { command: 'stop', args: { step_id: 'step-b' } },
+    ])
+
+    expect(result.success).toBe(false)
+    expect(result.status).toBe('partial')
+    expect(result.appliedCount).toBe(1)
+    expect(result.rejectedCount).toBe(1)
+    expect(result.errors).toEqual([
+      'Command "stop" is not available in chat/apply. Use ThreadOSRuntimeService through the canonical workbench or CLI until chat delegation exists.',
+    ])
+    expect(result.results).toEqual([
+      { action: 'step add', status: 'applied' },
+      {
+        action: 'stop',
+        status: 'rejected',
+        error: 'Command "stop" is not available in chat/apply. Use ThreadOSRuntimeService through the canonical workbench or CLI until chat delegation exists.',
+      },
+    ])
+
+    const [{ readSequence }, audit] = await Promise.all([
+      import('../sequence/parser'),
+      import('../audit/logger'),
+    ])
+    const seq = await readSequence(testDir)
+    expect(seq.steps.some(step => step.id === 'step-c')).toBe(true)
+    expect(seq.steps.find(step => step.id === 'step-b')?.status).toBe('RUNNING')
+    expect(await audit.readAll(testDir)).toEqual([
+      expect.objectContaining({ action: 'step add', result: 'applied' }),
+      expect.objectContaining({ action: 'stop', result: 'rejected' }),
+    ])
   })
 
   test('group create sets group_id and type on steps', async () => {

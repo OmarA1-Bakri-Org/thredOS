@@ -1,4 +1,5 @@
 import type { ProposedAction } from './validator'
+import { isChatMutationCommand } from './commands'
 
 export type { ProposedAction }
 
@@ -77,8 +78,10 @@ function isProposedAction(obj: unknown): obj is ProposedAction {
     obj !== null &&
     'command' in obj &&
     typeof (obj as ProposedAction).command === 'string' &&
+    isChatMutationCommand((obj as ProposedAction).command) &&
     'args' in obj &&
     typeof (obj as ProposedAction).args === 'object' &&
-    (obj as ProposedAction).args !== null
+    (obj as ProposedAction).args !== null &&
+    !Array.isArray((obj as ProposedAction).args)
   )
 }

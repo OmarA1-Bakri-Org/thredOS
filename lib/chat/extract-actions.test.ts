@@ -10,7 +10,7 @@ describe('extractActions', () => {
 
   test('extracts JSON from markdown code fence', () => {
     const input = 'Here is my suggestion:\n```json\n[{"command":"run","args":{}}]\n```\nLet me know!'
-    expect(extractActions(input)).toHaveLength(1)
+    expect(extractActions(input)).toEqual([])
   })
 
   test('extracts bare JSON array with surrounding text', () => {
@@ -27,8 +27,13 @@ describe('extractActions', () => {
   })
 
   test('wraps single object into array', () => {
-    const input = '{"command":"run","args":{}}'
-    expect(extractActions(input)).toHaveLength(1)
+    const input = '{"command":"step add","args":{"id":"x","name":"X","type":"base","model":"claude-code","prompt_file":"p.md"}}'
+    expect(extractActions(input)).toEqual([
+      {
+        command: 'step add',
+        args: { id: 'x', name: 'X', type: 'base', model: 'claude-code', prompt_file: 'p.md' },
+      },
+    ])
   })
 
   test('returns empty array for empty JSON array', () => {
@@ -46,12 +51,31 @@ describe('extractActions', () => {
   test('filters out non-action objects from array', () => {
     const input = '[{"command":"run","args":{}},{"notAnAction":true}]'
     const actions = extractActions(input)
-    expect(actions).toHaveLength(1)
-    expect(actions[0].command).toBe('run')
+    expect(actions).toEqual([])
   })
 
   test('extracts from code fence without json language tag', () => {
     const input = '```\n[{"command":"stop","args":{}}]\n```'
-    expect(extractActions(input)).toHaveLength(1)
+    expect(extractActions(input)).toEqual([])
+  })
+
+  test('filters out unknown commands and keeps allowed mutation commands', () => {
+    const input = '[{"command":"unknown","args":{}},{"command":"dep add","args":{"from":"a","to":"b"}}]'
+    expect(extractActions(input)).toEqual([
+      {
+        command: 'dep add',
+        args: { from: 'a', to: 'b' },
+      },
+    ])
+  })
+
+  test('filters out malformed args payloads', () => {
+    const input = `[{"command":"step add","args":null},{"command":"step remove","args":["step-1"]},{"command":"gate approve","args":"bad"},{"command":"gate block","args":{"id":"gate-1"}}]`
+    expect(extractActions(input)).toEqual([
+      {
+        command: 'gate block',
+        args: { id: 'gate-1' },
+      },
+    ])
   })
 })

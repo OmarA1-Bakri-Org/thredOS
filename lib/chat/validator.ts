@@ -2,9 +2,14 @@ import { readSequence, writeSequence } from '../sequence/parser'
 import { PolicyEngine } from '../policy/engine'
 import * as audit from '../audit/logger'
 import YAML from 'yaml'
-import { StepSchema, StepTypeSchema, ModelTypeSchema, StepStatusSchema, FailPolicySchema, type Sequence } from '../sequence/schema'
+import { StepSchema, StepTypeSchema, ModelTypeSchema, FailPolicySchema, type Sequence } from '../sequence/schema'
 import { readThreadSurfaceState, withThreadSurfaceStateRevision, writeThreadSurfaceState } from '@/lib/thread-surfaces/repository'
 import { materializeStepSurface, removeStepSurface } from '@/lib/thread-surfaces/materializer'
+import {
+  buildRuntimeControlRejection,
+  isChatRuntimeControlCommand,
+  isKnownChatCommand,
+} from './commands'
 
 export interface ProposedAction {
   command: string
@@ -22,18 +27,23 @@ export interface DryRunResult {
   errors: string[]
 }
 
-export interface ApplyResult {
-  success: boolean
-  results: Array<{ action?: string; status?: string; error?: string }>
+export type ApplyActionResultStatus = 'applied' | 'rejected'
+export type ApplyBatchStatus = 'applied' | 'partial' | 'rejected'
+
+export interface ApplyActionResult {
+  action?: string
+  status: ApplyActionResultStatus
+  error?: string
 }
 
-const VALID_COMMANDS = [
-  'step add', 'step remove', 'step update',
-  'run', 'stop', 'restart',
-  'gate approve', 'gate block',
-  'dep add', 'dep remove',
-  'group create', 'fusion create',
-]
+export interface ApplyResult {
+  success: boolean
+  status: ApplyBatchStatus
+  appliedCount: number
+  rejectedCount: number
+  errors: string[]
+  results: ApplyActionResult[]
+}
 
 type ValidatorFn = (action: ProposedAction, errors: string[]) => void
 
@@ -48,11 +58,9 @@ function requireFields(command: string, fields: string[]): ValidatorFn {
 const commandValidators: Record<string, ValidatorFn> = {
   'step add': requireFields('step add', ['id', 'name', 'type', 'model', 'prompt_file']),
   'step remove': requireFields('step remove', ['id']),
-  'step update': requireFields('step update', ['id']),
+  'step update': validateStepUpdateAction,
   'dep add': requireFields('dep add', ['from', 'to']),
   'dep remove': requireFields('dep remove', ['from', 'to']),
-  'restart': requireFields('restart', ['step_id']),
-  'stop': requireFields('stop', ['step_id']),
   'gate approve': (action, errors) => { if (!action.args.id) errors.push('gate approve requires id') },
   'gate block': (action, errors) => { if (!action.args.id) errors.push('gate block requires id') },
   'group create': requireFields('group create', ['id', 'step_ids']),
@@ -62,9 +70,57 @@ const commandValidators: Record<string, ValidatorFn> = {
 /** Allowed fields for step update to prevent arbitrary field injection */
 const ALLOWED_UPDATE_FIELDS = new Set([
   'id', 'name', 'type', 'model', 'prompt_file', 'depends_on',
-  'status', 'cwd', 'group_id', 'fanout', 'fusion_candidates',
+  'cwd', 'group_id', 'fanout', 'fusion_candidates',
   'fusion_synth', 'watchdog_for', 'orchestrator', 'timeout_ms', 'fail_policy',
 ])
+
+function validateStepUpdateAction(action: ProposedAction, errors: string[]) {
+  if (!action.args.id) {
+    errors.push('step update requires id')
+  }
+
+  for (const key of Object.keys(action.args)) {
+    if (!ALLOWED_UPDATE_FIELDS.has(key)) {
+      errors.push(`Invalid update field: ${key}`)
+    }
+  }
+}
+
+function buildApplyResult(results: ApplyActionResult[]): ApplyResult {
+  const appliedCount = results.filter(result => result.status === 'applied').length
+  const rejectedResults = results.filter(result => result.status === 'rejected')
+  const rejectedCount = rejectedResults.length
+  const errors = rejectedResults
+    .map(result => result.error)
+    .filter((error): error is string => typeof error === 'string' && error.length > 0)
+
+  return {
+    success: rejectedCount === 0 && appliedCount > 0,
+    status: rejectedCount === 0 ? 'applied' : appliedCount > 0 ? 'partial' : 'rejected',
+    appliedCount,
+    rejectedCount,
+    errors,
+    results,
+  }
+}
+
+function validateAction(action: ProposedAction): string[] {
+  if (!isKnownChatCommand(action.command)) {
+    return [`Unknown command: ${action.command}`]
+  }
+
+  if (isChatRuntimeControlCommand(action.command)) {
+    return [buildRuntimeControlRejection(action.command)]
+  }
+
+  const errors: string[] = []
+  const validator = commandValidators[action.command]
+  if (validator) {
+    validator(action, errors)
+  }
+
+  return errors
+}
 
 export class ActionValidator {
   constructor(private basePath: string) {}
@@ -73,21 +129,11 @@ export class ActionValidator {
    * Validate that actions reference valid seqctl commands
    */
   async validate(actions: ProposedAction[]): Promise<ValidationResult> {
-    const errors: string[] = []
-
-    for (const action of actions) {
-      if (!VALID_COMMANDS.includes(action.command)) {
-        errors.push(`Unknown command: ${action.command}`)
-        continue
-      }
-
-      const validator = commandValidators[action.command]
-      if (validator) {
-        validator(action, errors)
-      }
+    const validationResults = actions.flatMap(action => validateAction(action))
+    return {
+      valid: validationResults.length === 0,
+      errors: validationResults,
     }
-
-    return { valid: errors.length === 0, errors }
   }
 
   /**
@@ -129,13 +175,8 @@ export class ActionValidator {
    * Apply actions for real with policy checks and durable local-state writes.
    */
   async apply(actions: ProposedAction[]): Promise<ApplyResult> {
-    const validation = await this.validate(actions)
-    if (!validation.valid) {
-      return { success: false, results: validation.errors.map(e => ({ error: e })) }
-    }
-
     const policy = await PolicyEngine.load(this.basePath)
-    const results: Array<{ action?: string; status?: string; error?: string }> = []
+    const results: ApplyActionResult[] = []
 
     try {
       const sequence = await readSequence(this.basePath)
@@ -147,19 +188,29 @@ export class ActionValidator {
       const appliedActions: ProposedAction[] = []
 
       for (const action of actions) {
+        const validationErrors = validateAction(action)
+        if (validationErrors.length > 0) {
+          results.push({
+            action: action.command,
+            status: 'rejected',
+            error: validationErrors.join('; '),
+          })
+          continue
+        }
+
         const policyResult = policy.validate({
           type: 'run_command',
           command: action.command,
         })
 
         if (!policyResult.allowed) {
-          results.push({ action: action.command, error: policyResult.reason })
+          results.push({ action: action.command, status: 'rejected', error: policyResult.reason })
           continue
         }
 
         const err = applyAction(sequence, action)
         if (err) {
-          results.push({ action: action.command, error: err })
+          results.push({ action: action.command, status: 'rejected', error: err })
           continue
         }
 
@@ -183,7 +234,9 @@ export class ActionValidator {
         results.push({ action: action.command, status: 'applied' })
       }
 
-      await writeSequence(this.basePath, sequence)
+      if (appliedActions.length > 0) {
+        await writeSequence(this.basePath, sequence)
+      }
 
       if (surfaceStateDirty) {
         try {
@@ -198,20 +251,23 @@ export class ActionValidator {
         }
       }
 
-      for (const action of appliedActions) {
+      for (const [index, action] of actions.entries()) {
+        const result = results[index]
+        if (!result) continue
+
         await audit.log(this.basePath, {
           timestamp: new Date().toISOString(),
           actor: 'chat-orchestrator',
           action: action.command,
           target: String(action.args.id || action.args.step_id || 'sequence'),
           payload: action.args,
-          result: 'applied',
+          result: result.status,
         }).catch(() => {})
       }
 
-      return { success: true, results }
+      return buildApplyResult(results)
     } catch (error) {
-      return { success: false, results: [{ error: (error as Error).message }] }
+      return buildApplyResult([{ status: 'rejected', error: (error as Error).message }])
     }
   }
 }
@@ -291,11 +347,6 @@ function validateEnumUpdates(
     const modelResult = ModelTypeSchema.safeParse(updates.model)
     if (!modelResult.success) return `Invalid model: ${updates.model}`
     step.model = modelResult.data
-  }
-  if (updates.status !== undefined) {
-    const statusResult = StepStatusSchema.safeParse(updates.status)
-    if (!statusResult.success) return `Invalid status: ${updates.status}`
-    step.status = statusResult.data
   }
   return null
 }
@@ -413,22 +464,6 @@ const actionAppliers: Record<string, ActionApplier> = {
     return null
   },
   'gate block': (seq, action) => applyGateStatus(seq, action, 'BLOCKED'),
-  'run': () => null,
-  'stop': (seq, action) => {
-    const stepId = String(action.args.step_id || '')
-    if (!stepId) return 'stop requires step_id'
-    const step = seq.steps.find(s => s.id === stepId)
-    if (!step) return `Step ${stepId} not found`
-    step.status = 'FAILED'
-    return null
-  },
-  'restart': (seq, action) => {
-    const stepId = String(action.args.step_id)
-    const step = seq.steps.find(s => s.id === stepId)
-    if (!step) return `Step ${stepId} not found`
-    step.status = 'RUNNING'
-    return null
-  },
   'group create': (seq, action) => {
     const groupId = String(action.args.id || '')
     const stepIds = action.args.step_ids as string[] | undefined
@@ -479,6 +514,9 @@ const actionAppliers: Record<string, ActionApplier> = {
  * Returns error string or null on success.
  */
 function applyAction(seq: Sequence, action: ProposedAction): string | null {
+  if (isChatRuntimeControlCommand(action.command)) {
+    return buildRuntimeControlRejection(action.command)
+  }
   const applier = actionAppliers[action.command]
   if (!applier) return `Unknown command: ${action.command}`
   return applier(seq, action)

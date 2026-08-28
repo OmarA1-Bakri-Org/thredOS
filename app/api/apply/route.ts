@@ -56,21 +56,21 @@ export async function POST(request: Request) {
     const validator = new ActionValidator(basePath)
     const result = await validator.apply(actions)
 
-    try {
-      await recordApprovedApprovalLifecycle({
-        basePath,
-        runId,
-        actionType: 'side_effect',
-        targetRef: `chat-apply:${surfaceId}:${actions.length}`,
-        requestedBy: session.email,
-        resolvedBy: session.email,
-        actor: 'api:apply',
-        notes: result.success
-          ? `Applied ${actions.length} reviewed chat action(s).`
-          : `Chat apply was approved but returned errors: ${result.results.map(entry => entry.error).filter(Boolean).join(', ') || 'unknown error'}`,
-      })
-    } catch (lifecycleError) {
-      console.error('[apply.POST] lifecycle persistence failed after apply commit', lifecycleError)
+    if (result.success) {
+      try {
+        await recordApprovedApprovalLifecycle({
+          basePath,
+          runId,
+          actionType: 'side_effect',
+          targetRef: `chat-apply:${surfaceId}:${actions.length}`,
+          requestedBy: session.email,
+          resolvedBy: session.email,
+          actor: 'api:apply',
+          notes: `Applied ${result.appliedCount} reviewed chat action(s); ${result.rejectedCount} rejected.`,
+        })
+      } catch (lifecycleError) {
+        console.error('[apply.POST] lifecycle persistence failed after apply commit', lifecycleError)
+      }
     }
 
     return Response.json({ ...result, runId })

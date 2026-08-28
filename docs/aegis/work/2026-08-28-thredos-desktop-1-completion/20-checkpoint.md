@@ -6,10 +6,9 @@ Close the verified Milestone 0 correctness and ownership defects without changin
 
 ## Active slice
 
-Phase 0 Task 2:
+Phase 0 Task 3:
 
-1. Remove or canonically delegate chat/apply runtime lifecycle commands.
-2. Bind approval resolution to exact reviewed evidence without duplicating executable-policy authority.
+Bind approval resolution to exact reviewed evidence without duplicating executable-policy authority.
 
 ## Completed
 
@@ -19,6 +18,8 @@ Phase 0 Task 2:
 - Ran the pre-edit baseline: frozen install made no changes; lint, typecheck, and 1,829 tests passed.
 - Phase 0 Task 1: extracted truthful terminal run-outcome derivation, persisted `awaiting_review`, `partially_successful`, and `interrupted` results, and aligned `/api/stop` with the latest running attempt.
 - Task 1 strict TDD, specification review, TypeScript-quality review, and coordinator verification passed.
+- Phase 0 Task 2: removed chat/apply runtime-control and lifecycle-field bypasses, constrained structured and fallback parsers, and made full/partial/rejected apply results and audit evidence truthful.
+- Task 2 strict TDD, specification review, TypeScript-quality review, and coordinator verification passed.
 
 ## Boundaries
 
@@ -33,7 +34,7 @@ Resume by re-reading `10-intent.md`, this checkpoint, the canonical authority se
 
 ## Next
 
-Create the minimal failing tests for chat runtime-command rejection/delegation and exact approval evidence binding.
+Create the minimal failing tests for exact approval evidence binding, trusted resolver identity, and unbound approval visibility.
 
 ## Drift decision
 
