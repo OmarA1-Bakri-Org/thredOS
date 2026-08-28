@@ -6,9 +6,9 @@ Close the verified Milestone 0 correctness and ownership defects without changin
 
 ## Active slice
 
-Phase 0 Task 5:
+Phase 0 closeout gate:
 
-Make lifecycle-interface discovery exhaustive and fail on unclassified handlers.
+Run the complete M0 proof, UI proof, local proof, production worktree scan, and final independent Phase 0 review.
 
 ## Completed
 
@@ -24,6 +24,8 @@ Make lifecycle-interface discovery exhaustive and fail on unclassified handlers.
 - Task 3 strict TDD, specification/security review, TypeScript-quality review, and coordinator verification passed.
 - Phase 0 Task 4: trace and approval evidence now distinguish loading, unavailable, true-empty, and populated states without optimistic zero counts.
 - Task 4 strict TDD, specification review, React/TypeScript-quality review, and coordinator verification passed.
+- Phase 0 Task 5: replaced the incomplete fixed lifecycle allowlist with recursive AST-based discovery, explicit classification, fail-closed traversal reporting, chat/apply rejection proof, and adversarial import/origin/shadowing coverage.
+- Task 5 strict TDD, specification review, TypeScript/verifier-quality review, and coordinator verification passed.
 
 ## Boundaries
 
@@ -38,7 +40,7 @@ Resume by re-reading `10-intent.md`, this checkpoint, the canonical authority se
 
 ## Next
 
-Create the minimal failing tests for unclassified lifecycle-interface discovery and chat/apply boundary coverage.
+Run the full Phase 0 acceptance and falsification gates; repair any regression before advancing to PR-08.
 
 ## Drift decision
 

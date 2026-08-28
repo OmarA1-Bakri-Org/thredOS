@@ -1,5 +1,14 @@
 import { readFile, readdir, stat, writeFile } from 'fs/promises'
 import { join } from 'path'
+import {
+  loadRuntimeLifecycleFileRecords,
+  requiredSignalsForClassification,
+  RUNTIME_LIFECYCLE_INTERFACE_CLASSIFICATIONS,
+  RUNTIME_LIFECYCLE_INTERFACE_ROOTS,
+  shouldApplyDelegateOwnershipChecks,
+  type RuntimeLifecycleFileSystem,
+  type RuntimeLifecycleTraversalError,
+} from './runtime-lifecycle-interfaces'
 
 export const REQUIRED_M0_PROOF_FILES = [
   'api-run-tree.txt',
@@ -13,40 +22,54 @@ export const REQUIRED_M0_PROOF_FILES = [
   'build-results.txt',
 ] as const
 
-export const RUNTIME_LIFECYCLE_HANDLERS = [
-  'app/api/run/route.ts',
-  'app/api/stop/route.ts',
-  'app/api/restart/route.ts',
-  'app/api/status/route.ts',
-  'app/api/runs/route.ts',
-  'app/api/runs/[runId]/route.ts',
-  'app/api/runs/[runId]/attempts/route.ts',
-  'app/api/runs/[runId]/cancel/route.ts',
-  'app/api/attempts/[attemptId]/route.ts',
-  'app/api/attempts/[attemptId]/cancel/route.ts',
-  'app/api/attempts/[attemptId]/retry/route.ts',
-  'lib/seqctl/commands/run.ts',
-  'lib/seqctl/commands/control.ts',
-  'lib/seqctl/commands/status.ts',
-  'lib/seqctl/commands/attempt.ts',
-] as const
+export const RUNTIME_LIFECYCLE_HANDLERS = RUNTIME_LIFECYCLE_INTERFACE_CLASSIFICATIONS
+  .map(classification => classification.file)
 
-const FORBIDDEN_IMPORTS = [
-  /(?:@\/|\.\.\/)+(?:lib\/)?runner\/(?:wrapper|dispatch|artifacts|prompt-compiler|process-handle)/,
-  /(?:@\/|\.\.\/)+(?:lib\/)?runtime\/(?:attempt-executor|process-controller|lifecycle|scheduler)/,
-  /(?:@\/|\.\.\/)+(?:lib\/)?mprocs\//,
-  /(?:@\/|\.\.\/)+(?:lib\/)?thread-surfaces\/(?:mutations|step-run-runtime|repository)/,
-  /(?:@\/|\.\.\/)+(?:lib\/)?reconciliation\//,
-  /(?:@\/|\.\.\/)+(?:lib\/)?gates\/(?:engine|rules)/,
-  /(?:@\/|\.\.\/)+(?:lib\/)?approvals\//,
-] as const
+export type RuntimeServiceBoundaryViolationCategory =
+  | 'forbidden-import'
+  | 'forbidden-lifecycle-call'
+  | 'missing-runtime-service'
+  | 'missing-policy-signal'
+  | 'unclassified-lifecycle'
+  | 'missing-classified-interface'
+  | 'interface-traversal-error'
 
-const FORBIDDEN_LIFECYCLE_CALLS = [
-  /\b(?:transitionRun|transitionAttempt|transitionProcess)\s*\(/,
-  /\b(?:startProcess|runStep|dispatch|executeStep)\s*\(/,
-  /\b(?:writeSequence|writeThreadSurfaceState)\s*\(/,
-  /\bnew\s+(?:RunRepository|AttemptRepository|ProcessRepository|SequentialScheduler)\b/,
-] as const
+export interface RuntimeServiceBoundaryViolation {
+  file: string
+  category: RuntimeServiceBoundaryViolationCategory
+  pattern: string
+}
+
+export interface RuntimeServiceBoundaryReport {
+  passed: boolean
+  handlersScanned: string[]
+  discoveredFiles: string[]
+  candidateFiles: string[]
+  classifiedFiles: string[]
+  unclassifiedCandidates: string[]
+  missingClassifiedFiles: string[]
+  traversalErrors: RuntimeLifecycleTraversalError[]
+  violations: RuntimeServiceBoundaryViolation[]
+}
+
+export interface RuntimeServiceBoundaryScanOptions {
+  roots?: readonly string[]
+  filesystem?: RuntimeLifecycleFileSystem
+  classifications?: readonly {
+    file: string
+    kind: 'api-delegate' | 'cli-delegate' | 'chat-runtime-controls-rejected'
+    policy: 'delegate-to-runtime-service' | 'reject-runtime-controls'
+    requiredSignals?: readonly (
+      | 'api-runtime-service'
+      | 'api-runtime-service-reference'
+      | 'cli-runtime-service'
+      | 'cli-runtime-service-reference'
+      | 'chat-action-validator'
+      | 'chat-runtime-control-guard'
+      | 'chat-runtime-control-definition'
+    )[]
+  }[]
+}
 
 export interface M0ProofBundleValidation {
   valid: boolean
@@ -176,60 +199,109 @@ export async function readCanonicalRuntimeTree(basePath: string): Promise<{
   return { topology, records }
 }
 
-export async function scanRuntimeServiceBoundary(repositoryRoot: string): Promise<{
-  passed: boolean
-  handlersScanned: string[]
-  violations: Array<{
-    file: string
-    category: 'forbidden-import' | 'forbidden-lifecycle-call' | 'missing-runtime-service'
-    pattern: string
-  }>
-}> {
-  const violations: Array<{
-    file: string
-    category: 'forbidden-import' | 'forbidden-lifecycle-call' | 'missing-runtime-service'
-    pattern: string
-  }> = []
+export async function scanRuntimeServiceBoundary(
+  repositoryRoot: string,
+  options: RuntimeServiceBoundaryScanOptions = {},
+): Promise<RuntimeServiceBoundaryReport> {
+  const classifications = options.classifications ?? RUNTIME_LIFECYCLE_INTERFACE_CLASSIFICATIONS
+  const violations: RuntimeServiceBoundaryViolation[] = []
+  const loadResult = await loadRuntimeLifecycleFileRecords(
+    repositoryRoot,
+    options.roots ?? RUNTIME_LIFECYCLE_INTERFACE_ROOTS,
+    options.filesystem,
+  )
+  const discoveredRecords = loadResult.records
+  const traversalErrors = loadResult.traversalErrors
+  const discoveredFiles = discoveredRecords.map(record => record.file)
+  const sourceByFile = new Map(discoveredRecords.map(record => [record.file, record]))
+  const classificationByFile = new Map(classifications.map(classification => [classification.file, classification]))
+  const classifiedFiles = classifications.map(classification => classification.file)
+  const candidateSignalsByFile = new Map<string, string[]>()
 
-  for (const relativePath of RUNTIME_LIFECYCLE_HANDLERS) {
-    const source = await readFile(join(repositoryRoot, relativePath), 'utf8')
-    for (const pattern of FORBIDDEN_IMPORTS) {
-      if (pattern.test(source)) {
-        violations.push({
-          file: relativePath,
-          category: 'forbidden-import',
-          pattern: pattern.source,
-        })
-      }
-    }
-    for (const pattern of FORBIDDEN_LIFECYCLE_CALLS) {
-      if (pattern.test(source)) {
-        violations.push({
-          file: relativePath,
-          category: 'forbidden-lifecycle-call',
-          pattern: pattern.source,
-        })
-      }
-    }
-    if (relativePath.startsWith('app/api/') && !source.includes('getApiRuntimeService')) {
+  for (const record of discoveredRecords) {
+    for (const violation of record.globalViolations) {
       violations.push({
-        file: relativePath,
-        category: 'missing-runtime-service',
-        pattern: 'getApiRuntimeService',
+        file: record.file,
+        category: violation.category,
+        pattern: violation.pattern,
       })
     }
-    if (relativePath.startsWith('lib/seqctl/') && !source.includes('getCLIRuntimeService')) {
+    const classification = classificationByFile.get(record.file)
+    if (shouldApplyDelegateOwnershipChecks(classification, record.signals)) {
+      for (const violation of record.delegateViolations) {
+        violations.push({
+          file: record.file,
+          category: violation.category,
+          pattern: violation.pattern,
+        })
+      }
+    }
+    const candidatePatterns = record.candidatePatterns
+    if (candidatePatterns.length > 0) {
+      candidateSignalsByFile.set(record.file, candidatePatterns)
+    }
+  }
+
+  for (const traversalError of traversalErrors) {
+    violations.push({
+      file: traversalError.path,
+      category: 'interface-traversal-error',
+      pattern: traversalError.code,
+    })
+  }
+
+  const candidateFiles = [...candidateSignalsByFile.keys()].sort()
+  const missingClassifiedFiles = classifications
+    .map(classification => classification.file)
+    .filter(file => !sourceByFile.has(file))
+    .sort()
+
+  for (const file of missingClassifiedFiles) {
+    violations.push({
+      file,
+      category: 'missing-classified-interface',
+      pattern: 'classified-file-missing',
+    })
+  }
+
+  const unclassifiedCandidates = candidateFiles
+    .filter(file => !classifiedFiles.includes(file))
+    .sort()
+
+  for (const file of unclassifiedCandidates) {
+    const signals = candidateSignalsByFile.get(file) ?? []
+    violations.push({
+      file,
+      category: 'unclassified-lifecycle',
+      pattern: signals[0] ?? 'candidate-signal',
+    })
+  }
+
+  for (const classification of classifications) {
+    const record = sourceByFile.get(classification.file)
+    if (!record) continue
+    const signals = new Set(record.signals)
+    for (const requiredSignal of requiredSignalsForClassification(classification)) {
+      if (signals.has(requiredSignal)) continue
       violations.push({
-        file: relativePath,
-        category: 'missing-runtime-service',
-        pattern: 'getCLIRuntimeService',
+        file: classification.file,
+        category: classification.kind === 'chat-runtime-controls-rejected'
+          ? 'missing-policy-signal'
+          : 'missing-runtime-service',
+        pattern: requiredSignal,
       })
     }
   }
 
   return {
-    passed: violations.length === 0,
-    handlersScanned: [...RUNTIME_LIFECYCLE_HANDLERS],
+    passed: violations.length === 0 && traversalErrors.length === 0,
+    handlersScanned: [...classifiedFiles],
+    discoveredFiles,
+    candidateFiles,
+    classifiedFiles: [...classifiedFiles],
+    unclassifiedCandidates,
+    missingClassifiedFiles,
+    traversalErrors,
     violations,
   }
 }

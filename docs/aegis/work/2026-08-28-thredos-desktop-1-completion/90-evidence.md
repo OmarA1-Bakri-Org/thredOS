@@ -51,3 +51,13 @@ The green baseline does not cover the known runtime-status, chat/apply ownership
 - `bun run lint` — passed.
 - `git diff --check` for task-owned paths — passed.
 - Specification and React/TypeScript-quality reviews — approved after explicit `error -> loading -> empty -> data` precedence and non-authoritative metrics.
+
+## Phase 0 Task 5
+
+- RED iterations proved fixed-list omission, comment/string evasion, removed ownership checks, same-named false positives, alternate import forms, alias/namespace/shadowing bypasses, silent traversal failures, unbound canonical service references, and static-template import bypasses.
+- GREEN coordinator regression: 32 passed, 0 failed across the helper and live architecture test.
+- Live boundary scan: 20 classified candidates, zero unclassified, zero traversal errors, zero violations.
+- `bun run typecheck` — passed.
+- `bun run lint` — passed.
+- `git diff --check` for task-owned paths — passed.
+- Specification and TypeScript/verifier-quality reviews — approved after AST origin proof and fail-closed traversal/import analysis.
