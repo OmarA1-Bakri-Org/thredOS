@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import { WorkspaceInspector } from '@/components/inspector/WorkspaceInspector'
 import { useUIStore } from '@/lib/ui/store'
 import {
   useApprovals,
@@ -162,6 +163,7 @@ export interface RuntimeRunConsoleProps {
   onRetryAttempt(attemptId: string): void
   onSelectRun(runId: string): void
   onSelectAttempt(attemptId: string): void
+  onInspectWorkspace(workspaceId: string): void
 }
 
 export function RuntimeRunConsole({
@@ -184,6 +186,7 @@ export function RuntimeRunConsole({
   onRetryAttempt,
   onSelectRun,
   onSelectAttempt,
+  onInspectWorkspace,
 }: RuntimeRunConsoleProps) {
   const activeCount = runs.filter(item => isActiveRunStatus(item.run.status)).length
   const successfulCount = runs.filter(item => item.run.status === 'successful').length
@@ -395,6 +398,9 @@ export function RuntimeRunConsole({
                           {item.attempt.retry_of_attempt_id
                             ? ` · retry of ${item.attempt.retry_of_attempt_id}`
                             : ''}
+                          {item.attempt.workspace_id
+                            ? ` · workspace ${item.attempt.workspace_id}`
+                            : ' · no workspace allocated'}
                         </span>
                       </span>
                       <span className="flex flex-col items-end gap-1">
@@ -467,7 +473,25 @@ export function RuntimeRunConsole({
                     {formatTimestamp(activeAttempt.attempt.last_heartbeat_at)}
                   </dd>
                 </div>
+                <div>
+                  <dt className="text-slate-500">Workspace</dt>
+                  <dd className="mt-0.5 break-all text-slate-200">
+                    {activeAttempt.attempt.workspace_id ?? 'Not allocated'}
+                  </dd>
+                </div>
               </dl>
+              {activeAttempt.attempt.workspace_id ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="mt-3"
+                  data-testid="inspect-workspace-button"
+                  onClick={() => onInspectWorkspace(activeAttempt.attempt.workspace_id!)}
+                >
+                  Inspect workspace
+                </Button>
+              ) : null}
               {activeAttempt.attempt.error_code || activeAttempt.attempt.error_message ? (
                 <div className="mt-3 border-t border-slate-800 pt-2 text-xs text-rose-200">
                   {activeAttempt.attempt.error_code ?? 'RUNTIME_ERROR'}
@@ -520,6 +544,7 @@ export function RunSection() {
   const [confirmRun, setConfirmRun] = useState(false)
   const [localRunId, setLocalRunId] = useState<string | null>(null)
   const [localAttemptId, setLocalAttemptId] = useState<string | null>(null)
+  const [workspaceInspectorId, setWorkspaceInspectorId] = useState<string | null>(null)
   const startRun = useStartRun()
   const cancelRun = useCancelRun()
   const cancelAttempt = useCancelAttempt()
@@ -662,9 +687,26 @@ export function RunSection() {
         onSelectRun={runId => {
           setLocalRunId(runId)
           setLocalAttemptId(null)
+          setWorkspaceInspectorId(null)
         }}
-        onSelectAttempt={setLocalAttemptId}
+        onSelectAttempt={attemptId => {
+          setLocalAttemptId(attemptId)
+          setWorkspaceInspectorId(null)
+        }}
+        onInspectWorkspace={setWorkspaceInspectorId}
       />
+
+      {workspaceInspectorId ? (
+        <WorkspaceInspector
+          workspaceId={workspaceInspectorId}
+          onClose={() => setWorkspaceInspectorId(null)}
+          onSelectRun={runId => {
+            setLocalRunId(runId)
+            setLocalAttemptId(null)
+            setWorkspaceInspectorId(null)
+          }}
+        />
+      ) : null}
 
       {activeRunId ? (
         <section data-testid="run-control-plane" className="space-y-3 border-t border-slate-800 pt-4">

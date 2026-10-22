@@ -51,7 +51,7 @@ const runtimeAttempt = {
     model: 'codex',
     side_effect_class: 'execute' as const,
     baseline_snapshot_id: null,
-    workspace_id: null,
+    workspace_id: 'workspace-1',
     process_id: 'process-1',
     compiled_prompt_hash: 'sha256:prompt',
     input_manifest_ref: null,
@@ -219,6 +219,19 @@ mock.module('@/lib/ui/api', () => ({
     mutate: () => {},
     isPending: false,
     data: null,
+  }),
+  useWorkspaceInspection: () => ({
+    data: undefined,
+    error: null,
+    isError: false,
+    isFetching: false,
+    refetch: () => {},
+  }),
+  useWorkspaceAction: () => ({
+    mutate: () => {},
+    isPending: false,
+    isError: false,
+    error: null,
   }),
 }))
 

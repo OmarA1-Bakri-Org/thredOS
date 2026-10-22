@@ -139,6 +139,19 @@ mock.module('@/lib/ui/api', () => ({
   useResolveApproval: () => ({ mutate: () => {}, mutateAsync: async () => ({}) }),
   useRevealSurface: () => ({ mutate: () => {}, mutateAsync: async () => ({}) }),
   useExportBundle: () => ({ mutate: () => {}, mutateAsync: async () => ({}) }),
+  useWorkspaceInspection: () => ({
+    data: undefined,
+    error: null,
+    isError: false,
+    isFetching: false,
+    refetch: () => {},
+  }),
+  useWorkspaceAction: () => ({
+    mutate: () => {},
+    isPending: false,
+    isError: false,
+    error: null,
+  }),
   useSurfaceAccess: () => ({ data: null, isLoading: false }),
   useGateDecisions: () => ({ data: [], isLoading: false }),
 }))

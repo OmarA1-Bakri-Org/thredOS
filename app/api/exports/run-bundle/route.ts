@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { mkdir } from 'fs/promises'
 import { z } from 'zod'
 import { generateExportBundle } from '@/lib/exports/bundler'
-import { ExportBundleSchema } from '@/lib/exports/schema'
+import { ExportBundleSchema, type ExportBundle } from '@/lib/exports/schema'
 import { PolicyEngine } from '@/lib/policy/engine'
 import { getBasePath } from '@/lib/config'
 import { handleError, requireRequestSession } from '@/lib/api-helpers'
@@ -12,7 +12,7 @@ import {
   resolveExistingPathWithinRoot,
   resolvePathWithinRoot,
 } from '@/lib/security/safe-path'
-import { copyFileNoFollow, writeFileNoFollow } from '@/lib/security/safe-io'
+import { writeFileNoFollow } from '@/lib/security/safe-io'
 
 function isSafeRunId(value: string): boolean {
   try {
@@ -27,35 +27,19 @@ const BodySchema = z.object({
   runId: z.string().refine(isSafeRunId, 'runId must be a file-safe identifier'),
 })
 
-async function copyIfPresent(sourceRoot: string, destinationRoot: string, fileName: string): Promise<void> {
-  try {
-    const sourcePath = await resolveExistingPathWithinRoot(sourceRoot, fileName)
-    const destinationPath = await resolvePathWithinRoot(destinationRoot, fileName)
-    await copyFileNoFollow(sourcePath, destinationPath)
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      return
-    }
-    throw error
-  }
-}
-
-async function copyRuntimeExportRecords(basePath: string, runId: string, exportDir: string): Promise<void> {
-  let runDir: string
-  try {
-    const threadosRoot = await resolveExistingPathWithinRoot(basePath, '.threados')
-    const runsRoot = await resolveExistingPathWithinRoot(threadosRoot, 'runs')
-    runDir = await resolveExistingPathWithinRoot(runsRoot, runId)
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return
-    throw error
-  }
+async function writeRedactedExportRecords(exportDir: string, bundle: ExportBundle): Promise<void> {
   const verifiedExportDir = await resolveExistingPathWithinRoot(exportDir)
-  await Promise.all([
-    copyIfPresent(runDir, verifiedExportDir, 'trace.ndjson'),
-    copyIfPresent(runDir, verifiedExportDir, 'approvals.ndjson'),
-    copyIfPresent(runDir, verifiedExportDir, 'gate-decisions.ndjson'),
-  ])
+  for (const [fileName, records] of [
+    ['trace.ndjson', bundle.trace_events],
+    ['approvals.ndjson', bundle.approvals],
+    ['gate-decisions.ndjson', bundle.gate_decisions],
+  ] as const) {
+    const destinationPath = await resolvePathWithinRoot(verifiedExportDir, fileName)
+    await writeFileNoFollow(
+      destinationPath,
+      records.length > 0 ? `${records.map(record => JSON.stringify(record)).join('\n')}\n` : '',
+    )
+  }
 }
 
 export async function POST(request: Request) {
@@ -98,7 +82,7 @@ export async function POST(request: Request) {
     const verifiedExportDir = await resolveExistingPathWithinRoot(verifiedExportsRoot, runId)
     const bundlePath = await resolvePathWithinRoot(verifiedExportDir, 'bundle.json')
     await writeFileNoFollow(bundlePath, JSON.stringify(validatedBundle, null, 2))
-    await copyRuntimeExportRecords(bp, runId, verifiedExportDir)
+    await writeRedactedExportRecords(verifiedExportDir, validatedBundle)
 
     return NextResponse.json({ bundle: validatedBundle, exportPath: `.threados/exports/${runId}/bundle.json` })
   } catch (err) {

@@ -186,6 +186,29 @@ thread attempt cancel <attemptId> --idempotency-key <key> --json
 thread attempt retry <attemptId> --idempotency-key <key> --json
 ```
 
+### `thread workspace list|inspect|retain|clean|doctor`
+
+Inspect and manage the Surface Workspaces used by write and execute attempts.
+These commands read and mutate the same canonical workspace records as the API
+and operator UI. Portable-copy workspaces report `THREADOS_SCOPED` isolation;
+the label does not claim host-enforced containment.
+
+```bash
+thread workspace list --json
+thread workspace list --run <runId> --json
+thread workspace inspect <workspaceId> --json
+thread workspace retain <workspaceId> --idempotency-key <key> --json
+thread workspace clean <workspaceId> --idempotency-key <key> --json
+thread workspace doctor --json
+```
+
+`retain` preserves a workspace for review. `clean` follows the workspace
+lifecycle and quota rules; it does not apply files to the canonical project.
+`doctor` reports configuration, canonical records, external storage, and
+diagnostic errors without treating missing process evidence as success.
+
+Cleanup fails with `WORKSPACE_NOT_CLEANABLE` when process termination evidence is missing, lost, malformed, quarantined, or ambiguous. POSIX cleanup checks both the recorded PID and its original process group. The current Windows observation port cannot prove descendant termination after a leader exits, so cleanup of a workspace with process records is refused there. The API returns HTTP `409`; CLI returns conflict exit code `5`. SAFE-mode cleanup requires `--confirm` (or API `policy_confirmed: true`).
+
 ### `thread status [--watch]`
 
 Show status derived from canonical runtime records. mprocs state is not execution truth.
@@ -318,4 +341,7 @@ Full policy reference: `docs/policy.md`.
 
 ```bash
 bun run check
+bun run verify:m1
 ```
+
+`verify:m1` generates fresh M1 evidence under the sequential scheduler. Runtime isolation, export privacy, the no-worktree guard, workspace API/CLI/component contracts, production build, and workspace-inspector UI/local proof must all pass. A failed evidence run is diagnostic output, not acceptance.

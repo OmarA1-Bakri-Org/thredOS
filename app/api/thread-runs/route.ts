@@ -63,6 +63,10 @@ async function enrichRuntimeTruth(basePath: string, runs: RunScope[]): Promise<R
       ...(attempt ? {
         attemptStatus: attempt.attempt.status,
         processStatus: attempt.process?.status,
+        ...(attempt.attempt.workspace_id ? { workspaceId: attempt.attempt.workspace_id } : {}),
+        ...(attempt.attempt.baseline_snapshot_id
+          ? { snapshotId: attempt.attempt.baseline_snapshot_id }
+          : {}),
       } : {}),
     }
   })

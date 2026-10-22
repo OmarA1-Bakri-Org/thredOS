@@ -242,6 +242,11 @@ export const RUNTIME_LIFECYCLE_INTERFACE_CLASSIFICATIONS: readonly RuntimeLifecy
   { file: 'app/api/attempts/[attemptId]/cancel/route.ts', kind: 'api-delegate', policy: 'delegate-to-runtime-service' },
   { file: 'app/api/attempts/[attemptId]/retry/route.ts', kind: 'api-delegate', policy: 'delegate-to-runtime-service' },
   { file: 'app/api/thread-runs/route.ts', kind: 'api-delegate', policy: 'delegate-to-runtime-service' },
+  { file: 'app/api/workspaces/route.ts', kind: 'api-delegate', policy: 'delegate-to-runtime-service' },
+  { file: 'app/api/workspaces/doctor/route.ts', kind: 'api-delegate', policy: 'delegate-to-runtime-service' },
+  { file: 'app/api/workspaces/[workspaceId]/route.ts', kind: 'api-delegate', policy: 'delegate-to-runtime-service' },
+  { file: 'app/api/workspaces/[workspaceId]/retain/route.ts', kind: 'api-delegate', policy: 'delegate-to-runtime-service' },
+  { file: 'app/api/workspaces/[workspaceId]/clean/route.ts', kind: 'api-delegate', policy: 'delegate-to-runtime-service' },
   {
     file: 'app/api/apply/route.ts',
     kind: 'chat-runtime-controls-rejected',
@@ -258,6 +263,7 @@ export const RUNTIME_LIFECYCLE_INTERFACE_CLASSIFICATIONS: readonly RuntimeLifecy
   { file: 'lib/seqctl/commands/control.ts', kind: 'cli-delegate', policy: 'delegate-to-runtime-service' },
   { file: 'lib/seqctl/commands/status.ts', kind: 'cli-delegate', policy: 'delegate-to-runtime-service' },
   { file: 'lib/seqctl/commands/attempt.ts', kind: 'cli-delegate', policy: 'delegate-to-runtime-service' },
+  { file: 'lib/seqctl/commands/workspace.ts', kind: 'cli-delegate', policy: 'delegate-to-runtime-service' },
   {
     file: 'lib/chat/commands.ts',
     kind: 'chat-runtime-controls-rejected',

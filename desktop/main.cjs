@@ -3,6 +3,7 @@ const { spawn } = require('child_process')
 const http = require('http')
 const path = require('path')
 const fs = require('fs')
+const { localOrigin, openVerifiedWorkspace } = require('./workspace-open.cjs')
 
 const HOST = process.env.THREDOS_DESKTOP_HOST || '127.0.0.1'
 const PORT = process.env.THREDOS_DESKTOP_PORT || '3010'
@@ -132,6 +133,20 @@ ipcMain.handle('thredos:consume-pending-activation-url', () => {
   const url = pendingActivationUrl
   pendingActivationUrl = null
   return url
+})
+ipcMain.handle('thredos:open-workspace-in-explorer', async (event, workspaceId) => {
+  if (!mainWindow || mainWindow.isDestroyed()
+    || event.sender !== mainWindow.webContents
+    || event.senderFrame !== mainWindow.webContents.mainFrame
+    || new URL(event.senderFrame.url).origin !== localOrigin(getStartUrl())) {
+    throw new Error('Workspace Explorer request did not come from the desktop app')
+  }
+  await openVerifiedWorkspace({
+    id: workspaceId,
+    startUrl: getStartUrl(),
+    canonicalRoot: resolveBasePath(),
+    openPath: target => shell.openPath(target),
+  })
 })
 
 const singleInstanceLock = app.requestSingleInstanceLock()

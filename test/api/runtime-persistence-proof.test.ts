@@ -7,6 +7,7 @@ import { saveRunArtifacts } from '@/lib/runner/artifacts'
 import { ROOT_THREAD_SURFACE_ID } from '@/lib/thread-surfaces/constants'
 import { writeThreadSurfaceState } from '@/lib/thread-surfaces/repository'
 import type { ThreadSurface } from '@/lib/thread-surfaces/types'
+import { hashSha256Bytes } from '@/lib/workspaces/hash'
 import { registerSequenceAgents } from '../helpers/registered-sequence'
 
 let basePath = ''
@@ -187,6 +188,18 @@ describe.serial('runtime persistence proof', () => {
     }))
     expect(revealResponse.status).toBe(200)
 
+    const privateTracePath = 'C:\\private\\sibling\\do-not-export.txt'
+    const existingTrace = await readFile(join(runDir, 'trace.ndjson'), 'utf-8')
+    await writeFile(join(runDir, 'trace.ndjson'), `${existingTrace}${JSON.stringify({
+      ts: '2026-09-28T00:00:00.000Z',
+      run_id: runId,
+      surface_id: 'thread-step-a',
+      actor: privateTracePath,
+      event_type: 'policy-checked',
+      payload_ref: privateTracePath,
+      policy_ref: null,
+    })}\n`)
+
     const { POST: exportBundle } = await import('@/app/api/exports/run-bundle/route')
     const exportResponse = await exportBundle(new Request('http://localhost/api/exports/run-bundle', {
       method: 'POST',
@@ -256,6 +269,16 @@ describe.serial('runtime persistence proof', () => {
 
     const bundlePath = join(basePath, exportBody.exportPath)
     const persistedBundle = JSON.parse(await readFile(bundlePath, 'utf-8'))
+    const exportDir = join(basePath, '.threados', 'exports', runId)
+    const exportedPrivateTrace = expect.objectContaining({
+      ts: '2026-09-28T00:00:00.000Z',
+      actor: '[redacted]',
+      payload_ref: hashSha256Bytes(privateTracePath),
+    })
+    expect(persistedBundle.trace_events).toEqual(expect.arrayContaining([exportedPrivateTrace]))
+    const exportedTraceLines = (await readFile(join(exportDir, 'trace.ndjson'), 'utf8'))
+      .trim().split('\n').filter(Boolean).map(line => JSON.parse(line))
+    expect(exportedTraceLines).toEqual(expect.arrayContaining([exportedPrivateTrace]))
     expect(persistedBundle.run_id).toBe(runId)
     expect(persistedBundle.surfaces).toEqual(expect.arrayContaining([
       expect.objectContaining({
@@ -282,7 +305,7 @@ describe.serial('runtime persistence proof', () => {
       precondition_hash: bundledApprovals[1].precondition_hash,
       expires_at: bundledApprovals[1].expires_at,
     })
-    expect(persistedBundle.artifact_manifests).toContain(`.threados/runs/${runId}/step-a/status.json`)
+    expect(persistedBundle.artifact_manifests).toContain(hashSha256Bytes(`.threados/runs/${runId}/step-a/status.json`))
     expect(typeof persistedBundle.timing_summary.stepCount).toBe('number')
     expect(typeof persistedBundle.timing_summary.successfulSteps).toBe('number')
     expect(typeof persistedBundle.timing_summary.totalDurationMs).toBe('number')

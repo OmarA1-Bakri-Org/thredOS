@@ -71,6 +71,11 @@ export function defaultVerificationPort(mode) {
   return null
 }
 
+export function localVerificationBaseURL(port) {
+  // Playwright's API cookie jar recognizes localhost for Secure loopback cookies.
+  return `http://localhost:${port}`
+}
+
 async function claimPort(port) {
   return await new Promise((resolve, reject) => {
     const server = createServer()
@@ -131,7 +136,7 @@ export function createPlaywrightServerSettings({
   const defaultPort = defaultVerificationPort(mode)
   const port = env.PLAYWRIGHT_PORT ?? (defaultPort == null ? undefined : String(defaultPort))
   const baseURL = env.PLAYWRIGHT_BASE_URL
-    ?? (port ? `http://127.0.0.1:${port}` : undefined)
+    ?? (port ? localVerificationBaseURL(port) : undefined)
   const serverEnv = {
     ...prependEnvironmentPath(env, resolveBunBinDirectory(env, platform), platform),
     ...(platform === 'win32' ? { SystemRoot: env.SystemRoot ?? 'C:\\Windows' } : {}),
