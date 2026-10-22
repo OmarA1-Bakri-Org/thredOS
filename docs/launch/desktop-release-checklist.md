@@ -15,6 +15,26 @@
 - `bun run test:ui`
 - `bun run verify:ci`
 
+## Milestone 1 workspace gate
+
+- Run `bun run verify:m1` from the exact release candidate.
+- Confirm the command exits `0`; an evidence directory produced by a failed run is diagnostic output, not acceptance.
+- Confirm `test-results/verify/m1/<timestamp>/m1-proof/` contains:
+  - `snapshot.json` and `snapshot-manifest.json`
+  - `workspace-a.json` and `workspace-b.json`
+  - `canonical-before.manifest.json` and `canonical-after.manifest.json`
+  - `isolation-proof.json`
+  - `dirty-git-proof.json` and `non-git-proof.json`
+  - `no-worktree-report.json`
+  - `export-bundle.json`
+  - `test-results.txt`
+  - `ui-proof/reference.json`
+- Confirm the two attempts used one snapshot and distinct workspace roots under the sequential scheduler.
+- Confirm both workspace labels are `THREADOS_SCOPED`, the canonical before/after hashes match, and the no-worktree report passed.
+- Confirm workspace list, inspect, retain, clean, and doctor agree through API, CLI, and UI.
+- Confirm `ui-proof/reference.json` is `passed` and points to the workspace-inspector verification artifacts.
+- Do not record Milestone 1 as accepted until every item above passes on the integrated candidate.
+
 ## Windows launch flow
 
 - Install packaged `thredOS Desktop` build on a clean Windows machine.
@@ -43,6 +63,8 @@
   - copied `trace.ndjson`
   - copied `approvals.ndjson` when present
   - copied `gate-decisions.ndjson`
+  - workflow-run, attempt, process, snapshot manifest, workspace, isolation, gate, approval, and trace evidence in `bundle.json`
+  - hashed sequence/policy source and manifest paths, redacted external roots, and no embedded Surface Workspace file content
 
 ## Privacy boundary
 

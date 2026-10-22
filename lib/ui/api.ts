@@ -13,6 +13,8 @@ import type { LocalWorkspace } from '@/lib/local-first/types'
 import { resolveSkillsForAgent } from '@/lib/thread-surfaces/projections'
 import type { WorkflowRunStatus, WorkflowRunStrategy, WorkflowRunTarget } from '@/lib/runtime/schema'
 import type { AttemptProjection, RunProjection, RuntimeRunQuery } from '@/lib/runtime/service-types'
+import type { WorkspaceInspection } from '@/lib/workspaces/inspection'
+import type { SurfaceWorkspace } from '@/lib/workspaces/schema'
 
 interface ThreadSurfacesResponse {
   threadSurfaces: ThreadSurface[]
@@ -971,5 +973,42 @@ export function useSurfaceAccess(surfaceId: string | null, requestorSurfaceId: s
     queryKey: ['surface-access', surfaceId, requestorSurfaceId],
     queryFn: () => fetchJson<{ access: unknown }>(`/api/surfaces/access?surfaceId=${surfaceId}&requestorSurfaceId=${requestorSurfaceId}`).then(r => r.access),
     enabled: !!surfaceId && !!requestorSurfaceId,
+  })
+}
+
+export function useWorkspaces(runId?: string) {
+  return useQuery({
+    queryKey: ['workspaces', runId ?? null],
+    queryFn: () => fetchJson<{ schema_version: 1; workspaces: SurfaceWorkspace[] }>(
+      `/api/workspaces${runId ? `?run_id=${encodeURIComponent(runId)}` : ''}`,
+    ).then(result => result.workspaces),
+  })
+}
+
+export function useWorkspaceInspection(workspaceId: string) {
+  return useQuery({
+    queryKey: ['workspace-inspection', workspaceId],
+    queryFn: () => fetchJson<WorkspaceInspection>(`/api/workspaces/${encodeURIComponent(workspaceId)}`),
+    refetchInterval: current => {
+      const status = current.state.data?.workspace.status
+      return status && ['planned', 'materializing', 'ready', 'active', 'cleaning'].includes(status)
+        ? 5_000
+        : false
+    },
+  })
+}
+
+export function useWorkspaceAction(workspaceId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (action: 'retain' | 'clean') => postJson<WorkspaceInspection>(
+      `/api/workspaces/${encodeURIComponent(workspaceId)}/${action}`,
+      action === 'clean' ? { policy_confirmed: true } : {},
+    ),
+    onSuccess: inspection => {
+      qc.setQueryData(['workspace-inspection', workspaceId], inspection)
+      qc.invalidateQueries({ queryKey: ['workspaces'] })
+      invalidateRuntimeQueries(qc)
+    },
   })
 }

@@ -6,6 +6,7 @@ import { ExportBundleSchema } from '@/lib/exports/schema'
 import { readTraceEvents } from '@/lib/traces/reader'
 import { readThreadSurfaceState, writeThreadSurfaceState } from '@/lib/thread-surfaces/repository'
 import type { ThreadSurface } from '@/lib/thread-surfaces/types'
+import { hashSha256Bytes } from '@/lib/workspaces/hash'
 
 let basePath: string
 
@@ -255,7 +256,11 @@ describe.serial('surface proof routes', () => {
           revealState: 'revealed',
         }),
       ],
-      runs: [],
+      runs: [{
+        id: 'run-export-1', threadSurfaceId: 'surface-a', runStatus: 'successful',
+        startedAt: '2026-03-29T00:00:00.000Z', endedAt: '2026-03-29T00:00:05.000Z',
+        parentRunId: null, childIndex: null,
+      }],
       mergeEvents: [],
       runEvents: [],
     })
@@ -272,7 +277,9 @@ describe.serial('surface proof routes', () => {
     const parsedBundle = ExportBundleSchema.parse(data.bundle)
     expect(parsedBundle.run_id).toBe('run-export-1')
     expect(parsedBundle.surfaces).toHaveLength(1)
-    expect(parsedBundle.artifact_manifests).toContain('.threados/runs/run-export-1/step-alpha/status.json')
+    expect(parsedBundle.artifact_manifests).toContain(
+      hashSha256Bytes('.threados/runs/run-export-1/step-alpha/status.json'),
+    )
     expect(parsedBundle.timing_summary).toMatchObject({
       stepCount: 1,
       totalDurationMs: 5000,

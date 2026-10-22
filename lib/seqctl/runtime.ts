@@ -7,7 +7,8 @@ import type { CLIOptions } from './formatters/runtime'
 
 export type CLIRuntimeService = Pick<ThreadOSRuntimeService,
   'startRun' | 'runAndWait' | 'listRuns' | 'inspectRun' | 'inspectAttempt' |
-  'cancelRun' | 'cancelAttempt' | 'retryAttempt' | 'findLatestAttempt' | 'getStatus' | 'reconcile'>
+  'cancelRun' | 'cancelAttempt' | 'retryAttempt' | 'findLatestAttempt' | 'getStatus' | 'reconcile' |
+  'listWorkspaces' | 'inspectWorkspace' | 'retainWorkspace' | 'cleanWorkspace' | 'doctorWorkspaces'>
 
 interface LegacyCLIRunRuntime {
   dispatch: RuntimeServiceDependencies['dispatch']

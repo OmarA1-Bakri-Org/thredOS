@@ -12,7 +12,8 @@ import { allowHostedProcessControls } from '../hosted'
 
 export type RuntimeServicePort = Pick<ThreadOSRuntimeService,
   'startRun' | 'runAndWait' | 'listRuns' | 'inspectRun' | 'inspectAttempt' |
-  'cancelRun' | 'cancelAttempt' | 'retryAttempt' | 'findLatestAttempt' | 'getStatus' | 'reconcile'>
+  'cancelRun' | 'cancelAttempt' | 'retryAttempt' | 'findLatestAttempt' | 'getStatus' | 'reconcile' |
+  'listWorkspaces' | 'inspectWorkspace' | 'retainWorkspace' | 'cleanWorkspace' | 'doctorWorkspaces'>
 
 declare global {
   var __THREADOS_RUNTIME_SERVICE__: RuntimeServicePort | undefined

@@ -14,6 +14,7 @@ import { runCommand } from './commands/run'
 import { statusCommand } from './commands/status'
 import { stepCommand } from './commands/step'
 import { templateCommand } from './commands/template'
+import { workspaceCommand } from './commands/workspace'
 import { renderRuntimeFailure, type CLIOptions } from './formatters/runtime'
 
 type CommandHandler = (
@@ -37,6 +38,7 @@ const commands: Record<string, CommandHandler> = {
   mprocs: mprocsCommand,
   template: templateCommand,
   event: eventCommand,
+  workspace: workspaceCommand,
 }
 
 function printHelp(): void {
@@ -62,6 +64,8 @@ Commands:
   mprocs open|select                Optional legacy observer controls
   template apply <type>             Apply a thread template
   event spawn-child|merge-into      Emit runtime delegation events
+  workspace list|inspect            Inspect Surface Workspaces
+  workspace retain|clean|doctor     Manage retained Surface Workspaces
 
 Options:
   -j, --json                        Emit the versioned JSON envelope

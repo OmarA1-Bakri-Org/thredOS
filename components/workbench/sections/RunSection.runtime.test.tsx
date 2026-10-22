@@ -72,7 +72,7 @@ function attemptProjection(
       model: 'codex',
       side_effect_class: 'execute',
       baseline_snapshot_id: null,
-      workspace_id: null,
+      workspace_id: source === 'v2' ? 'workspace-1' : null,
       process_id: source === 'v2' ? 'process-1' : null,
       compiled_prompt_hash: 'sha256:prompt',
       input_manifest_ref: null,
@@ -139,6 +139,7 @@ function baseProps(overrides: Partial<RuntimeRunConsoleProps> = {}): RuntimeRunC
     onRetryAttempt: () => {},
     onSelectRun: () => {},
     onSelectAttempt: () => {},
+    onInspectWorkspace: () => {},
     ...overrides,
   }
 }
@@ -226,6 +227,30 @@ describe('RunSection canonical runtime controls', () => {
     expect(markup).toContain('attempt · interrupted')
     expect(markup).toContain('process · lost')
     expect(markup).toContain('PROCESS_LOST')
+  })
+
+  test('shows the selected attempt workspace and links it to inspection', () => {
+    const calls: string[] = []
+    const tree = RuntimeRunConsole(baseProps({
+      onInspectWorkspace: workspaceId => calls.push(workspaceId),
+    }))
+    const inspect = findByTestId(tree, 'inspect-workspace-button')
+
+    expect(renderToStaticMarkup(tree)).toContain('workspace-1')
+    ;(inspect.props.onClick as () => void)()
+    expect(calls).toEqual(['workspace-1'])
+  })
+
+  test('states when an attempt has no workspace and does not render an inspection action', () => {
+    const attempt = attemptProjection()
+    attempt.attempt.workspace_id = null
+    const markup = renderToStaticMarkup(<RuntimeRunConsole {...baseProps({
+      attempts: [attempt],
+      activeAttempt: attempt,
+    })} />)
+
+    expect(markup).toContain('Not allocated')
+    expect(markup).not.toContain('data-testid="inspect-workspace-button"')
   })
 
   test('keeps legacy runs visible and read-only with an explicit badge', () => {

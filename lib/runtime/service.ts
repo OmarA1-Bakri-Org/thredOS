@@ -32,6 +32,10 @@ import {
 import { deriveTerminalRunOutcome } from './run-outcome'
 import type { RuntimeCommandReceipt, StepAttempt, WorkflowRun, WorkflowRunTarget } from './schema'
 import { classifyAttemptSideEffect, requiresIsolatedWorkspace } from './workspace-planner'
+import { WorkspaceOperations } from './workspace-operations'
+import type { WorkspaceDoctorReport } from '../workspaces/doctor'
+import type { WorkspaceInspection } from '../workspaces/inspection'
+import type { SurfaceWorkspace } from '../workspaces/schema'
 
 function targetRef(target: WorkflowRunTarget): string {
   if (target.kind === 'step') return `step:${target.step_id}`
@@ -102,6 +106,7 @@ export class ThreadOSRuntimeService {
   private readonly repositories: RuntimeServiceOptions['repositories']
   private readonly deps: RuntimeServiceOptions['dependencies']
   private readonly processController: ProcessController
+  private readonly workspaceOperations: WorkspaceOperations
   private readonly inFlight = new Map<string, Promise<CompletedRunResult>>()
   private readonly inFlightAttempts = new Map<string, Promise<{ run: WorkflowRun; attempt: StepAttempt }>>()
   private readonly inFlightAttemptCancellations = new Map<string, Promise<StepAttempt>>()
@@ -122,6 +127,33 @@ export class ThreadOSRuntimeService {
       now: this.deps.now,
       startProcess: this.deps.startProcess,
     })
+    this.workspaceOperations = new WorkspaceOperations(this.basePath)
+  }
+
+  async listWorkspaces(query: { runId?: string } = {}): Promise<SurfaceWorkspace[]> {
+    return await this.workspaceOperations.list(query)
+  }
+
+  async inspectWorkspace(id: string): Promise<WorkspaceInspection> {
+    return await this.workspaceOperations.inspect(id)
+  }
+
+  async retainWorkspace(
+    id: string,
+    context: RuntimeCommandContext,
+  ): Promise<WorkspaceInspection> {
+    return await this.workspaceOperations.mutate('retain', id, context)
+  }
+
+  async cleanWorkspace(
+    id: string,
+    context: RuntimeCommandContext,
+  ): Promise<WorkspaceInspection> {
+    return await this.workspaceOperations.mutate('clean', id, context)
+  }
+
+  async doctorWorkspaces(): Promise<WorkspaceDoctorReport> {
+    return await this.workspaceOperations.doctor()
   }
 
   async startRun(request: StartRunRequest, rawContext: RuntimeCommandContext): Promise<WorkflowRun> {

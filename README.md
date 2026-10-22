@@ -111,12 +111,15 @@ thredOS
 ├── lib/provenance/       # Provenance tracking for thread artifacts
 ├── lib/reconciliation/   # State reconciliation
 ├── lib/runner/           # Step execution wrapper
+├── lib/runtime/          # Canonical run, attempt, process, and scheduler service
 ├── lib/seqctl/           # CLI commands (12 handlers)
 ├── lib/sequence/         # Schema, parser, DAG validation
 ├── lib/templates/        # Thread type templates (base/p/c/f/b/l)
 ├── lib/thread-runner/    # Verified-run, race, and eligibility contracts
 ├── lib/thread-surfaces/  # Thread surface runtime (events, spawn, projections)
 ├── lib/ui/               # UI state (React Query hooks, Zustand store)
+├── lib/workspaces/       # Immutable snapshots and isolated Surface Workspaces
+├── lib/exports/          # Redacted local run-evidence bundles
 ├── lib/workflows/        # Workflow templates and content definitions
 ├── app/                  # Next.js UI + 21 API route groups
 ├── components/           # React components (14 directories)
@@ -147,6 +150,7 @@ Key commands:
 - `thread group parallelize|list` — Manage parallel groups
 - `thread fusion create` — Create fusion workflows
 - `thread run step|runnable|group` — Execute steps
+- `thread workspace list|inspect|retain|clean|doctor` — Inspect and manage Surface Workspaces
 - `thread stop|restart` — Control running steps
 - `thread status` — View current state
 - `thread template apply <type>` — Apply thread templates
@@ -182,6 +186,7 @@ If you are reviewing the project quickly, start here:
 
 ## Documentation
 
+- [Canonical product documents](docs/product/canonical-document-index.md) — authoritative PRD, repository rules, and Milestones 0–1 delivery plan
 - [Product Documentation Pack](docs/product/README.md)
 - [Founder Overview](docs/product/founder-overview.md)
 - [Current State of the Product](docs/product/current-state.md)
@@ -203,11 +208,19 @@ Safety policy is loaded from `.threados/policy.yaml` (see [docs/policy.md](docs/
 
 ## Local Verification
 
+For WSL-mounted repos, use `bun run dev:wsl` for the interactive app and
+`bun run verify:release-live` for the launch checklist flow. Both relay through
+a native Linux temporary copy when the repository lives under `/mnt/*`.
 
-
-For WSL-mounted repos, prefer  for the interactive app and  for the launch checklist flow. Both now relay through a native Linux temp copy when the repo lives under .```bash
+```bash
 bun run check
+bun run verify:m1       # M1 runtime, export, guard, operator, build, and UI evidence
 ```
+
+Milestones 0–1 use the sequential scheduler. `verify:m1` proves two isolated
+write attempts from one immutable snapshot without treating them as concurrent.
+It writes the evidence bundle under `test-results/verify/m1/<timestamp>/m1-proof/`
+and fails unless the API/CLI/component and workspace-inspector UI gates also pass.
 
 ## Testing
 
@@ -215,6 +228,7 @@ bun run check
 bun test             # Full test suite
 bun test:ui          # Playwright E2E tests
 bun run check        # Lint + typecheck + test
+bun run verify:m1    # Milestone 1 evidence gate
 ```
 
 ## Acknowledgments

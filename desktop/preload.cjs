@@ -2,6 +2,7 @@ const { contextBridge, shell, ipcRenderer } = require('electron')
 
 contextBridge.exposeInMainWorld('thredosDesktop', {
   openExternal: (url) => shell.openExternal(url),
+  openWorkspaceInExplorer: (workspaceId) => ipcRenderer.invoke('thredos:open-workspace-in-explorer', workspaceId),
   getPendingActivationUrl: () => ipcRenderer.invoke('thredos:get-pending-activation-url'),
   consumePendingActivationUrl: () => ipcRenderer.invoke('thredos:consume-pending-activation-url'),
   onActivationUrl: (callback) => {
