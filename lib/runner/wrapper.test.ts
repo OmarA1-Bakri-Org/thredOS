@@ -334,6 +334,21 @@ describe.serial('runStep', () => {
       'THREDOS_UNRELATED_SENTINEL',
     ])
   })
+
+  test('removes a denied key from the actual child environment after an explicit grant', async () => {
+    const { runStep } = await importActualWrapper()
+    const result = await runStep({
+      stepId: 'deny-explicit-environment',
+      runId: 'run-deny-explicit',
+      command: NODE_FIXTURE_COMMAND,
+      args: ['-e', 'process.stdout.write(process.env.THREADOS_BASE_PATH ?? "DENIED")'],
+      env: { THREADOS_BASE_PATH: 'explicit-canonical-root' },
+      deniedEnvKeys: ['THREADOS_BASE_PATH'],
+    })
+
+    expect(result.status).toBe('SUCCESS')
+    expect(result.stdout).toBe('DENIED')
+  })
 })
 
 describe.serial('startProcess', () => {
@@ -539,6 +554,24 @@ describe('buildExecutionEnv', () => {
     expect(result.THREADOS_EVENT_LOG).toBe('event-log-sentinel')
     expect(result.THREADOS_EVENT_EMITTER).toBe('event-emitter-sentinel')
     expect(result.THREADOS_BASE_PATH).toBe('explicit-base-path-sentinel')
+  })
+
+  test('denied environment keys cannot survive an explicit trusted grant', async () => {
+    const buildExecutionEnv = await getBuilder()
+    const result = buildExecutionEnv(
+      { NODE_ENV: 'test', THREADOS_BASE_PATH: 'inherited-canonical-root' },
+      {
+        THREADOS_BASE_PATH: 'explicit-canonical-root',
+        THREADOS_WORKSPACE_ID: 'workspace-1',
+      },
+      ['THREADOS_BASE_PATH'],
+    )
+
+    expect(result.THREADOS_BASE_PATH).toBeUndefined()
+    expect(result.THREADOS_WORKSPACE_ID).toBe('workspace-1')
+    if (process.platform === 'win32') {
+      expect(result.threados_base_path).toBeUndefined()
+    }
   })
 
   test('undefined explicit grants remove inherited values and are omitted', async () => {

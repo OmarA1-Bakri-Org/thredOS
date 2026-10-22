@@ -129,6 +129,9 @@ describe('canonical runtime schemas', () => {
       revision: 0,
       workflow_run_id: 'run-01',
       attempt_id: 'attempt-01',
+      workspace_id: 'workspace-01',
+      process_purpose: 'bootstrap',
+      process_ordinal: 1,
       provider: 'local-process',
       provider_handle: 'pid:101',
       pid: 101,
@@ -147,6 +150,8 @@ describe('canonical runtime schemas', () => {
       signal: null,
     })
     expect(process.attempt_id).not.toBe(process.workflow_run_id)
+    expect(process.workspace_id).toBe('workspace-01')
+    expect(process).toMatchObject({ process_purpose: 'bootstrap', process_ordinal: 1 })
     expect(process.environment_keys).toEqual(['PATH', 'THREADOS_ATTEMPT_ID'])
     expect(ProcessStatusSchema.safeParse('successful').success).toBe(false)
   })
@@ -174,6 +179,9 @@ describe('canonical runtime schemas', () => {
       signal: null,
     })
     expect(legacyProcess.environment_keys).toBeUndefined()
+    expect(legacyProcess.workspace_id).toBeUndefined()
+    expect(legacyProcess.process_purpose).toBeUndefined()
+    expect(legacyProcess.process_ordinal).toBeUndefined()
     expect(legacyProcess.last_heartbeat_at).toBeUndefined()
   })
 
@@ -294,6 +302,8 @@ describe('runtime commands and errors', () => {
       'WORKSPACE_QUOTA_EXCEEDED',
       'WORKSPACE_NOT_FOUND',
       'WORKSPACE_NOT_CLEANABLE',
+      'WORKSPACE_BOOTSTRAP_FAILED',
+      'CANONICAL_WORKSPACE_MUTATED',
       'RUNTIME_REVISION_CONFLICT',
       'MERGE_CONFLICT',
       'MERGE_PRECONDITION_FAILED',

@@ -37,6 +37,8 @@ export interface RunnerConfig {
   cwd?: string
   timeout?: number // in milliseconds, default 30 minutes
   env?: Record<string, string>
+  /** Environment keys removed after inherited and explicit grants are combined. */
+  deniedEnvKeys?: readonly string[]
   executablePayload?: ExecutablePayload
   processId?: string
   cancellationGraceMs?: number
@@ -158,9 +160,11 @@ const INHERITED_ENV_KEY_IDENTITIES = new Set(
 export function buildExecutionEnv(
   inherited: NodeJS.ProcessEnv,
   granted: Record<string, string | undefined>,
+  deniedEnvKeys: readonly string[] = [],
 ): NodeJS.ProcessEnv {
   const result: NodeJS.ProcessEnv = Object.create(null) as NodeJS.ProcessEnv
   const outputKeys = new Map<string, string>()
+  const deniedIdentities = new Set(deniedEnvKeys.map(environmentKeyIdentity))
 
   const replace = (key: string, value: string | undefined): void => {
     const identity = environmentKeyIdentity(key)
@@ -176,13 +180,18 @@ export function buildExecutionEnv(
   }
 
   for (const [key, value] of Object.entries(inherited)) {
-    if (INHERITED_ENV_KEY_IDENTITIES.has(environmentKeyIdentity(key)) && value !== undefined) {
+    const identity = environmentKeyIdentity(key)
+    if (!deniedIdentities.has(identity)
+      && INHERITED_ENV_KEY_IDENTITIES.has(identity)
+      && value !== undefined) {
       replace(key, value)
     }
   }
 
   for (const [key, value] of Object.entries(granted)) {
-    replace(key, value)
+    if (!deniedIdentities.has(environmentKeyIdentity(key))) {
+      replace(key, value)
+    }
   }
 
   return result
@@ -198,7 +207,7 @@ export async function startProcess(config: RunnerConfig): Promise<RunningProcess
       command: launch.command,
       args: launch.args,
       cwd: launch.cwd,
-      env: buildExecutionEnv(process.env, config.env ?? {}),
+      env: buildExecutionEnv(process.env, config.env ?? {}, config.deniedEnvKeys),
       timeoutMs: config.timeout ?? DEFAULT_TIMEOUT_MS,
       cancellationGraceMs: config.cancellationGraceMs ?? DEFAULT_CANCELLATION_GRACE_MS,
       forceKillWaitMs: config.forceKillWaitMs ?? DEFAULT_FORCE_KILL_WAIT_MS,

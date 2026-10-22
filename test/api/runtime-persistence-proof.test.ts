@@ -155,7 +155,14 @@ describe.serial('runtime persistence proof', () => {
     })
 
     const gateDecisionLines = (await readFile(join(runDir, 'gate-decisions.ndjson'), 'utf-8')).trim().split('\n').filter(Boolean)
-    expect(gateDecisionLines).toHaveLength(8)
+    expect(gateDecisionLines).toHaveLength(13)
+    expect(gateDecisionLines.map(line => JSON.parse(line))).toEqual(expect.arrayContaining([
+      expect.objectContaining({ gate_type: 'snapshot_present', status: 'PASS' }),
+      expect.objectContaining({ gate_type: 'snapshot_verified', status: 'PASS' }),
+      expect.objectContaining({ gate_type: 'workspace_present', status: 'PASS' }),
+      expect.objectContaining({ gate_type: 'workspace_ready', status: 'PASS' }),
+      expect.objectContaining({ gate_type: 'workspace_manifest_verified', status: 'PASS' }),
+    ]))
 
     const inputManifest = JSON.parse(await readFile(join(stepSurfaceDir, 'input.manifest.json'), 'utf-8'))
     expect(inputManifest).toMatchObject({
@@ -214,7 +221,7 @@ describe.serial('runtime persistence proof', () => {
     expect(tracesResponse.status).toBe(200)
     const tracesBody = await tracesResponse.json()
     const eventTypes = tracesBody.events.map((event: { event_type: string }) => event.event_type)
-    expect(eventTypes.filter((eventType: string) => eventType === 'gate-evaluated')).toHaveLength(8)
+    expect(eventTypes.filter((eventType: string) => eventType === 'gate-evaluated')).toHaveLength(gateDecisionLines.length)
     expect(eventTypes).toEqual(expect.arrayContaining([
       'approval-requested',
       'approval-resolved',

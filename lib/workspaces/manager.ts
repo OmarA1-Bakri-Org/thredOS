@@ -270,6 +270,9 @@ export class SurfaceWorkspaceManager {
     const decision = decideWorkspaceRetention(workspace.retention_policy, effectiveContext)
 
     if (decision.action === 'cleanup') {
+      if (workspace.status === 'ready' || workspace.status === 'active') {
+        workspace = await this.freeze(workspace.id)
+      }
       await this.destroy(workspaceId)
       workspace = await this.repository.get(workspaceId) ?? workspace
       return { workspace, decision }

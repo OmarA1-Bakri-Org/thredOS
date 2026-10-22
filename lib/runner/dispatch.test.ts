@@ -98,6 +98,20 @@ describe('dispatch', () => {
     expect(config.executablePayload?.script?.sha256).toMatch(/^sha256:[a-f0-9]{64}$/)
   })
 
+  test('propagates denied environment keys to the process boundary', async () => {
+    const config = await dispatch('shell', {
+      stepId: 'isolated',
+      runId: 'run-isolated',
+      compiledPrompt: 'echo "isolated"',
+      cwd: process.cwd(),
+      timeout: 5000,
+      env: { THREADOS_BASE_PATH: 'must-not-cross' },
+      deniedEnvKeys: ['THREADOS_BASE_PATH'],
+    })
+
+    expect(config.deniedEnvKeys).toEqual(['THREADOS_BASE_PATH'])
+  })
+
   test('dispatch exposes THREADOS_EVENT_LOG to the child process', async () => {
     const config = await dispatch('shell', {
       stepId: 'runtime-events',

@@ -116,7 +116,7 @@ describe.serial('thread run lifecycle routes', () => {
     await rm(basePath, { recursive: true, force: true })
   })
 
-  test('first run initializes root thread surface state when absent', async () => {
+  test('first run initializes root and step thread surfaces when absent', async () => {
     const { POST } = await import('@/app/api/run/route')
     const response = await POST(new Request('http://localhost/api/run', {
       method: 'POST',
@@ -127,19 +127,30 @@ describe.serial('thread run lifecycle routes', () => {
     expect(response.status).toBe(200)
 
     const state = await readThreadSurfaceState()
-    expect(state.threadSurfaces).toEqual([
+    expect(state.threadSurfaces).toHaveLength(2)
+    expect(state.threadSurfaces).toEqual(expect.arrayContaining([
       expect.objectContaining({
         id: 'thread-root',
+        childSurfaceIds: ['thread-step-a'],
+      }),
+      expect.objectContaining({
+        id: 'thread-step-a',
+        parentSurfaceId: 'thread-root',
+        parentAgentNodeId: 'step-a',
         childSurfaceIds: [],
       }),
-    ])
-    expect(state.runs).toHaveLength(1)
-    expect(state.runs).toEqual([
+    ]))
+    expect(state.runs).toHaveLength(2)
+    expect(state.runs).toEqual(expect.arrayContaining([
       expect.objectContaining({
         threadSurfaceId: 'thread-root',
         runStatus: 'successful',
       }),
-    ])
+      expect.objectContaining({
+        threadSurfaceId: 'thread-step-a',
+        runStatus: 'successful',
+      }),
+    ]))
     expect(state.runEvents).toEqual([])
   }, 30_000)
 
@@ -158,14 +169,17 @@ describe.serial('thread run lifecycle routes', () => {
     }))
 
     const state = await readThreadSurfaceState()
-    expect(state.threadSurfaces).toHaveLength(1)
-    expect(state.runs).toHaveLength(2)
+    expect(state.threadSurfaces).toHaveLength(2)
+    expect(state.runs).toHaveLength(4)
 
     const rootRuns = state.runs.filter(run => run.threadSurfaceId === 'thread-root')
 
     expect(rootRuns).toHaveLength(2)
     expect(rootRuns[0]?.id).not.toBe(rootRuns[1]?.id)
     expect(rootRuns.every(run => run.runStatus === 'successful')).toBe(true)
+    const stepRuns = state.runs.filter(run => run.threadSurfaceId === 'thread-step-a')
+    expect(stepRuns).toHaveLength(2)
+    expect(stepRuns.every(run => run.runStatus === 'successful')).toBe(true)
     expect(state.runEvents).toEqual([])
   }, 30_000)
 

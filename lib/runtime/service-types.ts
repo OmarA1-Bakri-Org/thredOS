@@ -14,6 +14,8 @@ import type { RunRepository } from './run-repository'
 import type { RuntimeCommandContext } from './command-schema'
 import type { StepAttempt, WorkflowRun } from './schema'
 import type { ProcessRecord, StepAttemptStatus, WorkflowRunStatus } from './schema'
+import type { WorkspaceDispatchContext } from './workspace-planner'
+import type { BootstrapExecutionOptions, BootstrapExecutionResult } from '../workspaces/bootstrap'
 export interface StartRunRequest {
   sequence_id: string
   target: import('./schema').WorkflowRunTarget
@@ -34,6 +36,15 @@ export interface RuntimeRepositories {
 export interface RuntimeProjectionPort {
   beginRun(input: { run: WorkflowRun; sequence: Sequence }): Promise<void>
   beginAttempt(input: { run: WorkflowRun; attempt: StepAttempt; step: Step }): Promise<void>
+  bindAttemptWorkspace?(input: {
+    run: WorkflowRun
+    attempt: StepAttempt
+    step: Step
+    workspaceId: string
+    snapshotId: string
+    provider: 'copy' | 'overlayfs' | 'container'
+    isolationLabel: 'THREADOS_SCOPED' | 'HOST_ENFORCED'
+  }): Promise<void>
   finalizeAttempt(input: { run: WorkflowRun; attempt: StepAttempt; step: Step; runtimeEvents: RuntimeDelegationEvent[] }): Promise<void>
   finalizeRun(input: { run: WorkflowRun; attempts: StepAttempt[] }): Promise<void>
 }
@@ -45,7 +56,59 @@ export interface RuntimeServiceDependencies {
   loadPolicy(basePath: string): Promise<PolicyConfig>
   validateSequence(sequence: Sequence): void
   validatePrompt(basePath: string, stepId: string): Promise<boolean>
-  compilePrompt(input: { basePath: string; sequence: Sequence; step: Step; runId: string; agentRegistration: AgentExecutionSnapshot; rawPrompt: string }): Promise<string>
+  compilePrompt(input: {
+    basePath: string
+    executionRoot: string
+    workspaceContext: WorkspaceDispatchContext['promptContext'] | null
+    logicalWorkingDirectory?: string
+    includeDependencyArtifacts: boolean
+    runtimeEventLogPath?: string
+    sequence: Sequence
+    step: Step
+    runId: string
+    agentRegistration: AgentExecutionSnapshot
+    rawPrompt: string
+  }): Promise<string>
+  prepareRunWorkspace(input: {
+    basePath: string
+    run: WorkflowRun
+    sequence: Sequence
+    steps: Step[]
+  }): Promise<RuntimeRunWorkspacePreparation | null>
+  prepareAttemptWorkspace(input: {
+    basePath: string
+    run: WorkflowRun
+    attempt: StepAttempt
+    step: Step
+    snapshotId: string
+  }): Promise<RuntimeAttemptWorkspacePreparation>
+  bootstrapWorkspace(input: {
+    basePath: string
+    run: WorkflowRun
+    attempt: StepAttempt
+    step: Step
+    policy: PolicyConfig
+    context: RuntimeCommandContext
+    workspace: RuntimeAttemptWorkspacePreparation
+    execute(
+      payload: ExecutablePayload,
+      options: BootstrapExecutionOptions,
+    ): Promise<BootstrapExecutionResult>
+  }): Promise<void>
+  finalizeAttemptWorkspace(input: {
+    basePath: string
+    run: WorkflowRun
+    attempt: StepAttempt
+    step: Step
+    workspace: RuntimeAttemptWorkspacePreparation
+  }): Promise<void>
+  verifyCanonicalWorkspace(input: {
+    basePath: string
+    run: WorkflowRun
+    attempt: StepAttempt
+    step: Step
+    workspace: RuntimeAttemptWorkspacePreparation
+  }): Promise<RuntimeCanonicalWorkspaceEvidence>
   prepareArtifacts?(input: { basePath: string; runId: string; surfaceId: string; step: Step; compiledPrompt: string; createdAt: string }): Promise<void>
   resolveGateSurface(input: { basePath: string; surfaceId: string; step: Step }): Promise<{ surfaceClass: SurfaceClass; revealState: RevealState }>
   allowModelExecution(input: { step: Step }): { allowed: boolean; errorCode?: string; reason?: string }
@@ -55,7 +118,13 @@ export interface RuntimeServiceDependencies {
   /** @deprecated Test fixtures must bridge this explicitly with createTestCompatibilityStartProcess. */
   runStep?(config: RunnerConfig): Promise<RunResult>
   saveArtifacts(basePath: string, result: RunResult, input: { surfaceId: string; compiledPrompt: string; step: Step }): Promise<string>
-  readRuntimeEvents(basePath: string, runId: string, stepId: string): Promise<RuntimeDelegationEvent[]>
+  readRuntimeEvents(
+    basePath: string,
+    runId: string,
+    stepId: string,
+    runtimeEventLogPath: string | undefined,
+    executionRoot: string,
+  ): Promise<RuntimeDelegationEvent[]>
   readApprovals(basePath: string, runId: string): Promise<Approval[]>
   /**
    * Compatibility-only optional hook. Production runtime wiring must provide
@@ -71,7 +140,21 @@ export interface RuntimeServiceDependencies {
     consumedAt: string
     consumedBy: string
   }): Promise<Approval>
-  evaluatePreGates(input: { step: Step; sequence: Sequence; policy: PolicyConfig; approvalPresent: boolean; surfaceClass: SurfaceClass; revealState: RevealState }): GateDecision[]
+  evaluatePreGates(input: {
+    step: Step
+    sequence: Sequence
+    policy: PolicyConfig
+    approvalPresent: boolean
+    surfaceClass: SurfaceClass
+    revealState: RevealState
+    snapshotPresent: boolean
+    snapshotVerified: boolean
+    workspacePresent: boolean
+    workspaceReady: boolean
+    workspaceManifestVerified: boolean
+    snapshotManifestRef: string | null
+    workspaceManifestRef: string | null
+  }): GateDecision[]
   evaluateCompletionGates(input: { step: Step; result: RunResult; artifactManifestPresent: boolean }): GateDecision[]
   persistGateDecisions(basePath: string, runId: string, surfaceId: string, decisions: GateDecision[], policyRef: string): Promise<void>
   enforceBatchPolicy(input: { policy: PolicyConfig; stepCount: number; confirmed: boolean; basePath: string }): PolicyResult
@@ -83,6 +166,25 @@ export interface RuntimeServiceDependencies {
     context?: RuntimeReconciliationContext,
   ): Promise<RuntimeReconciliationReport | void>
   projections: RuntimeProjectionPort
+}
+
+export interface RuntimeRunWorkspacePreparation {
+  snapshotId: string
+  snapshotManifestRef: string
+  canonicalPreHash: string
+}
+
+export interface RuntimeAttemptWorkspacePreparation {
+  context: WorkspaceDispatchContext
+  manifestHash: string
+  workspaceManifestRef: string
+}
+
+export interface RuntimeCanonicalWorkspaceEvidence {
+  preHash: string
+  postHash: string
+  classification: 'unchanged' | 'external_user_edit' | 'threados_mutation'
+  evidenceRef: string
 }
 
 export interface RunProjection {

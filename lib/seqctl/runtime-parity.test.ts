@@ -83,13 +83,23 @@ async function listFiles(root: string, relative = ''): Promise<string[]> {
 function normalizeRecord(value: unknown, basePath: string, key = ''): unknown {
   if (key === 'created_via') return '<interface>'
   if (key === 'request_hash') return '<interface-bound-request-hash>'
+  if (key === 'ts' || key.endsWith('_at')) return value == null ? null : '<timestamp>'
+  if (key === 'workspace_id') return value == null ? null : '<workspace-id>'
+  if (key === 'snapshot_id' || key === 'baseline_snapshot_id') {
+    return value == null ? null : '<snapshot-id>'
+  }
   if (key.endsWith('_hash')) return '<content-hash>'
   if (typeof value === 'string') {
+    if (key === 'cwd' && /[\\/]thredOS[\\/](?:runtime[\\/])?workspaces[\\/]/i.test(value)) {
+      return '<workspace-root>'
+    }
     return value
       .replaceAll(basePath, '<ROOT>')
       .replaceAll(basePath.replaceAll('\\', '/'), '<ROOT>')
       .replaceAll('runtime:cli', 'runtime:<interface>')
       .replaceAll('runtime:api', 'runtime:<interface>')
+      .replace(/workspace-[0-9a-f-]{36}/g, '<workspace-id>')
+      .replace(/snapshot-[0-9a-f-]{36}/g, '<snapshot-id>')
   }
   if (Array.isArray(value)) return value.map(item => normalizeRecord(item, basePath))
   if (value && typeof value === 'object') {
@@ -341,6 +351,18 @@ describe.serial('CLI runtime service parity', () => {
 
       const cliProjection = await cliService.inspectRun('run-1')
       const apiProjection = await apiService.inspectRun('run-1')
+      for (const [projection, basePath] of [[cliProjection, cliPath], [apiProjection, apiPath]] as const) {
+        const attempt = projection.attempts[0]!
+        expect(projection.run.baseline_snapshot_id).toMatch(/^snapshot-/)
+        expect(attempt.baseline_snapshot_id).toBe(projection.run.baseline_snapshot_id)
+        expect(attempt.workspace_id).toMatch(/^workspace-/)
+        const reference = JSON.parse(await readFile(join(basePath, '.threados', 'runs', projection.run.id,
+          'attempts', attempt.id, 'workspace.ref.json'), 'utf8'))
+        expect(reference).toMatchObject({
+          workflow_run_id: projection.run.id, attempt_id: attempt.id,
+          workspace_id: attempt.workspace_id, snapshot_id: attempt.baseline_snapshot_id,
+        })
+      }
       expect(normalizeRecord(cliProjection, cliPath)).toEqual(normalizeRecord(apiProjection, apiPath))
       expect(await canonicalSnapshot(cliPath)).toEqual(await canonicalSnapshot(apiPath))
 

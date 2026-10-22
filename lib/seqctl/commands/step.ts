@@ -2,7 +2,14 @@ import { parseArgs } from 'util'
 import { readSequence, writeSequence } from '../../sequence/parser'
 import { validateDAG } from '../../sequence/dag'
 import { StepNotFoundError } from '../../errors'
-import { StepSchema, type Step, type StepType, type ModelType, type StepStatus } from '../../sequence/schema'
+import {
+  PortableStepCwdSchema,
+  StepSchema,
+  type Step,
+  type StepType,
+  type ModelType,
+  type StepStatus,
+} from '../../sequence/schema'
 import { writePrompt, deletePrompt, validatePromptExists } from '../../prompts/manager'
 
 interface CLIOptions {
@@ -33,6 +40,8 @@ function parseStepArgs(args: string[]) {
       prompt: { type: 'string', short: 'p' },
       status: { type: 'string', short: 's' },
       cwd: { type: 'string' },
+      'side-effect': { type: 'string' },
+      workspace: { type: 'string' },
       'depends-on': { type: 'string', short: 'd' },
     },
     allowPositionals: true,
@@ -61,6 +70,12 @@ async function addStep(
       error: `Step '${stepId}' already exists`,
     }
   }
+  if (options.cwd) {
+    const cwd = PortableStepCwdSchema.safeParse(options.cwd)
+    if (!cwd.success) {
+      return { success: false, action: 'add', stepId, error: cwd.error.issues[0]?.message }
+    }
+  }
 
   // Build step object
   const newStep: Step = {
@@ -74,6 +89,8 @@ async function addStep(
       : [],
     status: 'READY' as StepStatus,
     cwd: options.cwd ? (options.cwd as string) : undefined,
+    side_effect_class: options['side-effect'] as Step['side_effect_class'] | undefined,
+    workspace_mode: options.workspace as Step['workspace_mode'] | undefined,
   }
 
   // Validate the step
@@ -139,6 +156,13 @@ async function editStep(
 
   const step = sequence.steps[stepIndex]
 
+  if (options.cwd) {
+    const cwd = PortableStepCwdSchema.safeParse(options.cwd)
+    if (!cwd.success) {
+      return { success: false, action: 'edit', stepId, error: cwd.error.issues[0]?.message }
+    }
+  }
+
   // Update fields that were provided
   if (options.name) step.name = options.name as string
   if (options.type) {
@@ -149,6 +173,8 @@ async function editStep(
   if (options.prompt) step.prompt_file = options.prompt as string
   if (options.status) step.status = options.status as StepStatus
   if (options.cwd) step.cwd = options.cwd as string
+  if (options['side-effect']) step.side_effect_class = options['side-effect'] as Step['side_effect_class']
+  if (options.workspace) step.workspace_mode = options.workspace as Step['workspace_mode']
   if (options['depends-on']) {
     step.depends_on = (options['depends-on'] as string).split(',').map(s => s.trim())
   }

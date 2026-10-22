@@ -131,7 +131,17 @@ describe('ProcessController', () => {
       processId: 'process-01',
       workflowRunId: 'run-01',
       attemptId: 'attempt-01',
-      runnerConfig: runnerConfig(),
+      workspaceId: 'workspace-01',
+      processPurpose: 'bootstrap',
+      processOrdinal: 2,
+      runnerConfig: runnerConfig({
+        env: {
+          THREADOS_ATTEMPT_ID: 'attempt-01',
+          SECRET_TOKEN: 'secret-value',
+          THREADOS_BASE_PATH: 'C:\\canonical-private',
+        },
+        deniedEnvKeys: ['THREADOS_BASE_PATH'],
+      }),
     })
 
     expect(processes.events.slice(0, 4)).toEqual([
@@ -147,12 +157,16 @@ describe('ProcessController', () => {
     })
     expect(processes.writes[0]).toMatchObject({
       status: 'planned',
+      workspace_id: 'workspace-01',
+      process_purpose: 'bootstrap',
+      process_ordinal: 2,
       pid: null,
       provider_handle: null,
       redacted_args: ['[REDACTED]', '[REDACTED]'],
     })
     expect(processes.writes[0].environment_keys).toContain('THREADOS_ATTEMPT_ID')
     expect(processes.writes[0].environment_keys).toContain('SECRET_TOKEN')
+    expect(processes.writes[0].environment_keys).not.toContain('THREADOS_BASE_PATH')
     expect(JSON.stringify(processes.writes)).not.toContain('secret-value')
     expect(receivedConfigs[0]?.processId).toBe('process-01')
 

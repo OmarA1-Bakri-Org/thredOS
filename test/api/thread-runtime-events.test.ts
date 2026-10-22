@@ -49,10 +49,13 @@ async function emitRuntimeEventWithCommand(
   expect(logPath).toBeTruthy()
 
   const previousLogPath = process.env.THREADOS_EVENT_LOG
+  const previousCwd = process.cwd()
   try {
     process.env.THREADOS_EVENT_LOG = logPath
+    process.chdir(dirname(dirname(logPath!)))
     await eventCommand(subcommand, args, { json: false, help: false, watch: false })
   } finally {
+    process.chdir(previousCwd)
     if (previousLogPath == null) {
       delete process.env.THREADOS_EVENT_LOG
     } else {
@@ -144,7 +147,7 @@ describe.serial('thread runtime event persistence', () => {
     await rm(basePath, { recursive: true, force: true })
   })
 
-  test('plain steps do not create child thread surfaces when no delegation metadata exists', async () => {
+  test('plain steps materialize their step surface without delegation events', async () => {
     await setupSequence({
       version: '1.0',
       name: 'Runtime Sequence',
@@ -173,18 +176,30 @@ describe.serial('thread runtime event persistence', () => {
     expect(response.status).toBe(200)
 
     const state = await readThreadSurfaceState()
-    expect(state.threadSurfaces).toEqual([
+    expect(state.threadSurfaces).toHaveLength(2)
+    expect(state.threadSurfaces).toEqual(expect.arrayContaining([
       expect.objectContaining({
         id: 'thread-root',
+        childSurfaceIds: ['thread-step-a'],
+      }),
+      expect.objectContaining({
+        id: 'thread-step-a',
+        parentSurfaceId: 'thread-root',
+        parentAgentNodeId: 'step-a',
         childSurfaceIds: [],
       }),
-    ])
-    expect(state.runs).toEqual([
+    ]))
+    expect(state.runs).toHaveLength(2)
+    expect(state.runs).toEqual(expect.arrayContaining([
       expect.objectContaining({
         threadSurfaceId: 'thread-root',
         runStatus: 'successful',
       }),
-    ])
+      expect.objectContaining({
+        threadSurfaceId: 'thread-step-a',
+        runStatus: 'successful',
+      }),
+    ]))
     expect(state.runEvents).toEqual([])
   })
 

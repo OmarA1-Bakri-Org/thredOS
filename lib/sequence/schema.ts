@@ -1,5 +1,6 @@
 import { createHash } from 'crypto'
 import { z } from 'zod'
+import { assertPortableRelativePath } from '../security/safe-path'
 
 export const StepStatusSchema = z.enum([
   'READY', 'RUNNING', 'NEEDS_REVIEW', 'DONE', 'FAILED', 'BLOCKED',
@@ -15,6 +16,25 @@ export const KNOWN_MODELS = ['claude-code', 'codex', 'gemini', 'shell'] as const
 
 export const ModelTypeSchema = z.string().min(1, { message: 'Model identifier is required' })
 export type ModelType = z.infer<typeof ModelTypeSchema>
+
+export const SideEffectClassSchema = z.enum(['none', 'read', 'write', 'execute'])
+export type SideEffectClass = z.infer<typeof SideEffectClassSchema>
+
+export const WorkspaceModeSchema = z.enum(['auto', 'isolated'])
+export type WorkspaceMode = z.infer<typeof WorkspaceModeSchema>
+
+export function classifyLegacyStepSideEffect(model: string): SideEffectClass {
+  return model === 'shell' ? 'execute' : 'write'
+}
+
+export const PortableStepCwdSchema = z.string().min(1).refine(value => {
+  try {
+    assertPortableRelativePath(value, 'step cwd')
+    return true
+  } catch {
+    return false
+  }
+}, 'step cwd must be a portable relative path')
 
 export const FailPolicySchema = z.enum(['stop-all', 'continue', 'retry'])
 export type FailPolicy = z.infer<typeof FailPolicySchema>
@@ -84,7 +104,8 @@ function coerceStep(raw: unknown): Record<string, unknown> {
     output_contract_ref: input.output_contract_ref ?? input.output_contract ?? null,
     gate_set_ref: input.gate_set_ref ?? null,
     completion_contract: input.completion_contract ?? null,
-    side_effect_class: input.side_effect_class ?? 'none',
+    side_effect_class: input.side_effect_class ?? classifyLegacyStepSideEffect(String(input.model ?? '')),
+    workspace_mode: input.workspace_mode ?? 'auto',
     depends_on: Array.isArray(input.depends_on) ? input.depends_on : [],
   }
 }
@@ -99,7 +120,10 @@ const StepBaseSchema = z.object({
   type: StepTypeSchema,
   lane: z.string().optional(),
   role: z.string().optional(),
-  cwd: z.string().optional(),
+  // Existing sequence.yaml files may contain absolute cwd values. New mutation
+  // boundaries validate with PortableStepCwdSchema, while isolated dispatch
+  // independently requires a contained relative path.
+  cwd: z.string().min(1).optional(),
   model: ModelTypeSchema,
   agent_ref: z.string().nullable().default(null),
   prompt_file: z.string().min(1, { message: 'Prompt file path is required' }),
@@ -128,7 +152,8 @@ const StepBaseSchema = z.object({
   output_contract_ref: z.string().nullable().default(null),
   gate_set_ref: z.string().nullable().default(null),
   completion_contract: z.string().nullable().default(null),
-  side_effect_class: z.enum(['none', 'read', 'write', 'execute']).default('none'),
+  side_effect_class: SideEffectClassSchema,
+  workspace_mode: WorkspaceModeSchema.default('auto'),
 })
 
 export const StepSchema = z.preprocess(coerceStep, StepBaseSchema)
@@ -276,7 +301,8 @@ export interface Step {
   output_contract_ref?: string | null
   gate_set_ref?: string | null
   completion_contract?: string | null
-  side_effect_class?: 'none' | 'read' | 'write' | 'execute'
+  side_effect_class?: SideEffectClass
+  workspace_mode?: WorkspaceMode
 }
 
 export type Gate = z.infer<typeof GateSchema>

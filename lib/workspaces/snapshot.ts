@@ -97,6 +97,13 @@ export interface CaptureSnapshotResult {
   evidence: SnapshotCommitEvidence
 }
 
+export interface CanonicalManifestInspection {
+  rootManifestHash: string
+  entries: SnapshotEntry[]
+  blockedSymlinkPaths: string[]
+  retries: number
+}
+
 type SourceKind = 'file' | 'directory' | 'symlink'
 
 interface SourceItem {
@@ -726,6 +733,107 @@ function isRetryableSourceError(error: unknown): boolean {
     || error instanceof Error
       && 'code' in error
       && ['ENOENT', 'EISDIR', 'ENOTDIR', 'ELOOP', 'EINVAL', 'ESTALE'].includes(String(error.code))
+}
+
+async function manifestEntriesFromDiscovery(
+  discovery: Discovery,
+  maxBytes: number,
+): Promise<SnapshotEntry[]> {
+  const entries: SnapshotEntry[] = []
+  for (const item of discovery.items) {
+    if (item.blocked) continue
+    if (item.kind === 'directory') {
+      entries.push({
+        path: item.path,
+        kind: 'directory',
+        sha256: null,
+        size_bytes: 0,
+        mode: item.mode,
+        symlink_target: null,
+      })
+      continue
+    }
+    if (item.kind === 'symlink') {
+      entries.push({
+        path: item.path,
+        kind: 'symlink',
+        sha256: null,
+        size_bytes: 0,
+        mode: item.mode,
+        symlink_target: item.symlinkTarget,
+      })
+      continue
+    }
+    await assertSourceItemUnchanged(item)
+    const hashed = await hashFileNoFollow(item.sourcePath, maxBytes)
+    await assertSourceItemUnchanged(item)
+    entries.push({
+      path: item.path,
+      kind: 'file',
+      sha256: `sha256:${hashed.sha256}`,
+      size_bytes: hashed.sizeBytes,
+      mode: item.mode,
+      symlink_target: null,
+    })
+  }
+  return entries
+}
+
+/**
+ * Recomputes the canonical source manifest without persisting another snapshot.
+ * It intentionally shares capture exclusion, Git, ordering, symlink and source-race rules.
+ */
+export async function inspectCanonicalManifest(
+  request: CaptureSnapshotRequest,
+  dependencies: Pick<SnapshotCaptureDependencies, 'beforeEntryStat'> = {},
+): Promise<CanonicalManifestInspection> {
+  const sourceRoot = await realpath(request.canonicalRoot)
+  const runtimeDataRoot = await resolveRuntimeDataRoot({
+    canonicalRoot: sourceRoot,
+    override: request.runtimeDataRoot,
+  })
+  const policy = await buildExclusionPolicy({
+    canonicalRoot: sourceRoot,
+    config: request.config,
+    requiredIncludes: [...(request.requiredIncludes ?? [])],
+    alwaysExcludedRoots: [runtimeDataRoot, ...(request.alwaysExcludedRoots ?? [])],
+  })
+  const git = await gitEvidence(sourceRoot, request.config.snapshot.include_untracked)
+  const shouldExclude = (path: string, directory = false): boolean => {
+    if (policy.shouldExclude(path, directory)) return true
+    if (request.config.snapshot.include_untracked || git.trackedFiles == null || git.trackedDirectories == null) {
+      return false
+    }
+    return directory ? !git.trackedDirectories.has(path) : !git.trackedFiles.has(path)
+  }
+
+  let retries = 0
+  while (true) {
+    try {
+      const before = await discoverSource(sourceRoot, shouldExclude, path => (
+        dependencies.beforeEntryStat?.({ attempt: retries + 1, phase: 'before-copy', path })
+      ))
+      enforceDiscoveryLimits(before, request.config.workspace)
+      const entries = await manifestEntriesFromDiscovery(before, request.config.workspace.max_bytes_each)
+      const after = await discoverSource(sourceRoot, shouldExclude, path => (
+        dependencies.beforeEntryStat?.({ attempt: retries + 1, phase: 'after-copy', path })
+      ))
+      enforceDiscoveryLimits(after, request.config.workspace)
+      if (!sameDiscovery(before, after)) {
+        throw new SnapshotCaptureError('SNAPSHOT_SOURCE_BUSY', 'Source changed during manifest inspection')
+      }
+      const manifest = createSnapshotManifest('canonical-inspection', entries)
+      return {
+        rootManifestHash: manifest.root_manifest_hash,
+        entries: manifest.entries,
+        blockedSymlinkPaths: before.blockedSymlinkPaths,
+        retries,
+      }
+    } catch (error) {
+      if (!isRetryableSourceError(error) || retries >= request.config.snapshot.max_source_retries) throw error
+      retries += 1
+    }
+  }
 }
 
 export async function captureSnapshot(

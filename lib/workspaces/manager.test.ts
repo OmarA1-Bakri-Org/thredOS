@@ -5,6 +5,7 @@ import { createDefaultWorkspaceConfig } from './config-schema'
 import { createSnapshotManifest } from './manifest'
 import { SurfaceWorkspaceManager, SurfaceWorkspaceTraceError } from './manager'
 import { SnapshotRepository } from './snapshot-repository'
+import { WorkspaceRepository } from './repository'
 import type { WorkspaceSnapshot } from './schema'
 import { readTraceEvents } from '@/lib/traces/reader'
 import { resolveWorkspaceRuntimePaths } from './paths'
@@ -291,6 +292,35 @@ describe('SurfaceWorkspaceManager', () => {
     expect(result.workspace.status).toBe('cleaned')
     expect((await readTraceEvents(context.canonicalRoot, 'run-01')).at(-1)?.event_type)
       .toBe('workspace-cleaned')
+  })
+
+  test('freezes an active pristine workspace before cancelled cleanup', async () => {
+    const context = await fixture()
+    const manager = new SurfaceWorkspaceManager({
+      canonicalRoot: context.canonicalRoot,
+      runtimeDataRoot: context.runtimeDataRoot,
+      localWorkspaceId: 'local-01',
+      createId: () => 'cancelled-clean',
+    })
+    const ready = await manager.provision({
+      workflowRunId: 'run-01',
+      attemptId: 'attempt-01',
+      surfaceId: 'surface-01',
+      snapshotId: 'snapshot-01',
+      config: createDefaultWorkspaceConfig(),
+    })
+    await new WorkspaceRepository(context.canonicalRoot).update(
+      ready.id,
+      ready.revision,
+      current => ({ ...current, status: 'active' }),
+    )
+
+    const result = await manager.finalize(ready.id, {
+      outcome: 'cancelled_before_write',
+      hasUsefulOutput: false,
+    })
+    expect(result.decision).toEqual({ action: 'cleanup', reason: 'cancelled_pristine' })
+    expect(result.workspace.status).toBe('cleaned')
   })
 
   test('fails truthfully when host isolation is requested from the copy provider', async () => {

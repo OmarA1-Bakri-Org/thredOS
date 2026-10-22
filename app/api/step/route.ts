@@ -8,7 +8,16 @@ import { applyRateLimit } from '@/lib/rate-limit'
 import { StepNotFoundError } from '@/lib/errors'
 import { readAgentState, updateAgentState } from '@/lib/agents/repository'
 import { readPrompt, writePrompt, deletePrompt, validatePromptExists } from '@/lib/prompts/manager'
-import { StepSchema, StepTypeSchema, ModelTypeSchema, StepStatusSchema, type Step } from '@/lib/sequence/schema'
+import {
+  ModelTypeSchema,
+  PortableStepCwdSchema,
+  SideEffectClassSchema,
+  StepSchema,
+  StepStatusSchema,
+  StepTypeSchema,
+  WorkspaceModeSchema,
+  type Step,
+} from '@/lib/sequence/schema'
 import type { Sequence } from '@/lib/sequence/schema'
 import { deriveStepThreadSurfaceId } from '@/lib/thread-surfaces/constants'
 import {
@@ -47,7 +56,9 @@ const AddSchema = z.object({
   model: z.string().optional(),
   prompt: PortablePromptPathSchema.optional(),
   dependsOn: z.array(FileSafeStepIdSchema).optional(),
-  cwd: z.string().optional(),
+  cwd: PortableStepCwdSchema.optional(),
+  sideEffectClass: SideEffectClassSchema.optional(),
+  workspaceMode: WorkspaceModeSchema.optional(),
 })
 
 const EditSchema = z.object({
@@ -59,7 +70,9 @@ const EditSchema = z.object({
   prompt: PortablePromptPathSchema.optional(),
   status: z.string().optional(),
   dependsOn: z.array(FileSafeStepIdSchema).optional(),
-  cwd: z.string().optional(),
+  cwd: PortableStepCwdSchema.optional(),
+  sideEffectClass: SideEffectClassSchema.optional(),
+  workspaceMode: WorkspaceModeSchema.optional(),
   assignedAgentId: z.string().trim().min(1).nullable().optional(),
 })
 
@@ -114,6 +127,8 @@ async function handleAdd(body: AddBody, seq: Sequence, bp: string) {
     depends_on: body.dependsOn || [],
     status: 'READY' as const,
     cwd: body.cwd,
+    side_effect_class: body.sideEffectClass,
+    workspace_mode: body.workspaceMode,
   }
 
   const validated = StepSchema.safeParse(newStep)
@@ -191,6 +206,8 @@ function applyEditFields(step: Step, body: EditBody): NextResponse | null {
 
   if (body.dependsOn) step.depends_on = body.dependsOn
   if (body.cwd) step.cwd = body.cwd
+  if (body.sideEffectClass) step.side_effect_class = body.sideEffectClass
+  if (body.workspaceMode) step.workspace_mode = body.workspaceMode
 
   if (body.assignedAgentId !== undefined) {
     step.assigned_agent_id = body.assignedAgentId ?? undefined

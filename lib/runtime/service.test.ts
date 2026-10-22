@@ -117,6 +117,35 @@ async function fixture(overrides: Partial<RuntimeServiceDependencies> = {}) {
     validateSequence: () => undefined,
     validatePrompt: async () => true,
     compilePrompt: async () => 'compiled prompt',
+    prepareRunWorkspace: async () => ({ snapshotId: 'snapshot-test', snapshotManifestRef: '.threados/snapshots/snapshot-test/manifest.json', canonicalPreHash: `sha256:${'b'.repeat(64)}` }),
+    verifyCanonicalWorkspace: async () => ({ preHash: `sha256:${'b'.repeat(64)}`, postHash: `sha256:${'b'.repeat(64)}`, classification: 'unchanged', evidenceRef: 'canonical-precondition.json' }),
+    prepareAttemptWorkspace: async ({ run, attempt, step, snapshotId }) => ({
+      manifestHash: `sha256:${'a'.repeat(64)}`,
+      workspaceManifestRef: `.threados/workspaces/records/workspace-${attempt.id}.json`,
+      context: {
+        cwd: basePath,
+        workspaceId: `workspace-${attempt.id}`,
+        snapshotId,
+        attemptId: attempt.id,
+        workflowRunId: run.id,
+        isolationLabel: 'THREADOS_SCOPED',
+        environment: {
+          THREADOS_WORKSPACE_ID: `workspace-${attempt.id}`,
+          THREADOS_SNAPSHOT_ID: snapshotId,
+          THREADOS_ATTEMPT_ID: attempt.id,
+          THREADOS_RUN_ID: run.id,
+          THREADOS_STEP_ID: step.id,
+        },
+        promptContext: {
+          workspace_id: `workspace-${attempt.id}`,
+          snapshot_id: snapshotId,
+          isolation_label: 'THREADOS_SCOPED',
+          instruction: 'Operate only in the provided working directory.',
+        },
+      },
+    }),
+    bootstrapWorkspace: async () => undefined,
+    finalizeAttemptWorkspace: async () => undefined,
     prepareArtifacts: async () => undefined,
     resolveGateSurface: async () => ({ surfaceClass: 'shared', revealState: null }),
     allowModelExecution: () => ({ allowed: true }),
@@ -434,6 +463,51 @@ async function waitForAttemptStatus(
 }
 
 describe('ThreadOSRuntimeService', () => {
+  test.each([
+    ['lost bootstrap during provisioning', 'provisioning', 'bootstrap', 'lost', true],
+    ['lost running agent', 'running', 'agent', 'lost', true],
+    ['exited bootstrap during provisioning', 'provisioning', 'bootstrap', 'exited', true],
+    ['lost earlier bootstrap after cleared binding', 'provisioning', 'bootstrap', 'lost', false],
+    ['running earlier bootstrap after cleared binding', 'provisioning', 'bootstrap', 'running', false],
+  ] as const)('cancellation requires verified process termination: %s', async (label, attemptStatus, purpose, processStatus, isBound) => {
+    const built = await fixture()
+    const completed = await built.service.runAndWait(request, context)
+    const originalAttempt = completed.attempts[0]!
+    const originalProcess = (await built.repositories.processes.list())[0]!
+    await built.repositories.runs.create({
+      ...completed.run, id: 'run-control-evidence', revision: 0, status: 'running', ended_at: null,
+      attempt_ids: ['attempt-control-evidence'],
+    })
+    await built.repositories.attempts.create({
+      ...originalAttempt, id: 'attempt-control-evidence', revision: 0,
+      workflow_run_id: 'run-control-evidence', status: attemptStatus,
+      process_id: isBound ? 'process-control-evidence' : null, ended_at: null,
+      error_code: 'PROCESS_LOST', error_message: 'Termination has not been verified',
+    })
+    await built.repositories.processes.create({
+      ...originalProcess, id: 'process-control-evidence', revision: 0,
+      workflow_run_id: 'run-control-evidence', attempt_id: 'attempt-control-evidence',
+      process_purpose: purpose, status: processStatus,
+      ended_at: processStatus === 'running' ? null : originalProcess.ended_at,
+      exit_code: processStatus === 'exited' ? 0 : null,
+    })
+    const launchesBeforeCancel = built.calls.filter(call => call === 'process:create').length
+    const cancellation = built.service.cancelAttempt('attempt-control-evidence', {
+      ...context, idempotencyKey: `cancel-${label}`,
+    })
+    if (processStatus !== 'exited') {
+      await expect(cancellation).rejects.toMatchObject({ code: 'PROCESS_CONTROL_FAILED' })
+      expect(await built.repositories.attempts.get('attempt-control-evidence')).toMatchObject({
+        status: attemptStatus, ended_at: null,
+        error_code: 'PROCESS_LOST', error_message: 'Termination has not been verified',
+      })
+    } else {
+      expect(await cancellation).toMatchObject({ status: 'cancelled' })
+    }
+    expect(built.calls.filter(call => call === 'process:create')).toHaveLength(launchesBeforeCancel)
+    expect(await built.repositories.processes.get('process-control-evidence')).toMatchObject({ status: processStatus })
+  }, 30_000)
+
   test('registration persistence failure with failed cleanup control stays active until stronger cancellation', async () => {
     const terminal = deferred<RawProcessResult>()
     let controls = 0
@@ -1443,8 +1517,11 @@ describe('ThreadOSRuntimeService', () => {
       pid: expect.any(Number),
       provider_handle: expect.stringMatching(/^pid:/),
     })
-    expect(completed.run).toMatchObject({ baseline_snapshot_id: null, max_concurrency: 1, strategy: 'sequential' })
-    expect(completed.attempts[0]).toMatchObject({ baseline_snapshot_id: null, workspace_id: null })
+    expect(completed.run).toMatchObject({ baseline_snapshot_id: 'snapshot-test', max_concurrency: 1, strategy: 'sequential' })
+    expect(completed.attempts[0]).toMatchObject({
+      baseline_snapshot_id: 'snapshot-test',
+      workspace_id: `workspace-${completed.attempts[0]!.id}`,
+    })
     expect(calls.indexOf('run:create')).toBeLessThan(calls.indexOf('attempt:create'))
     expect(calls.indexOf('attempt:create')).toBeLessThan(calls.indexOf('process:create'))
     expect(calls.indexOf('process:create')).toBeLessThan(calls.indexOf('run'))
@@ -1607,7 +1684,7 @@ describe('ThreadOSRuntimeService', () => {
     const revision = (await runs.get('stale-run'))?.revision
     await first.reconcile()
     expect((await runs.get('stale-run'))?.revision).toBe(revision)
-  })
+  }, 30_000)
 
   test('factory confirmed SAFE approval lifecycle fails atomically, retries cleanly, and is consumed before spawn', async () => {
     const basePath = await mkdtemp(join(tmpdir(), 'threados-factory-approval-'))

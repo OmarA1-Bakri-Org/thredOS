@@ -30,6 +30,9 @@ export interface StartControlledProcessInput {
   processId: string
   workflowRunId: string
   attemptId: string
+  workspaceId?: string | null
+  processPurpose?: 'bootstrap' | 'agent'
+  processOrdinal?: number
   runnerConfig: RunnerConfig
 }
 
@@ -134,13 +137,20 @@ export class ProcessController {
       revision: 0,
       workflow_run_id: input.workflowRunId,
       attempt_id: input.attemptId,
+      workspace_id: input.workspaceId ?? null,
+      process_purpose: input.processPurpose ?? 'agent',
+      process_ordinal: input.processOrdinal ?? 0,
       provider: 'local-process',
       provider_handle: null,
       pid: null,
       command: payload.command,
       redacted_args: payload.args.map(() => '[REDACTED]'),
       environment_keys: Object.keys(
-        buildExecutionEnv(process.env, input.runnerConfig.env ?? {}),
+        buildExecutionEnv(
+          process.env,
+          input.runnerConfig.env ?? {},
+          input.runnerConfig.deniedEnvKeys,
+        ),
       ).sort(),
       cwd: payload.cwd,
       status: 'planned',

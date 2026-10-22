@@ -12,7 +12,12 @@ import {
   checkPolicyPass,
   checkRequiredInputsPresent,
   checkRevealAllowed,
+  checkSnapshotPresent,
+  checkSnapshotVerified,
   checkSurfaceAccessPass,
+  checkWorkspaceManifestVerified,
+  checkWorkspacePresent,
+  checkWorkspaceReady,
 } from './rules'
 
 export interface GateContext {
@@ -30,6 +35,16 @@ export interface CompletionGateContext {
   artifactManifestPresent: boolean
   outputSchemaValid: boolean
   completionContractSatisfied: boolean
+}
+
+export interface WorkspaceGateContext {
+  snapshotPresent: boolean
+  snapshotVerified: boolean
+  workspacePresent: boolean
+  workspaceReady: boolean
+  workspaceManifestVerified: boolean
+  snapshotManifestRef: string | null
+  workspaceManifestRef: string | null
 }
 
 function toDecision(
@@ -68,6 +83,34 @@ export function evaluateStepCompletionGates(step: Step, ctx: CompletionGateConte
     toDecision(step.id, 'artifact_manifest_pass', checkArtifactManifestPass(step, ctx.artifactManifestPresent)),
     toDecision(step.id, 'output_schema_pass', checkOutputSchemaPass(step, ctx.outputSchemaValid)),
     toDecision(step.id, 'completion_contract_pass', checkCompletionContractPass(step, ctx.completionContractSatisfied)),
+  ]
+}
+
+export function evaluateWorkspaceGates(
+  subjectRef: string,
+  ctx: WorkspaceGateContext,
+): GateDecision[] {
+  return [
+    toDecision(subjectRef, 'snapshot_present', checkSnapshotPresent(
+      ctx.snapshotPresent,
+      ctx.snapshotManifestRef,
+    )),
+    toDecision(subjectRef, 'snapshot_verified', checkSnapshotVerified(
+      ctx.snapshotVerified,
+      ctx.snapshotManifestRef,
+    )),
+    toDecision(subjectRef, 'workspace_present', checkWorkspacePresent(
+      ctx.workspacePresent,
+      ctx.workspaceManifestRef,
+    )),
+    toDecision(subjectRef, 'workspace_ready', checkWorkspaceReady(
+      ctx.workspaceReady,
+      ctx.workspaceManifestRef,
+    )),
+    toDecision(subjectRef, 'workspace_manifest_verified', checkWorkspaceManifestVerified(
+      ctx.workspaceManifestVerified,
+      ctx.workspaceManifestRef,
+    )),
   ]
 }
 

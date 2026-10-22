@@ -175,59 +175,93 @@ async function scanRuntimeRecords(
             }
           }
 
-          const processLabel = `${runEntry.name}/attempts/${attemptEntry.name}/process.json`
-          const processPath = await resolveExistingPathWithinRoot(attemptDirectory, 'process.json').catch(() => null)
-          if (!processPath) continue
-          try {
-            const parsed = ProcessRecordSchema.safeParse(await readJson(processPath))
-            if (!parsed.success) {
-              snapshot.errors.push(`Malformed process record at ${processLabel}: ${parsed.error.message}`)
-              continue
-            }
-            if (
-              parsed.data.workflow_run_id !== runEntry.name
-              || parsed.data.attempt_id !== attemptEntry.name
-            ) {
-              quarantineIdentity(
-                snapshot.processes,
-                quarantinedProcesses,
-                parsed.data.id,
-              )
-              snapshot.errors.push(
-                `Process ownership mismatch at ${processLabel}: expected run ${runEntry.name} attempt ${attemptEntry.name}, received run ${parsed.data.workflow_run_id} attempt ${parsed.data.attempt_id}`,
-              )
-              continue
-            }
+          const inspectProcess = async (
+            processPath: string,
+            processLabel: string,
+            expectedProcessId?: string,
+          ): Promise<void> => {
             try {
-              assertSafePathSegment(parsed.data.id, 'process id')
-            } catch (error) {
-              snapshot.errors.push(
-                `Unsafe process record identity at ${processLabel}: ${errorMessage(error)}`,
-              )
-              continue
-            }
-            if (!validAttempt) {
-              quarantineIdentity(
+              const parsed = ProcessRecordSchema.safeParse(await readJson(processPath))
+              if (!parsed.success) {
+                snapshot.errors.push(`Malformed process record at ${processLabel}: ${parsed.error.message}`)
+                return
+              }
+              if (expectedProcessId !== undefined && parsed.data.id !== expectedProcessId) {
+                quarantineIdentity(snapshot.processes, quarantinedProcesses, parsed.data.id)
+                snapshot.errors.push(
+                  `Process record identity mismatch at ${processLabel}: expected ${expectedProcessId}, received ${parsed.data.id}`,
+                )
+                return
+              }
+              if (
+                parsed.data.workflow_run_id !== runEntry.name
+                || parsed.data.attempt_id !== attemptEntry.name
+              ) {
+                quarantineIdentity(
+                  snapshot.processes,
+                  quarantinedProcesses,
+                  parsed.data.id,
+                )
+                snapshot.errors.push(
+                  `Process ownership mismatch at ${processLabel}: expected run ${runEntry.name} attempt ${attemptEntry.name}, received run ${parsed.data.workflow_run_id} attempt ${parsed.data.attempt_id}`,
+                )
+                return
+              }
+              try {
+                assertSafePathSegment(parsed.data.id, 'process id')
+              } catch (error) {
+                snapshot.errors.push(
+                  `Unsafe process record identity at ${processLabel}: ${errorMessage(error)}`,
+                )
+                return
+              }
+              if (!validAttempt) {
+                quarantineIdentity(
+                  snapshot.processes,
+                  quarantinedProcesses,
+                  parsed.data.id,
+                )
+                snapshot.errors.push(
+                  attemptPath
+                    ? `Process ${parsed.data.id} references invalid attempt ${parsed.data.attempt_id}`
+                    : `Process ${parsed.data.id} references missing attempt ${parsed.data.attempt_id}`,
+                )
+                return
+              }
+              addUnique(
                 snapshot.processes,
                 quarantinedProcesses,
-                parsed.data.id,
+                parsed.data,
+                'process',
+                snapshot.errors,
               )
-              snapshot.errors.push(
-                attemptPath
-                  ? `Process ${parsed.data.id} references invalid attempt ${parsed.data.attempt_id}`
-                  : `Process ${parsed.data.id} references missing attempt ${parsed.data.attempt_id}`,
-              )
-              continue
+            } catch (error) {
+              snapshot.errors.push(`Malformed process record at ${processLabel}: ${errorMessage(error)}`)
             }
-            addUnique(
-              snapshot.processes,
-              quarantinedProcesses,
-              parsed.data,
-              'process',
-              snapshot.errors,
-            )
-          } catch (error) {
-            snapshot.errors.push(`Malformed process record at ${processLabel}: ${errorMessage(error)}`)
+          }
+
+          const legacyProcessLabel = `${runEntry.name}/attempts/${attemptEntry.name}/process.json`
+          const legacyProcessPath = await resolveExistingPathWithinRoot(attemptDirectory, 'process.json').catch(() => null)
+          if (legacyProcessPath) {
+            await inspectProcess(legacyProcessPath, legacyProcessLabel)
+          }
+          const processesDirectory = await resolveExistingPathWithinRoot(attemptDirectory, 'processes').catch(() => null)
+          if (processesDirectory) {
+            for (const processEntry of await readdir(processesDirectory, { withFileTypes: true })) {
+              if (!processEntry.isFile() || !processEntry.name.endsWith('.json')) continue
+              const processId = processEntry.name.slice(0, -'.json'.length)
+              try {
+                assertSafePathSegment(processId, 'process id')
+              } catch (error) {
+                snapshot.errors.push(
+                  `Unsafe process record filename ${runEntry.name}/attempts/${attemptEntry.name}/processes/${processEntry.name}: ${errorMessage(error)}`,
+                )
+                continue
+              }
+              const processLabel = `${runEntry.name}/attempts/${attemptEntry.name}/processes/${processEntry.name}`
+              const processPath = await resolveExistingPathWithinRoot(processesDirectory, processEntry.name)
+              await inspectProcess(processPath, processLabel, processId)
+            }
           }
         } catch (error) {
           snapshot.errors.push(

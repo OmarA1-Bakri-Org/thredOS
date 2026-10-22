@@ -91,6 +91,11 @@ export const GateTypeSchema = z.enum([
   'surface_access_pass',
   'reveal_allowed',
   'completion_contract_pass',
+  'snapshot_present',
+  'snapshot_verified',
+  'workspace_present',
+  'workspace_ready',
+  'workspace_manifest_verified',
 ])
 export type GateType = z.infer<typeof GateTypeSchema>
 

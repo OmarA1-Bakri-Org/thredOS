@@ -9,7 +9,7 @@ import {
   RuntimeCommandContextSchema, StartRunCommandSchema,
 } from './command-schema'
 import { AttemptExecutor, stableRuntimeHash } from './attempt-executor'
-import { RuntimeErrorCodeSchema } from './error-codes'
+import { RuntimeErrorCodeSchema, runtimeErrorCodeFrom } from './error-codes'
 import { RuntimeServiceError } from './errors'
 import { transitionAttempt, transitionRun } from './lifecycle'
 import { RuntimeRepositoryError } from './run-repository'
@@ -31,6 +31,7 @@ import {
 } from './projections'
 import { deriveTerminalRunOutcome } from './run-outcome'
 import type { RuntimeCommandReceipt, StepAttempt, WorkflowRun, WorkflowRunTarget } from './schema'
+import { classifyAttemptSideEffect, requiresIsolatedWorkspace } from './workspace-planner'
 
 function targetRef(target: WorkflowRunTarget): string {
   if (target.kind === 'step') return `step:${target.step_id}`
@@ -277,10 +278,10 @@ export class ThreadOSRuntimeService {
   private async executeAttemptCancellation(attemptId: string, commandId: string): Promise<StepAttempt> {
     const attempt = await this.repositories.attempts.get(attemptId)
     if (!attempt) return await this.failAttemptMutation(commandId, 'ATTEMPT_NOT_FOUND', `attempt ${attemptId} was not found`)
-    if (attempt.status !== 'running') {
+    if (attempt.status !== 'running' && attempt.status !== 'provisioning') {
       return await this.failAttemptMutation(commandId, 'ATTEMPT_NOT_RUNNING', `attempt ${attemptId} is ${attempt.status}`)
     }
-    if (!attempt.process_id) {
+    if (!attempt.process_id && attempt.status === 'running') {
       return await this.failAttemptMutation(
         commandId,
         'PROCESS_CONTROL_FAILED',
@@ -803,6 +804,7 @@ export class ThreadOSRuntimeService {
           `run ${runId} ended as ${run.status} instead of cancelled`,
         )
       }
+      await this.assertRunCancellationProcessEvidence(run.id)
       try {
         return await transitionRun(this.repositories.runs, run, 'cancelled', {
           cancellation_requested_at: run.cancellation_requested_at ?? this.deps.now(),
@@ -822,12 +824,34 @@ export class ThreadOSRuntimeService {
     )
   }
 
+  private async assertRunCancellationProcessEvidence(runId: string): Promise<void> {
+    const processes = await this.repositories.processes.list()
+    const unproven = processes.find(process => process.workflow_run_id === runId
+      && process.status !== 'planned' && process.status !== 'exited')
+    if (unproven) {
+      throw new RuntimeServiceError(
+        'PROCESS_CONTROL_FAILED',
+        `process ${unproven.id} has no verified termination evidence`,
+      )
+    }
+  }
+
   private async cancelAttemptForRun(attemptId: string): Promise<StepAttempt> {
     for (let poll = 0; poll < CONTROL_WINDOW_POLLS; poll++) {
       const attempt = await this.repositories.attempts.get(attemptId)
       if (!attempt) throw new RuntimeServiceError('ATTEMPT_NOT_FOUND', `attempt ${attemptId} was not found`)
       if (!['pending', 'provisioning', 'running'].includes(attempt.status)) return attempt
-      if (attempt.status === 'pending' || attempt.status === 'provisioning') {
+      const processes = await this.repositories.processes.list()
+      const unproven = processes.find(process => process.attempt_id === attempt.id
+        && (process.status === 'lost' || (process.id !== attempt.process_id
+          && process.status !== 'planned' && process.status !== 'exited')))
+      if (unproven) {
+        throw new RuntimeServiceError(
+          'PROCESS_CONTROL_FAILED',
+          `process ${unproven.id} has no verified termination evidence`,
+        )
+      }
+      if (attempt.status === 'pending' || (attempt.status === 'provisioning' && !attempt.process_id)) {
         try {
           return await transitionAttempt(this.repositories.attempts, attempt, 'cancelled', {
             ended_at: this.deps.now(),
@@ -850,8 +874,25 @@ export class ThreadOSRuntimeService {
         await new Promise(resolve => setTimeout(resolve, CONTROL_POLL_INTERVAL_MS))
         continue
       }
-      if (process.status === 'exited' || process.status === 'lost') {
-        return await this.waitForCancelledAttempt(attempt.id)
+      if (process.status === 'lost') {
+        throw new RuntimeServiceError(
+          'PROCESS_CONTROL_FAILED',
+          `process ${process.id} has no verified termination evidence`,
+        )
+      }
+      if (process.status === 'exited') {
+        try {
+          return await transitionAttempt(this.repositories.attempts, attempt, 'cancelled', {
+            ended_at: this.deps.now(),
+            error_code: null,
+            error_message: null,
+          })
+        } catch (error) {
+          if (!(error instanceof RuntimeRepositoryError) || error.code !== 'RUNTIME_REVISION_CONFLICT') {
+            throw error
+          }
+          continue
+        }
       }
       if (
         (process.status === 'planned' || process.status === 'starting')
@@ -1038,6 +1079,26 @@ export class ThreadOSRuntimeService {
         )
       }
 
+      if (steps.some(step => requiresIsolatedWorkspace({
+        model: step.model,
+        declaredSideEffectClass: step.side_effect_class,
+        workspaceMode: step.workspace_mode,
+      }))) {
+        const preparedRun = await this.deps.prepareRunWorkspace({
+          basePath: this.basePath,
+          run,
+          sequence,
+          steps,
+        })
+        if (!preparedRun) {
+          throw new RuntimeServiceError('SNAPSHOT_REQUIRED', 'An isolated attempt requires a verified baseline snapshot')
+        }
+        run = await this.repositories.runs.update(run.id, run.revision, value => ({
+          ...value,
+          baseline_snapshot_id: preparedRun.snapshotId,
+        }))
+      }
+
       const executor = new AttemptExecutor(
         this.basePath,
         this.repositories,
@@ -1061,7 +1122,12 @@ export class ThreadOSRuntimeService {
           retry_of_attempt_id: retryOf?.step_id === step.id ? retryOf.id : null,
           status: 'pending', agent_ref: registrations[step.id]!.registration_id,
           agent_registration: registrations[step.id],
-          model: step.model, side_effect_class: step.side_effect_class ?? 'execute', baseline_snapshot_id: null,
+          model: step.model,
+          side_effect_class: classifyAttemptSideEffect({
+            model: step.model,
+            declaredSideEffectClass: step.side_effect_class,
+          }),
+          baseline_snapshot_id: run.baseline_snapshot_id,
           workspace_id: null, process_id: null, compiled_prompt_hash: 'pending', input_manifest_ref: null,
           output_manifest_ref: null, artifact_manifest_ref: null, change_set_id: null, gate_decision_refs: [],
           created_at: this.deps.now(), started_at: null, ended_at: null, last_heartbeat_at: null,
@@ -1109,6 +1175,7 @@ export class ThreadOSRuntimeService {
         }, this.deps.now()).catch(() => undefined)
         return { run, attempts, replayed: false }
       }
+      if (run.cancellation_requested_at) await this.assertRunCancellationProcessEvidence(run.id)
       const terminalOutcome = deriveTerminalRunOutcome(attempts)
       run = await transitionRun(this.repositories.runs, run, terminalOutcome.status, {
         ended_at: this.deps.now(),
@@ -1130,9 +1197,21 @@ export class ThreadOSRuntimeService {
       )
       return { run, attempts, replayed: false }
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
+      let failure = error
+      const persistedAttempts = await this.repositories.attempts.listForRun(run.id)
+      attempts.splice(0, attempts.length, ...persistedAttempts)
       const latestRun = await this.repositories.runs.get(run.id) ?? run
-      if (latestRun.status === 'cancelled' || latestRun.cancellation_requested_at) {
+      if (latestRun.cancellation_requested_at) {
+        try {
+          await this.assertRunCancellationProcessEvidence(latestRun.id)
+        } catch (controlError) {
+          failure = controlError
+        }
+      }
+      const errorCode = runtimeErrorCodeFrom(failure, 'RUNTIME_EXECUTION_FAILED')
+      const message = failure instanceof Error ? failure.message : String(failure)
+      if (latestRun.status === 'cancelled'
+        || (latestRun.cancellation_requested_at && errorCode !== 'PROCESS_CONTROL_FAILED')) {
         run = latestRun.status === 'cancelled'
           ? latestRun
           : await this.completeRunCancellation(latestRun.id)
@@ -1142,7 +1221,9 @@ export class ThreadOSRuntimeService {
         || latestRun.status === 'running'
       ) {
         run = await transitionRun(this.repositories.runs, latestRun, 'failed', {
-          ended_at: this.deps.now(), error_code: error instanceof RuntimeServiceError ? error.code : 'RUNTIME_EXECUTION_FAILED', error_message: message,
+          ended_at: this.deps.now(),
+          error_code: errorCode,
+          error_message: message,
         })
       } else {
         run = latestRun

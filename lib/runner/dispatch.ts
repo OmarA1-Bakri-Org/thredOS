@@ -15,6 +15,7 @@ export interface DispatchOptions {
   cwd: string
   timeout: number
   env?: Record<string, string>
+  deniedEnvKeys?: readonly string[]
   runtimeEventLogPath?: string
   runtimeEventEmitterCommand?: string
 }
@@ -71,6 +72,7 @@ const dispatchers: Record<string, AgentDispatcher> = {
           ...(opts.runtimeEventLogPath ? { THREADOS_EVENT_LOG: opts.runtimeEventLogPath } : {}),
           ...(opts.runtimeEventEmitterCommand ? { THREADOS_EVENT_EMITTER: opts.runtimeEventEmitterCommand } : {}),
         },
+        deniedEnvKeys: opts.deniedEnvKeys,
       }
     },
   },
@@ -97,6 +99,7 @@ const dispatchers: Record<string, AgentDispatcher> = {
           ...(opts.runtimeEventLogPath ? { THREADOS_EVENT_LOG: opts.runtimeEventLogPath } : {}),
           ...(opts.runtimeEventEmitterCommand ? { THREADOS_EVENT_EMITTER: opts.runtimeEventEmitterCommand } : {}),
         },
+        deniedEnvKeys: opts.deniedEnvKeys,
       }
     },
   },
@@ -122,6 +125,7 @@ const dispatchers: Record<string, AgentDispatcher> = {
           ...(opts.runtimeEventLogPath ? { THREADOS_EVENT_LOG: opts.runtimeEventLogPath } : {}),
           ...(opts.runtimeEventEmitterCommand ? { THREADOS_EVENT_EMITTER: opts.runtimeEventEmitterCommand } : {}),
         },
+        deniedEnvKeys: opts.deniedEnvKeys,
       }
     },
   },
@@ -144,6 +148,7 @@ const dispatchers: Record<string, AgentDispatcher> = {
           ...(opts.runtimeEventLogPath ? { THREADOS_EVENT_LOG: opts.runtimeEventLogPath } : {}),
           ...(opts.runtimeEventEmitterCommand ? { THREADOS_EVENT_EMITTER: opts.runtimeEventEmitterCommand } : {}),
         },
+        deniedEnvKeys: opts.deniedEnvKeys,
         executablePayload: {
           command: 'sh',
           args: [],

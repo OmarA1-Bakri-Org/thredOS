@@ -1,4 +1,5 @@
 import type { ProcessRecord, StepAttempt, WorkflowRun } from './schema'
+import type { SurfaceWorkspaceManager } from '../workspaces/manager'
 import { AttemptRepository } from './attempt-repository'
 import { CommandRepository } from './command-repository'
 import { transitionAttempt, transitionProcess, transitionRun } from './lifecycle'
@@ -58,6 +59,7 @@ export interface CanonicalRecoveryOptions extends RuntimeReconciliationContext {
   probePid?: (pid: number) => Promise<boolean>
   orphanTermination?: OrphanTerminationPolicy
   repositories?: RuntimeRepositories
+  workspaceManager?: Pick<SurfaceWorkspaceManager, 'get' | 'finalize'>
 }
 
 function message(error: unknown): string {
@@ -91,6 +93,56 @@ function recordChange(
   reason: string,
 ): void {
   report.changes.push({ entityType, entityId, from, to, reason })
+}
+
+async function retainInterruptedAttemptWorkspace(
+  repositories: RuntimeRepositories,
+  manager: Pick<SurfaceWorkspaceManager, 'get' | 'finalize'>,
+  attempt: StepAttempt,
+  report: RuntimeReconciliationReport,
+): Promise<void> {
+  try {
+    const reference = await repositories.attempts.getWorkspaceRef(
+      attempt.workflow_run_id,
+      attempt.id,
+    )
+    if (!reference) {
+      if (attempt.workspace_id != null) {
+        report.errors.push(
+          `Attempt ${attempt.id} has workspace ${attempt.workspace_id} but no durable workspace reference`,
+        )
+      }
+      return
+    }
+
+    const workspace = await manager.get(reference.workspace_id)
+    if (!workspace) {
+      report.errors.push(
+        `Attempt ${attempt.id} references missing workspace ${reference.workspace_id}`,
+      )
+      return
+    }
+    if (
+      workspace.id !== reference.workspace_id
+      || workspace.workflow_run_id !== reference.workflow_run_id
+      || workspace.attempt_id !== reference.attempt_id
+      || workspace.snapshot_id !== reference.snapshot_id
+      || workspace.manifest_hash !== reference.manifest_hash
+    ) {
+      report.errors.push(
+        `Workspace ${workspace.id} identity or manifest does not match attempt ${attempt.id} durable binding`,
+      )
+      return
+    }
+
+    if (workspace.status === 'ready' || workspace.status === 'active' || workspace.status === 'frozen') {
+      await manager.finalize(workspace.id, { outcome: 'interrupted' })
+    }
+  } catch (error) {
+    report.errors.push(
+      `Failed to retain workspace evidence for interrupted attempt ${attempt.id}: ${message(error)}`,
+    )
+  }
 }
 
 async function repairAcceptedReceipts(
@@ -287,6 +339,7 @@ export async function reconcileCanonicalRuntime(
       .map(attempt => attempt.id),
   )
   const managedAttemptIds = new Set<string>()
+  const recoveredAttemptIds = new Set<string>()
   const inconsistentRunIds = new Set<string>()
   const missingReservedAttemptsByRun = new Map<string, string>()
 
@@ -396,6 +449,7 @@ export async function reconcileCanonicalRuntime(
         error_message: 'Runtime service restarted before the attempt reached terminal process evidence',
       })
       attempts.set(interrupted.id, interrupted)
+      recoveredAttemptIds.add(interrupted.id)
       recordChange(
         report,
         'attempt',
@@ -406,6 +460,21 @@ export async function reconcileCanonicalRuntime(
       )
     } catch (error) {
       report.errors.push(`Failed to interrupt attempt ${owner.id}: ${message(error)}`)
+    }
+  }
+
+  if (options.workspaceManager) {
+    for (const owner of [...attempts.values()].sort((left, right) => left.id.localeCompare(right.id))) {
+      if (
+        !recoveredAttemptIds.has(owner.id)
+        && !(owner.status === 'interrupted' && owner.error_code === 'PROCESS_LOST')
+      ) continue
+      await retainInterruptedAttemptWorkspace(
+        repositories,
+        options.workspaceManager,
+        owner,
+        report,
+      )
     }
   }
 

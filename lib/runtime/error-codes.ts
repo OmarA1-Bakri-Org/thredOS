@@ -29,6 +29,8 @@ export const RuntimeErrorCode = {
   WORKSPACE_QUOTA_EXCEEDED: 'WORKSPACE_QUOTA_EXCEEDED',
   WORKSPACE_NOT_FOUND: 'WORKSPACE_NOT_FOUND',
   WORKSPACE_NOT_CLEANABLE: 'WORKSPACE_NOT_CLEANABLE',
+  WORKSPACE_BOOTSTRAP_FAILED: 'WORKSPACE_BOOTSTRAP_FAILED',
+  CANONICAL_WORKSPACE_MUTATED: 'CANONICAL_WORKSPACE_MUTATED',
   RUNTIME_REVISION_CONFLICT: 'RUNTIME_REVISION_CONFLICT',
   MERGE_CONFLICT: 'MERGE_CONFLICT',
   MERGE_PRECONDITION_FAILED: 'MERGE_PRECONDITION_FAILED',
@@ -43,3 +45,31 @@ export const RuntimeErrorCode = {
 
 export const RuntimeErrorCodeSchema = z.enum(RuntimeErrorCode)
 export type RuntimeErrorCode = z.infer<typeof RuntimeErrorCodeSchema>
+
+const RUNTIME_ERROR_ALIASES: Readonly<Record<string, RuntimeErrorCode>> = {
+  WORKSPACE_MISSING: RuntimeErrorCode.WORKSPACE_REQUIRED,
+  WORKSPACE_NOT_READY: RuntimeErrorCode.WORKSPACE_PROVISION_FAILED,
+  WORKSPACE_TREE_MISSING: RuntimeErrorCode.WORKSPACE_PROVISION_FAILED,
+  WORKSPACE_BINDING_MISMATCH: RuntimeErrorCode.WORKSPACE_PROVISION_FAILED,
+  WORKSPACE_ROOT_UNSAFE: RuntimeErrorCode.WORKSPACE_PROVISION_FAILED,
+  WORKSPACE_PROVIDER_UNAVAILABLE: RuntimeErrorCode.WORKSPACE_PROVISION_FAILED,
+  WORKSPACE_INVALID_STATE: RuntimeErrorCode.WORKSPACE_PROVISION_FAILED,
+  WORKSPACE_TRACE_PERSIST_FAILED: RuntimeErrorCode.WORKSPACE_PROVISION_FAILED,
+  SNAPSHOT_UNSAFE_PATH: RuntimeErrorCode.SNAPSHOT_SOURCE_CHANGED,
+  SNAPSHOT_CAPTURE_FAILED: RuntimeErrorCode.RUNTIME_EXECUTION_FAILED,
+  SNAPSHOT_STORAGE_CORRUPT: RuntimeErrorCode.RUNTIME_EXECUTION_FAILED,
+  SNAPSHOT_PERSIST_FAILED: RuntimeErrorCode.RUNTIME_EXECUTION_FAILED,
+  SNAPSHOT_QUOTA_EXCEEDED: RuntimeErrorCode.WORKSPACE_QUOTA_EXCEEDED,
+}
+
+export function runtimeErrorCodeFrom(
+  error: unknown,
+  fallback: RuntimeErrorCode,
+): RuntimeErrorCode {
+  if (!(error instanceof Error) || !('code' in error) || typeof error.code !== 'string') {
+    return fallback
+  }
+  const parsed = RuntimeErrorCodeSchema.safeParse(error.code)
+  if (parsed.success) return parsed.data
+  return RUNTIME_ERROR_ALIASES[error.code] ?? fallback
+}

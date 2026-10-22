@@ -1,4 +1,3 @@
-import { RuntimeServiceError } from './errors'
 import { agentRegistrationEvidence, resolveStepAgent, readRegisteredPrompt } from '../agents/execution'
 import { createHash } from 'crypto'
 import { ApprovalConsumptionError } from '../approvals/repository'
@@ -10,11 +9,21 @@ import type { RawProcessResult } from '../runner/process-handle'
 import { ProcessControlError } from '../runner/process-handle'
 import type { RunnerConfig, RunResult } from '../runner/wrapper'
 import { transitionAttempt, transitionRun } from './lifecycle'
-import type { ProcessController } from './process-controller'
-import { RuntimeErrorCode } from './error-codes'
+import type { ControlledProcessCompletion, ProcessController } from './process-controller'
+import { RuntimeErrorCode, runtimeErrorCodeFrom } from './error-codes'
+import { RuntimeServiceError } from './errors'
 import { RuntimeRepositoryError } from './run-repository'
 import type { RuntimeCommandContext, RuntimeRepositories, RuntimeServiceDependencies } from './service-types'
 import type { StepAttempt, WorkflowRun } from './schema'
+import type { RuntimeAttemptWorkspacePreparation } from './service-types'
+import { isAbsolute, resolve } from 'path'
+import { requiresIsolatedWorkspace } from './workspace-planner'
+import { resolveExistingPathWithinRoot } from '../security/safe-path'
+import type {
+  BootstrapExecutionOptions,
+  BootstrapExecutionResult,
+} from '../workspaces/bootstrap'
+import { WorkspaceBootstrapError } from '../workspaces/bootstrap'
 
 const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000
 const EVENT_EMITTER = 'thread event'
@@ -33,6 +42,12 @@ function compatibilityResult(result: RawProcessResult): RunResult {
     ...compatible,
     status: status === 'CANCELLED' ? 'ERROR' : status,
   }
+}
+
+async function resolveExecutionRoot(workspaceRoot: string, configuredCwd?: string): Promise<string> {
+  if (!configuredCwd) return workspaceRoot
+  if (isAbsolute(configuredCwd)) throw new Error('Step cwd must be relative to the isolated workspace')
+  return await resolveExistingPathWithinRoot(workspaceRoot, ...configuredCwd.split('/'))
 }
 
 export interface ExecuteAttemptInput {
@@ -62,6 +77,7 @@ export class AttemptExecutor {
     let { run, attempt } = input
     const { sequence, step, policy, context } = input
     const surfaceId = attempt.surface_id
+    let workspace: RuntimeAttemptWorkspacePreparation | null = null
     const cancelledBeforeProvisioning = await this.observeRunCancellation(run.id, attempt.id)
     if (cancelledBeforeProvisioning) return cancelledBeforeProvisioning
     attempt = await transitionAttempt(this.repositories.attempts, attempt, 'provisioning')
@@ -71,9 +87,97 @@ export class AttemptExecutor {
         throw new RuntimeServiceError('AGENT_REGISTRATION_REQUIRED', 'Attempt has no frozen registered identity')
       }
       await resolveStepAgent(this.basePath, step, attempt.agent_registration)
-      const rawPrompt = await readRegisteredPrompt(this.basePath, attempt.agent_registration)
-      const compiledPrompt = await this.deps.compilePrompt({ basePath: this.basePath, sequence, step, runId: run.id,
-        agentRegistration: attempt.agent_registration, rawPrompt })
+      let executionRoot = step.cwd || this.basePath
+      if (requiresIsolatedWorkspace({
+        model: step.model,
+        declaredSideEffectClass: step.side_effect_class,
+        workspaceMode: step.workspace_mode,
+      })) {
+        if (!run.baseline_snapshot_id || attempt.baseline_snapshot_id !== run.baseline_snapshot_id) {
+          throw new Error('An isolated attempt requires the run baseline snapshot')
+        }
+        workspace = await this.deps.prepareAttemptWorkspace({
+          basePath: this.basePath,
+          run,
+          attempt,
+          step,
+          snapshotId: run.baseline_snapshot_id,
+        })
+        if (
+          workspace.context.snapshotId !== run.baseline_snapshot_id
+          || workspace.context.attemptId !== attempt.id
+          || workspace.context.workflowRunId !== run.id
+        ) {
+          throw new Error('Prepared workspace identity does not match the isolated attempt')
+        }
+        await this.repositories.attempts.bindWorkspaceRef({
+          schema_version: 1,
+          workflow_run_id: run.id,
+          attempt_id: attempt.id,
+          workspace_id: workspace.context.workspaceId,
+          snapshot_id: workspace.context.snapshotId,
+          manifest_hash: workspace.manifestHash,
+          bound_at: this.deps.now(),
+        })
+        attempt = await this.repositories.attempts.update(attempt.id, attempt.revision, value => ({
+          ...value,
+          workspace_id: workspace!.context.workspaceId,
+          baseline_snapshot_id: workspace!.context.snapshotId,
+        }))
+        await this.deps.projections.bindAttemptWorkspace?.({
+          run,
+          attempt,
+          step,
+          workspaceId: workspace.context.workspaceId,
+          snapshotId: workspace.context.snapshotId,
+          provider: 'copy',
+          isolationLabel: workspace.context.isolationLabel,
+        }).catch(() => undefined)
+        let bootstrapOrdinal = 0
+        await this.deps.bootstrapWorkspace({
+          basePath: this.basePath,
+          run,
+          attempt,
+          step,
+          policy,
+          context,
+          workspace,
+          execute: async (payload, options) => await this.executeBootstrapProcess({
+            runId: run.id,
+            attemptId: attempt.id,
+            stepId: step.id,
+            step,
+            agentRegistration: attempt.agent_registration!,
+            workspaceId: workspace!.context.workspaceId,
+            processOrdinal: bootstrapOrdinal++,
+            environment: workspace!.context.environment,
+            payload,
+            options,
+          }),
+        })
+        attempt = await this.repositories.attempts.get(attempt.id) ?? attempt
+        executionRoot = await resolveExecutionRoot(workspace.context.cwd, step.cwd)
+      }
+      const runtimeEventLogPath = workspace
+        ? resolve(workspace.context.cwd, '.threados-runtime', 'events.ndjson')
+        : getRuntimeEventLogPath(this.basePath, run.id, step.id)
+      const rawPrompt = await readRegisteredPrompt(this.basePath, attempt.agent_registration!)
+      const gateSurface = await this.deps.resolveGateSurface({ basePath: this.basePath, surfaceId, step })
+      const compiledPrompt = await this.deps.compilePrompt({
+        basePath: this.basePath,
+        executionRoot,
+        workspaceContext: workspace?.context.promptContext ?? null,
+        logicalWorkingDirectory: workspace
+          ? step.cwd ? `./${step.cwd}` : '.'
+          : undefined,
+        includeDependencyArtifacts: gateSurface.surfaceClass !== 'sealed',
+        runtimeEventLogPath,
+        sequence,
+        step,
+        runId: run.id,
+        agentRegistration: attempt.agent_registration!,
+        rawPrompt,
+      })
       const compiledHash = hash(compiledPrompt)
       attempt = await this.repositories.attempts.update(attempt.id, attempt.revision, value => ({
         ...value,
@@ -91,8 +195,22 @@ export class AttemptExecutor {
       const approvals = await this.deps.readApprovals(this.basePath, run.id)
       const approvalPresent = context.policyConfirmed || approvals.some(approval =>
         approval.status === 'approved' && (approval.target_ref === `step:${step.id}` || approval.target_ref === input.targetRef))
-      const gateSurface = await this.deps.resolveGateSurface({ basePath: this.basePath, surfaceId, step })
-      const preGates = this.deps.evaluatePreGates({ step, sequence, policy, approvalPresent, ...gateSurface })
+      const preGates = this.deps.evaluatePreGates({
+        step,
+        sequence,
+        policy,
+        approvalPresent,
+        ...gateSurface,
+        snapshotPresent: run.baseline_snapshot_id != null,
+        snapshotVerified: run.baseline_snapshot_id != null,
+        workspacePresent: workspace != null,
+        workspaceReady: workspace?.context.isolationLabel === 'THREADOS_SCOPED',
+        workspaceManifestVerified: workspace?.manifestHash != null,
+        snapshotManifestRef: run.baseline_snapshot_id
+          ? `.threados/snapshots/${run.baseline_snapshot_id}/manifest.json`
+          : null,
+        workspaceManifestRef: workspace?.workspaceManifestRef ?? null,
+      })
       await this.deps.persistGateDecisions(this.basePath, run.id, surfaceId, preGates, run.policy_snapshot_hash)
       if (preGates.length > 0) {
         attempt = await this.repositories.attempts.update(attempt.id, attempt.revision, value => ({
@@ -129,9 +247,11 @@ export class AttemptExecutor {
 
       // Dispatch may perform provider preflight and prompt-temp preparation; ProcessController is the spawn boundary.
       const runnerConfig = await this.deps.dispatch(step.model, {
-        stepId: step.id, runId: run.id, compiledPrompt, cwd: step.cwd || this.basePath,
+        stepId: step.id, runId: run.id, compiledPrompt, cwd: executionRoot,
         timeout: step.timeout_ms || DEFAULT_TIMEOUT_MS,
-        runtimeEventLogPath: getRuntimeEventLogPath(this.basePath, run.id, step.id),
+        env: workspace?.context.environment,
+        deniedEnvKeys: workspace ? ['THREADOS_BASE_PATH'] : undefined,
+        runtimeEventLogPath,
         runtimeEventEmitterCommand: EVENT_EMITTER,
       })
       const payload = payloadFrom(runnerConfig, this.basePath)
@@ -233,6 +353,9 @@ export class AttemptExecutor {
           processId,
           workflowRunId: run.id,
           attemptId: attempt.id,
+          workspaceId: workspace?.context.workspaceId ?? null,
+          processPurpose: 'agent',
+          processOrdinal: 0,
           runnerConfig,
         })
       } catch (error) {
@@ -275,13 +398,14 @@ export class AttemptExecutor {
       await this.deps.saveArtifacts(this.basePath, compatible, { surfaceId, compiledPrompt, step })
       artifactRef = `.threados/runs/${run.id}/surfaces/${surfaceId}/artifact.manifest.json`
       if (result.exitCode !== null) {
-        completionGates = this.deps.evaluateCompletionGates({
+        const evaluatedGates = this.deps.evaluateCompletionGates({
           step,
           result: compatible,
           artifactManifestPresent: true,
         })
-        await this.deps.persistGateDecisions(this.basePath, run.id, surfaceId, completionGates, run.policy_snapshot_hash)
-        for (const decision of completionGates) {
+        completionGates = [...completionGates, ...evaluatedGates]
+        await this.deps.persistGateDecisions(this.basePath, run.id, surfaceId, evaluatedGates, run.policy_snapshot_hash)
+        for (const decision of evaluatedGates) {
           await this.deps.appendTrace(this.basePath, run.id, {
           attempt_id: attempt.id,
           agent_registration: attempt.agent_registration ? agentRegistrationEvidence(attempt.agent_registration) : undefined,
@@ -292,7 +416,13 @@ export class AttemptExecutor {
         }
       }
       const completionPassed = completionGates.every(decision => decision.status === 'PASS')
-      const runtimeEvents = await this.deps.readRuntimeEvents(this.basePath, run.id, step.id)
+      const runtimeEvents = await this.deps.readRuntimeEvents(
+        this.basePath,
+        run.id,
+        step.id,
+        runtimeEventLogPath,
+        workspace?.context.cwd ?? this.basePath,
+      )
       const status = result.exitCode === 42
         ? 'needs_review'
         : result.status === 'TIMEOUT'
@@ -327,15 +457,71 @@ export class AttemptExecutor {
       if (cancellation) return cancellation
       run = await this.repositories.runs.get(run.id) ?? run
       attempt = await this.repositories.attempts.get(attempt.id) ?? attempt
+      const failure = error instanceof WorkspaceBootstrapError
+        && (error.cause instanceof RuntimeServiceError || error.cause instanceof ProcessControlError)
+        ? error.cause
+        : error
       attempt = await transitionAttempt(this.repositories.attempts, attempt, 'failed', {
         ended_at: this.deps.now(),
         error_code: error instanceof ApprovalConsumptionError
           ? RuntimeErrorCode.APPROVAL_CONSUMPTION_FAILED
-          : error instanceof RuntimeServiceError ? error.code : 'ATTEMPT_PREPARATION_FAILED',
-        error_message: error instanceof Error ? error.message : String(error),
+          : runtimeErrorCodeFrom(failure, RuntimeErrorCode.RUNTIME_EXECUTION_FAILED),
+        error_message: failure instanceof Error ? failure.message : String(failure),
       })
       await this.deps.projections.finalizeAttempt({ run, attempt, step, runtimeEvents: [] }).catch(() => undefined)
       return { run, attempt }
+    } finally {
+      if (workspace) {
+        const postAttemptErrors: unknown[] = []
+        let terminalRun = run
+        let terminalAttempt = attempt
+        try {
+          terminalRun = await this.repositories.runs.get(run.id) ?? run
+        } catch (error) {
+          postAttemptErrors.push(error)
+        }
+        try {
+          terminalAttempt = await this.repositories.attempts.get(attempt.id) ?? attempt
+        } catch (error) {
+          postAttemptErrors.push(error)
+        }
+        try {
+          const evidence = await this.deps.verifyCanonicalWorkspace({
+            basePath: this.basePath,
+            run: terminalRun,
+            attempt: terminalAttempt,
+            step,
+            workspace,
+          })
+          if (evidence.classification === 'threados_mutation') {
+            postAttemptErrors.push(new RuntimeServiceError(
+              RuntimeErrorCode.CANONICAL_WORKSPACE_MUTATED,
+              `thredOS mutated the canonical workspace during isolated attempt ${terminalAttempt.id}; user content was preserved`,
+            ))
+          }
+        } catch (error) {
+          postAttemptErrors.push(error)
+        }
+        try {
+          await this.deps.finalizeAttemptWorkspace({
+            basePath: this.basePath,
+            run: terminalRun,
+            attempt: terminalAttempt,
+            step,
+            workspace,
+          })
+        } catch (error) {
+          postAttemptErrors.push(error)
+        }
+        if (postAttemptErrors.length === 1) throw postAttemptErrors[0]
+        if (postAttemptErrors.length > 1) {
+          throw new RuntimeServiceError(
+            RuntimeErrorCode.RUNTIME_EXECUTION_FAILED,
+            `Post-attempt verification or workspace finalization failed for ${terminalAttempt.id}`,
+            new AggregateError(postAttemptErrors),
+          )
+        }
+      }
     }
   }
 
@@ -349,11 +535,22 @@ export class AttemptExecutor {
         this.repositories.attempts.get(attemptId),
       ])
       if (!run || !attempt) return null
+      const processes = (await this.repositories.processes.list()).filter(process =>
+        process.attempt_id === attempt.id && process.workflow_run_id === run.id)
       const cancellationRequested = run.status === 'cancelled'
         || run.cancellation_requested_at !== null
+        || attempt.status === 'cancelled'
+        || processes.some(process => process.cancellation_requested_at != null)
       if (!cancellationRequested) return null
       if (!['pending', 'provisioning', 'running'].includes(attempt.status)) {
         return { run, attempt }
+      }
+      const unproven = processes.find(process => process.status !== 'planned' && process.status !== 'exited')
+      if (unproven) {
+        throw new RuntimeServiceError(
+          RuntimeErrorCode.PROCESS_CONTROL_FAILED,
+          `process ${unproven.id} has no verified termination evidence`,
+        )
       }
       try {
         const cancelled = await transitionAttempt(
@@ -375,6 +572,208 @@ export class AttemptExecutor {
       }
     }
     throw new Error(`attempt ${attemptId} could not observe persisted run cancellation`)
+  }
+
+  private async executeBootstrapProcess(input: {
+    runId: string
+    attemptId: string
+    stepId: string
+    step: Step
+    agentRegistration: NonNullable<StepAttempt['agent_registration']>
+    workspaceId: string
+    processOrdinal: number
+    environment: Record<string, string>
+    payload: ExecutablePayload
+    options: BootstrapExecutionOptions
+  }): Promise<BootstrapExecutionResult> {
+    const processId = this.deps.newId('process')
+    await this.bindAttemptProcess(input.attemptId, processId)
+    const cancellationBeforeSpawn = await this.observeRunCancellation(input.runId, input.attemptId)
+    if (cancellationBeforeSpawn) {
+      await this.clearSuccessfulBootstrapBinding(input.attemptId, processId)
+      throw new Error(`bootstrap process ${processId} was cancelled before spawn`)
+    }
+
+    let controlled
+    try {
+      await resolveStepAgent(this.basePath, input.step, input.agentRegistration)
+      controlled = await this.processController.start({
+        processId,
+        workflowRunId: input.runId,
+        attemptId: input.attemptId,
+        workspaceId: input.workspaceId,
+        processPurpose: 'bootstrap',
+        processOrdinal: input.processOrdinal,
+        runnerConfig: {
+          stepId: `bootstrap-${input.stepId}`,
+          runId: input.runId,
+          command: input.payload.command,
+          args: input.payload.args,
+          cwd: input.options.cwd,
+          timeout: input.options.timeoutMs,
+          maxOutputBytes: input.options.maxOutputBytes,
+          env: input.environment,
+          deniedEnvKeys: ['THREADOS_BASE_PATH'],
+          executablePayload: input.payload,
+        },
+      })
+    } catch (error) {
+      if (this.processController.hasLiveHandle(processId)) {
+        await this.waitForVerifiedBootstrapCompletion(
+          input.runId,
+          input.attemptId,
+          processId,
+          this.waitForPersistedProcessTerminal(processId),
+        )
+      }
+      throw error
+    }
+
+    const completion = await this.waitForVerifiedBootstrapCompletion(
+      input.runId,
+      input.attemptId,
+      processId,
+      controlled.completion,
+    )
+    const result = completion.result
+    if (!result || completion.process.status !== 'exited') {
+      throw completion.error ?? new Error(`bootstrap process ${processId} returned no verified terminal result`)
+    }
+    if (result.status === 'SUCCESS' && result.exitCode === 0) {
+      await this.clearSuccessfulBootstrapBinding(input.attemptId, processId)
+    }
+    return {
+      exitCode: result.exitCode,
+      stdout: result.stdout,
+      stderr: result.stderr,
+    }
+  }
+
+  private async waitForVerifiedBootstrapCompletion(
+    runId: string,
+    attemptId: string,
+    processId: string,
+    completion: Promise<ControlledProcessCompletion>,
+  ): Promise<ControlledProcessCompletion> {
+    try {
+      const observed = await this.waitForBootstrapCompletion(runId, attemptId, processId, completion)
+      if (!observed.result && observed.error instanceof ProcessControlError) {
+        const terminal = await this.waitForBootstrapCompletion(
+          runId, attemptId, processId, this.waitForPersistedProcessTerminal(processId),
+        )
+        return terminal.result ? terminal : { ...terminal, error: observed.error }
+      }
+      return observed
+    } catch (error) {
+      // A failed signal does not release custody of a process with a live
+      // controller handle. Public cancellation can retry while this waits.
+      if (this.processController.hasLiveHandle(processId)) {
+        await this.waitForPersistedProcessTerminal(processId)
+      }
+      throw error
+    }
+  }
+
+  private async bindAttemptProcess(attemptId: string, processId: string): Promise<void> {
+    for (let retry = 0; retry < 250; retry++) {
+      const attempt = await this.repositories.attempts.get(attemptId)
+      if (!attempt) throw new Error(`attempt ${attemptId} was not found before bootstrap spawn`)
+      if (!['provisioning', 'running'].includes(attempt.status)) {
+        throw new Error(`attempt ${attemptId} is ${attempt.status} before bootstrap spawn`)
+      }
+      try {
+        await this.repositories.attempts.update(attempt.id, attempt.revision, current => ({
+          ...current,
+          process_id: processId,
+        }))
+        return
+      } catch (error) {
+        if (!(error instanceof RuntimeRepositoryError) || error.code !== 'RUNTIME_REVISION_CONFLICT') {
+          throw error
+        }
+        await new Promise(resolve => setTimeout(resolve, 2))
+      }
+    }
+    throw new Error(`attempt ${attemptId} could not bind bootstrap process ${processId}`)
+  }
+
+  private async clearSuccessfulBootstrapBinding(attemptId: string, processId: string): Promise<void> {
+    for (let retry = 0; retry < 250; retry++) {
+      const attempt = await this.repositories.attempts.get(attemptId)
+      if (!attempt || attempt.process_id !== processId) return
+      try {
+        await this.repositories.attempts.update(attempt.id, attempt.revision, current => ({
+          ...current,
+          process_id: current.process_id === processId ? null : current.process_id,
+        }))
+        return
+      } catch (error) {
+        if (!(error instanceof RuntimeRepositoryError) || error.code !== 'RUNTIME_REVISION_CONFLICT') {
+          throw error
+        }
+        await new Promise(resolve => setTimeout(resolve, 2))
+      }
+    }
+    throw new Error(`attempt ${attemptId} could not clear bootstrap process ${processId}`)
+  }
+
+  private async waitForBootstrapCompletion(
+    runId: string,
+    attemptId: string,
+    processId: string,
+    completion: Promise<import('./process-controller').ControlledProcessCompletion>,
+  ): Promise<import('./process-controller').ControlledProcessCompletion> {
+    let stopped = false
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const cancellation = new Promise<void>((resolveCancellation, rejectCancellation) => {
+      const poll = async (): Promise<void> => {
+        if (stopped) return
+        try {
+          const [run, attempt] = await Promise.all([
+            this.repositories.runs.get(runId),
+            this.repositories.attempts.get(attemptId),
+          ])
+          if (!run || !attempt) throw new Error(`bootstrap process ${processId} lost its run or attempt`)
+          const cancellationRequested = run.status === 'cancelled'
+            || run.cancellation_requested_at !== null
+            || attempt.status === 'cancelled'
+          if (cancellationRequested) {
+            const control = await this.processController.cancel(processId)
+            if (!control.success) throw new RuntimeServiceError(control.code, control.message)
+            resolveCancellation()
+            return
+          }
+          timer = setTimeout(() => { void poll() }, 20)
+        } catch (error) {
+          rejectCancellation(error)
+        }
+      }
+      void poll()
+    })
+
+    try {
+      await Promise.race([completion.then(() => undefined), cancellation])
+      return await completion
+    } finally {
+      stopped = true
+      if (timer) clearTimeout(timer)
+    }
+  }
+
+  private async waitForPersistedProcessTerminal(
+    processId: string,
+  ): Promise<import('./process-controller').ControlledProcessCompletion> {
+    while (true) {
+      const process = await this.repositories.processes.get(processId)
+      if (process?.status === 'exited' || process?.status === 'lost') {
+        return {
+          process,
+          result: null,
+          error: new Error(`bootstrap process ${processId} lost its controlled completion`),
+        }
+      }
+      await new Promise(resolve => setTimeout(resolve, 20))
+    }
   }
 
   private async waitForControlledTerminal(

@@ -50,11 +50,15 @@ Options:
 - `--model, -m` — Model id (for example `claude-code`, `codex`, `gemini`)
 - `--prompt, -p` — Prompt file path
 - `--depends-on, -d` — Comma-separated dependency IDs
-- `--cwd` — Working directory for the step
+- `--cwd` — Relative working directory within an isolated workspace; absolute paths and traversal are rejected
+- `--side-effect` — Declared effect: `none`, `read`, `write`, or `execute`
+- `--workspace` — Workspace mode: `auto` or `isolated`
 
 ### `thread step edit <stepId> [options]`
 
 Edit an existing step.
+
+The same `--side-effect`, `--workspace`, and `--cwd` options are accepted when editing.
 
 ```bash
 thread step edit build --name "Build v2" --type p
@@ -133,6 +137,12 @@ thread gate list
 Run one specific step through `ThreadOSRuntimeService`. Milestone 0 execution is sequential.
 
 Every executable step must be assigned an agent registered in `.threados/state/agents.json`, with matching model, role, canonical prompt reference, and skills. Missing registration fails with `AGENT_REGISTRATION_REQUIRED`; an unknown registration fails with `AGENT_NOT_REGISTERED`; a different loadout fails with `AGENT_COMPOSITION_MISMATCH`. Launch binds the registration version, composition, and asset content hashes. Retry retains the original binding. Legacy attempts without a frozen identity fail with `AGENT_REGISTRATION_REQUIRED`; a changed frozen identity or content fails with `AGENT_IDENTITY_CHANGED`. Start a new execution with a replacement registration for material changes.
+
+Write/execute steps and steps configured with `--workspace isolated` run in verified portable-copy workspaces from the run's immutable baseline. Configured bootstrap commands run there first under executable policy. Bootstrap command, policy, or artifact errors block agent launch with `WORKSPACE_BOOTSTRAP_FAILED` (exit `8`); identity and process-control failures retain their typed `AGENT_*` or `PROCESS_CONTROL_FAILED` codes. The agent receives workspace, snapshot, and attempt identifiers without `THREADOS_BASE_PATH`. Successful workspaces and failure/review evidence are retained; cancellation may clean a pristine workspace. Attributed thredOS writes to the canonical project fail with `CANONICAL_WORKSPACE_MUTATED` (exit `5`). Isolation is `THREADOS_SCOPED`; execution remains sequential and does not apply workspace output to the canonical project.
+
+A successful process exit does not validate a configured output schema or completion contract. Those gates remain blocked without validation evidence, so the attempt becomes `needs_review` and the run awaits review.
+
+Failed control of a managed live bootstrap leaves its attempt and workspace active so cancellation can be retried. Cancellation intent alone cannot confirm termination of a lost process; the runtime preserves `PROCESS_CONTROL_FAILED` evidence.
 
 ```bash
 thread run step research
