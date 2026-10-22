@@ -10,6 +10,9 @@ import type { AgentRegistration, AgentSkill } from '@/lib/agents/types'
 import { ensureLibraryStructure, readLibraryCatalog, skillRefFromEntry, syncAgentAsset } from '@/lib/library/repository'
 import type { SkillRef } from '@/lib/library/types'
 import { PromptRefSchema, SkillRefSchema } from '@/lib/sequence/schema'
+import { withExclusiveFileLock } from '@/lib/fs/atomic'
+import { ensureStateRoot } from '@/lib/runtime/paths'
+import { resolvePathWithinRoot } from '@/lib/security/safe-path'
 
 const AgentSkillSchema = z.object({
   id: z.string().min(1),
@@ -36,6 +39,15 @@ const AgentBodySchema = z.object({
 })
 
 const PUBLIC_CLOUD_SYNC_ERROR = 'Cloud registration unavailable'
+
+class MissingAgentPromptError extends Error {}
+
+interface RegistrationResult {
+  agent: AgentRegistration
+  replacementOf?: string
+  materialChange?: true
+  reasons?: string[]
+}
 
 export async function GET(request: Request) {
   try {
@@ -118,6 +130,12 @@ function nextReplacementAgentId(baseId: string, agents: AgentRegistration[]): st
   return candidate
 }
 
+async function withAgentAssetLock<T>(basePath: string, operation: () => Promise<T>): Promise<T> {
+  const stateRoot = await ensureStateRoot(basePath)
+  const assetLockPath = await resolvePathWithinRoot(stateRoot, 'agent-assets.lock')
+  return withExclusiveFileLock(assetLockPath, operation, { allowedRoot: basePath })
+}
+
 export async function POST(request: Request) {
   try {
     const session = requireRequestSession(request)
@@ -135,130 +153,79 @@ export async function POST(request: Request) {
     const body = parsed.data
 
     const bp = getBasePath()
-    await ensureLibraryStructure(bp)
-    const state = await readAgentState(bp)
-    const currentAgent = state.agents.find(agent => agent.id === body.id) ?? null
-    const anchorAgent = body.supersedesAgentId
-      ? state.agents.find(agent => agent.id === body.supersedesAgentId) ?? currentAgent
-      : currentAgent
-    const skillRefs = await resolveSkillRefs(bp, body.skillRefs, body.skills)
-    const promptRef = body.promptRef ?? currentAgent?.promptRef ?? anchorAgent?.promptRef ?? null
-    if (!promptRef) {
-      return jsonError('Missing promptRef for canonical agent registration', 'VALIDATION_ERROR', 400)
-    }
-    const currentComposition = anchorAgent
-      ? buildRegisteredAgentComposition({
-          model: anchorAgent.model,
-          role: anchorAgent.role,
-          promptRef: anchorAgent.promptRef,
-          skillRefs: anchorAgent.skillRefs,
-          tools: anchorAgent.tools,
-          composition: anchorAgent.composition,
-        })
-      : null
-    const composition = buildAgentComposition({
-      model: body.model ?? currentAgent?.model ?? anchorAgent?.model,
-      role: body.role ?? currentAgent?.role ?? anchorAgent?.role,
-      promptRef,
-      skillRefs,
-      tools: body.tools ?? currentAgent?.tools ?? anchorAgent?.tools,
+    const skillRefs = await withAgentAssetLock(bp, async () => {
+      await ensureLibraryStructure(bp)
+      return resolveSkillRefs(bp, body.skillRefs, body.skills)
     })
+    const outcome: { registration?: RegistrationResult } = {}
 
-    if (currentComposition) {
-      const currentDecision = detectMaterialChange(currentComposition, composition)
-      if (currentDecision.material) {
-        const anchorId = anchorAgent?.id ?? currentAgent?.id ?? body.id
-        const replacementId = body.id !== anchorId && !state.agents.some(agent => agent.id === body.id)
-          ? body.id
-          : nextReplacementAgentId(anchorId, state.agents)
-        const replacement = buildAgent({
-          ...body,
-          id: replacementId,
-          registeredAt: body.registeredAt || new Date().toISOString(),
-          model: body.model ?? anchorAgent?.model,
-          role: body.role ?? anchorAgent?.role,
-          tools: body.tools ?? anchorAgent?.tools,
-          promptRef,
-          skillRefs,
-          skills: body.skills ?? anchorAgent?.skills,
-          composition,
-          version: (anchorAgent?.version ?? 1) + 1,
-          supersedesAgentId: anchorId,
-        }, anchorAgent)
-
-        const updated = await updateAgentState(bp, (current) => {
-          const withoutCurrent = current.agents.filter(agent => agent.id !== replacement.id)
-          return {
-            ...current,
-            agents: [...withoutCurrent, replacement],
-          }
-        })
-
-        const registered = updated.agents.find(agent => agent.id === replacement.id)!
-        let cloudRegistration: Awaited<ReturnType<typeof cloudRegistry.registerCloudAgent>> | null = null
-        let cloudSyncError: string | null = null
-        let persisted = registered
-
-        try {
-          const syncedRegistration = await cloudRegistry.registerCloudAgent(bp, registered)
-          cloudRegistration = syncedRegistration
-          cloudSyncError = null
-        } catch (error) {
-          console.error('[agents.POST] cloud registration failed for replacement agent', error)
-          cloudSyncError = PUBLIC_CLOUD_SYNC_ERROR
-        }
-
-        if (cloudRegistration) {
-          const synced = await updateAgentState(bp, (current) => ({
-            ...current,
-            agents: current.agents.map(agent => agent.id === registered.id
-              ? {
-                  ...agent,
-                  registrationNumber: cloudRegistration!.registrationNumber,
-                  cloudSyncedAt: new Date().toISOString(),
-                }
-              : agent),
-          }))
-          persisted = synced.agents.find(agent => agent.id === replacement.id) ?? registered
-        }
-
-        await syncAgentAsset(bp, persisted)
-        return NextResponse.json({
-          agent: persisted,
-          cloudRegistration,
-          cloudSyncError,
-          replacementOf: anchorId,
-          materialChange: true,
-          reasons: currentDecision.reasons,
-        }, { status: 201 })
+    await updateAgentState(bp, (state) => {
+      const currentAgent = state.agents.find(agent => agent.id === body.id) ?? null
+      const anchorAgent = body.supersedesAgentId
+        ? state.agents.find(agent => agent.id === body.supersedesAgentId) ?? currentAgent
+        : currentAgent
+      const promptRef = body.promptRef ?? currentAgent?.promptRef ?? anchorAgent?.promptRef ?? null
+      if (!promptRef) {
+        throw new MissingAgentPromptError('Missing promptRef for canonical agent registration')
       }
-    }
+      const currentComposition = anchorAgent
+        ? buildRegisteredAgentComposition(anchorAgent)
+        : null
+      const composition = buildAgentComposition({
+        model: body.model ?? currentAgent?.model ?? anchorAgent?.model,
+        role: body.role ?? currentAgent?.role ?? anchorAgent?.role,
+        promptRef,
+        skillRefs,
+        tools: body.tools ?? currentAgent?.tools ?? anchorAgent?.tools,
+      })
 
-    const agent = buildAgent({
-      ...body,
-      model: body.model ?? currentAgent?.model ?? anchorAgent?.model,
-      role: body.role ?? currentAgent?.role ?? anchorAgent?.role,
-      tools: body.tools ?? currentAgent?.tools ?? anchorAgent?.tools,
-      promptRef,
-      skillRefs,
-      skills: body.skills ?? currentAgent?.skills,
-      composition,
-      version: currentAgent?.version ?? 1,
-      supersedesAgentId: body.supersedesAgentId ?? currentAgent?.supersedesAgentId ?? null,
-    }, currentAgent ?? anchorAgent)
+      if (anchorAgent && currentComposition) {
+        const currentDecision = detectMaterialChange(currentComposition, composition)
+        if (currentDecision.material) {
+          const anchorId = anchorAgent.id
+          const replacementId = body.id !== anchorId && !state.agents.some(agent => agent.id === body.id)
+            ? body.id
+            : nextReplacementAgentId(anchorId, state.agents)
+          const replacement = buildAgent({
+            ...body,
+            id: replacementId,
+            registeredAt: body.registeredAt || new Date().toISOString(),
+            model: body.model ?? anchorAgent?.model,
+            role: body.role ?? anchorAgent?.role,
+            tools: body.tools ?? anchorAgent?.tools,
+            promptRef,
+            skillRefs,
+            skills: body.skills ?? anchorAgent?.skills,
+            composition,
+            version: (anchorAgent?.version ?? 1) + 1,
+            supersedesAgentId: anchorId,
+          }, anchorAgent)
+          outcome.registration = {
+            agent: replacement,
+            replacementOf: anchorId,
+            materialChange: true,
+            reasons: currentDecision.reasons,
+          }
+          return { ...state, agents: [...state.agents, replacement] }
+        }
+      }
 
-    const updated = await updateAgentState(bp, (state) => {
+      const agent = buildAgent({
+        ...body,
+        model: body.model ?? currentAgent?.model ?? anchorAgent?.model,
+        role: body.role ?? currentAgent?.role ?? anchorAgent?.role,
+        tools: body.tools ?? currentAgent?.tools ?? anchorAgent?.tools,
+        promptRef,
+        skillRefs,
+        skills: body.skills ?? currentAgent?.skills,
+        composition,
+        version: currentAgent?.version ?? 1,
+        supersedesAgentId: body.supersedesAgentId ?? currentAgent?.supersedesAgentId ?? null,
+      }, currentAgent ?? anchorAgent)
       const existingIndex = state.agents.findIndex(a => a.id === agent.id)
       if (existingIndex !== -1) {
         const existing = state.agents[existingIndex]
-        const existingComposition = buildRegisteredAgentComposition({
-          model: existing.model,
-          role: existing.role,
-          promptRef: existing.promptRef,
-          skillRefs: existing.skillRefs,
-          tools: existing.tools,
-          composition: existing.composition,
-        })
+        const existingComposition = buildRegisteredAgentComposition(existing)
         const nextDecision = detectMaterialChange(existingComposition, composition)
         if (nextDecision.material) {
           throw new Error(`Agent '${agent.id}' already exists with a different composition`)
@@ -269,18 +236,22 @@ export async function POST(request: Request) {
           ...agent,
           composition,
         }
+        outcome.registration = { agent: nextAgents[existingIndex] }
         return {
           ...state,
           agents: nextAgents,
         }
       }
+      outcome.registration = { agent }
       return {
         ...state,
         agents: [...state.agents, agent],
       }
     })
 
-    const registered = updated.agents.find(a => a.id === agent.id)!
+    const registration = outcome.registration
+    if (!registration) throw new Error('Agent registration did not produce a canonical record')
+    const registered = registration.agent
     let cloudRegistration: Awaited<ReturnType<typeof cloudRegistry.registerCloudAgent>> | null = null
     let cloudSyncError: string | null = null
     let persisted = registered
@@ -305,12 +276,15 @@ export async function POST(request: Request) {
             }
           : item),
       }))
-      persisted = synced.agents.find(a => a.id === agent.id) ?? registered
+      persisted = synced.agents.find(a => a.id === registered.id) ?? registered
     }
 
-    await syncAgentAsset(bp, persisted)
-    return NextResponse.json({ agent: persisted, cloudRegistration, cloudSyncError }, { status: 201 })
+    await withAgentAssetLock(bp, () => syncAgentAsset(bp, persisted))
+    return NextResponse.json({ ...registration, agent: persisted, cloudRegistration, cloudSyncError }, { status: 201 })
   } catch (err) {
+    if (err instanceof MissingAgentPromptError) {
+      return jsonError(err.message, 'VALIDATION_ERROR', 400)
+    }
     if (err instanceof Error && err.message.includes('already exists')) {
       return jsonError(err.message, 'CONFLICT', 409)
     }

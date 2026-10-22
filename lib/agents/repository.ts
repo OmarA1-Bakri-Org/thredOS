@@ -1,7 +1,8 @@
-import { existsSync } from 'fs'
-import { mkdir, readFile } from 'fs/promises'
 import { join } from 'path'
-import { writeFileAtomic } from '@/lib/fs/atomic'
+import { withExclusiveFileLock, writeFileAtomic } from '@/lib/fs/atomic'
+import { ensureStateRoot } from '@/lib/runtime/paths'
+import { resolveExistingPathWithinRoot, resolvePathWithinRoot } from '@/lib/security/safe-path'
+import { readTextFileNoFollow } from '@/lib/security/safe-io'
 import type { AgentRegistration, AgentState } from './types'
 
 // ---------------------------------------------------------------------------
@@ -20,12 +21,18 @@ export function getAgentStatePath(basePath: string): string {
 }
 
 export async function readAgentState(basePath: string): Promise<AgentState> {
-  const fullPath = getAgentStatePath(basePath)
-  if (!existsSync(fullPath)) {
-    return structuredClone(DEFAULT_AGENT_STATE)
+  let content: string
+  try {
+    const fullPath = await resolveExistingPathWithinRoot(basePath, '.threados', 'state', 'agents.json')
+    content = await readTextFileNoFollow(fullPath)
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+      return structuredClone(DEFAULT_AGENT_STATE)
+    }
+    throw error
   }
 
-  const raw = JSON.parse(await readFile(fullPath, 'utf-8')) as Partial<AgentState>
+  const raw = JSON.parse(content) as Partial<AgentState>
 
   return {
     version: 1,
@@ -33,20 +40,32 @@ export async function readAgentState(basePath: string): Promise<AgentState> {
   }
 }
 
+async function withAgentStateLock<T>(basePath: string, operation: () => Promise<T>): Promise<T> {
+  const stateRoot = await ensureStateRoot(basePath)
+  const lockPath = await resolvePathWithinRoot(stateRoot, 'agents.json.lock')
+  return withExclusiveFileLock(lockPath, operation, { allowedRoot: basePath })
+}
+
+async function writeAgentStateUnlocked(basePath: string, state: AgentState): Promise<void> {
+  const stateRoot = await resolveExistingPathWithinRoot(basePath, '.threados', 'state')
+  const fullPath = await resolvePathWithinRoot(stateRoot, 'agents.json')
+  await writeFileAtomic(fullPath, `${JSON.stringify({ ...state, version: 1 }, null, 2)}\n`, { allowedRoot: basePath })
+}
+
 export async function writeAgentState(basePath: string, state: AgentState): Promise<void> {
-  const fullPath = getAgentStatePath(basePath)
-  await mkdir(join(basePath, '.threados/state'), { recursive: true })
-  await writeFileAtomic(fullPath, `${JSON.stringify({ ...state, version: 1 }, null, 2)}\n`)
+  await withAgentStateLock(basePath, () => writeAgentStateUnlocked(basePath, state))
 }
 
 export async function updateAgentState(
   basePath: string,
   updater: (currentState: AgentState) => AgentState | Promise<AgentState>,
 ): Promise<AgentState> {
-  const currentState = await readAgentState(basePath)
-  const nextState = await updater(currentState)
-  await writeAgentState(basePath, nextState)
-  return nextState
+  return withAgentStateLock(basePath, async () => {
+    const currentState = await readAgentState(basePath)
+    const nextState = await updater(currentState)
+    await writeAgentStateUnlocked(basePath, nextState)
+    return nextState
+  })
 }
 
 // ---------------------------------------------------------------------------
