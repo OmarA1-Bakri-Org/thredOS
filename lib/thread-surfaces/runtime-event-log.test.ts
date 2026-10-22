@@ -1,5 +1,6 @@
 import { beforeEach, afterEach, describe, expect, test } from 'bun:test'
 import { mkdir, readFile, symlink, writeFile } from 'fs/promises'
+import { randomUUID } from 'crypto'
 import { existsSync } from 'fs'
 import { join } from 'path'
 import { createTempDir, cleanTempDir } from '../../test/helpers/setup'
@@ -81,10 +82,10 @@ describe('runtime event log', () => {
   test('diagnostics omit private payloads from malformed and schema-invalid events', async () => {
     const { readRuntimeEventLogAtPath } = await importRuntimeEventLog()
     const logPath = join(tmpDir, 'private-events.ndjson')
-    const secret = 'private-fixture-token-that-must-not-be-logged'
+    const privateMarker = `fixture-${randomUUID()}`
     await writeFile(logPath, [
-      `{"token":"${secret}",`,
-      JSON.stringify({ token: secret, eventType: 'unsupported-private-event' }),
+      `{"token":"${privateMarker}",`,
+      JSON.stringify({ token: privateMarker, eventType: 'unsupported-private-event' }),
     ].join('\n'))
     const diagnostics: string[] = []
     const originalWarn = console.warn
@@ -92,7 +93,7 @@ describe('runtime event log', () => {
     try {
       expect(await readRuntimeEventLogAtPath(logPath, tmpDir)).toEqual({ events: [], invalidLines: 2 })
       expect(diagnostics).toHaveLength(2)
-      expect(diagnostics.join('\n')).not.toContain(secret)
+      expect(diagnostics.join('\n')).not.toContain(privateMarker)
       expect(diagnostics.join('\n')).not.toContain('token')
       expect(diagnostics).toEqual([
         '[runtime-event-log] Malformed JSON at line 1',

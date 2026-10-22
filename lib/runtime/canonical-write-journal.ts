@@ -213,6 +213,15 @@ function assertCanonicalWriteEvidence(
   }
   const beforeHash = snapshotEntryDigest(before.get(write.path) ?? null)
   const afterHash = snapshotEntryDigest(after.get(write.path) ?? null)
+  assertObservedWrite(write, beforeHash, afterHash, changed)
+}
+
+function assertObservedWrite(
+  write: CanonicalProjectWrite,
+  beforeHash: string,
+  afterHash: string,
+  changed: Set<string>,
+): void {
   if (write.before_entry_hash !== beforeHash || write.after_entry_hash !== afterHash || !changed.has(write.path)) {
     throw new CanonicalWriteAttributionError(`Canonical write ${write.id} does not match observed manifest evidence`)
   }
