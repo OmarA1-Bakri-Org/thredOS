@@ -69,4 +69,11 @@ describe('no Git worktree production-runtime guard', () => {
 
     await expect(scanNoGitWorktreeRuntime(root)).rejects.toMatchObject({ code: 'ENOENT' })
   })
+
+  test('keeps invocation evidence when a later quoted string ends with an escape', async () => {
+    const root = await sourceFixture("spawn('git', ['worktree', 'add', target])\nconst unfinished = 'trailing\\")
+    expect((await scanNoGitWorktreeRuntime(root)).violations).toEqual([
+      { file: 'lib/runtime.ts', line: 1, pattern: 'git-worktree' },
+    ])
+  })
 })

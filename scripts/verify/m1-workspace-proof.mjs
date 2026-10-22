@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'fs'
-import { isAbsolute, join, relative, resolve, sep } from 'path'
+import { join, relative, sep } from 'path'
 import { spawnSync } from 'child_process'
+import { verificationArtifactReferences, validateVerificationArtifactReferences } from './artifact-references.mjs'
 
 const repositoryRoot = process.cwd()
 const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
@@ -24,6 +25,14 @@ const requiredArtifacts = [
 ]
 const completedCommands = []
 
+function commandOutput(result) {
+  return [
+    result.stdout ?? '',
+    result.stderr ?? '',
+    result.error ? `${result.error.message}\n` : '',
+  ].join('')
+}
+
 function run(label, args, extraEnv = {}) {
   const command = `bun ${args.join(' ')}`
   console.log(`[verify:m1] ${label}: ${command}`)
@@ -37,11 +46,7 @@ function run(label, args, extraEnv = {}) {
     windowsHide: true,
     maxBuffer: 100 * 1024 * 1024,
   })
-  const output = [
-    result.stdout ?? '',
-    result.stderr ?? '',
-    result.error ? `${result.error.message}\n` : '',
-  ].join('')
+  const output = commandOutput(result)
   if (output.trim()) console.log(output.trimEnd())
   const record = { label, command, exitCode: result.status ?? 1, output }
   completedCommands.push(record)
@@ -72,19 +77,6 @@ function findWorkspaceApiTests() {
   return [...new Set(tests)].sort()
 }
 
-function relativeEvidenceReferences(output) {
-  const candidates = output.match(/[A-Za-z]:\\[^\r\n]+|\/(?:[^\s:\r\n]+\/)+[^\s:\r\n]+/g) ?? []
-  const references = []
-  for (const candidate of candidates) {
-    const absolute = resolve(candidate.trim())
-    const within = relative(repositoryRoot, absolute)
-    if (!within || within === '..' || within.startsWith(`..${sep}`) || isAbsolute(within)) continue
-    const portable = within.split(sep).join('/')
-    if (portable.startsWith('test-results/verify/') && !references.includes(portable)) references.push(portable)
-  }
-  return references
-}
-
 function writeCommandEvidence(results) {
   const body = results.flatMap(result => [
     `Label: ${result.label}`,
@@ -112,6 +104,7 @@ function validateArtifacts() {
   if (!isolation.passed) throw new Error('M1 isolation proof did not pass')
   if (!noWorktree.passed) throw new Error('M1 no-worktree guard did not pass')
   if (ui.status !== 'passed') throw new Error('M1 workspace UI proof did not pass')
+  validateVerificationArtifactReferences(ui.evidence_refs)
 }
 
 mkdirSync(join(proofRoot, 'ui-proof'), { recursive: true })
@@ -171,7 +164,10 @@ writeFileSync(join(proofRoot, 'ui-proof', 'reference.json'), `${JSON.stringify({
   status: ui.exitCode === 0 && local.exitCode === 0 ? 'passed' : 'failed',
   required_test: 'test/ui/workspace-inspector.e2e.ts',
   commands: [ui.command, local.command],
-  evidence_refs: [...relativeEvidenceReferences(ui.output), ...relativeEvidenceReferences(local.output)],
+  evidence_refs: [
+    ...verificationArtifactReferences(ui.output, repositoryRoot, 'ui'),
+    ...verificationArtifactReferences(local.output, repositoryRoot, 'local'),
+  ],
 }, null, 2)}\n`, 'utf8')
 
 try {

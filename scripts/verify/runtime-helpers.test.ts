@@ -134,7 +134,7 @@ describe('verification port lifecycle', () => {
 })
 
 describe('shared Playwright server settings', () => {
-  test('uses one CI port decision and 127.0.0.1 on Windows and POSIX', () => {
+  test('uses one port decision and the Secure-cookie loopback hostname on Windows and POSIX', () => {
     expect(defaultVerificationPort('ci')).toBe(4302)
     const windows = createPlaywrightServerSettings({
       mode: 'ci',
@@ -142,7 +142,7 @@ describe('shared Playwright server settings', () => {
       env: { ...TEST_ENV, Path: 'C:\\Windows', BUN_INSTALL: 'C:\\Users\\test\\.bun' },
     })
     expect(windows.port).toBe('4302')
-    expect(windows.baseURL).toBe('http://127.0.0.1:4302')
+    expect(windows.baseURL).toBe('http://localhost:4302')
     expect(windows.env.Path).toBe('C:\\Users\\test\\.bun\\bin;C:\\Windows')
     expect(windows.env.PATH).toBeUndefined()
 
@@ -152,7 +152,7 @@ describe('shared Playwright server settings', () => {
       env: { ...TEST_ENV, PATH: '/usr/bin', BUN_INSTALL: '/home/test/.bun' },
     })
     expect(posix.port).toBe('4301')
-    expect(posix.baseURL).toBe('http://127.0.0.1:4301')
+    expect(posix.baseURL).toBe('http://localhost:4301')
     expect(posix.env.PATH).toBe('/home/test/.bun/bin:/usr/bin')
   })
 

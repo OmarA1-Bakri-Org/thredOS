@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from 'fs/promises'
 import { dirname, join } from 'path'
 import { request as playwrightRequest, type FullConfig } from '@playwright/test'
+import { localVerificationBaseURL } from '../../scripts/verify/runtime-helpers.mjs'
 
 const ARTIFACTS_DIR = process.env.PLAYWRIGHT_ARTIFACTS_DIR ?? 'test-results/verify/manual'
 const STORAGE_STATE_PATH = process.env.PLAYWRIGHT_STORAGE_STATE_PATH ?? join(ARTIFACTS_DIR, 'auth-storage-state.json')
@@ -67,7 +68,7 @@ async function probe(pathname: string, baseURL: string) {
 export default async function globalSetup(config: FullConfig) {
   const baseURL = config.projects[0]?.use.baseURL
     ?? process.env.PLAYWRIGHT_BASE_URL
-    ?? `http://127.0.0.1:${process.env.PLAYWRIGHT_PORT ?? '4301'}`
+    ?? localVerificationBaseURL(process.env.PLAYWRIGHT_PORT ?? '4301')
   await seedAuthenticatedStorageState(baseURL)
   const readiness = {
     generatedAt: new Date().toISOString(),

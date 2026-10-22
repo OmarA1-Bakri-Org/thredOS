@@ -16,13 +16,19 @@ function workspaceId(args: string[], action: string): string {
   return value
 }
 
-function listRunId(args: string[]): string | undefined {
-  if (args.length === 0) return undefined
-  if (args.length === 2 && args[0] === '--run' && args[1]?.trim()) return args[1].trim()
+function inlineRunId(args: string[]): string | undefined {
   if (args.length === 1 && args[0].startsWith('--run=')) {
     const value = args[0].slice('--run='.length).trim()
     if (value) return value
   }
+  return undefined
+}
+
+function listRunId(args: string[]): string | undefined {
+  if (args.length === 0) return undefined
+  if (args.length === 2 && args[0] === '--run' && args[1]?.trim()) return args[1].trim()
+  const inlineValue = inlineRunId(args)
+  if (inlineValue) return inlineValue
   throw new RuntimeServiceError(
     'VALIDATION_ERROR',
     'Usage: thread workspace list [--run <runId>]',
@@ -61,6 +67,64 @@ function printDoctor(report: WorkspaceDoctorReport): void {
   }
 }
 
+type WorkspaceCLIService = Awaited<ReturnType<typeof getCLIRuntimeService>>
+
+async function workspaceDoctor(service: WorkspaceCLIService, args: string[], options: CLIOptions): Promise<void> {
+  if (args.length !== 0) {
+    throw new RuntimeServiceError('VALIDATION_ERROR', 'Usage: thread workspace doctor')
+  }
+  const report = await service.doctorWorkspaces()
+  renderRuntimeSuccess(report, options, () => printDoctor(report))
+}
+
+async function executeWorkspaceCommand(
+  service: WorkspaceCLIService,
+  subcommand: string | undefined,
+  args: string[],
+  options: CLIOptions,
+): Promise<void> {
+  switch (subcommand) {
+    case 'list': {
+      const workspaces = await service.listWorkspaces({ runId: listRunId(args) })
+      renderRuntimeSuccess({ workspaces }, options, () => {
+        if (workspaces.length === 0) console.log('No workspaces found')
+        else workspaces.forEach(printWorkspace)
+      })
+      return
+    }
+    case 'inspect': {
+      const inspection = await service.inspectWorkspace(workspaceId(args, 'inspect'))
+      renderRuntimeSuccess(inspection, options, () => printInspection(inspection))
+      return
+    }
+    case 'retain': {
+      const inspection = await service.retainWorkspace(
+        workspaceId(args, 'retain'),
+        createCLIContext(options),
+      )
+      renderRuntimeSuccess(inspection, options, () => printInspection(inspection))
+      return
+    }
+    case 'clean': {
+      const inspection = await service.cleanWorkspace(
+        workspaceId(args, 'clean'),
+        createCLIContext(options),
+      )
+      renderRuntimeSuccess(inspection, options, () => printInspection(inspection))
+      return
+    }
+    case 'doctor': {
+      await workspaceDoctor(service, args, options)
+      return
+    }
+    default:
+      throw new RuntimeServiceError(
+        'VALIDATION_ERROR',
+        'Unknown subcommand. Usage: thread workspace list|inspect|retain|clean|doctor',
+      )
+  }
+}
+
 export async function workspaceCommand(
   subcommand: string | undefined,
   args: string[],
@@ -68,50 +132,7 @@ export async function workspaceCommand(
 ): Promise<void> {
   try {
     const service = await getCLIRuntimeService(options.basePath ?? process.cwd())
-    switch (subcommand) {
-      case 'list': {
-        const workspaces = await service.listWorkspaces({ runId: listRunId(args) })
-        renderRuntimeSuccess({ workspaces }, options, () => {
-          if (workspaces.length === 0) console.log('No workspaces found')
-          else workspaces.forEach(printWorkspace)
-        })
-        return
-      }
-      case 'inspect': {
-        const inspection = await service.inspectWorkspace(workspaceId(args, 'inspect'))
-        renderRuntimeSuccess(inspection, options, () => printInspection(inspection))
-        return
-      }
-      case 'retain': {
-        const inspection = await service.retainWorkspace(
-          workspaceId(args, 'retain'),
-          createCLIContext(options),
-        )
-        renderRuntimeSuccess(inspection, options, () => printInspection(inspection))
-        return
-      }
-      case 'clean': {
-        const inspection = await service.cleanWorkspace(
-          workspaceId(args, 'clean'),
-          createCLIContext(options),
-        )
-        renderRuntimeSuccess(inspection, options, () => printInspection(inspection))
-        return
-      }
-      case 'doctor': {
-        if (args.length !== 0) {
-          throw new RuntimeServiceError('VALIDATION_ERROR', 'Usage: thread workspace doctor')
-        }
-        const report = await service.doctorWorkspaces()
-        renderRuntimeSuccess(report, options, () => printDoctor(report))
-        return
-      }
-      default:
-        throw new RuntimeServiceError(
-          'VALIDATION_ERROR',
-          'Unknown subcommand. Usage: thread workspace list|inspect|retain|clean|doctor',
-        )
-    }
+    await executeWorkspaceCommand(service, subcommand, args, options)
   } catch (error) {
     renderRuntimeFailure(error, options)
   }

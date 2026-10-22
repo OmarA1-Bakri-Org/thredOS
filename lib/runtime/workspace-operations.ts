@@ -13,7 +13,7 @@ import { SnapshotRepository } from '../workspaces/snapshot-repository'
 import { doctorWorkspaces, type WorkspaceDoctorReport } from '../workspaces/doctor'
 import { copyWorkspaceTreePath } from '../workspaces/providers/copy'
 import type { WorkspaceInspection } from '../workspaces/inspection'
-import type { SurfaceWorkspace, SurfaceWorkspaceStatus } from '../workspaces/schema'
+import type { SurfaceWorkspace, SurfaceWorkspaceStatus, WorkspaceSnapshot } from '../workspaces/schema'
 import { AttemptRepository } from './attempt-repository'
 import { ProcessRepository } from './process-repository'
 import { CommandRepository } from './command-repository'
@@ -21,7 +21,7 @@ import { RuntimeCommandContextSchema, type RuntimeCommandContext } from './comma
 import { stableRuntimeHash } from './attempt-executor'
 import { RuntimeServiceError } from './errors'
 import { RuntimeRepositoryError } from './run-repository'
-import type { StepAttemptStatus } from './schema'
+import type { ProcessRecord, StepAttempt, StepAttemptStatus } from './schema'
 import { assertWorkspaceProcessTermination } from './workspace-process-evidence'
 import { commandIdempotencyLockPath } from './paths'
 import { idempotencyDigest } from './runtime-index'
@@ -77,6 +77,110 @@ function samePath(left: string, right: string): boolean {
     : resolvedLeft === resolvedRight
 }
 
+async function inspectWorkspaceStorage(
+  workspace: SurfaceWorkspace,
+  expected: string,
+  manager: SurfaceWorkspaceManager,
+  id: string,
+  diagnostics: WorkspaceInspection['diagnostics'],
+): Promise<WorkspaceInspection['verification']> {
+  let verification: WorkspaceInspection['verification'] = {
+    exists: false,
+    manifestMatches: null,
+    hasUsefulOutput: null,
+  }
+  try {
+    if (!samePath(expected, workspace.root_path)) throw new Error('unsafe')
+    if (workspace.status !== 'cleaned') {
+      const actual = await realpath(workspace.root_path)
+      if (!samePath(actual, expected)) throw new Error('unsafe')
+      const state = await manager.inspect(id)
+      verification = {
+        exists: state.treeExists,
+        manifestMatches: state.manifestValid,
+        hasUsefulOutput: state.hasUsefulOutput,
+      }
+      if (!state.treeExists) {
+        diagnostics.push({ code: 'WORKSPACE_TREE_MISSING', message: 'Workspace tree is missing' })
+      }
+    }
+  } catch (error) {
+    diagnostics.push({
+      code: missing(error) ? 'WORKSPACE_TREE_MISSING' : 'WORKSPACE_STORAGE_UNSAFE',
+      message: 'Workspace storage could not be verified',
+    })
+  }
+  return verification
+}
+
+async function inspectWorkspaceSnapshot(
+  basePath: string,
+  workspace: SurfaceWorkspace,
+  diagnostics: WorkspaceInspection['diagnostics'],
+) {
+  const snapshots = new SnapshotRepository(basePath)
+  const snapshot = await snapshots.get(workspace.snapshot_id)
+  const manifest = await snapshots.getManifest(workspace.snapshot_id)
+  if (
+    !snapshot
+    || !manifest
+    || snapshot.root_manifest_hash !== workspace.manifest_hash
+    || manifest.root_manifest_hash !== workspace.manifest_hash
+  ) {
+    diagnostics.push({ code: 'WORKSPACE_MANIFEST_INVALID', message: 'Snapshot binding could not be verified' })
+  }
+  return { snapshot, manifest }
+}
+
+async function inspectWorkspaceBootstrap(
+  basePath: string,
+  workspace: SurfaceWorkspace,
+  id: string,
+  diagnostics: WorkspaceInspection['diagnostics'],
+): Promise<WorkspaceInspection['bootstrap']> {
+  const bootstrap: WorkspaceInspection['bootstrap'] = []
+  try {
+    const root = await resolveExistingPathWithinRoot(basePath, '.threados', 'runs', workspace.workflow_run_id, 'attempts', workspace.attempt_id)
+    for (const name of (await readdir(root)).filter(name => /^bootstrap-\d+\.json$/.test(name)).slice(0, 1000)) {
+      const path = await resolveExistingPathWithinRoot(root, name)
+      const artifact = BootstrapSchema.parse(JSON.parse(await readTextFileNoFollow(path)))
+      if (artifact.workspace_id !== id || artifact.attempt_id !== workspace.attempt_id) throw new Error('binding')
+      const { index, status, duration_ms, exit_code } = artifact
+      bootstrap.push({ index, status, duration_ms, exit_code })
+    }
+  } catch (error) {
+    if (!missing(error)) {
+      diagnostics.push({ code: 'WORKSPACE_BOOTSTRAP_FAILED', message: 'Bootstrap evidence could not be verified' })
+    }
+  }
+  return bootstrap
+}
+
+function snapshotInspection(snapshot: WorkspaceSnapshot | null): WorkspaceInspection['snapshot'] {
+  return snapshot ? {
+    id: snapshot.id,
+    status: snapshot.status,
+    root_manifest_hash: snapshot.root_manifest_hash,
+    file_count: snapshot.file_count,
+    total_bytes: snapshot.total_bytes,
+    created_at: snapshot.created_at,
+    verified_at: snapshot.verified_at,
+  } : null
+}
+
+function attemptInspection(attempt: StepAttempt | null): WorkspaceInspection['attempt'] {
+  return attempt ? {
+    id: attempt.id,
+    status: attempt.status,
+    step_id: attempt.step_id,
+    workflow_run_id: attempt.workflow_run_id,
+  } : null
+}
+
+function processInspection({ id, attempt_id, status, pid, exit_code, started_at, ended_at }: ProcessRecord): WorkspaceInspection['processes'][number] {
+  return { id, attempt_id, status, pid, exit_code, started_at, ended_at }
+}
+
 export class WorkspaceOperations {
   private readonly inFlight = new Map<string, InFlightWorkspaceMutation>()
 
@@ -109,106 +213,19 @@ export class WorkspaceOperations {
     }
     const { local, manager } = await this.resources()
     const diagnostics: WorkspaceInspection['diagnostics'] = []
-    let verification: WorkspaceInspection['verification'] = {
-      exists: false,
-      manifestMatches: null,
-      hasUsefulOutput: null,
-    }
     const expected = copyWorkspaceTreePath(local.surfaceWorkspaceRoot, workspace.workflow_run_id, id)
-    try {
-      if (!samePath(expected, workspace.root_path)) throw new Error('unsafe')
-      if (workspace.status !== 'cleaned') {
-        const actual = await realpath(workspace.root_path)
-        if (!samePath(actual, expected)) throw new Error('unsafe')
-        const state = await manager.inspect(id)
-        verification = {
-          exists: state.treeExists,
-          manifestMatches: state.manifestValid,
-          hasUsefulOutput: state.hasUsefulOutput,
-        }
-        if (!state.treeExists) {
-          diagnostics.push({
-            code: 'WORKSPACE_TREE_MISSING',
-            message: 'Workspace tree is missing',
-          })
-        }
-      }
-    } catch (error) {
-      diagnostics.push({
-        code: missing(error) ? 'WORKSPACE_TREE_MISSING' : 'WORKSPACE_STORAGE_UNSAFE',
-        message: 'Workspace storage could not be verified',
-      })
-    }
-    const snapshots = new SnapshotRepository(this.basePath)
-    const snapshot = await snapshots.get(workspace.snapshot_id)
-    const manifest = await snapshots.getManifest(workspace.snapshot_id)
-    if (
-      !snapshot
-      || !manifest
-      || snapshot.root_manifest_hash !== workspace.manifest_hash
-      || manifest.root_manifest_hash !== workspace.manifest_hash
-    ) {
-      diagnostics.push({
-        code: 'WORKSPACE_MANIFEST_INVALID',
-        message: 'Snapshot binding could not be verified',
-      })
-    }
+    const verification = await inspectWorkspaceStorage(workspace, expected, manager, id, diagnostics)
+    const { snapshot, manifest } = await inspectWorkspaceSnapshot(this.basePath, workspace, diagnostics)
     const attempt = await new AttemptRepository(this.basePath).get(workspace.attempt_id)
     const processes = (await new ProcessRepository(this.basePath).list()).filter(item => item.attempt_id === workspace.attempt_id && item.workflow_run_id === workspace.workflow_run_id)
-    const bootstrap: WorkspaceInspection['bootstrap'] = []
-    try {
-      const root = await resolveExistingPathWithinRoot(this.basePath, '.threados', 'runs', workspace.workflow_run_id, 'attempts', workspace.attempt_id)
-      for (const name of (await readdir(root)).filter(name => /^bootstrap-\d+\.json$/.test(name)).slice(0, 1000)) {
-        const path = await resolveExistingPathWithinRoot(root, name)
-        const artifact = BootstrapSchema.parse(JSON.parse(await readTextFileNoFollow(path)))
-        if (artifact.workspace_id !== id || artifact.attempt_id !== workspace.attempt_id) throw new Error('binding')
-        const { index, status, duration_ms, exit_code } = artifact
-        bootstrap.push({ index, status, duration_ms, exit_code })
-      }
-    } catch (error) {
-      if (!missing(error)) {
-        diagnostics.push({
-          code: 'WORKSPACE_BOOTSTRAP_FAILED',
-          message: 'Bootstrap evidence could not be verified',
-        })
-      }
-    }
+    const bootstrap = await inspectWorkspaceBootstrap(this.basePath, workspace, id, diagnostics)
     return {
       schema_version: 1,
       workspace,
       manifest_hash: manifest?.root_manifest_hash ?? null,
-      snapshot: snapshot ? {
-        id: snapshot.id,
-        status: snapshot.status,
-        root_manifest_hash: snapshot.root_manifest_hash,
-        file_count: snapshot.file_count,
-        total_bytes: snapshot.total_bytes,
-        created_at: snapshot.created_at,
-        verified_at: snapshot.verified_at,
-      } : null,
-      attempt: attempt ? {
-        id: attempt.id,
-        status: attempt.status,
-        step_id: attempt.step_id,
-        workflow_run_id: attempt.workflow_run_id,
-      } : null,
-      processes: processes.map(({
-        id: processId,
-        attempt_id,
-        status,
-        pid,
-        exit_code,
-        started_at,
-        ended_at,
-      }) => ({
-        id: processId,
-        attempt_id,
-        status,
-        pid,
-        exit_code,
-        started_at,
-        ended_at,
-      })),
+      snapshot: snapshotInspection(snapshot),
+      attempt: attemptInspection(attempt),
+      processes: processes.map(processInspection),
       verification,
       bootstrap: bootstrap.sort((left, right) => left.index - right.index),
       diagnostics,

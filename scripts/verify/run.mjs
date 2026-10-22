@@ -7,6 +7,7 @@ import { tmpdir } from 'os'
 import {
   buildRelayVerificationArgs,
   findBunPath,
+  localVerificationBaseURL,
   prependEnvironmentPath,
   prependPath,
   releasePortReservation,
@@ -478,7 +479,7 @@ try {
     workspacePath = prepareWorkspace(artifactsDir)
     env.THREDOS_BASE_PATH = workspacePath
     env.THREADOS_BASE_PATH = workspacePath
-    env.PLAYWRIGHT_BASE_URL = `http://127.0.0.1:${env.PLAYWRIGHT_PORT}`
+    env.PLAYWRIGHT_BASE_URL = localVerificationBaseURL(env.PLAYWRIGHT_PORT)
   }
 
   writeFileSync(join(artifactsDir, 'metadata.json'), `${JSON.stringify({

@@ -15,13 +15,18 @@ const ARTIFACTS_DIR = process.env.PLAYWRIGHT_ARTIFACTS_DIR ?? 'test-results/veri
 const REPORT_PATH = process.env.PLAYWRIGHT_JSON_REPORT_PATH ?? `${ARTIFACTS_DIR}/playwright-report.json`
 const STORAGE_STATE_PATH = process.env.PLAYWRIGHT_STORAGE_STATE_PATH ?? `${ARTIFACTS_DIR}/auth-storage-state.json`
 
-function verificationBrowser(): { executablePath: string | undefined; videoMode: 'off' | 'retain-on-failure' } {
+function verificationExecutable(): string | undefined {
   const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH?.trim() || undefined
   if (executablePath) {
     let regularFile = false
     try { regularFile = isAbsolute(executablePath) && statSync(executablePath).isFile() } catch { /* invalid selection */ }
     if (!regularFile) throw new Error('PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH must name an existing absolute file')
   }
+  return executablePath
+}
+
+function verificationBrowser(): { executablePath: string | undefined; videoMode: 'off' | 'retain-on-failure' } {
+  const executablePath = verificationExecutable()
   const videoMode = process.env.PLAYWRIGHT_VIDEO_MODE || 'retain-on-failure'
   if (videoMode !== 'off' && videoMode !== 'retain-on-failure') {
     throw new Error('PLAYWRIGHT_VIDEO_MODE must be off or retain-on-failure')

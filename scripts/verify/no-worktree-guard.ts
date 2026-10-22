@@ -51,12 +51,12 @@ function stripComments(source: string): string {
   let index = 0
   let quote: '"' | "'" | '`' | null = null
   while (index < source.length) {
-    const current = source[index]!
-    const next = source[index + 1]
+    const current = source.charAt(index)
+    const next = source.charAt(index + 1)
     if (quote) {
       result += current
       if (current === '\\') {
-        if (next != null) result += next
+        result += next
         index += 2
         continue
       }
@@ -100,7 +100,7 @@ function callEnd(source: string, openParen: number): number {
   let depth = 0
   let quote: '"' | "'" | '`' | null = null
   for (let index = openParen; index < source.length; index += 1) {
-    const current = source[index]!
+    const current = source.charAt(index)
     if (quote) {
       if (current === '\\') {
         index += 1
@@ -165,8 +165,8 @@ export async function scanNoGitWorktreeRuntime(repositoryRoot: string): Promise<
   const absoluteFiles = (await Promise.all(PRODUCTION_ROOTS.map(root => collectSourceFiles(join(repositoryRoot, root)))))
     .flat()
   const files = absoluteFiles.map(file => relative(repositoryRoot, file).split(sep).join('/'))
-  const violations = (await Promise.all(absoluteFiles.map(async (file, index) =>
-    scanSource(files[index]!, await readFile(file, 'utf8')),
+  const violations = (await Promise.all(absoluteFiles.map(async file =>
+    scanSource(relative(repositoryRoot, file).split(sep).join('/'), await readFile(file, 'utf8')),
   ))).flat()
   return {
     schema_version: 1,
