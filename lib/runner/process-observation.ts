@@ -58,98 +58,141 @@ function parseProcess(raw: string, expectedPid: number): LinuxProcess {
   return { pid: expectedPid, groupId, state: fields[0]!, startTime: fields[19]!, threads }
 }
 
-function procView(system: ProcessObservationDependencies): string | null {
+function hasCurrentPidNamespace(system: ProcessObservationDependencies): boolean {
   parseProcess(system.readText('/proc/self/stat'), system.currentPid)
   // NStgid lists the mounted proc namespace first and then each nested one.
   // Numeric equality alone would miss coincidentally equal PIDs in two namespaces.
   // https://man7.org/linux/man-pages/man5/proc_pid_status.5.html
   const identities = system.readText('/proc/self/status').split('\n').filter(line => line.startsWith('NStgid:'))
   const identity = identities.length === 1 ? /^NStgid:[ \t]+([1-9]\d*)[ \t]*$/.exec(identities[0]!) : null
-  if (identity?.[1] !== String(system.currentPid)) return null
-  const mountInfo = system.readText('/proc/self/mountinfo')
-  const allMounts = mountInfo.trim().split('\n').map(line => line.split(' - '))
-  if (allMounts.some(parts => /^\/proc\/(?:\d+|self|thread-self)(?:\/|$)/.test(parts[0]?.split(' ')[4] ?? ''))) return null
-  const mounts = allMounts.filter(parts => parts[0]?.split(' ')[4] === '/proc')
-  if (mounts.length !== 1) return null
-  const [left, right] = mounts[0]!
+  return identity?.[1] === String(system.currentPid)
+}
+
+function completeProcMount(parts: string[]): boolean {
+  const [left, right] = parts
   const mount = left?.split(' ')
   const filesystem = right?.split(' ')
-  if (mount?.[3] !== '/' || !mount[5] || filesystem?.[0] !== 'proc' || !filesystem[2]) return null
+  if (mount?.[3] !== '/' || !mount[5] || filesystem?.[0] !== 'proc' || !filesystem[2]) return false
   const options = `${mount[5]},${filesystem[2]}`.split(',')
   // hidepid can omit other users' live members entirely. A partial view is
   // never evidence of a zombie-only group, even if the visible PIDs are dead.
-  if (options.some(option => option === 'hidepid' || (option.startsWith('hidepid=') && option !== 'hidepid=0'))) return null
-  return mountInfo
+  return !options.some(option => option === 'hidepid' || (option.startsWith('hidepid=') && option !== 'hidepid=0'))
 }
 
-function zombieMembers(groupId: number, system: ProcessObservationDependencies): string[] | null {
-  const members: string[] = []
+function hasCompleteProcMount(mountInfo: string): boolean {
+  const allMounts = mountInfo.trim().split('\n').map(line => line.split(' - '))
+  if (allMounts.some(parts => /^\/proc\/(?:\d+|self|thread-self)(?:\/|$)/.test(parts[0]?.split(' ')[4] ?? ''))) return false
+  const mounts = allMounts.filter(parts => parts[0]?.split(' ')[4] === '/proc')
+  return mounts.length === 1 && completeProcMount(mounts[0]!)
+}
+
+function procView(system: ProcessObservationDependencies): string | null {
+  if (!hasCurrentPidNamespace(system)) return null
+  const mountInfo = system.readText('/proc/self/mountinfo')
+  return hasCompleteProcMount(mountInfo) ? mountInfo : null
+}
+
+function processIds(system: ProcessObservationDependencies): number[] | null {
+  const ids: number[] = []
   for (const name of system.listProcesses()) {
     if (!/^[1-9]\d*$/.test(name)) continue
     const pid = Number(name)
     if (!Number.isSafeInteger(pid)) return null
-    let entry: LinuxProcess
-    try {
-      entry = readProcess(pid, system)
-    } catch (error) {
-      if (['ENOENT', 'ESRCH'].includes((error as NodeJS.ErrnoException).code ?? '')) continue
-      return null
-    }
-    if (entry.groupId !== groupId) continue
-    // Only a positively identified zombie is excluded. Stopped, idle, unknown,
-    // and every other state remain alive for process-control decisions.
-    // A dead thread-group leader can still have executing worker threads.
-    // Only a zombie with exactly one remaining thread proves the process exited.
-    // https://man7.org/linux/man-pages/man3/pthread_exit.3.html
-    if (entry.state !== 'Z' || entry.threads !== 1) return null
+    ids.push(pid)
+  }
+  return ids
+}
+
+function readVisibleProcess(pid: number, system: ProcessObservationDependencies): LinuxProcess | null {
+  try {
+    return readProcess(pid, system)
+  } catch (error) {
+    if (['ENOENT', 'ESRCH'].includes((error as NodeJS.ErrnoException).code ?? '')) return null
+    throw error
+  }
+}
+
+function singleThreadZombie(entry: LinuxProcess): boolean {
+  // A dead thread-group leader can still have executing worker threads.
+  // https://man7.org/linux/man-pages/man3/pthread_exit.3.html
+  return entry.state === 'Z' && entry.threads === 1
+}
+
+function zombieMembers(groupId: number, system: ProcessObservationDependencies): string[] | null {
+  const ids = processIds(system)
+  if (!ids) return null
+  const members: string[] = []
+  for (const pid of ids) {
+    const entry = readVisibleProcess(pid, system)
+    if (!entry || entry.groupId !== groupId) continue
+    // Stopped, idle, unknown, and every other state remain alive.
+    if (!singleThreadZombie(entry)) return null
     members.push(`${entry.pid}:${entry.startTime}`)
   }
   return members.sort()
+}
+
+function sameExitedProcess(first: LinuxProcess, second: LinuxProcess): boolean {
+  return singleThreadZombie(second) && second.startTime === first.startTime && second.groupId === first.groupId
+}
+
+function linuxProcessExited(pid: number, system: ProcessObservationDependencies): boolean {
+  const view = procView(system)
+  if (view === null) return false
+  const first = readProcess(pid, system)
+  if (!singleThreadZombie(first)) return false
+  const second = readProcess(pid, system)
+  if (!sameExitedProcess(first, second)) return false
+  return procView(system) === view && existence(pid, system) !== 'unknown'
 }
 
 /** Exited-but-unreaped Linux zombies cannot execute; ambiguous evidence stays alive. */
 export function isProcessAlive(pid: number, system = native): boolean {
   if (!Number.isSafeInteger(pid) || pid <= 0) return true
   const observed = existence(pid, system)
-  if (observed !== 'present' || system.platform !== 'linux') return observed !== 'absent'
+  if (observed !== 'present') return observed !== 'absent'
+  if (system.platform !== 'linux') return true
   try {
-    const view = procView(system)
-    if (view === null) return true
-    const first = readProcess(pid, system)
-    if (first.state !== 'Z' || first.threads !== 1) return true
-    const second = readProcess(pid, system)
-    return second.state !== 'Z' || second.threads !== 1 || second.startTime !== first.startTime
-      || second.groupId !== first.groupId || procView(system) !== view || existence(pid, system) === 'unknown'
+    return !linuxProcessExited(pid, system)
   } catch {
     return true
   }
+}
+
+function liveGroupLeader(groupId: number, system: ProcessObservationDependencies): boolean {
+  const leader = readVisibleProcess(groupId, system)
+  if (!leader) return false
+  return leader.groupId === groupId && !singleThreadZombie(leader)
+}
+
+function sameZombieMembers(first: string[], second: string[] | null): boolean {
+  return !!second?.length && first.length === second.length && first.every((value, index) => value === second[index])
+}
+
+function linuxGroupExited(groupId: number, system: ProcessObservationDependencies): boolean {
+  // The common live-leader case needs no system-wide scan.
+  if (liveGroupLeader(groupId, system)) return false
+  const view = procView(system)
+  if (view === null) return false
+  // kill(2) tests existence, including unreaped zombies. Require two complete
+  // nonempty observations of the same exited generations before treating
+  // that group as no longer executable. Empty or changing scans prove nothing.
+  // https://man7.org/linux/man-pages/man2/kill.2.html
+  // https://man7.org/linux/man-pages/man5/proc_pid_stat.5.html
+  const first = zombieMembers(groupId, system)
+  if (!first?.length) return false
+  if (!sameZombieMembers(first, zombieMembers(groupId, system))) return false
+  return procView(system) === view && existence(-groupId, system) !== 'unknown'
 }
 
 export function isProcessGroupAlive(groupId: number, system = native): boolean {
   if (!Number.isSafeInteger(groupId) || groupId <= 1) return true
   const target = system.platform === 'win32' ? groupId : -groupId
   const observed = existence(target, system)
-  if (observed !== 'present' || system.platform !== 'linux') return observed !== 'absent'
+  if (observed !== 'present') return observed !== 'absent'
+  if (system.platform !== 'linux') return true
   try {
-    // The common live-leader case needs no system-wide scan.
-    try {
-      const leader = readProcess(groupId, system)
-      if (leader.groupId === groupId && (leader.state !== 'Z' || leader.threads !== 1)) return true
-    } catch (error) {
-      if (!['ENOENT', 'ESRCH'].includes((error as NodeJS.ErrnoException).code ?? '')) return true
-    }
-    const view = procView(system)
-    if (view === null) return true
-    // kill(2) tests existence, including unreaped zombies. Require two complete
-    // nonempty observations of the same exited generations before treating
-    // that group as no longer executable. Empty or changing scans prove nothing.
-    // https://man7.org/linux/man-pages/man2/kill.2.html
-    // https://man7.org/linux/man-pages/man5/proc_pid_stat.5.html
-    const first = zombieMembers(groupId, system)
-    if (!first?.length) return true
-    const second = zombieMembers(groupId, system)
-    if (!second?.length || first.length !== second.length || first.some((value, index) => value !== second[index])) return true
-    return procView(system) !== view || existence(target, system) === 'unknown'
+    return !linuxGroupExited(groupId, system)
   } catch {
     return true
   }
