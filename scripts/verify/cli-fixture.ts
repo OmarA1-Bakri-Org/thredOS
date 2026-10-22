@@ -30,12 +30,20 @@ export function assertVerificationCliFixture(env: NodeJS.ProcessEnv = process.en
   if (!directory || !isAbsolute(directory)) {
     throw new Error('Run this case through node scripts/verify/cli-fixture.ts <Node verification arguments>; a local CLI fixture is required')
   }
+  assertPrivateDirectory(directory)
+  assertPinnedExecutable(join(directory, 'claude'), env)
+}
+
+function assertPrivateDirectory(directory: string) {
   const root = lstatSync(directory)
   if (!root.isDirectory() || root.isSymbolicLink() || realpathSync(directory) !== resolve(directory)
     || (root.mode & 0o077) !== 0 || root.uid !== process.getuid?.()) {
     throw new Error('The verification CLI fixture directory is not private and owned')
   }
-  const executable = join(directory, 'claude')
+
+}
+
+function assertPinnedExecutable(executable: string, env: NodeJS.ProcessEnv) {
   const file = lstatSync(executable)
   if (!file.isFile() || file.isSymbolicLink() || file.nlink !== 1 || (file.mode & 0o022) !== 0
     || hashFile(executable) !== fixtureHash || firstExecutable('claude', env) !== executable) {
