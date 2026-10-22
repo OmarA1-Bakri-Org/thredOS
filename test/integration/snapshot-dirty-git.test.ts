@@ -1,23 +1,23 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
-import { cp, mkdtemp, readFile, rm, writeFile } from 'fs/promises'
-import { tmpdir } from 'os'
+import { cp, readFile, writeFile } from 'fs/promises'
 import { join } from 'path'
 import { createDefaultWorkspaceConfig } from '@/lib/workspaces/config-schema'
 import { captureSnapshot } from '@/lib/workspaces/snapshot'
+import { createFixtureRoot, removeFixtureTree } from '../helpers/remove-fixture-tree'
 
 const execFileAsync = promisify(execFile)
 const roots: string[] = []
 
 afterEach(async () => {
-  await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true })))
+  await Promise.all(roots.splice(0).map(removeFixtureTree))
 })
 
 describe('snapshot dirty Git integration', () => {
   test('captures modified and untracked bytes while recording best-effort Git evidence', async () => {
-    const source = await mkdtemp(join(tmpdir(), 'threados-dirty-git-source-'))
-    const runtime = await mkdtemp(join(tmpdir(), 'threados-dirty-git-runtime-'))
+    const source = await createFixtureRoot('threados-dirty-git-source-')
+    const runtime = await createFixtureRoot('threados-dirty-git-runtime-')
     roots.push(source, runtime)
     await cp(join(import.meta.dir, '..', 'fixtures', 'workspaces', 'snapshot-project'), source, { recursive: true })
     await execFileAsync('git', ['init'], { cwd: source, windowsHide: true })
@@ -56,8 +56,8 @@ describe('snapshot dirty Git integration', () => {
   })
 
   test('captures a clean Git project with stable HEAD evidence', async () => {
-    const source = await mkdtemp(join(tmpdir(), 'threados-clean-git-source-'))
-    const runtime = await mkdtemp(join(tmpdir(), 'threados-clean-git-runtime-'))
+    const source = await createFixtureRoot('threados-clean-git-source-')
+    const runtime = await createFixtureRoot('threados-clean-git-runtime-')
     roots.push(source, runtime)
     await cp(join(import.meta.dir, '..', 'fixtures', 'workspaces', 'snapshot-project'), source, { recursive: true })
     await execFileAsync('git', ['init'], { cwd: source, windowsHide: true })

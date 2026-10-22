@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { chmod, lstat, mkdir, mkdtemp, readFile, readlink, rename, rm, symlink, writeFile } from 'fs/promises'
-import { tmpdir } from 'os'
+import { chmod, lstat, mkdir, readFile, readlink, rename, symlink, writeFile } from 'fs/promises'
 import { dirname, join } from 'path'
 import type { WorkspaceLimits } from '../config-schema'
 import { createSnapshotManifest } from '../manifest'
@@ -9,6 +8,7 @@ import { SnapshotRepository } from '../snapshot-repository'
 import type { SnapshotEntry, SurfaceWorkspace, WorkspaceSnapshot } from '../schema'
 import { CopyWorkspaceProvider, copyWorkspaceTreePath } from './copy'
 import { setAtomicBeforeRenameHookForTests } from '@/lib/fs/atomic'
+import { createFixtureRoot, removeFixtureTree } from '../../../test/helpers/remove-fixture-tree'
 
 const roots: string[] = []
 const timestamp = '2026-08-28T00:00:00.000Z'
@@ -20,7 +20,7 @@ const limits: WorkspaceLimits = {
 }
 
 async function tempRoot(prefix: string): Promise<string> {
-  const root = await mkdtemp(join(tmpdir(), prefix))
+  const root = await createFixtureRoot(prefix)
   roots.push(root)
   return root
 }
@@ -140,7 +140,7 @@ function planned(root: string, id = 'workspace-01'): SurfaceWorkspace {
 
 afterEach(async () => {
   setAtomicBeforeRenameHookForTests(null)
-  await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true })))
+  await Promise.all(roots.splice(0).map(removeFixtureTree))
 })
 
 describe('CopyWorkspaceProvider', () => {

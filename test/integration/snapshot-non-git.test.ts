@@ -1,20 +1,20 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { cp, mkdtemp, readFile, rm, writeFile } from 'fs/promises'
-import { tmpdir } from 'os'
+import { cp, readFile, writeFile } from 'fs/promises'
 import { join } from 'path'
 import { createDefaultWorkspaceConfig } from '@/lib/workspaces/config-schema'
 import { captureSnapshot } from '@/lib/workspaces/snapshot'
+import { createFixtureRoot, removeFixtureTree } from '../helpers/remove-fixture-tree'
 
 const roots: string[] = []
 
 afterEach(async () => {
-  await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true })))
+  await Promise.all(roots.splice(0).map(removeFixtureTree))
 })
 
 describe('snapshot non-Git integration', () => {
   test('captures a non-Git fixture by content without requiring Git', async () => {
-    const source = await mkdtemp(join(tmpdir(), 'threados-non-git-source-'))
-    const runtime = await mkdtemp(join(tmpdir(), 'threados-non-git-runtime-'))
+    const source = await createFixtureRoot('threados-non-git-source-')
+    const runtime = await createFixtureRoot('threados-non-git-runtime-')
     roots.push(source, runtime)
     await cp(join(import.meta.dir, '..', 'fixtures', 'workspaces', 'snapshot-project'), source, { recursive: true })
     await writeFile(join(source, 'untracked-by-definition.txt'), 'non-git content\n')

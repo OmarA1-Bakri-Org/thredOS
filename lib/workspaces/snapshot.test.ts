@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { chmod, lstat, mkdir, mkdtemp, readFile, readlink, readdir, rename, rm, symlink, writeFile } from 'fs/promises'
-import { tmpdir } from 'os'
+import { chmod, lstat, mkdir, readFile, readlink, readdir, rename, rm, symlink, writeFile } from 'fs/promises'
 import { dirname, join, sep } from 'path'
 import { createDefaultWorkspaceConfig } from './config-schema'
 import { resolveWorkspaceRuntimePaths } from './paths'
@@ -9,11 +8,12 @@ import {
   setSafeIoAfterOpenHookForTests,
   setSafeIoBeforeOpenHookForTests,
 } from '@/lib/security/safe-io'
+import { createFixtureRoot, removeFixtureTree } from '../../test/helpers/remove-fixture-tree'
 
 const roots: string[] = []
 
 async function tempRoot(prefix: string): Promise<string> {
-  const root = await mkdtemp(join(tmpdir(), prefix))
+  const root = await createFixtureRoot(prefix)
   roots.push(root)
   return root
 }
@@ -39,12 +39,7 @@ function request(canonicalRoot: string, runtimeDataRoot: string) {
 afterEach(async () => {
   setSafeIoBeforeOpenHookForTests(null)
   setSafeIoAfterOpenHookForTests(null)
-  await Promise.all(roots.splice(0).map(root => rm(root, {
-    recursive: true,
-    force: true,
-    maxRetries: 5,
-    retryDelay: 50,
-  })))
+  await Promise.all(roots.splice(0).map(removeFixtureTree))
 })
 
 describe('captureSnapshot', () => {
