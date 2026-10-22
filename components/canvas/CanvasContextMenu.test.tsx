@@ -16,7 +16,10 @@ const apiState: Record<string, any> = {
   setSelectedNodeId: () => {},
 }
 
+const actualApiExports = { ...await import('@/lib/ui/api') }
+
 mock.module('@/lib/ui/api', () => ({
+  ...actualApiExports,
   useStatus: () => ({ data: { steps: [], gates: [], summary: {} }, isLoading: false }),
   useSequence: () => ({ data: null }),
   useThreadSurfaces: () => ({ data: [] }),

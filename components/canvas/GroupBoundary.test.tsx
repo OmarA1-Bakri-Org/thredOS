@@ -16,6 +16,7 @@ mock.module('@xyflow/react', () => ({
   Controls: () => <div data-testid="controls" />,
   Background: () => <div data-testid="background" />,
   useReactFlow: () => ({ fitView: () => {}, getNodes: () => [], getEdges: () => [] }),
+  useViewport: () => ({ x: 0, y: 0, zoom: 1 }),
   memo: <T,>(fn: T): T => fn,
 }))
 

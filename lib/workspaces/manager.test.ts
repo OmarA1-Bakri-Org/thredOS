@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'fs/promises'
-import { tmpdir } from 'os'
+import { chmod, mkdir, readFile, writeFile } from 'fs/promises'
 import { join } from 'path'
 import { createDefaultWorkspaceConfig } from './config-schema'
 import { createSnapshotManifest } from './manifest'
@@ -9,12 +8,13 @@ import { SnapshotRepository } from './snapshot-repository'
 import type { WorkspaceSnapshot } from './schema'
 import { readTraceEvents } from '@/lib/traces/reader'
 import { resolveWorkspaceRuntimePaths } from './paths'
+import { createFixtureRoot, removeFixtureTree } from '../../test/helpers/remove-fixture-tree'
 
 const roots: string[] = []
 const timestamp = '2026-08-28T00:00:00.000Z'
 
 async function tempRoot(prefix: string): Promise<string> {
-  const root = await mkdtemp(join(tmpdir(), prefix))
+  const root = await createFixtureRoot(prefix)
   roots.push(root)
   return root
 }
@@ -69,7 +69,7 @@ async function fixture() {
 }
 
 afterEach(async () => {
-  await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true })))
+  await Promise.all(roots.splice(0).map(removeFixtureTree))
 })
 
 describe('SurfaceWorkspaceManager', () => {
