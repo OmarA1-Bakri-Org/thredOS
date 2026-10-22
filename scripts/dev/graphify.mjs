@@ -5,10 +5,13 @@ import { spawnSync } from 'node:child_process'
 import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { basename, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { tmpdir } from 'node:os'
 
 const root = fileURLToPath(new URL('../../', import.meta.url))
 const output = join(root, 'output', 'graphify')
-const toolRoot = join(output, 'tool')
+// Python environments contain interpreter symlinks; keep them outside Next's project scan.
+const runtimeRoot = join(tmpdir(), 'thredos-graphify', createHash('sha256').update(root).digest('hex').slice(0, 16))
+const toolRoot = join(runtimeRoot, 'tool')
 const toolBin = join(toolRoot, process.platform === 'win32' ? 'Scripts' : 'bin')
 const python = join(toolBin, process.platform === 'win32' ? 'python.exe' : 'python')
 const graphify = join(toolBin, process.platform === 'win32' ? 'graphify.exe' : 'graphify')
@@ -20,7 +23,7 @@ const coveragePrefixes = ['lib/agents/', 'lib/runner/', 'lib/runtime/']
 const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => (
   !/^UV_/i.test(key) && !['PYTHONPATH', 'PYTHONHOME'].includes(key.toUpperCase())
 )))
-env.UV_CACHE_DIR = join(output, 'uv-cache')
+env.UV_CACHE_DIR = join(runtimeRoot, 'uv-cache')
 env.UV_PYTHON_DOWNLOADS = 'never'
 env.GRAPHIFY_NO_AUTO_REFRESH = '1'
 
@@ -144,7 +147,7 @@ function main() {
   const [command = 'help', ...args] = process.argv.slice(2)
   if (command === 'help' || command === '--help' || command === '-h') {
     console.log(`Usage: node scripts/dev/graphify.mjs <command>
-  setup [--wheelhouse PATH]    Install all pinned wheels in output/graphify/tool
+  setup [--wheelhouse PATH]    Install pinned wheels in a project-specific OS temporary environment
   analyze                     Extract local code only, using two workers; verify output
   verify [--graph PATH]       Check nonempty graph and agents/runner/runtime coverage
   query QUESTION [OPTIONS]   Query the local graph (Graphify query options)

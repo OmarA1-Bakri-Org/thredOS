@@ -12,14 +12,16 @@ node scripts/dev/graphify.mjs analyze
 node scripts/dev/graphify.mjs verify
 ```
 
-Setup creates an isolated Python environment at `output/graphify/tool`. It uses
+Setup creates an isolated Python environment under the OS temporary directory,
+in `thredos-graphify/<project-path-hash>/tool`. This keeps Python interpreter
+symlinks outside Next.js/Turbopack's source scan. It uses
 `uv pip sync`, exact versions, `--no-build`, and the official
 `https://pypi.org/simple` index. It disables Python downloads and ignores uv config
 and index environment overrides. A platform without compatible wheels fails;
 setup does not fall back to building a source distribution.
 
-The generated environment, caches, and graph live under the already ignored
-`output/` directory. Setup does not install project dependencies, Git hooks,
+The environment and package cache live under that temporary directory; the graph
+and analysis cache live under the already ignored `output/` directory. Setup does not install project dependencies, Git hooks,
 editor integrations, or model providers.
 
 ## Verified offline setup
@@ -72,5 +74,5 @@ replace tests, typechecking, or inspection of current source.
 The setup and graph have been exercised in the current execution environment.
 The saved environment configuration interface is not exposed here, so this
 helper does not claim to update saved startup configuration or persist an
-environment across sessions. Keep these source files in version control and
-rerun setup when preparing another environment.
+environment across sessions. The OS may remove the temporary environment. Keep these source files in version
+control and rerun setup when preparing another environment or after cleanup.
