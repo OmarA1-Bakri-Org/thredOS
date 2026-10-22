@@ -150,6 +150,7 @@ export const TraceEventTypeSchema = z.enum([
   'policy-checked',
   'policy-blocked',
   'spawn-child',
+  'spawn-denied',
   'merge-into',
   'barrier-attested',
   'snapshot-created',
@@ -162,6 +163,16 @@ export const TraceEventTypeSchema = z.enum([
 ])
 export type TraceEventType = z.infer<typeof TraceEventTypeSchema>
 
+export const AgentRegistrationEvidenceSchema = z.object({
+  registration_id: z.string().min(1),
+  registration_version: z.number().int().positive(),
+  composition_hash: z.string().regex(/^[a-f0-9]{64}$/),
+  builder_id: z.string().min(1),
+  supersedes_agent_id: z.string().min(1).nullable(),
+  prompt_content_hash: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+}).strict()
+export type AgentRegistrationEvidence = z.infer<typeof AgentRegistrationEvidenceSchema>
+
 export const TraceEventSchema = z.object({
   ts: z.string().min(1),
   run_id: z.string().min(1),
@@ -170,6 +181,9 @@ export const TraceEventSchema = z.object({
   event_type: TraceEventTypeSchema,
   payload_ref: z.string().nullable(),
   policy_ref: z.string().nullable(),
+  attempt_id: z.string().min(1).optional(),
+  agent_registration: AgentRegistrationEvidenceSchema.optional(),
+  agent_registrations: z.record(z.string(), AgentRegistrationEvidenceSchema).optional(),
 })
 export type TraceEvent = z.infer<typeof TraceEventSchema>
 

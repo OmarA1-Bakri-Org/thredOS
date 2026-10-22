@@ -1,3 +1,5 @@
+import { RuntimeServiceError } from './errors'
+import { agentRegistrationEvidence, resolveStepAgent, readRegisteredPrompt } from '../agents/execution'
 import { createHash } from 'crypto'
 import { ApprovalConsumptionError } from '../approvals/repository'
 import { approvalMatchesExecutableSubject, executableSubjectDigest } from '../policy/executable'
@@ -65,10 +67,13 @@ export class AttemptExecutor {
     attempt = await transitionAttempt(this.repositories.attempts, attempt, 'provisioning')
 
     try {
-      if (!await this.deps.validatePrompt(this.basePath, step.id)) {
-        throw new Error(`Prompt file not found for step '${step.id}'`)
+      if (!attempt.agent_registration) {
+        throw new RuntimeServiceError('AGENT_REGISTRATION_REQUIRED', 'Attempt has no frozen registered identity')
       }
-      const compiledPrompt = await this.deps.compilePrompt({ basePath: this.basePath, sequence, step, runId: run.id })
+      await resolveStepAgent(this.basePath, step, attempt.agent_registration)
+      const rawPrompt = await readRegisteredPrompt(this.basePath, attempt.agent_registration)
+      const compiledPrompt = await this.deps.compilePrompt({ basePath: this.basePath, sequence, step, runId: run.id,
+        agentRegistration: attempt.agent_registration, rawPrompt })
       const compiledHash = hash(compiledPrompt)
       attempt = await this.repositories.attempts.update(attempt.id, attempt.revision, value => ({
         ...value,
@@ -96,6 +101,8 @@ export class AttemptExecutor {
       }
       for (const decision of preGates) {
         await this.deps.appendTrace(this.basePath, run.id, {
+          attempt_id: attempt.id,
+          agent_registration: attempt.agent_registration ? agentRegistrationEvidence(attempt.agent_registration) : undefined,
           ts: decision.decided_at, run_id: run.id, surface_id: surfaceId, actor: context.actor,
           event_type: decision.status === 'PASS' ? 'gate-evaluated' : 'gate-blocked', payload_ref: decision.id,
           policy_ref: run.policy_snapshot_hash,
@@ -208,6 +215,8 @@ export class AttemptExecutor {
       run = await this.repositories.runs.get(run.id) ?? run
       attempt = await this.repositories.attempts.get(attempt.id) ?? attempt
       await this.deps.appendTrace(this.basePath, run.id, {
+          attempt_id: attempt.id,
+          agent_registration: attempt.agent_registration ? agentRegistrationEvidence(attempt.agent_registration) : undefined,
         ts: this.deps.now(), run_id: run.id, surface_id: surfaceId, actor: context.actor,
         event_type: 'step-started', payload_ref: attempt.id, policy_ref: run.policy_snapshot_hash,
       })
@@ -216,6 +225,8 @@ export class AttemptExecutor {
       const cancelledAtLaunch = await this.observeRunCancellation(run.id, attempt.id)
       if (cancelledAtLaunch) return cancelledAtLaunch
 
+      // Recheck membership and versioned assets after provider/approval waits, immediately before launch.
+      await resolveStepAgent(this.basePath, step, attempt.agent_registration!)
       let controlled
       try {
         controlled = await this.processController.start({
@@ -244,6 +255,8 @@ export class AttemptExecutor {
       if (!result || completion.process.status !== 'exited') {
         const endedAt = completion.process.ended_at ?? this.deps.now()
         await this.deps.appendTrace(this.basePath, run.id, {
+          attempt_id: attempt.id,
+          agent_registration: attempt.agent_registration ? agentRegistrationEvidence(attempt.agent_registration) : undefined,
           ts: endedAt, run_id: run.id, surface_id: surfaceId, actor: context.actor,
           event_type: 'step-failed', payload_ref: processId, policy_ref: run.policy_snapshot_hash,
         })
@@ -270,6 +283,8 @@ export class AttemptExecutor {
         await this.deps.persistGateDecisions(this.basePath, run.id, surfaceId, completionGates, run.policy_snapshot_hash)
         for (const decision of completionGates) {
           await this.deps.appendTrace(this.basePath, run.id, {
+          attempt_id: attempt.id,
+          agent_registration: attempt.agent_registration ? agentRegistrationEvidence(attempt.agent_registration) : undefined,
             ts: decision.decided_at, run_id: run.id, surface_id: surfaceId, actor: context.actor,
             event_type: decision.status === 'PASS' ? 'gate-evaluated' : 'gate-blocked', payload_ref: decision.id,
             policy_ref: run.policy_snapshot_hash,
@@ -288,6 +303,8 @@ export class AttemptExecutor {
             ? (completionPassed ? 'completed' : 'needs_review')
             : 'failed'
       await this.deps.appendTrace(this.basePath, run.id, {
+          attempt_id: attempt.id,
+          agent_registration: attempt.agent_registration ? agentRegistrationEvidence(attempt.agent_registration) : undefined,
         ts: result.endTime.toISOString(), run_id: run.id, surface_id: surfaceId, actor: context.actor,
         event_type: status === 'completed' ? 'step-completed' : 'step-failed',
         payload_ref: artifactRef ?? processId,
@@ -314,7 +331,7 @@ export class AttemptExecutor {
         ended_at: this.deps.now(),
         error_code: error instanceof ApprovalConsumptionError
           ? RuntimeErrorCode.APPROVAL_CONSUMPTION_FAILED
-          : 'ATTEMPT_PREPARATION_FAILED',
+          : error instanceof RuntimeServiceError ? error.code : 'ATTEMPT_PREPARATION_FAILED',
         error_message: error instanceof Error ? error.message : String(error),
       })
       await this.deps.projections.finalizeAttempt({ run, attempt, step, runtimeEvents: [] }).catch(() => undefined)

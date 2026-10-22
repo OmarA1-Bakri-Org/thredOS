@@ -3,14 +3,21 @@ import { mkdtemp, mkdir, rm, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import YAML from 'yaml'
+import { registerSequenceAgents, type RegisteredFixtureStep } from '../helpers/registered-sequence'
+import { RunRepository } from '@/lib/runtime/run-repository'
+import { AttemptRepository } from '@/lib/runtime/attempt-repository'
+import { ProcessRepository } from '@/lib/runtime/process-repository'
+import { readAgentState } from '@/lib/agents/repository'
+import { readSequence } from '@/lib/sequence/parser'
 
 let basePath = ''
 
 setDefaultTimeout(30_000)
 
-async function setupTestSequence(seq: object) {
+async function setupTestSequence<T extends RegisteredFixtureStep>(seq: { steps: T[] } & Record<string, unknown>) {
   await mkdir(join(basePath, '.threados', 'prompts'), { recursive: true })
-  await writeFile(join(basePath, '.threados', 'sequence.yaml'), YAML.stringify(seq))
+  const steps = await registerSequenceAgents(basePath, seq.steps)
+  await writeFile(join(basePath, '.threados', 'sequence.yaml'), YAML.stringify({ ...seq, steps }))
 }
 
 async function writePrompt(stepId: string, content = `# ${stepId}`) {
@@ -355,7 +362,7 @@ describe.serial('run route coverage — error handling', () => {
     expect(data.gateReasons).toContain('DEP_MISSING')
   })
 
-  test('POST with stepId for step without prompt file returns failure', async () => {
+  test('POST with a missing registered prompt returns a typed canonical asset failure before launch', async () => {
     await setupTestSequence({
       version: '1.0',
       name: 'no-prompt-seq',
@@ -364,7 +371,7 @@ describe.serial('run route coverage — error handling', () => {
       ],
       gates: [],
     })
-    // Deliberately NOT writing the prompt file
+    await rm(join(basePath, '.threados/prompts/no-prompt.md'))
 
     const { POST } = await import('@/app/api/run/route')
     const res = await POST(new Request('http://localhost/api/run', {
@@ -373,12 +380,52 @@ describe.serial('run route coverage — error handling', () => {
       body: confirmedBody({ stepId: 'no-prompt' }),
     }))
 
-    expect(res.status).toBe(200)
+    expect(res.status).toBe(400)
     const data = await res.json()
-    expect(data.success).toBe(false)
-    expect(data.status).toBe('FAILED')
-    expect(data.error).toContain('Prompt file not found')
+    expect(data.code).toBe('AGENT_REGISTRATION_INVALID')
+    expect(data.error).toContain('Registered prompt or skill assets')
+    const runs = await new RunRepository(basePath).list()
+    expect(runs).toHaveLength(1)
+    expect(runs[0]).toMatchObject({ status: 'failed', error_code: 'AGENT_REGISTRATION_INVALID', attempt_ids: [] })
+    expect(await new AttemptRepository(basePath).listForRun(runs[0]!.id)).toEqual([])
+    expect(await new ProcessRepository(basePath).list()).toEqual([])
   })
+
+  for (const assignment of ['anonymous', 'unknown'] as const) {
+    test(`POST rejects a real ${assignment} agent assignment before attempts or dispatch`, async () => {
+      await setupTestSequence({
+        version: '1.0', name: 'identity-negative-seq', gates: [],
+        steps: [{ id: 'identity-step', name: 'Identity', type: 'base', model: 'codex',
+          prompt_file: '.threados/prompts/identity-step.md', depends_on: [], status: 'READY' }],
+      })
+      const sequence = await readSequence(basePath)
+      sequence.steps[0]!.assigned_agent_id = assignment === 'unknown' ? 'unknown-agent' : undefined
+      sequence.steps[0]!.agent_ref = assignment === 'unknown' ? 'unknown-agent' : null
+      await writeFile(join(basePath, '.threados/sequence.yaml'), YAML.stringify(sequence))
+      let dispatches = 0
+      const runtime = createMockRuntime()
+      globalThis.__THREADOS_RUN_ROUTE_RUNTIME__ = {
+        ...runtime,
+        dispatch: async (model, options) => { dispatches += 1; return runtime.dispatch(model, options) },
+      }
+
+      const { POST } = await import('@/app/api/run/route')
+      const response = await POST(new Request('http://localhost/api/run', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: confirmedBody({ stepId: 'identity-step' }),
+      }))
+      const code = assignment === 'unknown' ? 'AGENT_NOT_REGISTERED' : 'AGENT_REGISTRATION_REQUIRED'
+      expect(response.status).toBe(assignment === 'unknown' ? 404 : 400)
+      await expect(response.json()).resolves.toMatchObject({ code })
+      const runs = await new RunRepository(basePath).list()
+      expect(runs).toHaveLength(1)
+      expect(runs[0]).toMatchObject({ status: 'failed', error_code: code, attempt_ids: [] })
+      expect(await new AttemptRepository(basePath).listForRun(runs[0]!.id)).toEqual([])
+      expect(await new ProcessRepository(basePath).list()).toEqual([])
+      expect(dispatches).toBe(0)
+      expect((await readAgentState(basePath)).agents.map(agent => agent.id)).toEqual(['fixture-identity-step'])
+    })
+  }
 
   test('POST with stepId where runtime throws returns failure', async () => {
     await setupTestSequence({

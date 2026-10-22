@@ -94,12 +94,11 @@ async function verifyOpenedIdentity(filePath: string, handle: FileHandle): Promi
   const opened = await handle.stat()
   const current = await lstat(filePath)
 
-  if (
-    current.isSymbolicLink()
-    || opened.dev !== current.dev
-    || opened.ino !== current.ino
-  ) {
+  if (current.isSymbolicLink() || !current.isFile()) {
     throw new Error(`Refusing unsafe final file path: ${filePath}`)
+  }
+  if (opened.dev !== current.dev || opened.ino !== current.ino) {
+    throw new SafeIoSourceChangedError(`Source path was replaced before reading: ${filePath}`)
   }
 }
 
@@ -324,10 +323,27 @@ export async function appendFileNoFollow(filePath: string, content: string): Pro
   }
 }
 
-export async function readTextFileNoFollow(filePath: string): Promise<string> {
-  const handle = await openExistingVerified(filePath, constants.O_RDONLY, 'read')
+async function openReadableVerified(filePath: string, allowReplacement: boolean): Promise<FileHandle> {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      return await openExistingVerified(filePath, constants.O_RDONLY, 'read')
+    } catch (error) {
+      // Atomic JSON writers legitimately replace an inode. Retry a fresh,
+      // no-follow open; pinned assets must fail on any identity replacement.
+      if (!allowReplacement || !(error instanceof SafeIoSourceChangedError) || attempt === 2) throw error
+    }
+  }
+  throw new Error('Unable to open a stable regular file')
+}
+
+export async function readTextFileNoFollow(filePath: string, expectedSource?: SafeCopyExpectedIdentity): Promise<string> {
+  const handle = await openReadableVerified(filePath, expectedSource === undefined)
   try {
-    return await handle.readFile('utf-8')
+    const initial = expectedSource ? await readVerifiedIdentity(filePath, handle) : undefined
+    if (initial) validateExpectedIdentity(initial, expectedSource, filePath)
+    const content = await handle.readFile('utf-8')
+    if (initial) await verifySourceUnchanged(filePath, handle, initial)
+    return content
   } finally {
     await handle.close()
   }

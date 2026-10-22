@@ -1,3 +1,4 @@
+import type { AgentExecutionSnapshot } from '../agents/execution'
 import type { Approval, GateDecision, TraceEvent } from '../contracts/schemas'
 import type { PolicyConfig, PolicyResult, ExecutablePayload } from '../policy/schema'
 import type { DispatchOptions } from '../runner/dispatch'
@@ -44,7 +45,7 @@ export interface RuntimeServiceDependencies {
   loadPolicy(basePath: string): Promise<PolicyConfig>
   validateSequence(sequence: Sequence): void
   validatePrompt(basePath: string, stepId: string): Promise<boolean>
-  compilePrompt(input: { basePath: string; sequence: Sequence; step: Step; runId: string }): Promise<string>
+  compilePrompt(input: { basePath: string; sequence: Sequence; step: Step; runId: string; agentRegistration: AgentExecutionSnapshot; rawPrompt: string }): Promise<string>
   prepareArtifacts?(input: { basePath: string; runId: string; surfaceId: string; step: Step; compiledPrompt: string; createdAt: string }): Promise<void>
   resolveGateSurface(input: { basePath: string; surfaceId: string; step: Step }): Promise<{ surfaceClass: SurfaceClass; revealState: RevealState }>
   allowModelExecution(input: { step: Step }): { allowed: boolean; errorCode?: string; reason?: string }

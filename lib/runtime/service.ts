@@ -1,3 +1,7 @@
+import { withExclusiveFileLock, RuntimeLockTimeoutError } from '../fs/atomic'
+import { ensureStateRoot } from './paths'
+import { assertSafePathSegment, resolvePathWithinRoot } from '../security/safe-path'
+import { resolveStepAgent } from '../agents/execution'
 import { topologicalSort } from '../sequence/dag'
 import type { Sequence, Step } from '../sequence/schema'
 import {
@@ -68,6 +72,14 @@ function compareAttemptRecency(left: StepAttempt, right: StepAttempt): number {
   if (byAttempt !== 0) return byAttempt
   const byIndex = right.execution_index - left.execution_index
   return byIndex !== 0 ? byIndex : right.id.localeCompare(left.id)
+}
+
+function retryEndedBeforeAttempt(run: WorkflowRun): RuntimeServiceError {
+  const code = RuntimeErrorCodeSchema.safeParse(run.error_code)
+  return new RuntimeServiceError(
+    code.success ? code.data : 'ATTEMPT_NOT_FOUND',
+    run.error_message ?? 'Retry ended before an attempt was created',
+  )
 }
 
 function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void; reject: (reason: unknown) => void } {
@@ -435,6 +447,9 @@ export class ThreadOSRuntimeService {
       if (['pending', 'provisioning', 'running'].includes(original.status)) {
         return await this.failAttemptMutation(receipt.id, 'ATTEMPT_NOT_RUNNING', `attempt ${attemptId} is not terminal`)
       }
+      if (!original.agent_registration) {
+        return await this.failAttemptMutation(receipt.id, 'AGENT_REGISTRATION_REQUIRED', 'Legacy attempts without a frozen registration cannot be retried')
+      }
       const childRunId = this.deps.newId('run')
       const binding = formatRetryBinding(original.id, childRunId)
       try {
@@ -590,6 +605,33 @@ export class ThreadOSRuntimeService {
     context: RuntimeCommandContext,
     outerCommandId: string,
   ): Promise<WorkflowRun> {
+    assertSafePathSegment(outerCommandId, 'retry command id')
+    const stateRoot = await ensureStateRoot(this.basePath)
+    const lockPath = await resolvePathWithinRoot(stateRoot, `retry-dispatch-${outerCommandId}.lock`)
+    while (true) {
+      try {
+        return await withExclusiveFileLock(lockPath, async () => {
+          const run = await this.repairRetryChildRunLocked(binding, original, context, outerCommandId)
+          // A queued creator retains custody until attachment or terminal
+          // failure, including when unrelated work holds the scheduler.
+          await this.waitForAttemptCreation(binding.childRunId, true)
+          return run
+        }, { allowedRoot: this.basePath })
+      } catch (error) {
+        // A live creator may be queued longer than the normal lock window.
+        // Rejoin its durable result or reacquire after verified owner death;
+        // a timeout is never permission to dispatch a second child run.
+        if (!(error instanceof RuntimeLockTimeoutError)) throw error
+      }
+    }
+  }
+
+  private async repairRetryChildRunLocked(
+    binding: RetryBinding,
+    original: StepAttempt,
+    context: RuntimeCommandContext,
+    outerCommandId: string,
+  ): Promise<WorkflowRun> {
     const request = this.retryStartRequest(original)
     const idempotencyKey = `retry-start:${outerCommandId}`
     let run = await this.repositories.runs.get(binding.childRunId)
@@ -721,7 +763,7 @@ export class ThreadOSRuntimeService {
 
   private async failAttemptMutation(
     commandId: string,
-    code: 'ATTEMPT_NOT_FOUND' | 'ATTEMPT_NOT_RUNNING' | 'PROCESS_CONTROL_FAILED',
+    code: 'ATTEMPT_NOT_FOUND' | 'ATTEMPT_NOT_RUNNING' | 'PROCESS_CONTROL_FAILED' | 'AGENT_REGISTRATION_REQUIRED',
     message: string,
   ): Promise<never> {
     await this.repositories.commands.complete(commandId, { status: 'failed', errorCode: code, errorMessage: message }, this.deps.now())
@@ -867,8 +909,8 @@ export class ThreadOSRuntimeService {
     )
   }
 
-  private async waitForAttemptCreation(runId: string): Promise<StepAttempt> {
-    for (let poll = 0; poll < 250; poll++) {
+  private async waitForAttemptCreation(runId: string, retainCreatorCustody = false): Promise<StepAttempt> {
+    for (let poll = 0; retainCreatorCustody || poll < 250; poll++) {
       const run = await this.repositories.runs.get(runId)
       if (!run) throw new RuntimeServiceError('RUN_NOT_FOUND', `run ${runId} was not found`)
       const attemptId = run.attempt_ids[0]
@@ -877,7 +919,7 @@ export class ThreadOSRuntimeService {
         if (attempt) return attempt
       }
       if (terminalRunStatuses.has(run.status)) {
-        throw new RuntimeServiceError('ATTEMPT_NOT_FOUND', `retry run ${runId} ended before an attempt was created`)
+        throw retryEndedBeforeAttempt(run)
       }
       await new Promise(resolve => setTimeout(resolve, 20))
     }
@@ -961,7 +1003,7 @@ export class ThreadOSRuntimeService {
         sequence_snapshot_hash: stableRuntimeHash(sequence), policy_snapshot_hash: stableRuntimeHash(policy),
       })
       await this.deps.projections.beginRun({ run, sequence }).catch(() => undefined)
-      const steps = resolveTarget(sequence, request.target)
+      let steps = resolveTarget(sequence, request.target)
       if (steps.length === 0) {
         if (!request.allow_empty) {
           const message = request.target.kind === 'step'
@@ -977,6 +1019,17 @@ export class ThreadOSRuntimeService {
         await this.repositories.commands.complete(commandId, { status: 'completed', resultRef: run.id }, this.deps.now())
         return { run, attempts, replayed: false }
       }
+      if (retryOf && !retryOf.agent_registration) {
+        throw new RuntimeServiceError('AGENT_REGISTRATION_REQUIRED', 'Legacy attempts without a frozen registration cannot be retried')
+      }
+      const bindings = await Promise.all(steps.map(step => resolveStepAgent(
+        this.basePath, step, retryOf?.step_id === step.id ? retryOf.agent_registration : undefined,
+      )))
+      steps = bindings.map(binding => binding.step)
+      const registrations = Object.fromEntries(bindings.map(binding => [binding.step.id, binding.registration]))
+      run = await this.repositories.runs.update(run.id, run.revision, value => ({
+        ...value, agent_registrations: registrations,
+      }))
       const batchPolicy = this.deps.enforceBatchPolicy({ policy, stepCount: steps.length, confirmed: context.policyConfirmed, basePath: this.basePath })
       if (!batchPolicy.allowed || (batchPolicy.confirmation_required && !context.policyConfirmed)) {
         throw new RuntimeServiceError(
@@ -1006,7 +1059,8 @@ export class ThreadOSRuntimeService {
           sequence_id: run.sequence_id, step_id: step.id, surface_id: surfaceId(step), execution_index: executionIndex,
           attempt_number: retryOf?.step_id === step.id ? retryOf.attempt_number + 1 : 1,
           retry_of_attempt_id: retryOf?.step_id === step.id ? retryOf.id : null,
-          status: 'pending', agent_ref: step.assigned_agent_id ?? null,
+          status: 'pending', agent_ref: registrations[step.id]!.registration_id,
+          agent_registration: registrations[step.id],
           model: step.model, side_effect_class: step.side_effect_class ?? 'execute', baseline_snapshot_id: null,
           workspace_id: null, process_id: null, compiled_prompt_hash: 'pending', input_manifest_ref: null,
           output_manifest_ref: null, artifact_manifest_ref: null, change_set_id: null, gate_decision_refs: [],

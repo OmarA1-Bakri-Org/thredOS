@@ -1,3 +1,5 @@
+import { buildAgentComposition } from '@/lib/agents/composition'
+import { writeAgentState } from '@/lib/agents/repository'
 import { afterEach, describe, expect, setDefaultTimeout, test } from 'bun:test'
 import { mkdir, mkdtemp, rm, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
@@ -119,6 +121,8 @@ describe.serial('PR-06 real process exit gate', () => {
         name: 'Long-running fixture',
         type: 'base',
         model: 'shell',
+        assigned_agent_id: 'fixture-agent-step-1', agent_ref: 'fixture-agent-step-1',
+        prompt_ref: { id: 'step-1', version: 1, path: '.threados/prompts/step-1.md' },
         prompt_file: '.threados/prompts/step-1.md',
         depends_on: [],
         status: 'READY',
@@ -130,6 +134,11 @@ describe.serial('PR-06 real process exit gate', () => {
       side_effect_mode: 'free',
     }))
     await writeFile(promptPath, '# real process proof')
+    await writeAgentState(basePath, { version: 1, agents: [{
+      id: 'fixture-agent-step-1', name: 'Fixture Agent', builderId: 'fixture-builder', builderName: 'Fixture Builder',
+      registeredAt: '2026-07-16T00:00:00.000Z', version: 1, threadSurfaceIds: [],
+      composition: buildAgentComposition({ model: 'shell', promptRef: { id: 'step-1', version: 1, path: '.threados/prompts/step-1.md' } }),
+    }] })
     setProcessTerminationHookForTests(terminateFixtureDirectly)
 
     const service = await getThreadOSRuntimeService(basePath, {

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { createHash } from 'crypto'
-import { access, lstat, mkdir, mkdtemp, open, readFile, rm, symlink, writeFile } from 'fs/promises'
+import { access, lstat, mkdir, mkdtemp, open, readFile, rename, rm, symlink, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import {
@@ -68,6 +68,24 @@ describe('safe file I/O', () => {
 
     expect(await readTextFileNoFollow(regular)).toBe('regular content')
     await expect(readTextFileNoFollow(linked)).rejects.toThrow()
+  })
+
+  test('retries an atomic regular-file replacement but rejects it when an expected identity is pinned', async () => {
+    const path = join(inside, 'record.json')
+    const replacement = join(inside, 'next.json')
+    await writeFile(path, 'old record')
+    let replaced = false
+    setSafeIoAfterOpenHookForTests(async ({ operation, filePath }) => {
+      if (operation === 'read' && filePath === path && !replaced) {
+        replaced = true
+        await writeFile(replacement, 'new record')
+        await rename(replacement, path)
+      }
+    })
+    expect(await readTextFileNoFollow(path)).toBe('new record')
+    const expected = await lstat(path, { bigint: true })
+    replaced = false
+    await expect(readTextFileNoFollow(path, expected)).rejects.toMatchObject({ code: 'SAFE_IO_SOURCE_CHANGED' })
   })
 
   test('writes new files and truncates existing regular files', async () => {

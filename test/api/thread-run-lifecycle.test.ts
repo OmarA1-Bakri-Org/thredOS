@@ -5,6 +5,7 @@ import { join } from 'path'
 import YAML from 'yaml'
 import type { RuntimeServicePort } from '@/lib/api/runtime-request'
 import { RuntimeServiceError } from '@/lib/runtime/errors'
+import { registerSequenceAgents } from '../helpers/registered-sequence'
 
 const THREAD_SURFACE_STATE_PATH = ['.threados', 'state', 'thread-surfaces.json']
 
@@ -17,7 +18,7 @@ async function setupTestSequence() {
     YAML.stringify({
       version: '1.0',
       name: 'Lifecycle Sequence',
-      steps: [
+      steps: await registerSequenceAgents(basePath, [
         {
           id: 'step-a',
           name: 'Step A',
@@ -27,7 +28,7 @@ async function setupTestSequence() {
           depends_on: [],
           status: 'READY',
         },
-      ],
+      ]),
       gates: [],
     }),
   )

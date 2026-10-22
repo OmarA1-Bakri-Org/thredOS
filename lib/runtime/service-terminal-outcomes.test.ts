@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { mkdtemp, rm } from 'fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { PolicyConfigSchema } from '../policy/schema'
@@ -15,6 +15,8 @@ import type { RuntimeCommandContext, RuntimeServiceDependencies, StartRunRequest
 import type { ProcessRecord, RuntimeCommandReceipt, StepAttempt, WorkflowRun } from './schema'
 import type { Sequence } from '../sequence/schema'
 import { stableRuntimeHash } from './attempt-executor'
+import { buildAgentComposition } from '../agents/composition'
+import { writeAgentState } from '../agents/repository'
 
 const roots: string[] = []
 const NOW = '2026-08-28T00:00:00.000Z'
@@ -30,6 +32,8 @@ function makeStep(id: string) {
     name: id,
     type: 'base' as const,
     model: 'shell',
+    assigned_agent_id: `registered-${id}`,
+    agent_ref: `registered-${id}`,
     prompt_file: `.threados/prompts/${id}.md`,
     prompt_ref: { id, version: 1, path: `.threados/prompts/${id}.md` },
     status: 'READY' as const,
@@ -104,6 +108,17 @@ async function makeService(
 ) {
   const basePath = await mkdtemp(join(tmpdir(), 'threados-service-terminal-outcomes-'))
   roots.push(basePath)
+  await mkdir(join(basePath, '.threados/prompts'), { recursive: true })
+  // Register only the two known fixture identities; overrides retain their
+  // original load timing and cannot implicitly register unknown assignments.
+  const registeredSteps = [makeStep('step-1'), makeStep('step-2')]
+  await Promise.all(registeredSteps.map(step => writeFile(join(basePath, step.prompt_ref.path), `registered command for ${step.id}`)))
+  await writeAgentState(basePath, { version: 1, agents: registeredSteps.map(step => ({
+    id: step.assigned_agent_id, name: step.id,
+    builderId: 'fixture-builder', builderName: 'Fixture Builder',
+    registeredAt: NOW, version: 1, threadSurfaceIds: [],
+    composition: buildAgentComposition({ model: step.model, promptRef: step.prompt_ref, skillRefs: [] }),
+  })) })
   let id = 0
   const deps: RuntimeServiceDependencies = {
     now: () => NOW,

@@ -14,6 +14,7 @@ import {
 import { RunRepository } from './run-repository'
 import type { ProcessRecord, StepAttempt, WorkflowRun } from './schema'
 import { readThreadSurfaceState, writeThreadSurfaceState } from '../thread-surfaces/repository'
+import { readTraceEvents } from '../traces/reader'
 
 const NOW = '2026-07-16T00:00:00.000Z'
 
@@ -131,6 +132,56 @@ describe('operator runtime projections', () => {
   afterEach(async () => {
     await rm(basePath, { recursive: true, force: true })
   })
+
+  for (const scenario of ['legacy', 'no-spawn', 'permitted', 'spoofed-parent'] as const) {
+    test(`projects ${scenario} child requests with frozen origin evidence`, async () => {
+      const registration = {
+        registration_id: 'frozen-agent', registration_version: 2, composition_hash: 'a'.repeat(64),
+        builder_id: 'frozen-builder', registered_at: NOW, supersedes_agent_id: 'prior-agent',
+        model: 'codex', role: 'orchestrator', prompt_ref: { id: 'prompt', version: 1, path: '.threados/prompts/private.md' },
+        skill_refs: scenario === 'no-spawn' ? [] : [{ id: 'spawn', version: 1, capabilities: ['spawn'], path: '.threados/skills/private/SKILL.md' }],
+        tools: ['private-tool'], prompt_content_hash: 'b'.repeat(64), skill_content_hashes: [],
+      }
+      await writeThreadSurfaceState(basePath, { version: 1, threadSurfaces: [{
+        id: 'thread-root', parentSurfaceId: null, parentAgentNodeId: null, depth: 0,
+        surfaceLabel: 'Root', createdAt: NOW, childSurfaceIds: [], sequenceRef: null, spawnedByAgentId: null,
+      }], runs: [], mergeEvents: [], runEvents: [] })
+      const attempt = { ...stepAttempt({ status: 'completed', surface_id: 'thread-step-1', process_id: null }),
+        ...(scenario === 'legacy' ? {} : { agent_registration: registration }),
+      }
+      const input = {
+        run: workflowRun(), attempt,
+        step: { id: 'step-1', name: 'Step', type: 'base' as const, model: 'codex', prompt_file: '.threados/prompts/step-1.md', depends_on: [], status: 'DONE' as const },
+        runtimeEvents: [{ eventType: 'spawn-child' as const, createdAt: NOW, childStepId: 'child',
+          childLabel: 'Child', spawnKind: 'orchestrator' as const,
+          ...(scenario === 'spoofed-parent' ? { parentStepId: 'other-step' } : {}),
+        }],
+      }
+      const projections = createRuntimeProjections(basePath)
+      await projections.beginAttempt(input)
+      await projections.finalizeAttempt(input)
+      await projections.finalizeAttempt(input)
+      const state = await readThreadSurfaceState(basePath)
+      expect(state.threadSurfaces.some(surface => surface.id === 'thread-child')).toBe(scenario === 'permitted')
+      const traces = await readTraceEvents(basePath, input.run.id)
+      expect(traces).toHaveLength(1)
+      expect(traces[0]).toMatchObject({ attempt_id: attempt.id,
+        event_type: scenario === 'permitted' ? 'spawn-child' : 'spawn-denied',
+        ...(scenario === 'legacy' ? {} : { agent_registration: {
+          registration_id: 'frozen-agent', registration_version: 2, composition_hash: 'a'.repeat(64),
+          builder_id: 'frozen-builder', supersedes_agent_id: 'prior-agent', prompt_content_hash: 'b'.repeat(64),
+        } }),
+      })
+      expect(JSON.stringify(traces)).not.toContain('private')
+      if (scenario === 'permitted') {
+        expect(new Set(state.runs.map(item => item.id)).size).toBe(state.runs.length)
+        expect(state.runs.find(item => item.threadSurfaceId === 'thread-child')?.parentRunId).toBe(attempt.id)
+        expect(state.threadSurfaces.find(surface => surface.id === 'thread-child')?.registeredAgentId).toBeUndefined()
+        const childSequence = await readFile(join(basePath, '.threados/sequences/thread-child/sequence.yaml'), 'utf-8')
+        expect(childSequence).not.toContain('frozen-agent')
+      }
+    })
+  }
 
   test('lists V2 and legacy runs with explicit source metadata without rewriting legacy bytes', async () => {
     await repositories.runs.create(workflowRun())
