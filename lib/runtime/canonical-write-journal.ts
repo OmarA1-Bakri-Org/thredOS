@@ -192,6 +192,32 @@ export async function readCanonicalProjectWrites(
   }
 }
 
+function changedManifestPaths(
+  before: Map<string, SnapshotEntry>,
+  after: Map<string, SnapshotEntry>,
+): Set<string> {
+  const paths = new Set([...before.keys(), ...after.keys()])
+  return new Set([...paths].filter(path =>
+    snapshotEntryDigest(before.get(path) ?? null) !== snapshotEntryDigest(after.get(path) ?? null),
+  ))
+}
+
+function assertCanonicalWriteEvidence(
+  write: CanonicalProjectWrite,
+  before: Map<string, SnapshotEntry>,
+  after: Map<string, SnapshotEntry>,
+  changed: Set<string>,
+): void {
+  if (write.status !== 'committed' || write.after_entry_hash == null) {
+    throw new CanonicalWriteAttributionError(`Canonical write ${write.id} lacks committed evidence`)
+  }
+  const beforeHash = snapshotEntryDigest(before.get(write.path) ?? null)
+  const afterHash = snapshotEntryDigest(after.get(write.path) ?? null)
+  if (write.before_entry_hash !== beforeHash || write.after_entry_hash !== afterHash || !changed.has(write.path)) {
+    throw new CanonicalWriteAttributionError(`Canonical write ${write.id} does not match observed manifest evidence`)
+  }
+}
+
 export function classifyCanonicalManifestChange(input: {
   before: SnapshotEntry[]
   after: SnapshotEntry[]
@@ -199,22 +225,12 @@ export function classifyCanonicalManifestChange(input: {
 }): 'unchanged' | 'external_user_edit' | 'threados_mutation' {
   const before = new Map(input.before.map(entry => [entry.path, entry]))
   const after = new Map(input.after.map(entry => [entry.path, entry]))
-  const paths = new Set([...before.keys(), ...after.keys()])
-  const changed = new Set([...paths].filter(path =>
-    snapshotEntryDigest(before.get(path) ?? null) !== snapshotEntryDigest(after.get(path) ?? null),
-  ))
+  const changed = changedManifestPaths(before, after)
   if (changed.size === 0) return 'unchanged'
 
   let attributed = false
   for (const write of input.writes) {
-    if (write.status !== 'committed' || write.after_entry_hash == null) {
-      throw new CanonicalWriteAttributionError(`Canonical write ${write.id} lacks committed evidence`)
-    }
-    const beforeHash = snapshotEntryDigest(before.get(write.path) ?? null)
-    const afterHash = snapshotEntryDigest(after.get(write.path) ?? null)
-    if (write.before_entry_hash !== beforeHash || write.after_entry_hash !== afterHash || !changed.has(write.path)) {
-      throw new CanonicalWriteAttributionError(`Canonical write ${write.id} does not match observed manifest evidence`)
-    }
+    assertCanonicalWriteEvidence(write, before, after, changed)
     attributed = true
   }
   return attributed ? 'threados_mutation' : 'external_user_edit'

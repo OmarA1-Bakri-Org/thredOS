@@ -193,50 +193,42 @@ async function resolveVerifiedRoot(path: string, label: string): Promise<string>
   }
 }
 
-export async function resolveWorkspaceDispatchContext(
-  input: ResolveWorkspaceDispatchContextInput,
-): Promise<WorkspaceDispatchContext> {
+function requireReadyWorkspace(input: ResolveWorkspaceDispatchContextInput): SurfaceWorkspaceState['workspace'] {
   if (input.state == null) {
     throw new WorkspacePlanningError('WORKSPACE_MISSING', 'An isolated attempt requires a workspace record')
   }
-
   const { workspace } = input.state
   if (workspace.status !== 'ready' || workspace.ready_at == null || workspace.manifest_hash == null) {
-    throw new WorkspacePlanningError(
-      'WORKSPACE_NOT_READY',
-      `Workspace ${workspace.id} is not ready for dispatch`,
-    )
+    throw new WorkspacePlanningError('WORKSPACE_NOT_READY', `Workspace ${workspace.id} is not ready for dispatch`)
   }
   if (!input.state.treeExists) {
-    throw new WorkspacePlanningError(
-      'WORKSPACE_TREE_MISSING',
-      `Workspace ${workspace.id} has no verified tree`,
-    )
+    throw new WorkspacePlanningError('WORKSPACE_TREE_MISSING', `Workspace ${workspace.id} has no verified tree`)
   }
   if (input.state.manifestValid !== true) {
-    throw new WorkspacePlanningError(
-      'WORKSPACE_MANIFEST_INVALID',
-      `Workspace ${workspace.id} does not have a valid manifest`,
-    )
+    throw new WorkspacePlanningError('WORKSPACE_MANIFEST_INVALID', `Workspace ${workspace.id} does not have a valid manifest`)
   }
-  if (workspace.isolation_label !== 'THREADOS_SCOPED') {
-    throw new WorkspacePlanningError(
-      'WORKSPACE_NOT_READY',
-      `Workspace ${workspace.id} does not provide the required isolation contract`,
-    )
-  }
-  if (
-    workspace.workflow_run_id !== input.expected.workflowRunId
-    || workspace.attempt_id !== input.expected.attemptId
-    || workspace.surface_id !== input.expected.surfaceId
-    || workspace.snapshot_id !== input.expected.snapshotId
-  ) {
-    throw new WorkspacePlanningError(
-      'WORKSPACE_BINDING_MISMATCH',
-      `Workspace ${workspace.id} is not bound to the requested attempt`,
-    )
-  }
+  return workspace
+}
 
+function assertWorkspaceBinding(
+  workspace: SurfaceWorkspaceState['workspace'],
+  expected: WorkspaceBindingExpectation,
+): void {
+  if (workspace.isolation_label !== 'THREADOS_SCOPED') {
+    throw new WorkspacePlanningError('WORKSPACE_NOT_READY', `Workspace ${workspace.id} does not provide the required isolation contract`)
+  }
+  if (workspace.workflow_run_id !== expected.workflowRunId
+    || workspace.attempt_id !== expected.attemptId
+    || workspace.surface_id !== expected.surfaceId
+    || workspace.snapshot_id !== expected.snapshotId) {
+    throw new WorkspacePlanningError('WORKSPACE_BINDING_MISMATCH', `Workspace ${workspace.id} is not bound to the requested attempt`)
+  }
+}
+
+async function verifyWorkspaceRoot(
+  workspace: SurfaceWorkspaceState['workspace'],
+  input: ResolveWorkspaceDispatchContextInput,
+): Promise<string> {
   const workspaceRoot = await resolveVerifiedRoot(workspace.root_path, 'workspace root')
   const canonicalRoot = await resolveVerifiedRoot(input.canonicalRoot, 'canonical root')
   if (sameOrWithin(canonicalRoot, workspaceRoot) || sameOrWithin(workspaceRoot, canonicalRoot)) {
@@ -254,7 +246,15 @@ export async function resolveWorkspaceDispatchContext(
       )
     }
   }
+  return workspaceRoot
+}
 
+export async function resolveWorkspaceDispatchContext(
+  input: ResolveWorkspaceDispatchContextInput,
+): Promise<WorkspaceDispatchContext> {
+  const workspace = requireReadyWorkspace(input)
+  assertWorkspaceBinding(workspace, input.expected)
+  const workspaceRoot = await verifyWorkspaceRoot(workspace, input)
   return {
     cwd: workspaceRoot,
     workspaceId: workspace.id,

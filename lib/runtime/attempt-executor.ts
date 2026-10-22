@@ -729,14 +729,7 @@ export class AttemptExecutor {
       const poll = async (): Promise<void> => {
         if (stopped) return
         try {
-          const [run, attempt] = await Promise.all([
-            this.repositories.runs.get(runId),
-            this.repositories.attempts.get(attemptId),
-          ])
-          if (!run || !attempt) throw new Error(`bootstrap process ${processId} lost its run or attempt`)
-          const cancellationRequested = run.status === 'cancelled'
-            || run.cancellation_requested_at !== null
-            || attempt.status === 'cancelled'
+          const cancellationRequested = await this.bootstrapCancellationRequested(runId, attemptId, processId)
           if (cancellationRequested) {
             const control = await this.processController.cancel(processId)
             if (!control.success) throw new RuntimeServiceError(control.code, control.message)
@@ -758,6 +751,17 @@ export class AttemptExecutor {
       stopped = true
       if (timer) clearTimeout(timer)
     }
+  }
+
+  private async bootstrapCancellationRequested(runId: string, attemptId: string, processId: string): Promise<boolean> {
+    const [run, attempt] = await Promise.all([
+      this.repositories.runs.get(runId),
+      this.repositories.attempts.get(attemptId),
+    ])
+    if (!run || !attempt) throw new Error(`bootstrap process ${processId} lost its run or attempt`)
+    return run.status === 'cancelled'
+      || run.cancellation_requested_at !== null
+      || attempt.status === 'cancelled'
   }
 
   private async waitForPersistedProcessTerminal(

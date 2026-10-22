@@ -26,7 +26,8 @@ import { reconcileCanonicalRuntime } from './recovery'
 import { RunRepository } from './run-repository'
 import { SequentialScheduler } from './scheduler'
 import { ThreadOSRuntimeService } from './service'
-import type { RuntimeServiceDependencies } from './service-types'
+import type { RuntimeCanonicalWorkspaceEvidence, RuntimeServiceDependencies } from './service-types'
+import type { StepAttempt, WorkflowRun } from './schema'
 import { createTestCompatibilityStartProcess } from './test-compatibility'
 import type { RunnerConfig, RunResult } from '../runner/wrapper'
 import { loadWorkspaceConfig } from '../workspaces/config'
@@ -58,6 +59,41 @@ export interface RuntimeFactoryOptions {
 
 const instances = new Map<string, Promise<ThreadOSRuntimeService>>()
 
+interface CanonicalEvidenceInput extends Omit<RuntimeCanonicalWorkspaceEvidence, 'evidenceRef'> {
+  basePath: string
+  run: WorkflowRun
+  attempt: StepAttempt
+  now(): string
+}
+
+async function persistCanonicalWorkspaceEvidence(input: CanonicalEvidenceInput): Promise<RuntimeCanonicalWorkspaceEvidence> {
+  const { basePath, run, attempt, preHash, postHash, classification, now } = input
+  const relativeRef = `.threados/runs/${run.id}/attempts/${attempt.id}/canonical-precondition.json`
+  const attemptRoot = await resolveExistingPathWithinRoot(
+    basePath, '.threados', 'runs', run.id, 'attempts', attempt.id,
+  )
+  const evidencePath = await resolvePathWithinRoot(attemptRoot, 'canonical-precondition.json')
+  await writeFileAtomic(evidencePath, `${JSON.stringify({
+    schema_version: 1,
+    workflow_run_id: run.id,
+    attempt_id: attempt.id,
+    pre_hash: preHash,
+    post_hash: postHash,
+    classification,
+    observed_at: now(),
+  }, null, 2)}\n`, { allowedRoot: basePath })
+  await appendTraceEvent(basePath, run.id, {
+    ts: now(),
+    run_id: run.id,
+    surface_id: attempt.surface_id,
+    actor: 'threados-runtime',
+    event_type: 'policy-checked',
+    payload_ref: relativeRef,
+    policy_ref: run.policy_snapshot_hash,
+  })
+  return { preHash, postHash, classification, evidenceRef: relativeRef }
+}
+
 function defaults(basePath: string): RuntimeServiceDependencies {
   const now = () => new Date().toISOString()
   const workspaceManagers = new Map<string, SurfaceWorkspaceManager>()
@@ -81,17 +117,9 @@ function defaults(basePath: string): RuntimeServiceDependencies {
     loadPolicy: async path => (await PolicyEngine.load(path)).getConfig(),
     validateSequence: validateDAG,
     validatePrompt: validatePromptExists,
-    compilePrompt: async ({
-      sequence,
-      step,
-      runId,
-      executionRoot,
-      workspaceContext,
-      logicalWorkingDirectory,
-      includeDependencyArtifacts,
-      runtimeEventLogPath,
-      rawPrompt,
-    }) => {
+    compilePrompt: async input => {
+      const { sequence, step, runId, executionRoot, workspaceContext, logicalWorkingDirectory,
+        includeDependencyArtifacts, runtimeEventLogPath, rawPrompt } = input
       if (step.model === 'shell') return rawPrompt
       return await compilePrompt({
         stepId: step.id, step, rawPrompt, sequence, basePath,
@@ -255,40 +283,11 @@ function defaults(basePath: string): RuntimeServiceDependencies {
         after: inspected.entries,
         writes,
       })
-      const relativeRef = `.threados/runs/${run.id}/attempts/${attempt.id}/canonical-precondition.json`
-      const attemptRoot = await resolveExistingPathWithinRoot(
-        basePath,
-        '.threados',
-        'runs',
-        run.id,
-        'attempts',
-        attempt.id,
-      )
-      const evidencePath = await resolvePathWithinRoot(attemptRoot, 'canonical-precondition.json')
-      await writeFileAtomic(evidencePath, `${JSON.stringify({
-        schema_version: 1,
-        workflow_run_id: run.id,
-        attempt_id: attempt.id,
-        pre_hash: preHash,
-        post_hash: inspected.rootManifestHash,
-        classification,
-        observed_at: now(),
-      }, null, 2)}\n`, { allowedRoot: basePath })
-      await appendTraceEvent(basePath, run.id, {
-        ts: now(),
-        run_id: run.id,
-        surface_id: attempt.surface_id,
-        actor: 'threados-runtime',
-        event_type: 'policy-checked',
-        payload_ref: relativeRef,
-        policy_ref: run.policy_snapshot_hash,
-      })
-      return {
-        preHash,
+      return await persistCanonicalWorkspaceEvidence({
+        basePath, run, attempt, preHash,
         postHash: inspected.rootManifestHash,
-        classification,
-        evidenceRef: relativeRef,
-      }
+        classification, now,
+      })
     },
     prepareArtifacts: async ({ basePath: path, runId, surfaceId, step, compiledPrompt, createdAt }) => {
       await writeInputManifest(path, runId, surfaceId, {

@@ -78,6 +78,31 @@ describe('runtime event log', () => {
     expect(result.events[0]).not.toHaveProperty('agent')
   })
 
+  test('diagnostics omit private payloads from malformed and schema-invalid events', async () => {
+    const { readRuntimeEventLogAtPath } = await importRuntimeEventLog()
+    const logPath = join(tmpDir, 'private-events.ndjson')
+    const secret = 'private-fixture-token-that-must-not-be-logged'
+    await writeFile(logPath, [
+      `{"token":"${secret}",`,
+      JSON.stringify({ token: secret, eventType: 'unsupported-private-event' }),
+    ].join('\n'))
+    const diagnostics: string[] = []
+    const originalWarn = console.warn
+    console.warn = (...args: unknown[]) => { diagnostics.push(args.map(String).join(' ')) }
+    try {
+      expect(await readRuntimeEventLogAtPath(logPath, tmpDir)).toEqual({ events: [], invalidLines: 2 })
+      expect(diagnostics).toHaveLength(2)
+      expect(diagnostics.join('\n')).not.toContain(secret)
+      expect(diagnostics.join('\n')).not.toContain('token')
+      expect(diagnostics).toEqual([
+        '[runtime-event-log] Malformed JSON at line 1',
+        '[runtime-event-log] Invalid event at line 2',
+      ])
+    } finally {
+      console.warn = originalWarn
+    }
+  })
+
   test('ignores blank lines and counts malformed lines without throwing', async () => {
     const { getRuntimeEventLogPath, readRuntimeEventLog } = await importRuntimeEventLog()
     const logPath = getRuntimeEventLogPath(tmpDir, 'run-2', 'step-2')

@@ -88,13 +88,11 @@ export async function readRuntimeEventLogAtPath(
         events.push(result.data)
       } else {
         invalidLines += 1
-        const preview = trimmed.length > 100 ? trimmed.slice(0, 100) + '...' : trimmed
-        console.warn(`[runtime-event-log] Invalid event at line ${i + 1}: ${preview}`)
+        console.warn(`[runtime-event-log] Invalid event at line ${i + 1}`)
       }
     } catch {
       invalidLines += 1
-      const preview = trimmed.length > 100 ? trimmed.slice(0, 100) + '...' : trimmed
-      console.warn(`[runtime-event-log] Malformed JSON at line ${i + 1}: ${preview}`)
+      console.warn(`[runtime-event-log] Malformed JSON at line ${i + 1}`)
     }
   }
 

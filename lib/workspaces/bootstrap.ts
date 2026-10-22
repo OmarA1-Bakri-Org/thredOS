@@ -60,65 +60,82 @@ export class WorkspaceBootstrapError extends Error {
   }
 }
 
+type BootstrapQuote = 'single' | 'double' | null
+
+interface BootstrapTokenState {
+  tokens: string[]
+  token: string
+  tokenStarted: boolean
+  quote: BootstrapQuote
+}
+
+function appendBootstrapToken(state: BootstrapTokenState): void {
+  if (!state.tokenStarted) return
+  state.tokens.push(state.token)
+  state.token = ''
+  state.tokenStarted = false
+}
+
+function assertBootstrapCharacter(source: string, index: number, quote: BootstrapQuote): void {
+  if (quote !== null) return
+  const character = source[index]!
+  if (/[|&;<>\r\n]/.test(character)) {
+    throw new Error('Bootstrap command contains unsupported shell operator: ' + character)
+  }
+  if ((character === '$' && source[index + 1] === '(') || character === String.fromCharCode(96)) {
+    throw new Error('Bootstrap command contains unsupported shell operator')
+  }
+}
+
+function consumeBootstrapQuote(character: string, state: BootstrapTokenState): boolean {
+  if (character === "'" && state.quote !== 'double') {
+    state.quote = state.quote === 'single' ? null : 'single'
+    state.tokenStarted = true
+    return true
+  }
+  if (character === '"' && state.quote !== 'single') {
+    state.quote = state.quote === 'double' ? null : 'double'
+    state.tokenStarted = true
+    return true
+  }
+  return false
+}
+
+function readBootstrapEscape(source: string, index: number, quote: BootstrapQuote): string | null {
+  if (source[index] !== '\\' || quote === 'single') return null
+  const next = source[index + 1]
+  if (next === undefined) return null
+  if (['\\', '"', "'"].includes(next)) return next
+  return quote === null && /\s/.test(next) ? next : null
+}
+
+function consumeBootstrapCharacter(source: string, index: number, state: BootstrapTokenState): number {
+  const character = source[index]!
+  assertBootstrapCharacter(source, index, state.quote)
+  if (consumeBootstrapQuote(character, state)) return index
+  if (state.quote === null && /\s/.test(character)) {
+    appendBootstrapToken(state)
+    return index
+  }
+  const escaped = readBootstrapEscape(source, index, state.quote)
+  state.token += escaped ?? character
+  state.tokenStarted = true
+  return escaped === null ? index : index + 1
+}
+
 export function parseBootstrapCommand(_source: string): ParsedBootstrapCommand {
   const source = _source.trim()
   if (source.length === 0) throw new Error('Bootstrap command must not be empty')
-
-  const tokens: string[] = []
-  let token = ''
-  let tokenStarted = false
-  let quote: 'single' | 'double' | null = null
-
-  const appendToken = (): void => {
-    if (!tokenStarted) return
-    tokens.push(token)
-    token = ''
-    tokenStarted = false
-  }
-
+  const state: BootstrapTokenState = { tokens: [], token: '', tokenStarted: false, quote: null }
   for (let index = 0; index < source.length; index += 1) {
-    const character = source[index]!
-    if (quote === null && /[|&;<>\r\n]/.test(character)) {
-      throw new Error('Bootstrap command contains unsupported shell operator: ' + character)
-    }
-    if (quote === null && (character === '$' && source[index + 1] === '(' || character === String.fromCharCode(96))) {
-      throw new Error('Bootstrap command contains unsupported shell operator')
-    }
-    if (character === "'" && quote !== 'double') {
-      quote = quote === 'single' ? null : 'single'
-      tokenStarted = true
-      continue
-    }
-    if (character === '"' && quote !== 'single') {
-      quote = quote === 'double' ? null : 'double'
-      tokenStarted = true
-      continue
-    }
-    if (quote === null && /\s/.test(character)) {
-      appendToken()
-      continue
-    }
-    if (character === '\\' && quote !== 'single') {
-      const next = source[index + 1]
-      const escapable = next !== undefined
-        && (next === '\\' || next === '"' || next === "'" || (quote === null && /\s/.test(next)))
-      if (escapable) {
-        token += next
-        tokenStarted = true
-        index += 1
-        continue
-      }
-    }
-    token += character
-    tokenStarted = true
+    index = consumeBootstrapCharacter(source, index, state)
   }
-
-  if (quote !== null) throw new Error('Bootstrap command contains an unterminated quote')
-  appendToken()
-  if (tokens.length === 0 || tokens[0]!.length === 0) {
+  if (state.quote !== null) throw new Error('Bootstrap command contains an unterminated quote')
+  appendBootstrapToken(state)
+  if (state.tokens.length === 0 || state.tokens[0]!.length === 0) {
     throw new Error('Bootstrap command must include an executable')
   }
-  return { command: tokens[0]!, args: tokens.slice(1) }
+  return { command: state.tokens[0]!, args: state.tokens.slice(1) }
 }
 
 const DEFAULT_TIMEOUT_MS = 10 * 60 * 1_000
@@ -241,136 +258,152 @@ async function persistArtifact(
   }
 }
 
+interface BootstrapCommandContext {
+  input: RunWorkspaceBootstrapInput
+  index: number
+  payload: ExecutablePayload
+  workspaceRoot: string
+  redactedCommand: string
+  redactedArgs: string[]
+  timeoutMs: number
+  maxOutputBytes: number
+  nowMs(): number
+  artifacts: BootstrapArtifact[]
+}
+
+function bootstrapArtifactIdentity(context: BootstrapCommandContext) {
+  return {
+    schema_version: 1 as const,
+    workspace_id: context.input.context.workspaceId,
+    attempt_id: context.input.context.attemptId,
+    index: context.index,
+    command: context.redactedCommand,
+    args: context.redactedArgs,
+  }
+}
+
+async function recordBootstrapArtifact(context: BootstrapCommandContext, artifact: BootstrapArtifact): Promise<void> {
+  await persistArtifact(context.input, artifact, context.index)
+  context.artifacts.push(artifact)
+}
+
+function parseBootstrapPayload(source: string, index: number, workspaceRoot: string): ExecutablePayload {
+  let parsed: ParsedBootstrapCommand
+  try {
+    parsed = parseBootstrapCommand(source)
+  } catch (error) {
+    throw new WorkspaceBootstrapError('Bootstrap command ' + index + ' is invalid', index, error)
+  }
+  return { command: parsed.command, args: parsed.args, cwd: workspaceRoot }
+}
+
+async function recordBootstrapPolicyFailure(context: BootstrapCommandContext, error: unknown): Promise<never> {
+  const artifact: BootstrapArtifact = {
+    ...bootstrapArtifactIdentity(context),
+    stdout: '', stderr: '', duration_ms: 0, exit_code: null, status: 'policy_blocked',
+    error_message: redactAndBound(
+      error instanceof Error ? error.message : 'Policy evaluation failed',
+      context.maxOutputBytes,
+    ),
+  }
+  await recordBootstrapArtifact(context, artifact)
+  throw new WorkspaceBootstrapError('Bootstrap policy evaluation failed for command ' + context.index, context.index, error)
+}
+
+async function recordBootstrapPolicyRejection(context: BootstrapCommandContext, policy: PolicyResult): Promise<never> {
+  const artifact: BootstrapArtifact = {
+    ...bootstrapArtifactIdentity(context),
+    stdout: '', stderr: '', duration_ms: 0, exit_code: null, status: 'policy_blocked',
+    error_message: redactAndBound(
+      policy.reason ?? (policy.confirmation_required ? 'Policy confirmation required' : 'Policy denied command'),
+      context.maxOutputBytes,
+    ),
+  }
+  await recordBootstrapArtifact(context, artifact)
+  throw new WorkspaceBootstrapError('Bootstrap policy blocked command ' + context.index, context.index)
+}
+
+async function evaluateBootstrapCommandPolicy(context: BootstrapCommandContext): Promise<void> {
+  let policy: PolicyResult
+  try {
+    policy = context.input.evaluatePolicy(context.payload)
+  } catch (error) {
+    return await recordBootstrapPolicyFailure(context, error)
+  }
+  if (!policy.allowed || policy.confirmation_required) {
+    await recordBootstrapPolicyRejection(context, policy)
+  }
+}
+
+async function recordBootstrapExecutionError(
+  context: BootstrapCommandContext,
+  startedAt: number,
+  error: unknown,
+): Promise<never> {
+  const { nowMs } = context
+  const artifact: BootstrapArtifact = {
+    ...bootstrapArtifactIdentity(context),
+    stdout: '', stderr: '',
+    duration_ms: Math.max(0, nowMs() - startedAt),
+    exit_code: null, status: 'error',
+    error_message: redactAndBound(
+      error instanceof Error ? error.message : 'Bootstrap execution failed',
+      context.maxOutputBytes,
+    ),
+  }
+  await recordBootstrapArtifact(context, artifact)
+  throw new WorkspaceBootstrapError('Bootstrap execution failed for command ' + context.index, context.index, error)
+}
+
+async function executeBootstrapCommand(context: BootstrapCommandContext): Promise<void> {
+  const { nowMs } = context
+  const startedAt = nowMs()
+  let execution: BootstrapExecutionResult
+  try {
+    execution = await context.input.execute(context.payload, {
+      cwd: context.workspaceRoot,
+      shell: false,
+      timeoutMs: context.timeoutMs,
+      maxOutputBytes: context.maxOutputBytes,
+    })
+  } catch (error) {
+    return await recordBootstrapExecutionError(context, startedAt, error)
+  }
+  const artifact: BootstrapArtifact = {
+    ...bootstrapArtifactIdentity(context),
+    stdout: redactAndBound(execution.stdout, context.maxOutputBytes),
+    stderr: redactAndBound(execution.stderr, context.maxOutputBytes),
+    duration_ms: Math.max(0, nowMs() - startedAt),
+    exit_code: execution.exitCode,
+    status: execution.exitCode === 0 ? 'success' : 'failed',
+  }
+  await recordBootstrapArtifact(context, artifact)
+  if (execution.exitCode !== 0) {
+    throw new WorkspaceBootstrapError(
+      'Bootstrap command ' + context.index + ' exited with code ' + (execution.exitCode ?? 'unknown'),
+      context.index,
+    )
+  }
+}
+
 export async function runWorkspaceBootstrap(
   input: RunWorkspaceBootstrapInput,
 ): Promise<BootstrapArtifact[]> {
   const workspaceRoot = await assertSafeBootstrapRoot(input)
   const timeoutMs = validateLimit(input.timeoutMs ?? DEFAULT_TIMEOUT_MS, 'Bootstrap timeout')
-  const maxOutputBytes = validateLimit(
-    input.maxOutputBytes ?? DEFAULT_MAX_OUTPUT_BYTES,
-    'Bootstrap output limit',
-  )
+  const maxOutputBytes = validateLimit(input.maxOutputBytes ?? DEFAULT_MAX_OUTPUT_BYTES, 'Bootstrap output limit')
   const nowMs = input.nowMs ?? Date.now
   const artifacts: BootstrapArtifact[] = []
-
   for (let index = 0; index < input.commands.length; index += 1) {
-    let parsed: ParsedBootstrapCommand
-    try {
-      parsed = parseBootstrapCommand(input.commands[index]!)
-    } catch (error) {
-      throw new WorkspaceBootstrapError('Bootstrap command ' + index + ' is invalid', index, error)
+    const payload = parseBootstrapPayload(input.commands[index]!, index, workspaceRoot)
+    const context: BootstrapCommandContext = {
+      input, index, payload, workspaceRoot,
+      redactedCommand: redactSecrets(payload.command),
+      redactedArgs: redactArguments(payload.args),
+      timeoutMs, maxOutputBytes, nowMs, artifacts,
     }
-    const payload: ExecutablePayload = {
-      command: parsed.command,
-      args: parsed.args,
-      cwd: workspaceRoot,
-    }
-    const redactedCommand = redactSecrets(parsed.command)
-    const redactedArgs = redactArguments(parsed.args)
-
-    let policy: PolicyResult
-    try {
-      policy = input.evaluatePolicy(payload)
-    } catch (error) {
-      const artifact: BootstrapArtifact = {
-        schema_version: 1,
-        workspace_id: input.context.workspaceId,
-        attempt_id: input.context.attemptId,
-        index,
-        command: redactedCommand,
-        args: redactedArgs,
-        stdout: '',
-        stderr: '',
-        duration_ms: 0,
-        exit_code: null,
-        status: 'policy_blocked',
-        error_message: redactAndBound(
-          error instanceof Error ? error.message : 'Policy evaluation failed',
-          maxOutputBytes,
-        ),
-      }
-      await persistArtifact(input, artifact, index)
-      artifacts.push(artifact)
-      throw new WorkspaceBootstrapError('Bootstrap policy evaluation failed for command ' + index, index, error)
-    }
-
-    if (!policy.allowed || policy.confirmation_required) {
-      const artifact: BootstrapArtifact = {
-        schema_version: 1,
-        workspace_id: input.context.workspaceId,
-        attempt_id: input.context.attemptId,
-        index,
-        command: redactedCommand,
-        args: redactedArgs,
-        stdout: '',
-        stderr: '',
-        duration_ms: 0,
-        exit_code: null,
-        status: 'policy_blocked',
-        error_message: redactAndBound(
-          policy.reason ?? (policy.confirmation_required ? 'Policy confirmation required' : 'Policy denied command'),
-          maxOutputBytes,
-        ),
-      }
-      await persistArtifact(input, artifact, index)
-      artifacts.push(artifact)
-      throw new WorkspaceBootstrapError('Bootstrap policy blocked command ' + index, index)
-    }
-
-    const startedAt = nowMs()
-    let execution: BootstrapExecutionResult
-    try {
-      execution = await input.execute(payload, {
-        cwd: workspaceRoot,
-        shell: false,
-        timeoutMs,
-        maxOutputBytes,
-      })
-    } catch (error) {
-      const artifact: BootstrapArtifact = {
-        schema_version: 1,
-        workspace_id: input.context.workspaceId,
-        attempt_id: input.context.attemptId,
-        index,
-        command: redactedCommand,
-        args: redactedArgs,
-        stdout: '',
-        stderr: '',
-        duration_ms: Math.max(0, nowMs() - startedAt),
-        exit_code: null,
-        status: 'error',
-        error_message: redactAndBound(
-          error instanceof Error ? error.message : 'Bootstrap execution failed',
-          maxOutputBytes,
-        ),
-      }
-      await persistArtifact(input, artifact, index)
-      artifacts.push(artifact)
-      throw new WorkspaceBootstrapError('Bootstrap execution failed for command ' + index, index, error)
-    }
-
-    const artifact: BootstrapArtifact = {
-      schema_version: 1,
-      workspace_id: input.context.workspaceId,
-      attempt_id: input.context.attemptId,
-      index,
-      command: redactedCommand,
-      args: redactedArgs,
-      stdout: redactAndBound(execution.stdout, maxOutputBytes),
-      stderr: redactAndBound(execution.stderr, maxOutputBytes),
-      duration_ms: Math.max(0, nowMs() - startedAt),
-      exit_code: execution.exitCode,
-      status: execution.exitCode === 0 ? 'success' : 'failed',
-    }
-    await persistArtifact(input, artifact, index)
-    artifacts.push(artifact)
-    if (execution.exitCode !== 0) {
-      throw new WorkspaceBootstrapError(
-        'Bootstrap command ' + index + ' exited with code ' + (execution.exitCode ?? 'unknown'),
-        index,
-      )
-    }
+    await evaluateBootstrapCommandPolicy(context)
+    await executeBootstrapCommand(context)
   }
-
   return artifacts
 }

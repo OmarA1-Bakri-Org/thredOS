@@ -1,6 +1,7 @@
 import type { ProcessRecord, StepAttempt, WorkflowRun } from './schema'
 import type { SurfaceWorkspaceManager } from '../workspaces/manager'
-import { AttemptRepository } from './attempt-repository'
+import { AttemptRepository, type AttemptWorkspaceRef } from './attempt-repository'
+import type { SurfaceWorkspace } from '../workspaces/schema'
 import { CommandRepository } from './command-repository'
 import { transitionAttempt, transitionProcess, transitionRun } from './lifecycle'
 import { ProcessRepository } from './process-repository'
@@ -95,6 +96,44 @@ function recordChange(
   report.changes.push({ entityType, entityId, from, to, reason })
 }
 
+function workspaceMatchesReference(workspace: SurfaceWorkspace, reference: AttemptWorkspaceRef): boolean {
+  return workspace.id === reference.workspace_id
+    && workspace.workflow_run_id === reference.workflow_run_id
+    && workspace.attempt_id === reference.attempt_id
+    && workspace.snapshot_id === reference.snapshot_id
+    && workspace.manifest_hash === reference.manifest_hash
+}
+
+async function readInterruptedAttemptWorkspace(
+  repositories: RuntimeRepositories,
+  manager: Pick<SurfaceWorkspaceManager, 'get' | 'finalize'>,
+  attempt: StepAttempt,
+  report: RuntimeReconciliationReport,
+): Promise<SurfaceWorkspace | null> {
+  const reference = await repositories.attempts.getWorkspaceRef(
+    attempt.workflow_run_id,
+    attempt.id,
+  )
+  if (!reference) {
+    if (attempt.workspace_id != null) {
+      report.errors.push(
+        `Attempt ${attempt.id} has workspace ${attempt.workspace_id} but no durable workspace reference`,
+      )
+    }
+    return null
+  }
+  const workspace = await manager.get(reference.workspace_id)
+  if (!workspace) {
+    report.errors.push(`Attempt ${attempt.id} references missing workspace ${reference.workspace_id}`)
+    return null
+  }
+  if (!workspaceMatchesReference(workspace, reference)) {
+    report.errors.push(`Workspace ${workspace.id} identity or manifest does not match attempt ${attempt.id} durable binding`)
+    return null
+  }
+  return workspace
+}
+
 async function retainInterruptedAttemptWorkspace(
   repositories: RuntimeRepositories,
   manager: Pick<SurfaceWorkspaceManager, 'get' | 'finalize'>,
@@ -102,40 +141,8 @@ async function retainInterruptedAttemptWorkspace(
   report: RuntimeReconciliationReport,
 ): Promise<void> {
   try {
-    const reference = await repositories.attempts.getWorkspaceRef(
-      attempt.workflow_run_id,
-      attempt.id,
-    )
-    if (!reference) {
-      if (attempt.workspace_id != null) {
-        report.errors.push(
-          `Attempt ${attempt.id} has workspace ${attempt.workspace_id} but no durable workspace reference`,
-        )
-      }
-      return
-    }
-
-    const workspace = await manager.get(reference.workspace_id)
-    if (!workspace) {
-      report.errors.push(
-        `Attempt ${attempt.id} references missing workspace ${reference.workspace_id}`,
-      )
-      return
-    }
-    if (
-      workspace.id !== reference.workspace_id
-      || workspace.workflow_run_id !== reference.workflow_run_id
-      || workspace.attempt_id !== reference.attempt_id
-      || workspace.snapshot_id !== reference.snapshot_id
-      || workspace.manifest_hash !== reference.manifest_hash
-    ) {
-      report.errors.push(
-        `Workspace ${workspace.id} identity or manifest does not match attempt ${attempt.id} durable binding`,
-      )
-      return
-    }
-
-    if (workspace.status === 'ready' || workspace.status === 'active' || workspace.status === 'frozen') {
+    const workspace = await readInterruptedAttemptWorkspace(repositories, manager, attempt, report)
+    if (workspace && ['ready', 'active', 'frozen'].includes(workspace.status)) {
       await manager.finalize(workspace.id, { outcome: 'interrupted' })
     }
   } catch (error) {

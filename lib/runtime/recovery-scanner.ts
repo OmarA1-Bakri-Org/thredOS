@@ -56,6 +56,72 @@ function quarantineIdentity<T>(
   quarantined.add(id)
 }
 
+interface ProcessInspectionContext {
+  snapshot: RecoveryPhysicalSnapshot
+  quarantinedProcesses: Set<string>
+  runId: string
+  attemptId: string
+  validAttempt: boolean
+  attemptPath: string | null
+}
+
+function validProcessOwnership(
+  record: ProcessRecord,
+  label: string,
+  expectedProcessId: string | undefined,
+  context: ProcessInspectionContext,
+): boolean {
+  const { snapshot, quarantinedProcesses, runId, attemptId } = context
+  if (expectedProcessId !== undefined && record.id !== expectedProcessId) {
+    quarantineIdentity(snapshot.processes, quarantinedProcesses, record.id)
+    snapshot.errors.push(`Process record identity mismatch at ${label}: expected ${expectedProcessId}, received ${record.id}`)
+    return false
+  }
+  if (record.workflow_run_id !== runId || record.attempt_id !== attemptId) {
+    quarantineIdentity(snapshot.processes, quarantinedProcesses, record.id)
+    snapshot.errors.push(`Process ownership mismatch at ${label}: expected run ${runId} attempt ${attemptId}, received run ${record.workflow_run_id} attempt ${record.attempt_id}`)
+    return false
+  }
+  return true
+}
+
+function validProcessAncestor(record: ProcessRecord, label: string, context: ProcessInspectionContext): boolean {
+  try {
+    assertSafePathSegment(record.id, 'process id')
+  } catch (error) {
+    context.snapshot.errors.push(`Unsafe process record identity at ${label}: ${errorMessage(error)}`)
+    return false
+  }
+  if (!context.validAttempt) {
+    quarantineIdentity(context.snapshot.processes, context.quarantinedProcesses, record.id)
+    context.snapshot.errors.push(context.attemptPath
+      ? `Process ${record.id} references invalid attempt ${record.attempt_id}`
+      : `Process ${record.id} references missing attempt ${record.attempt_id}`)
+    return false
+  }
+  return true
+}
+
+async function inspectRecoveryProcess(
+  path: string,
+  label: string,
+  expectedProcessId: string | undefined,
+  context: ProcessInspectionContext,
+): Promise<void> {
+  try {
+    const parsed = ProcessRecordSchema.safeParse(await readJson(path))
+    if (!parsed.success) {
+      context.snapshot.errors.push(`Malformed process record at ${label}: ${parsed.error.message}`)
+      return
+    }
+    if (!validProcessOwnership(parsed.data, label, expectedProcessId, context)) return
+    if (!validProcessAncestor(parsed.data, label, context)) return
+    addUnique(context.snapshot.processes, context.quarantinedProcesses, parsed.data, 'process', context.snapshot.errors)
+  } catch (error) {
+    context.snapshot.errors.push(`Malformed process record at ${label}: ${errorMessage(error)}`)
+  }
+}
+
 async function scanRuntimeRecords(
   basePath: string,
   snapshot: RecoveryPhysicalSnapshot,
@@ -175,70 +241,17 @@ async function scanRuntimeRecords(
             }
           }
 
+          const processInspection: ProcessInspectionContext = {
+            snapshot, quarantinedProcesses, runId: runEntry.name,
+            attemptId: attemptEntry.name, validAttempt, attemptPath,
+          }
           const inspectProcess = async (
             processPath: string,
             processLabel: string,
             expectedProcessId?: string,
-          ): Promise<void> => {
-            try {
-              const parsed = ProcessRecordSchema.safeParse(await readJson(processPath))
-              if (!parsed.success) {
-                snapshot.errors.push(`Malformed process record at ${processLabel}: ${parsed.error.message}`)
-                return
-              }
-              if (expectedProcessId !== undefined && parsed.data.id !== expectedProcessId) {
-                quarantineIdentity(snapshot.processes, quarantinedProcesses, parsed.data.id)
-                snapshot.errors.push(
-                  `Process record identity mismatch at ${processLabel}: expected ${expectedProcessId}, received ${parsed.data.id}`,
-                )
-                return
-              }
-              if (
-                parsed.data.workflow_run_id !== runEntry.name
-                || parsed.data.attempt_id !== attemptEntry.name
-              ) {
-                quarantineIdentity(
-                  snapshot.processes,
-                  quarantinedProcesses,
-                  parsed.data.id,
-                )
-                snapshot.errors.push(
-                  `Process ownership mismatch at ${processLabel}: expected run ${runEntry.name} attempt ${attemptEntry.name}, received run ${parsed.data.workflow_run_id} attempt ${parsed.data.attempt_id}`,
-                )
-                return
-              }
-              try {
-                assertSafePathSegment(parsed.data.id, 'process id')
-              } catch (error) {
-                snapshot.errors.push(
-                  `Unsafe process record identity at ${processLabel}: ${errorMessage(error)}`,
-                )
-                return
-              }
-              if (!validAttempt) {
-                quarantineIdentity(
-                  snapshot.processes,
-                  quarantinedProcesses,
-                  parsed.data.id,
-                )
-                snapshot.errors.push(
-                  attemptPath
-                    ? `Process ${parsed.data.id} references invalid attempt ${parsed.data.attempt_id}`
-                    : `Process ${parsed.data.id} references missing attempt ${parsed.data.attempt_id}`,
-                )
-                return
-              }
-              addUnique(
-                snapshot.processes,
-                quarantinedProcesses,
-                parsed.data,
-                'process',
-                snapshot.errors,
-              )
-            } catch (error) {
-              snapshot.errors.push(`Malformed process record at ${processLabel}: ${errorMessage(error)}`)
-            }
-          }
+          ): Promise<void> => await inspectRecoveryProcess(
+            processPath, processLabel, expectedProcessId, processInspection,
+          )
 
           const legacyProcessLabel = `${runEntry.name}/attempts/${attemptEntry.name}/process.json`
           const legacyProcessPath = await resolveExistingPathWithinRoot(attemptDirectory, 'process.json').catch(() => null)
