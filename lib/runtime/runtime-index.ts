@@ -65,6 +65,16 @@ function emptyRuntimeIndex(): RuntimeIndex {
 
 export async function scanAuthoritativeRuntimeIndex(basePath: string): Promise<RuntimeIndex> {
   const index = emptyRuntimeIndex()
+  const duplicateProcessIds = new Set<string>()
+  const indexProcess = (processId: string, processPath: string): void => {
+    if (duplicateProcessIds.has(processId)) return
+    if (index.processes[processId] !== undefined) {
+      delete index.processes[processId]
+      duplicateProcessIds.add(processId)
+      return
+    }
+    index.processes[processId] = portableReference(basePath, processPath)
+  }
   const runsRoot = await lookupRunsRoot(basePath)
   if (runsRoot) for (const runEntry of await readdir(runsRoot, { withFileTypes: true })) {
     if (!runEntry.isDirectory()) continue
@@ -94,7 +104,27 @@ export async function scanAuthoritativeRuntimeIndex(basePath: string): Promise<R
       if (processPath) {
         const parsed = ProcessRecordSchema.safeParse(await readJson(processPath).catch(() => null))
         if (parsed.success && parsed.data.attempt_id === attemptEntry.name && parsed.data.workflow_run_id === runEntry.name) {
-          index.processes[parsed.data.id] = portableReference(basePath, processPath)
+          indexProcess(parsed.data.id, processPath)
+        }
+      }
+      const processesRoot = await resolveExistingPathWithinRoot(attemptDir, 'processes').catch(() => null)
+      if (processesRoot) for (const processEntry of await readdir(processesRoot, { withFileTypes: true })) {
+        if (!processEntry.isFile() || !processEntry.name.endsWith('.json')) continue
+        const processId = processEntry.name.slice(0, -'.json'.length)
+        try {
+          assertSafePathSegment(processId, 'process id')
+        } catch {
+          continue
+        }
+        const currentProcessPath = await resolveExistingPathWithinRoot(processesRoot, processEntry.name)
+        const parsed = ProcessRecordSchema.safeParse(await readJson(currentProcessPath).catch(() => null))
+        if (
+          parsed.success
+          && parsed.data.id === processId
+          && parsed.data.attempt_id === attemptEntry.name
+          && parsed.data.workflow_run_id === runEntry.name
+        ) {
+          indexProcess(parsed.data.id, currentProcessPath)
         }
       }
     }

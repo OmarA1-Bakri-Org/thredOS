@@ -65,7 +65,7 @@ async function handleSpawnChild(args: string[], options: CLIOptions): Promise<vo
     childLabel: parsed.childLabel,
     spawnKind: parsed.spawnKind,
     ...(parsed.parentStepId ? { parentStepId: parsed.parentStepId } : {}),
-  })
+  }, process.cwd())
 
   emitResult(options, {
     success: true,
@@ -94,7 +94,7 @@ async function handleMergeInto(args: string[], options: CLIOptions): Promise<voi
     sourceStepIds: parsed.sourceStepIds,
     mergeKind: parsed.mergeKind,
     ...(parsed.summary ? { summary: parsed.summary } : {}),
-  })
+  }, process.cwd())
 
   emitResult(options, {
     success: true,

@@ -6,12 +6,41 @@ import type { RuntimeDelegationEvent } from '@/lib/thread-surfaces/runtime-event
 import { deriveStepThreadSurfaceId, ROOT_THREAD_SURFACE_ID } from '@/lib/thread-surfaces/constants'
 import { deriveChildSequenceRef, type PendingChildSequence } from '@/lib/thread-surfaces/provision-child-sequence'
 import type { AgentExecutionSnapshot } from '@/lib/agents/execution'
+import type { IsolationLabel, RunScope } from '@/lib/thread-surfaces/types'
 
 export interface StepRunScope {
   runId: string
   startedAt: string
   executionIndex: number
   threadSurfaceId: string
+}
+
+export interface AttemptWorkspaceRunScopeBinding {
+  attemptId: string
+  workspaceId: string
+  snapshotId: string
+  provider: NonNullable<RunScope['provider']>
+  isolationLabel: IsolationLabel
+}
+
+export function projectAttemptWorkspaceRunScope(
+  state: ThreadSurfaceState,
+  binding: AttemptWorkspaceRunScopeBinding,
+): ThreadSurfaceState {
+  const runIndex = state.runs.findIndex(run =>
+    run.id === binding.attemptId || run.attemptId === binding.attemptId)
+  if (runIndex === -1) return state
+
+  const runs = [...state.runs]
+  runs[runIndex] = {
+    ...runs[runIndex],
+    attemptId: binding.attemptId,
+    workspaceId: binding.workspaceId,
+    snapshotId: binding.snapshotId,
+    provider: binding.provider,
+    isolationLabel: binding.isolationLabel,
+  }
+  return { ...state, runs }
 }
 
 interface BeginStepRunOptions {
@@ -107,7 +136,7 @@ export function finalizeStepRunWithRuntimeEvents(
   let effectiveStepRun = opts.stepRun
 
   if (effectiveStepRun == null && opts.success && opts.runtimeEvents.length > 0) {
-    const materialized = materializeStepRunForRuntimeEvents(nextState, opts.step, {
+    const materialized = materializeStepRunProjection(nextState, opts.step, {
       now: opts.endedAt,
       nextRunId: opts.nextRunId(),
     })
@@ -140,12 +169,12 @@ export function finalizeStepRunWithRuntimeEvents(
   return { state: nextState, stepRun: effectiveStepRun, pendingChildSequences }
 }
 
-function materializeStepRunForRuntimeEvents(
+export function materializeStepRunProjection(
   state: ThreadSurfaceState,
   step: Step,
-  opts: { now: string; nextRunId: string },
+  opts: { now: string; nextRunId: string; executionIndex?: number },
 ): { state: ThreadSurfaceState; stepRun: StepRunScope } {
-  const executionIndex = state.runs.length + 1
+  const executionIndex = opts.executionIndex ?? state.runs.length + 1
   const threadSurfaceId = deriveStepThreadSurfaceId(step.id)
   const existingSurface = state.threadSurfaces.find(surface => surface.id === threadSurfaceId) ?? null
 

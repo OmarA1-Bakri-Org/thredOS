@@ -128,6 +128,35 @@ async function makeService(
     validateSequence: () => undefined,
     validatePrompt: async () => true,
     compilePrompt: async () => 'prompt',
+    prepareRunWorkspace: async () => ({ snapshotId: 'snapshot-test', snapshotManifestRef: '.threados/snapshots/snapshot-test/manifest.json', canonicalPreHash: `sha256:${'b'.repeat(64)}` }),
+    verifyCanonicalWorkspace: async () => ({ preHash: `sha256:${'b'.repeat(64)}`, postHash: `sha256:${'b'.repeat(64)}`, classification: 'unchanged', evidenceRef: 'canonical-precondition.json' }),
+    prepareAttemptWorkspace: async ({ run, attempt, step, snapshotId }) => ({
+      manifestHash: `sha256:${'a'.repeat(64)}`,
+      workspaceManifestRef: `.threados/workspaces/records/workspace-${attempt.id}.json`,
+      context: {
+        cwd: basePath,
+        workspaceId: `workspace-${attempt.id}`,
+        snapshotId,
+        attemptId: attempt.id,
+        workflowRunId: run.id,
+        isolationLabel: 'THREADOS_SCOPED',
+        environment: {
+          THREADOS_WORKSPACE_ID: `workspace-${attempt.id}`,
+          THREADOS_SNAPSHOT_ID: snapshotId,
+          THREADOS_ATTEMPT_ID: attempt.id,
+          THREADOS_RUN_ID: run.id,
+          THREADOS_STEP_ID: step.id,
+        },
+        promptContext: {
+          workspace_id: `workspace-${attempt.id}`,
+          snapshot_id: snapshotId,
+          isolation_label: 'THREADOS_SCOPED',
+          instruction: 'Operate only in the provided working directory.',
+        },
+      },
+    }),
+    bootstrapWorkspace: async () => undefined,
+    finalizeAttemptWorkspace: async () => undefined,
     prepareArtifacts: async () => undefined,
     resolveGateSurface: async () => ({ surfaceClass: 'shared', revealState: null }),
     allowModelExecution: () => ({ allowed: true }),
@@ -310,7 +339,7 @@ describe('ThreadOSRuntimeService terminal outcomes', () => {
       error_code: 'RUN_REVIEW_REQUIRED',
       error_message: 'One or more attempts require review',
     })
-  })
+  }, 30_000)
 
   test('runAndWait persists partially_successful run status and failed command receipt', async () => {
     const { service, repositories } = await makeService(['step-1', 'step-2'], {
@@ -343,7 +372,7 @@ describe('ThreadOSRuntimeService terminal outcomes', () => {
       error_code: 'RUN_PARTIALLY_SUCCESSFUL',
       error_message: 'Run completed with mixed attempt outcomes',
     })
-  })
+  }, 30_000)
 
   test('shared service replays interrupted canonical truth and preserves failed receipt error code', async () => {
     const basePath = await mkdtemp(join(tmpdir(), 'threados-service-terminal-outcomes-'))

@@ -94,6 +94,8 @@ export interface RunScope extends RuntimeLinkRefs {
   runDiscussion?: string
   parentRunId: string | null
   childIndex: number | null
+  provider?: import('../workspaces/schema').SurfaceWorkspace['provider']
+  isolationLabel?: IsolationLabel
 }
 
 export interface RunEventPayloadByType {

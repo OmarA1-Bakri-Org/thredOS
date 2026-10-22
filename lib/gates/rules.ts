@@ -11,6 +11,78 @@ export interface RuleResult {
 
 const PASS: RuleResult = { status: 'PASS', reason_codes: [], evidence_refs: [] }
 
+function checkManifestEvidence(
+  condition: boolean,
+  manifestRef: string | null,
+  reasonCode: GateReasonCode,
+): RuleResult {
+  const evidence_refs = manifestRef?.trim() ? [manifestRef] : []
+  if (condition && evidence_refs.length === 1) {
+    return { status: 'PASS', reason_codes: [], evidence_refs }
+  }
+
+  return {
+    status: 'BLOCK',
+    reason_codes: [reasonCode],
+    evidence_refs,
+  }
+}
+
+export function checkSnapshotPresent(
+  present: boolean,
+  snapshotManifestRef: string | null,
+): RuleResult {
+  return checkManifestEvidence(
+    present,
+    snapshotManifestRef,
+    GateReasonCode.SNAPSHOT_MISSING,
+  )
+}
+
+export function checkSnapshotVerified(
+  verified: boolean,
+  snapshotManifestRef: string | null,
+): RuleResult {
+  return checkManifestEvidence(
+    verified,
+    snapshotManifestRef,
+    GateReasonCode.SNAPSHOT_NOT_VERIFIED,
+  )
+}
+
+export function checkWorkspacePresent(
+  present: boolean,
+  workspaceManifestRef: string | null,
+): RuleResult {
+  return checkManifestEvidence(
+    present,
+    workspaceManifestRef,
+    GateReasonCode.WORKSPACE_MISSING,
+  )
+}
+
+export function checkWorkspaceReady(
+  ready: boolean,
+  workspaceManifestRef: string | null,
+): RuleResult {
+  return checkManifestEvidence(
+    ready,
+    workspaceManifestRef,
+    GateReasonCode.WORKSPACE_NOT_READY,
+  )
+}
+
+export function checkWorkspaceManifestVerified(
+  verified: boolean,
+  workspaceManifestRef: string | null,
+): RuleResult {
+  return checkManifestEvidence(
+    verified,
+    workspaceManifestRef,
+    GateReasonCode.WORKSPACE_MANIFEST_INVALID,
+  )
+}
+
 export function checkDepsSatisfied(
   step: Step,
   allSteps: Step[],

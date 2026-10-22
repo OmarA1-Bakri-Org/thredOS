@@ -425,4 +425,92 @@ describe('operator runtime projections', () => {
       }),
     ])
   })
+
+  test('projects an isolated workspace onto only the attempt RunScope and preserves it at terminal finalization', async () => {
+    const step = {
+      id: 'step-1',
+      name: 'Step 1',
+      type: 'base' as const,
+      model: 'codex',
+      prompt_file: '.threados/prompts/step-1.md',
+      depends_on: [],
+      status: 'RUNNING' as const,
+    }
+    await writeThreadSurfaceState(basePath, {
+      version: 1,
+      threadSurfaces: [{
+        id: 'thread-root',
+        parentSurfaceId: null,
+        parentAgentNodeId: null,
+        depth: 0,
+        surfaceLabel: 'Root',
+        createdAt: NOW,
+        childSurfaceIds: [],
+        sequenceRef: null,
+        spawnedByAgentId: null,
+      }],
+      runs: [],
+      mergeEvents: [],
+      runEvents: [],
+    })
+    const run = workflowRun({ status: 'running', ended_at: null })
+    const provisioningAttempt = stepAttempt({
+      status: 'provisioning',
+      process_id: null,
+      workspace_id: 'workspace-1',
+      baseline_snapshot_id: 'snapshot-1',
+      ended_at: null,
+      error_code: null,
+      error_message: null,
+    })
+    const projections = createRuntimeProjections(basePath)
+
+    await projections.beginAttempt({ run, attempt: provisioningAttempt, step })
+    await projections.bindAttemptWorkspace!({
+      run,
+      attempt: provisioningAttempt,
+      step,
+      workspaceId: 'workspace-1',
+      snapshotId: 'snapshot-1',
+      provider: 'copy',
+      isolationLabel: 'THREADOS_SCOPED',
+    })
+
+    const bound = await readThreadSurfaceState(basePath)
+    expect(bound.runs).toContainEqual(expect.objectContaining({
+      id: 'attempt-v2',
+      workflowRunId: 'run-v2',
+      attemptId: 'attempt-v2',
+      workspaceId: 'workspace-1',
+      snapshotId: 'snapshot-1',
+      provider: 'copy',
+      isolationLabel: 'THREADOS_SCOPED',
+      endedAt: null,
+    }))
+    const stepSurface = bound.threadSurfaces.find(surface => surface.id === 'thread-step-1')
+    expect(stepSurface).toBeDefined()
+    expect(stepSurface).not.toHaveProperty('workspaceId')
+    expect(stepSurface).not.toHaveProperty('snapshotId')
+    expect(stepSurface).not.toHaveProperty('provider')
+    expect(stepSurface?.isolationLabel).toBe('NONE')
+
+    const completedAttempt = stepAttempt({
+      ...provisioningAttempt,
+      status: 'completed',
+      ended_at: NOW,
+      exit_code: 0,
+    })
+    await projections.finalizeAttempt({ run, attempt: completedAttempt, step, runtimeEvents: [] })
+
+    const finalized = await readThreadSurfaceState(basePath)
+    expect(finalized.runs).toContainEqual(expect.objectContaining({
+      id: 'attempt-v2',
+      workspaceId: 'workspace-1',
+      snapshotId: 'snapshot-1',
+      provider: 'copy',
+      isolationLabel: 'THREADOS_SCOPED',
+      runStatus: 'successful',
+      endedAt: NOW,
+    }))
+  })
 })

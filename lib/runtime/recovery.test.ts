@@ -9,6 +9,9 @@ import { ProcessRepository } from './process-repository'
 import { reconcileCanonicalRuntime } from './recovery'
 import { formatRetryBinding } from './retry-binding'
 import { RunRepository } from './run-repository'
+import { SurfaceWorkspaceManager } from '../workspaces/manager'
+import { WorkspaceRepository } from '../workspaces/repository'
+import type { SurfaceWorkspace, SurfaceWorkspaceStatus } from '../workspaces/schema'
 import type {
   ProcessRecord,
   RuntimeCommandReceipt,
@@ -109,6 +112,9 @@ function processRecord(overrides: Partial<ProcessRecord> = {}): ProcessRecord {
     revision: 0,
     workflow_run_id: 'run-1',
     attempt_id: 'attempt-1',
+    workspace_id: 'workspace-1',
+    process_purpose: 'agent',
+    process_ordinal: 0,
     provider: 'local-process',
     provider_handle: 'local:4242',
     pid: 4242,
@@ -152,10 +158,133 @@ async function createActiveTree(repos: Awaited<ReturnType<typeof repositories>>)
   await repos.processes.create(processRecord())
 }
 
+async function createBoundWorkspace(
+  repos: Awaited<ReturnType<typeof repositories>>,
+  status: Extract<SurfaceWorkspaceStatus, 'ready' | 'active'>,
+): Promise<{ manager: SurfaceWorkspaceManager; repository: WorkspaceRepository; workspace: SurfaceWorkspace }> {
+  const runtimeDataRoot = await mkdtemp(join(tmpdir(), 'threados-recovery-workspace-runtime-'))
+  roots.push(runtimeDataRoot)
+  const repository = new WorkspaceRepository(repos.basePath)
+  const workspace: SurfaceWorkspace = {
+    schema_version: 1,
+    id: 'workspace-1',
+    revision: 0,
+    workflow_run_id: 'run-1',
+    attempt_id: 'attempt-1',
+    surface_id: 'thread-build',
+    snapshot_id: 'snapshot-1',
+    provider: 'copy',
+    isolation_label: 'THREADOS_SCOPED',
+    root_path: join(runtimeDataRoot, 'workspace-1', 'tree'),
+    status,
+    retention_policy: 'cleanup_on_success',
+    manifest_hash: `sha256:${'a'.repeat(64)}`,
+    file_count: 3,
+    total_bytes: 42,
+    reserved_bytes: 42,
+    created_at: '2026-07-15T23:59:00.000Z',
+    ready_at: '2026-07-15T23:59:01.000Z',
+    cleaned_at: null,
+    error_code: null,
+  }
+  await repository.create(workspace)
+  await repos.attempts.bindWorkspaceRef({
+    schema_version: 1,
+    workflow_run_id: 'run-1',
+    attempt_id: 'attempt-1',
+    workspace_id: workspace.id,
+    snapshot_id: workspace.snapshot_id,
+    manifest_hash: workspace.manifest_hash!,
+    bound_at: '2026-07-15T23:59:02.000Z',
+  })
+  const manager = new SurfaceWorkspaceManager({
+    canonicalRoot: repos.basePath,
+    runtimeDataRoot,
+    localWorkspaceId: 'local-1',
+    repository,
+    now: () => new Date(NOW),
+  })
+  return { manager, repository, workspace }
+}
+
 describe('reconcileCanonicalRuntime', () => {
+  test('retains a ready bound workspace when provisioning is interrupted', async () => {
+    const repos = await repositories()
+    await repos.runs.create(run({ status: 'provisioning', baseline_snapshot_id: 'snapshot-1' }))
+    await repos.attempts.create(attempt({
+      status: 'provisioning',
+      baseline_snapshot_id: 'snapshot-1',
+      process_id: null,
+      started_at: null,
+      last_heartbeat_at: null,
+    }))
+    const context = await createBoundWorkspace(repos, 'ready')
+
+    await reconcileCanonicalRuntime(repos.basePath, {
+      now: () => NOW,
+      workspaceManager: context.manager,
+    })
+
+    expect(await repos.attempts.get('attempt-1')).toMatchObject({
+      status: 'interrupted',
+      workspace_id: 'workspace-1',
+      baseline_snapshot_id: 'snapshot-1',
+      error_code: 'PROCESS_LOST',
+    })
+    expect(await context.repository.get('workspace-1')).toMatchObject({
+      status: 'retained',
+      manifest_hash: context.workspace.manifest_hash,
+      file_count: 3,
+      total_bytes: 42,
+      reserved_bytes: 0,
+      ready_at: context.workspace.ready_at,
+    })
+  })
+
+  test('retains an active bound workspace when a running attempt is interrupted', async () => {
+    const repos = await repositories()
+    await createActiveTree(repos)
+    await repos.runs.update('run-1', 0, current => ({
+      ...current,
+      baseline_snapshot_id: 'snapshot-1',
+    }))
+    await repos.attempts.update('attempt-1', 0, current => ({
+      ...current,
+      baseline_snapshot_id: 'snapshot-1',
+    }))
+    const context = await createBoundWorkspace(repos, 'active')
+
+    await reconcileCanonicalRuntime(repos.basePath, {
+      now: () => NOW,
+      probePid: async () => false,
+      workspaceManager: context.manager,
+    })
+
+    expect((await repos.attempts.get('attempt-1'))?.status).toBe('interrupted')
+    expect(await context.repository.get('workspace-1')).toMatchObject({
+      status: 'retained',
+      manifest_hash: context.workspace.manifest_hash,
+      file_count: 3,
+      total_bytes: 42,
+      reserved_bytes: 0,
+      ready_at: context.workspace.ready_at,
+    })
+  })
+
   test('marks a stale running process lost and its attempt and run interrupted while preserving evidence', async () => {
     const repos = await repositories()
     await createActiveTree(repos)
+    await repos.processes.create(processRecord({
+      id: 'process-bootstrap',
+      process_purpose: 'bootstrap',
+      process_ordinal: 0,
+      provider_handle: 'local:4000',
+      pid: 4000,
+      command: 'bootstrap-tool',
+      status: 'exited',
+      ended_at: '2026-07-15T23:59:45.000Z',
+      exit_code: 0,
+    }))
 
     const report = await reconcileCanonicalRuntime(repos.basePath, {
       now: () => NOW,
@@ -167,8 +296,16 @@ describe('reconcileCanonicalRuntime', () => {
       provider_handle: 'local:4242',
       pid: 4242,
       command: 'node',
+      workspace_id: 'workspace-1',
       ended_at: NOW,
       last_output_at: '2026-07-15T23:59:30.000Z',
+    })
+    expect(await repos.processes.get('process-bootstrap')).toMatchObject({
+      status: 'exited',
+      workspace_id: 'workspace-1',
+      process_purpose: 'bootstrap',
+      process_ordinal: 0,
+      exit_code: 0,
     })
     expect(await repos.attempts.get('attempt-1')).toMatchObject({
       status: 'interrupted',
@@ -874,14 +1011,11 @@ describe('reconcileCanonicalRuntime', () => {
       'shared-attempt',
       'attempt.json',
     )).text()) as StepAttempt
-    const validProcess = JSON.parse(await Bun.file(join(
+    const validProcess = JSON.parse(await Bun.file(await processRecordPath(
       repos.basePath,
-      '.threados',
-      'runs',
       'a-valid-run',
-      'attempts',
       'shared-attempt',
-      'process.json',
+      'shared-process',
     )).text()) as ProcessRecord
     expect(validAttempt.status).toBe('running')
     expect(validProcess.status).toBe('running')

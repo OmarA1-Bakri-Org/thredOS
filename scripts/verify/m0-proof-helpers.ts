@@ -149,12 +149,22 @@ export function normalizeProofValue(
 ): unknown {
   if (key === 'created_via') return '<interface>'
   if (key === 'request_hash') return '<interface-request-hash>'
+  if (key === 'ts' || key.endsWith('_at')) return value == null ? null : '<timestamp>'
+  if (key === 'workspace_id') return value == null ? null : '<workspace-id>'
+  if (key === 'snapshot_id' || key === 'baseline_snapshot_id') {
+    return value == null ? null : '<snapshot-id>'
+  }
   if (typeof value === 'string') {
+    if (key === 'cwd' && /[\\/]thredOS[\\/](?:runtime[\\/])?workspaces[\\/]/i.test(value)) {
+      return '<workspace-root>'
+    }
     return value
       .replaceAll(basePath, '<ROOT>')
       .replaceAll(basePath.replaceAll('\\', '/'), '<ROOT>')
       .replaceAll('runtime:cli', 'runtime:<interface>')
       .replaceAll('runtime:api', 'runtime:<interface>')
+      .replace(/workspace-[0-9a-f-]{36}/g, '<workspace-id>')
+      .replace(/snapshot-[0-9a-f-]{36}/g, '<snapshot-id>')
   }
   if (Array.isArray(value)) {
     return value.map(item => normalizeProofValue(item, basePath))

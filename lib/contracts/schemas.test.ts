@@ -2,12 +2,14 @@ import { describe, it, expect } from 'bun:test'
 import {
   SurfaceSchema,
   RunSchema,
+  GateTypeSchema,
   GateDecisionSchema,
   ApprovalSchema,
   TraceEventSchema,
   BarrierAttestationSchema,
 } from './schemas'
 import { GateReasonCode } from './reason-codes'
+import { RuntimeErrorCode } from '@/lib/runtime/error-codes'
 import {
   RuntimeCommandSchema,
   SurfaceWorkspaceSchema,
@@ -131,6 +133,16 @@ describe('RunSchema', () => {
 })
 
 describe('GateDecisionSchema', () => {
+  it.each([
+    'snapshot_present',
+    'snapshot_verified',
+    'workspace_present',
+    'workspace_ready',
+    'workspace_manifest_verified',
+  ] as const)('accepts the PR-11 %s gate type', gateType => {
+    expect(GateTypeSchema.safeParse(gateType).success).toBe(true)
+  })
+
   it('validates a PASS decision', () => {
     const result = GateDecisionSchema.safeParse({
       id: 'gate-decision-001',
@@ -367,8 +379,23 @@ describe('GateReasonCode', () => {
     expect(GateReasonCode.REVEAL_LOCKED).toBe('REVEAL_LOCKED')
   })
 
-  it('covers all ten reason codes', () => {
+  it('defines deterministic snapshot and workspace gate reasons', () => {
+    expect(GateReasonCode.SNAPSHOT_MISSING).toBe('SNAPSHOT_MISSING')
+    expect(GateReasonCode.SNAPSHOT_NOT_VERIFIED).toBe('SNAPSHOT_NOT_VERIFIED')
+    expect(GateReasonCode.WORKSPACE_MISSING).toBe('WORKSPACE_MISSING')
+    expect(GateReasonCode.WORKSPACE_NOT_READY).toBe('WORKSPACE_NOT_READY')
+    expect(GateReasonCode.WORKSPACE_MANIFEST_INVALID).toBe('WORKSPACE_MANIFEST_INVALID')
+  })
+
+  it('covers all fifteen reason codes', () => {
     const codes = Object.keys(GateReasonCode)
-    expect(codes).toHaveLength(10)
+    expect(codes).toHaveLength(15)
+  })
+})
+
+describe('RuntimeErrorCode', () => {
+  it('defines PR-11 bootstrap and canonical mutation failures', () => {
+    expect(RuntimeErrorCode.WORKSPACE_BOOTSTRAP_FAILED).toBe('WORKSPACE_BOOTSTRAP_FAILED')
+    expect(RuntimeErrorCode.CANONICAL_WORKSPACE_MUTATED).toBe('CANONICAL_WORKSPACE_MUTATED')
   })
 })

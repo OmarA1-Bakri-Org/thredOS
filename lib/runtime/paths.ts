@@ -118,8 +118,25 @@ export async function lookupAttemptsDirectory(basePath: string, runId: string): 
   return await existingOrNull(basePath, '.threados', 'runs', runId, 'attempts')
 }
 
-export async function processRecordPath(basePath: string, runId: string, attemptId: string): Promise<string> {
-  return await resolvePathWithinRoot(await ensureAttemptDirectory(basePath, runId, attemptId), 'process.json')
+export async function processRecordPath(
+  basePath: string,
+  runId: string,
+  attemptId: string,
+  processId?: string,
+): Promise<string> {
+  const attemptDirectory = await ensureAttemptDirectory(basePath, runId, attemptId)
+  if (processId === undefined) {
+    return await resolvePathWithinRoot(attemptDirectory, 'process.json')
+  }
+  assertSafePathSegment(processId, 'process id')
+  const processesDirectory = await ensureDirectory(attemptDirectory, 'processes')
+  return await resolvePathWithinRoot(processesDirectory, `${processId}.json`)
+}
+
+export async function processIdentityLockPath(basePath: string, processId: string): Promise<string> {
+  assertSafePathSegment(processId, 'process id')
+  const locks = await ensureDirectory(await ensureStateRoot(basePath), 'runtime-process-locks')
+  return join(locks, `${processId}.lock`)
 }
 
 export async function lookupCommandsRoot(basePath: string): Promise<string | null> {

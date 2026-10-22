@@ -1,4 +1,7 @@
-import { describe, test, expect } from 'bun:test'
+import { afterEach, describe, test, expect } from 'bun:test'
+import { mkdir, mkdtemp, rm, writeFile } from 'fs/promises'
+import { tmpdir } from 'os'
+import { join } from 'path'
 import { compilePrompt } from './prompt-compiler'
 import type { Gate, Sequence, Step } from '../sequence/schema'
 
@@ -25,6 +28,12 @@ function makeSequence(steps: Step[] = [], gates: Gate[] = []): Sequence {
 }
 
 describe('compilePrompt', () => {
+  const temporaryRoots: string[] = []
+
+  afterEach(async () => {
+    await Promise.all(temporaryRoots.splice(0).map(path => rm(path, { recursive: true, force: true })))
+  })
+
   test('includes step identity', async () => {
     const step = makeStep({ id: 'build', name: 'Build Feature' })
     const seq = makeSequence([step])
@@ -57,6 +66,116 @@ describe('compilePrompt', () => {
     expect(result).toContain('REST API endpoint')
     expect(result).toContain('JWT tokens')
     expect(result).toContain('Rate limiting')
+  })
+
+  test('describes a logical in-workspace cwd without disclosing its private root', async () => {
+    const basePath = await mkdtemp(join(tmpdir(), 'threados-prompt-canonical-'))
+    const workspaceRoot = await mkdtemp(join(tmpdir(), 'threados-prompt-workspace-'))
+    const executionRoot = join(workspaceRoot, 'packages', 'app')
+    temporaryRoots.push(basePath, workspaceRoot)
+    await mkdir(executionRoot, { recursive: true })
+    await writeFile(join(executionRoot, 'workspace-file.txt'), 'workspace content')
+    const step = makeStep()
+
+    const result = await compilePrompt({
+      stepId: step.id,
+      step,
+      rawPrompt: 'Work only in the isolated workspace.',
+      sequence: makeSequence([step]),
+      basePath,
+      executionRoot,
+      logicalWorkingDirectory: './packages/app',
+      runtimeEventLogPath: join(executionRoot, '.threados-runtime', 'events.ndjson'),
+      workspaceContext: {
+        workspace_id: 'workspace-1',
+        snapshot_id: 'snapshot-1',
+        isolation_label: 'THREADOS_SCOPED',
+        instruction: 'Treat this workspace as the only writable project root.',
+      },
+    })
+
+    expect(result).toContain('## Working Directory\n\n`./packages/app`')
+    expect(result).toContain('workspace-file.txt')
+    expect(result).not.toContain(executionRoot)
+    expect(result).not.toContain(basePath)
+    expect(result).toContain('provided THREADOS_EVENT_LOG path')
+  })
+
+  test('loads dependency artifacts only from the explicitly selected workflow run', async () => {
+    const basePath = await mkdtemp(join(tmpdir(), 'threados-prompt-artifacts-'))
+    temporaryRoots.push(basePath)
+    const currentArtifactDir = join(basePath, '.threados', 'runs', 'run-current', 'plan')
+    const unrelatedArtifactDir = join(basePath, '.threados', 'runs', 'run-unrelated', 'plan')
+    await mkdir(currentArtifactDir, { recursive: true })
+    await mkdir(unrelatedArtifactDir, { recursive: true })
+    await writeFile(join(currentArtifactDir, 'stdout.log'), 'CURRENT_RUN_OUTPUT')
+    await writeFile(join(unrelatedArtifactDir, 'stdout.log'), 'UNRELATED_RUN_OUTPUT')
+    const dependency = makeStep({ id: 'plan', status: 'DONE' })
+    const step = makeStep({ id: 'implement', depends_on: ['plan'] })
+
+    const result = await compilePrompt({
+      stepId: step.id,
+      step,
+      rawPrompt: 'Use the dependency output.',
+      sequence: makeSequence([dependency, step]),
+      basePath,
+      dependencyArtifactRunId: 'run-current',
+    })
+
+    expect(result).toContain('CURRENT_RUN_OUTPUT')
+    expect(result).not.toContain('UNRELATED_RUN_OUTPUT')
+  })
+
+  test('does not fall back to historical artifacts for an isolated workspace without a run scope', async () => {
+    const basePath = await mkdtemp(join(tmpdir(), 'threados-prompt-isolated-artifacts-'))
+    const executionRoot = await mkdtemp(join(tmpdir(), 'threados-prompt-isolated-root-'))
+    temporaryRoots.push(basePath, executionRoot)
+    const artifactDir = join(basePath, '.threados', 'runs', 'historical-run', 'plan')
+    await mkdir(artifactDir, { recursive: true })
+    await writeFile(join(artifactDir, 'stdout.log'), 'HISTORICAL_OUTPUT_MUST_STAY_DARK')
+    const dependency = makeStep({ id: 'plan', status: 'DONE' })
+    const step = makeStep({ id: 'implement', depends_on: ['plan'] })
+
+    const result = await compilePrompt({
+      stepId: step.id,
+      step,
+      rawPrompt: 'Work in isolation.',
+      sequence: makeSequence([dependency, step]),
+      basePath,
+      executionRoot,
+      workspaceContext: {
+        workspace_id: 'workspace-1',
+        snapshot_id: 'snapshot-1',
+        isolation_label: 'THREADOS_SCOPED',
+        instruction: 'Treat this workspace as the only writable project root.',
+      },
+    })
+
+    expect(result).not.toContain('Prior Step Outputs')
+    expect(result).not.toContain('HISTORICAL_OUTPUT_MUST_STAY_DARK')
+  })
+
+  test('keeps dependency artifacts dark when the surface is sealed', async () => {
+    const basePath = await mkdtemp(join(tmpdir(), 'threados-prompt-sealed-'))
+    temporaryRoots.push(basePath)
+    const artifactDir = join(basePath, '.threados', 'runs', 'run-current', 'plan')
+    await mkdir(artifactDir, { recursive: true })
+    await writeFile(join(artifactDir, 'stdout.log'), 'SEALED_OUTPUT_MUST_STAY_DARK')
+    const dependency = makeStep({ id: 'plan', status: 'DONE' })
+    const step = makeStep({ id: 'implement', depends_on: ['plan'] })
+
+    const result = await compilePrompt({
+      stepId: step.id,
+      step,
+      rawPrompt: 'Do not reveal sealed dependency output.',
+      sequence: makeSequence([dependency, step]),
+      basePath,
+      dependencyArtifactRunId: 'run-current',
+      includeDependencyArtifacts: false,
+    })
+
+    expect(result).not.toContain('Prior Step Outputs')
+    expect(result).not.toContain('SEALED_OUTPUT_MUST_STAY_DARK')
   })
 
   test('includes sequence state for done steps', async () => {

@@ -10,7 +10,13 @@ import { provisionAllChildSequences } from '../thread-surfaces/provision-child-s
 import {
   readThreadSurfaceState, withThreadSurfaceStateRevision, writeThreadSurfaceState, type ThreadSurfaceState,
 } from '../thread-surfaces/repository'
-import { beginStepRunIfSurfaceExists, finalizeStepRunWithRuntimeEvents, type StepRunScope } from '../thread-surfaces/step-run-runtime'
+import {
+  beginStepRunIfSurfaceExists,
+  finalizeStepRunWithRuntimeEvents,
+  materializeStepRunProjection,
+  projectAttemptWorkspaceRunScope,
+  type StepRunScope,
+} from '../thread-surfaces/step-run-runtime'
 import { lookupRunRecordPath, lookupRunsRoot } from './paths'
 import {
   LegacyRunRecordSchema,
@@ -269,6 +275,40 @@ export function createRuntimeProjections(basePath: string): RuntimeProjectionPor
               ? { ...item, workflowRunId: run.id, attemptId: attempt.id }
               : item),
           },
+          result: undefined,
+        }
+      })
+    },
+
+    async bindAttemptWorkspace({ run, attempt, step, workspaceId, snapshotId, provider, isolationLabel }) {
+      await mutateProjection(basePath, current => {
+        let nextState = current
+        let projected = nextState.runs.find(item =>
+          item.attemptId === attempt.id || item.id === attempt.id)
+        if (!projected) {
+          const materialized = materializeStepRunProjection(nextState, step, {
+            now: attempt.created_at,
+            nextRunId: attempt.id,
+            executionIndex: attempt.execution_index,
+          })
+          nextState = materialized.state
+          projected = nextState.runs.find(item => item.id === attempt.id)
+        }
+        if (!projected) return null
+        nextState = {
+          ...nextState,
+          runs: nextState.runs.map(item => item.id === projected.id
+            ? { ...item, workflowRunId: run.id, attemptId: attempt.id }
+            : item),
+        }
+        return {
+          state: projectAttemptWorkspaceRunScope(nextState, {
+            attemptId: attempt.id,
+            workspaceId,
+            snapshotId,
+            provider,
+            isolationLabel,
+          }),
           result: undefined,
         }
       })

@@ -1,7 +1,9 @@
-import { readFile, appendFile, mkdir } from 'fs/promises'
-import { dirname } from 'path'
+import { mkdir } from 'fs/promises'
+import { basename, isAbsolute, relative, resolve, sep } from 'path'
 import { z } from 'zod'
 import { getRuntimeEventLogPath } from '../runner/artifacts'
+import { appendFileNoFollow, readTextFileNoFollow } from '../security/safe-io'
+import { resolveExistingPathWithinRoot, resolvePathWithinRoot } from '../security/safe-path'
 
 const SpawnKindSchema = z.enum(['orchestrator', 'watchdog', 'fanout'])
 const MergeKindSchema = z.enum(['single', 'block'])
@@ -45,7 +47,27 @@ export async function readRuntimeEventLog(
   stepId: string,
 ): Promise<RuntimeEventLogReadResult> {
   const logPath = getRuntimeEventLogPath(basePath, runId, stepId)
-  const content = await readFile(logPath, 'utf-8').catch(() => '')
+  return await readRuntimeEventLogAtPath(logPath, basePath)
+}
+
+async function readContainedEventLog(logPath: string, executionRoot: string): Promise<string> {
+  const child = relative(resolve(executionRoot), resolve(logPath))
+  const segments = child.split(sep)
+  try {
+    await resolvePathWithinRoot(executionRoot, ...segments)
+    const containedPath = await resolveExistingPathWithinRoot(executionRoot, ...segments)
+    return await readTextFileNoFollow(containedPath)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return ''
+    throw error
+  }
+}
+
+export async function readRuntimeEventLogAtPath(
+  logPath: string,
+  executionRoot: string,
+): Promise<RuntimeEventLogReadResult> {
+  const content = await readContainedEventLog(logPath, executionRoot)
 
   if (!content.trim()) {
     return { events: [], invalidLines: 0 }
@@ -66,13 +88,11 @@ export async function readRuntimeEventLog(
         events.push(result.data)
       } else {
         invalidLines += 1
-        const preview = trimmed.length > 100 ? trimmed.slice(0, 100) + '...' : trimmed
-        console.warn(`[runtime-event-log] Invalid event at line ${i + 1}: ${preview}`)
+        console.warn(`[runtime-event-log] Invalid event at line ${i + 1}`)
       }
     } catch {
       invalidLines += 1
-      const preview = trimmed.length > 100 ? trimmed.slice(0, 100) + '...' : trimmed
-      console.warn(`[runtime-event-log] Malformed JSON at line ${i + 1}: ${preview}`)
+      console.warn(`[runtime-event-log] Malformed JSON at line ${i + 1}`)
     }
   }
 
@@ -82,9 +102,22 @@ export async function readRuntimeEventLog(
 export async function appendRuntimeEventAtPath(
   logPath: string,
   event: RuntimeDelegationEvent,
+  allowedRoot: string,
 ): Promise<void> {
-  await mkdir(dirname(logPath), { recursive: true })
-  await appendFile(logPath, `${JSON.stringify(event)}\n`, 'utf-8')
+  const child = relative(resolve(allowedRoot), resolve(logPath))
+  if (child === '' || isAbsolute(child) || child === '..' || child.startsWith(`..${sep}`)) {
+    throw new Error('Runtime event log must remain within the execution root')
+  }
+  const segments = child.split(sep)
+  const fileName = segments.pop()
+  if (!fileName || fileName !== basename(logPath)) {
+    throw new Error('Runtime event log path is invalid')
+  }
+  const safeParent = await resolvePathWithinRoot(allowedRoot, ...segments)
+  await mkdir(safeParent, { recursive: true })
+  const parent = await resolveExistingPathWithinRoot(allowedRoot, ...segments)
+  const verifiedPath = await resolvePathWithinRoot(parent, fileName)
+  await appendFileNoFollow(verifiedPath, `${JSON.stringify(event)}\n`)
 }
 
 export async function appendRuntimeEvent(
@@ -94,7 +127,7 @@ export async function appendRuntimeEvent(
   event: RuntimeDelegationEvent,
 ): Promise<void> {
   const logPath = getRuntimeEventLogPath(basePath, runId, stepId)
-  await appendRuntimeEventAtPath(logPath, event)
+  await appendRuntimeEventAtPath(logPath, event, basePath)
 }
 
 export {

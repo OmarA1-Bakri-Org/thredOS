@@ -10,7 +10,12 @@ import {
   checkPolicyPass,
   checkRequiredInputsPresent,
   checkRevealAllowed,
+  checkSnapshotPresent,
+  checkSnapshotVerified,
   checkSurfaceAccessPass,
+  checkWorkspaceManifestVerified,
+  checkWorkspacePresent,
+  checkWorkspaceReady,
 } from './rules'
 
 function makeStep(overrides: Partial<Step> = {}): Step {
@@ -129,5 +134,55 @@ describe('completion rules', () => {
     const result = checkCompletionContractPass(makeStep({ completion_contract: 'contracts/done.json' }), false)
     expect(result.status).toBe('BLOCK')
     expect(result.reason_codes).toContain(GateReasonCode.CONTRACT_INCOMPLETE)
+  })
+})
+
+describe('workspace evidence rules', () => {
+  const snapshotManifestRef = '.threados/snapshots/snapshot-1/manifest.json'
+  const workspaceManifestRef = '.threados/workspaces/workspace-1/manifest.json'
+
+  it('passes snapshot presence only with its manifest reference', () => {
+    expect(checkSnapshotPresent(true, snapshotManifestRef)).toEqual({
+      status: 'PASS',
+      reason_codes: [],
+      evidence_refs: [snapshotManifestRef],
+    })
+    expect(checkSnapshotPresent(true, null)).toEqual({
+      status: 'BLOCK',
+      reason_codes: [GateReasonCode.SNAPSHOT_MISSING],
+      evidence_refs: [],
+    })
+  })
+
+  it('blocks an unverified snapshot and preserves only its manifest reference as evidence', () => {
+    expect(checkSnapshotVerified(false, snapshotManifestRef)).toEqual({
+      status: 'BLOCK',
+      reason_codes: [GateReasonCode.SNAPSHOT_NOT_VERIFIED],
+      evidence_refs: [snapshotManifestRef],
+    })
+  })
+
+  it('blocks a missing workspace without inventing free-text evidence', () => {
+    expect(checkWorkspacePresent(false, null)).toEqual({
+      status: 'BLOCK',
+      reason_codes: [GateReasonCode.WORKSPACE_MISSING],
+      evidence_refs: [],
+    })
+  })
+
+  it('blocks a workspace that is not ready using its manifest reference', () => {
+    expect(checkWorkspaceReady(false, workspaceManifestRef)).toEqual({
+      status: 'BLOCK',
+      reason_codes: [GateReasonCode.WORKSPACE_NOT_READY],
+      evidence_refs: [workspaceManifestRef],
+    })
+  })
+
+  it('blocks an unverified workspace manifest using the exact manifest reference', () => {
+    expect(checkWorkspaceManifestVerified(false, workspaceManifestRef)).toEqual({
+      status: 'BLOCK',
+      reason_codes: [GateReasonCode.WORKSPACE_MANIFEST_INVALID],
+      evidence_refs: [workspaceManifestRef],
+    })
   })
 })

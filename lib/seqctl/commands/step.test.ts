@@ -308,13 +308,16 @@ describe.serial('stepCommand', () => {
 
   // --- add with options ---
 
-  test('add creates step with custom type, model, and cwd', async () => {
+  test('add creates step with custom type, model, side effect, workspace, and cwd', async () => {
     const { stepCommand } = await import('./step')
     const logs: string[] = []
     const origLog = console.log
     console.log = (msg: string) => logs.push(msg)
 
-    await stepCommand('add', ['step-d', '--type', 'p', '--model', 'codex', '--cwd', '/tmp/workdir'], { json: true, help: false, watch: false, basePath })
+    await stepCommand('add', [
+      'step-d', '--type', 'p', '--model', 'codex', '--cwd', 'packages/app',
+      '--side-effect', 'read', '--workspace', 'isolated',
+    ], { json: true, help: false, watch: false, basePath })
 
     console.log = origLog
     const output = JSON.parse(logs[0])
@@ -326,7 +329,53 @@ describe.serial('stepCommand', () => {
     const stepD = seq.steps.find((s: any) => s.id === 'step-d')
     expect(stepD.type).toBe('p')
     expect(stepD.model).toBe('codex')
-    expect(stepD.cwd).toBe('/tmp/workdir')
+    expect(stepD.cwd).toBe('packages/app')
+    expect(stepD.side_effect_class).toBe('read')
+    expect(stepD.workspace_mode).toBe('isolated')
+  })
+
+  test('add rejects an absolute or traversing cwd without changing the sequence', async () => {
+    const { stepCommand } = await import('./step')
+
+    for (const [stepId, cwd] of [['step-absolute', '/tmp/workdir'], ['step-traversal', '../escape']]) {
+      const logs: string[] = []
+      const origLog = console.log
+      console.log = (msg: string) => logs.push(msg)
+      await stepCommand('add', [stepId, '--cwd', cwd], { json: true, help: false, watch: false, basePath })
+      console.log = origLog
+
+      expect(JSON.parse(logs[0])).toMatchObject({ success: false, action: 'add', stepId })
+    }
+
+    const seq = YAML.parse(await readFile(join(basePath, '.threados/sequence.yaml'), 'utf8'))
+    expect(seq.steps.map((step: { id: string }) => step.id)).not.toContain('step-absolute')
+    expect(seq.steps.map((step: { id: string }) => step.id)).not.toContain('step-traversal')
+  })
+
+  test('edit rejects a traversing cwd without changing the step', async () => {
+    const { stepCommand } = await import('./step')
+    const logs: string[] = []
+    const origLog = console.log
+    console.log = (msg: string) => logs.push(msg)
+    await stepCommand('edit', ['step-a', '--cwd', '../escape'], {
+      json: true, help: false, watch: false, basePath,
+    })
+    console.log = origLog
+
+    expect(JSON.parse(logs[0])).toMatchObject({ success: false, action: 'edit', stepId: 'step-a' })
+    const seq = YAML.parse(await readFile(join(basePath, '.threados/sequence.yaml'), 'utf8'))
+    expect(seq.steps[0].cwd).toBeUndefined()
+  })
+
+  test('edit persists explicit side effect and workspace values', async () => {
+    const { stepCommand } = await import('./step')
+    await stepCommand('edit', ['step-a', '--side-effect', 'execute', '--workspace', 'isolated'], {
+      json: true, help: false, watch: false, basePath,
+    })
+
+    const seq = YAML.parse(await readFile(join(basePath, '.threados/sequence.yaml'), 'utf8'))
+    expect(seq.steps[0].side_effect_class).toBe('execute')
+    expect(seq.steps[0].workspace_mode).toBe('isolated')
   })
 
   test('add creates step with depends-on', async () => {

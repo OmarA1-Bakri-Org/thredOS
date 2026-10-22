@@ -1,7 +1,6 @@
-import { buildAgentComposition } from '../agents/composition'
-import { writeAgentState } from '../agents/repository'
 import { afterEach, describe, expect, test } from 'bun:test'
-import { mkdir, mkdtemp, rm, writeFile } from 'fs/promises'
+import { mkdir, mkdtemp, rm, symlink, writeFile } from 'fs/promises'
+import { existsSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { RunRepository } from './run-repository'
@@ -22,6 +21,13 @@ import { executableSubjectDigest } from '../policy/executable'
 import type { RawProcessResult, RunningProcessHandle } from '../runner/process-handle'
 import type { RunResult } from '../runner/wrapper'
 import { createTestCompatibilityStartProcess } from './test-compatibility'
+import { runWorkspaceBootstrap, WorkspaceBootstrapError } from '../workspaces/bootstrap'
+import { buildAgentComposition } from '../agents/composition'
+import { writeAgentState } from '../agents/repository'
+
+const fixturePromptRef = { id: 'registered-command', version: 2, path: '.threados/prompts/registered-command.md' }
+const fixtureSkillRefs = [{ id: 'fixture-files', version: 1, path: '.threados/skills/fixture-files/SKILL.md', capabilities: ['read'] }]
+const fixturePrompt = 'registered fixture command'
 
 const roots: string[] = []
 afterEach(async () => { await Promise.all(roots.splice(0).map(path => rm(path, { recursive: true, force: true }))) })
@@ -29,19 +35,26 @@ afterEach(async () => { await Promise.all(roots.splice(0).map(path => rm(path, {
 function seq(): Sequence {
   return { version: '1', id: 's', name: 's', gates: [], groups: [], fusion_rules: [], steps: [{
     id: 'x', name: 'x', type: 'base', model: 'shell', prompt_file: '.threados/prompts/x.md',
-    agent_ref: 'registered-x', assigned_agent_id: 'registered-x',
-    prompt_ref: { id: 'x', version: 1, path: '.threados/prompts/x.md' }, status: 'READY', depends_on: [], side_effect_class: 'execute',
+    assigned_agent_id: 'registered-x', agent_ref: 'registered-x', role: 'fixture-executor',
+    prompt_ref: fixturePromptRef, skill_refs: fixtureSkillRefs,
+    status: 'READY', depends_on: [], side_effect_class: 'execute',
   }] } as Sequence
 }
 
-async function make(overrides: Partial<RuntimeServiceDependencies>) {
+async function make(overrides: Partial<RuntimeServiceDependencies>, workspaceRoot?: string) {
   const basePath = await mkdtemp(join(tmpdir(), 'threados-attempt-')); roots.push(basePath)
   await mkdir(join(basePath, '.threados/prompts'), { recursive: true })
-  await writeFile(join(basePath, '.threados/prompts/x.md'), 'registered fixture command')
+  await mkdir(join(basePath, '.threados/skills/fixture-files'), { recursive: true })
+  await writeFile(join(basePath, fixturePromptRef.path), fixturePrompt)
+  await writeFile(join(basePath, fixtureSkillRefs[0]!.path), 'Read fixture files within the assigned workspace.')
   await writeAgentState(basePath, { version: 1, agents: [{
-    id: 'registered-x', name: 'Registered X', builderId: 'fixture-builder', builderName: 'Fixture Builder',
+    id: 'registered-x', name: 'Registered Executor Fixture',
+    builderId: 'fixture-builder', builderName: 'Fixture Builder',
     registeredAt: '2026-01-01T00:00:00.000Z', version: 1, threadSurfaceIds: [],
-    composition: buildAgentComposition({ model: 'shell', promptRef: seq().steps[0]!.prompt_ref }),
+    composition: buildAgentComposition({
+      model: 'shell', role: 'fixture-executor', promptRef: fixturePromptRef,
+      skillRefs: fixtureSkillRefs, tools: ['files'],
+    }),
   }] })
   let id = 0
   const defaultRunStep: NonNullable<RuntimeServiceDependencies['runStep']> = async c => ({
@@ -53,6 +66,35 @@ async function make(overrides: Partial<RuntimeServiceDependencies>) {
     now: () => '2026-01-01T00:00:00.000Z', newId: p => `${p}-${++id}`,
     loadSequence: async () => seq(), loadPolicy: async () => PolicyConfigSchema.parse({ mode: 'POWER', side_effect_mode: 'free' }),
     validateSequence: () => undefined, validatePrompt: async () => true, compilePrompt: async () => 'prompt',
+    prepareRunWorkspace: async () => ({ snapshotId: 'snapshot-test', snapshotManifestRef: '.threados/snapshots/snapshot-test/manifest.json', canonicalPreHash: `sha256:${'b'.repeat(64)}` }),
+    verifyCanonicalWorkspace: async () => ({ preHash: `sha256:${'b'.repeat(64)}`, postHash: `sha256:${'b'.repeat(64)}`, classification: 'unchanged', evidenceRef: 'canonical-precondition.json' }),
+    prepareAttemptWorkspace: async ({ run, attempt, step, snapshotId }) => ({
+      manifestHash: `sha256:${'a'.repeat(64)}`,
+      workspaceManifestRef: `.threados/workspaces/records/workspace-${attempt.id}.json`,
+      context: {
+        cwd: workspaceRoot ?? basePath,
+        workspaceId: `workspace-${attempt.id}`,
+        snapshotId,
+        attemptId: attempt.id,
+        workflowRunId: run.id,
+        isolationLabel: 'THREADOS_SCOPED',
+        environment: {
+          THREADOS_WORKSPACE_ID: `workspace-${attempt.id}`,
+          THREADOS_SNAPSHOT_ID: snapshotId,
+          THREADOS_ATTEMPT_ID: attempt.id,
+          THREADOS_RUN_ID: run.id,
+          THREADOS_STEP_ID: step.id,
+        },
+        promptContext: {
+          workspace_id: `workspace-${attempt.id}`,
+          snapshot_id: snapshotId,
+          isolation_label: 'THREADOS_SCOPED',
+          instruction: 'Operate only in the provided working directory.',
+        },
+      },
+    }),
+    bootstrapWorkspace: async () => undefined,
+    finalizeAttemptWorkspace: async () => undefined,
     prepareArtifacts: async () => undefined,
     resolveGateSurface: async () => ({ surfaceClass: 'shared', revealState: null }),
     allowModelExecution: () => ({ allowed: true }),
@@ -67,9 +109,22 @@ async function make(overrides: Partial<RuntimeServiceDependencies>) {
     startProcess: overrides.startProcess
       ?? createTestCompatibilityStartProcess(selectedRunStep),
   }
-  return { basePath, service: new ThreadOSRuntimeService({ basePath, scheduler: new SequentialScheduler(), repositories: {
-    runs: new RunRepository(basePath), attempts: new AttemptRepository(basePath), processes: new ProcessRepository(basePath), commands: new CommandRepository(basePath),
-  }, dependencies: deps }) }
+  const repositories = {
+    runs: new RunRepository(basePath),
+    attempts: new AttemptRepository(basePath),
+    processes: new ProcessRepository(basePath),
+    commands: new CommandRepository(basePath),
+  }
+  return {
+    basePath,
+    repositories,
+    service: new ThreadOSRuntimeService({
+      basePath,
+      scheduler: new SequentialScheduler(),
+      repositories,
+      dependencies: deps,
+    }),
+  }
 }
 
 const context = { actor: 't', interface: 'system' as const, idempotencyKey: 'k', policyConfirmed: true }
@@ -104,6 +159,417 @@ function rawResult(
 }
 
 describe('AttemptExecutor and lifecycle', () => {
+  test('launches the registered canonical prompt and freezes identity without a step-named prompt', async () => {
+    let legacyPromptChecks = 0
+    let compiled = 0
+    const { basePath, service, repositories } = await make({
+      validatePrompt: async () => { legacyPromptChecks += 1; return false },
+      compilePrompt: async input => {
+        compiled += 1
+        expect(input.rawPrompt).toBe(fixturePrompt)
+        expect(input.step.prompt_file).toBe(fixturePromptRef.path)
+        expect(input.agentRegistration).toMatchObject({
+          registration_id: 'registered-x', registration_version: 1,
+          prompt_ref: fixturePromptRef, skill_refs: fixtureSkillRefs,
+        })
+        return input.rawPrompt
+      },
+    })
+
+    expect(existsSync(join(basePath, '.threados/prompts/x.md'))).toBe(false)
+    const outcome = await service.runAndWait(cmd, context)
+    expect(outcome.run.status).toBe('successful')
+    expect(compiled).toBe(1)
+    expect(legacyPromptChecks).toBe(0)
+    const attempt = outcome.attempts[0]!
+    expect(attempt).toMatchObject({ status: 'completed', agent_ref: 'registered-x' })
+    expect(attempt.agent_registration).toMatchObject({
+      registration_id: 'registered-x', registration_version: 1,
+      builder_id: 'fixture-builder', prompt_ref: fixturePromptRef,
+    })
+    expect(attempt.agent_registration?.prompt_content_hash).toHaveLength(64)
+    expect(attempt.agent_registration?.skill_content_hashes).toHaveLength(1)
+    expect(outcome.run.agent_registrations?.x).toEqual(attempt.agent_registration)
+    expect((await repositories.attempts.get(attempt.id))?.agent_registration).toEqual(attempt.agent_registration)
+    expect((await repositories.runs.get(outcome.run.id))?.agent_registrations?.x).toEqual(attempt.agent_registration)
+  }, 30_000)
+
+  test('an unknown assignment is not registered by fixture setup and cannot dispatch', async () => {
+    const sequence = seq()
+    sequence.steps[0]!.assigned_agent_id = 'unknown-registration'
+    sequence.steps[0]!.agent_ref = 'unknown-registration'
+    let dispatches = 0
+    const { service, repositories } = await make({
+      loadSequence: async () => sequence,
+      dispatch: async () => { dispatches += 1; throw new Error('must not dispatch') },
+    })
+
+    const outcome = await service.runAndWait(cmd, context)
+    expect(outcome.run).toMatchObject({ status: 'failed', error_code: 'AGENT_NOT_REGISTERED' })
+    expect(outcome.attempts).toEqual([])
+    expect(await repositories.processes.list()).toEqual([])
+    expect(dispatches).toBe(0)
+  }, 30_000)
+
+  test('registered prompt mutation after freezing fails before compilation or dispatch', async () => {
+    let compiled = 0
+    let dispatches = 0
+    const built = await make({
+      bootstrapWorkspace: async () => {
+        await writeFile(join(built.basePath, fixturePromptRef.path), 'changed registered command')
+      },
+      compilePrompt: async () => { compiled += 1; return 'must not compile' },
+      dispatch: async () => { dispatches += 1; throw new Error('must not dispatch') },
+    })
+
+    const outcome = await built.service.runAndWait(cmd, context)
+    expect(outcome.run.status).toBe('failed')
+    expect(outcome.attempts[0]).toMatchObject({ status: 'failed', error_code: 'AGENT_IDENTITY_CHANGED' })
+    expect(outcome.run.agent_registrations?.x).toEqual(outcome.attempts[0]?.agent_registration)
+    expect(await built.repositories.processes.list()).toEqual([])
+    expect(compiled).toBe(0)
+    expect(dispatches).toBe(0)
+  }, 30_000)
+
+  test('write attempts bind one verified isolated workspace before compile, gates, dispatch, and spawn', async () => {
+    const workspaceRoot = await mkdtemp(join(tmpdir(), 'threados-attempt-workspace-'))
+    roots.push(workspaceRoot)
+    await mkdir(join(workspaceRoot, 'src'), { recursive: true })
+    const order: string[] = []
+    const finalized: string[] = []
+    let dispatchedEnv: Record<string, string> | undefined
+    let workspaceEventLogPath: string | undefined
+
+    const { basePath, service } = await make({
+      prepareRunWorkspace: async () => {
+        order.push('snapshot')
+        return {
+          snapshotId: 'snapshot-shared',
+          snapshotManifestRef: '.threados/snapshots/snapshot-shared/manifest.json',
+          canonicalPreHash: `sha256:${'b'.repeat(64)}`,
+        }
+      },
+      prepareAttemptWorkspace: async ({ attempt }: { attempt: { id: string } }) => {
+        order.push(`workspace:${attempt.id}`)
+        return {
+          manifestHash: `sha256:${'a'.repeat(64)}`,
+          workspaceManifestRef: '.threados/workspaces/records/workspace-1.json',
+          context: {
+            cwd: workspaceRoot,
+            workspaceId: 'workspace-1',
+            snapshotId: 'snapshot-shared',
+            attemptId: attempt.id,
+            workflowRunId: 'run-1',
+            isolationLabel: 'THREADOS_SCOPED',
+            environment: {
+              THREADOS_WORKSPACE_ID: 'workspace-1',
+              THREADOS_SNAPSHOT_ID: 'snapshot-shared',
+              THREADOS_ATTEMPT_ID: attempt.id,
+              THREADOS_RUN_ID: 'run-1',
+              THREADOS_STEP_ID: 'x',
+            },
+            promptContext: {
+              workspace_id: 'workspace-1',
+              snapshot_id: 'snapshot-shared',
+              isolation_label: 'THREADOS_SCOPED',
+              instruction: 'Operate only in the provided working directory.',
+            },
+          },
+        }
+      },
+      bootstrapWorkspace: async () => { order.push('bootstrap') },
+      compilePrompt: async input => {
+        order.push(`compile:${input.executionRoot}`)
+        expect(input.executionRoot).toBe(workspaceRoot)
+        expect(JSON.stringify(input.workspaceContext)).not.toContain(input.basePath)
+        return 'prompt'
+      },
+      evaluatePreGates: input => {
+        order.push('gates')
+        expect(input.workspaceReady).toBe(true)
+        return []
+      },
+      dispatch: async (_model, options) => {
+        order.push('dispatch')
+        expect(options.cwd).toBe(workspaceRoot)
+        expect(options.cwd).not.toBe(basePath)
+        dispatchedEnv = options.env
+        workspaceEventLogPath = options.runtimeEventLogPath
+        expect(options.runtimeEventLogPath?.startsWith(workspaceRoot)).toBe(true)
+        expect(options.runtimeEventLogPath?.startsWith(basePath)).toBe(false)
+        expect(options.deniedEnvKeys).toContain('THREADOS_BASE_PATH')
+        return { stepId: options.stepId, runId: options.runId, command: 'sh', args: [], cwd: options.cwd, env: options.env }
+      },
+      readRuntimeEvents: async (_basePath, _runId, _stepId, runtimeEventLogPath, executionRoot) => {
+        expect(runtimeEventLogPath).toBe(workspaceEventLogPath)
+        expect(executionRoot).toBe(workspaceRoot)
+        return []
+      },
+      finalizeAttemptWorkspace: async ({ attempt }: { attempt: { status: string } }) => {
+        order.push('workspace-finalized')
+        finalized.push(attempt.status)
+      },
+      verifyCanonicalWorkspace: async () => {
+        order.push('canonical-evidence')
+        return {
+          preHash: `sha256:${'b'.repeat(64)}`,
+          postHash: `sha256:${'b'.repeat(64)}`,
+          classification: 'unchanged',
+          evidenceRef: 'canonical-precondition.json',
+        }
+      },
+    })
+
+    const outcome = await service.runAndWait(cmd, context)
+    expect(outcome.run.baseline_snapshot_id).toBe('snapshot-shared')
+    expect(outcome.attempts[0]).toMatchObject({
+      status: 'completed',
+      baseline_snapshot_id: 'snapshot-shared',
+      workspace_id: 'workspace-1',
+    })
+    expect(order.slice(0, 6)).toEqual([
+      'snapshot',
+      `workspace:${outcome.attempts[0]!.id}`,
+      'bootstrap',
+      `compile:${workspaceRoot}`,
+      'gates',
+      'dispatch',
+    ])
+    expect(dispatchedEnv).toMatchObject({
+      THREADOS_WORKSPACE_ID: 'workspace-1',
+      THREADOS_SNAPSHOT_ID: 'snapshot-shared',
+      THREADOS_ATTEMPT_ID: outcome.attempts[0]!.id,
+    })
+    expect(dispatchedEnv).not.toHaveProperty('THREADOS_BASE_PATH')
+    expect(finalized).toEqual(['completed'])
+    expect(order.slice(-2)).toEqual(['canonical-evidence', 'workspace-finalized'])
+  }, 30_000)
+
+  test('preserves typed bootstrap failures and still finalizes the isolated workspace', async () => {
+    const finalized: string[] = []
+    const { service } = await make({
+      bootstrapWorkspace: async () => {
+        throw new WorkspaceBootstrapError('bootstrap failed', 0)
+      },
+      finalizeAttemptWorkspace: async ({ attempt }) => { finalized.push(attempt.status) },
+    })
+
+    const outcome = await service.runAndWait(cmd, context)
+
+    expect(outcome.run.status).toBe('failed')
+    expect(outcome.attempts[0]).toMatchObject({
+      status: 'failed',
+      error_code: 'WORKSPACE_BOOTSTRAP_FAILED',
+    })
+    expect(finalized).toEqual(['failed'])
+  }, 30_000)
+
+  for (const phase of ['before first bootstrap', 'between bootstrap commands'] as const) {
+    test.each(['removed registration', 'changed registration', 'changed prompt', 'changed skill'] as const)(
+      `revalidates frozen identity ${phase}: %s`, async mutation => {
+        const workspaceRoot = await mkdtemp(join(tmpdir(), 'threados-bootstrap-identity-'))
+        roots.push(workspaceRoot)
+        const paused = deferred<void>()
+        const resume = deferred<void>()
+        let starts = 0
+        let dispatches = 0
+        let finalized = 0
+        const artifacts: string[] = []
+        const built = await make({
+          bootstrapWorkspace: async ({ basePath, workspace, execute }) => {
+            await runWorkspaceBootstrap({
+              canonicalRoot: basePath,
+              context: workspace.context,
+              commands: ['bootstrap-one prepare', 'bootstrap-two prepare'],
+              evaluatePolicy: () => ({ allowed: true, confirmation_required: false }),
+              execute: async (payload, options) => {
+                if ((phase === 'before first bootstrap' && starts === 0)
+                  || (phase === 'between bootstrap commands' && starts === 1)) {
+                  paused.resolve()
+                  await resume.promise
+                }
+                return await execute(payload, options)
+              },
+              writeArtifact: async artifact => { artifacts.push(artifact.status) },
+            })
+          },
+          startProcess: async config => {
+            starts += 1
+            return {
+              processId: config.processId!, pid: 4500 + starts,
+              result: Promise.resolve(rawResult({ stepId: config.stepId, runId: config.runId })),
+              cancel: async signal => ({ success: true, signal: signal ?? 'SIGTERM', escalated: false }),
+            }
+          },
+          dispatch: async () => { dispatches += 1; throw new Error('agent must not dispatch') },
+          finalizeAttemptWorkspace: async () => { finalized += 1 },
+        }, workspaceRoot)
+        const completion = built.service.runAndWait(cmd, context)
+        await paused.promise
+        const frozen = (await built.repositories.attempts.listForRun('run-1'))[0]!.agent_registration!
+        try {
+          if (mutation === 'removed registration') {
+            await writeAgentState(built.basePath, { version: 1, agents: [] })
+          } else if (mutation === 'changed registration') {
+            await writeAgentState(built.basePath, { version: 1, agents: [{
+              id: 'registered-x', name: 'Changed Executor', builderId: 'fixture-builder', builderName: 'Fixture Builder',
+              registeredAt: '2026-01-01T00:00:00.000Z', version: 2, threadSurfaceIds: [],
+              composition: buildAgentComposition({ model: 'shell', role: 'fixture-executor',
+                promptRef: fixturePromptRef, skillRefs: fixtureSkillRefs, tools: ['files'] }),
+            }] })
+          } else {
+            const path = mutation === 'changed prompt' ? fixturePromptRef.path : fixtureSkillRefs[0]!.path
+            await writeFile(join(built.basePath, path), 'changed after frozen registration')
+          }
+        } finally {
+          resume.resolve()
+        }
+        const outcome = await completion
+        const expectedStarts = phase === 'before first bootstrap' ? 0 : 1
+        expect(starts).toBe(expectedStarts)
+        expect(dispatches).toBe(0)
+        expect(finalized).toBe(1)
+        expect(outcome.attempts[0]).toMatchObject({
+          status: 'failed',
+          agent_ref: frozen.registration_id,
+          agent_registration: frozen,
+          error_code: mutation === 'removed registration' ? 'AGENT_NOT_REGISTERED' : 'AGENT_IDENTITY_CHANGED',
+        })
+        expect(outcome.run.agent_registrations?.x).toEqual(frozen)
+        expect(await built.repositories.processes.list()).toHaveLength(expectedStarts)
+        expect(artifacts).toEqual(phase === 'before first bootstrap' ? ['error'] : ['success', 'error'])
+      }, 30_000,
+    )
+  }
+
+  test('rejects a bootstrap-created cwd symlink or junction that escapes the workspace', async () => {
+    const workspaceRoot = await mkdtemp(join(tmpdir(), 'threados-cwd-workspace-'))
+    roots.push(workspaceRoot)
+    let dispatches = 0
+    let finalized = 0
+    const sequence = seq()
+    sequence.steps[0]!.cwd = 'nested'
+    const { basePath, service } = await make({
+      loadSequence: async () => sequence,
+      prepareAttemptWorkspace: async ({ run, attempt, snapshotId }) => ({
+        manifestHash: `sha256:${'a'.repeat(64)}`,
+        workspaceManifestRef: `.threados/workspaces/records/workspace-${attempt.id}.json`,
+        context: {
+          cwd: workspaceRoot,
+          workspaceId: `workspace-${attempt.id}`,
+          snapshotId,
+          attemptId: attempt.id,
+          workflowRunId: run.id,
+          isolationLabel: 'THREADOS_SCOPED',
+          environment: {},
+          promptContext: {
+            workspace_id: `workspace-${attempt.id}`,
+            snapshot_id: snapshotId,
+            isolation_label: 'THREADOS_SCOPED',
+            instruction: 'Operate only in the provided working directory.',
+          },
+        },
+      }),
+      bootstrapWorkspace: async () => {
+        await symlink(basePath, join(workspaceRoot, 'nested'), process.platform === 'win32' ? 'junction' : 'dir')
+      },
+      dispatch: async () => {
+        dispatches += 1
+        throw new Error('must not dispatch')
+      },
+      finalizeAttemptWorkspace: async () => { finalized += 1 },
+    })
+
+    const outcome = await service.runAndWait(cmd, context)
+
+    expect(outcome.run.status).toBe('failed')
+    expect(outcome.attempts[0]?.status).toBe('failed')
+    expect(dispatches).toBe(0)
+    expect(finalized).toBe(1)
+  }, 30_000)
+
+  test('preserves typed snapshot failures before attempt provisioning', async () => {
+    const { service } = await make({
+      prepareRunWorkspace: async () => {
+        throw Object.assign(new Error('source remained unstable'), { code: 'SNAPSHOT_SOURCE_BUSY' })
+      },
+    })
+
+    const outcome = await service.runAndWait(cmd, context)
+
+    expect(outcome.run).toMatchObject({
+      status: 'failed',
+      error_code: 'SNAPSHOT_SOURCE_BUSY',
+    })
+    expect(outcome.attempts).toEqual([])
+  }, 30_000)
+
+  test('fails the run on attributed canonical mutation while preserving attempt and workspace truth', async () => {
+    const finalized: string[] = []
+    const { service } = await make({
+      verifyCanonicalWorkspace: async () => ({
+        preHash: `sha256:${'b'.repeat(64)}`,
+        postHash: `sha256:${'c'.repeat(64)}`,
+        classification: 'threados_mutation',
+        evidenceRef: 'canonical-precondition.json',
+      }),
+      finalizeAttemptWorkspace: async ({ attempt }) => { finalized.push(attempt.status) },
+    })
+
+    const outcome = await service.runAndWait(cmd, context)
+
+    expect(outcome.run).toMatchObject({
+      status: 'failed',
+      error_code: 'CANONICAL_WORKSPACE_MUTATED',
+    })
+    expect(outcome.attempts).toHaveLength(1)
+    expect(outcome.attempts[0]?.status).toBe('completed')
+    expect(finalized).toEqual(['completed'])
+  }, 30_000)
+
+  test('finalizes the workspace even when canonical verification itself fails', async () => {
+    const finalized: string[] = []
+    const { service } = await make({
+      verifyCanonicalWorkspace: async () => { throw new Error('canonical evidence unavailable') },
+      finalizeAttemptWorkspace: async ({ attempt }) => { finalized.push(attempt.status) },
+    })
+
+    const outcome = await service.runAndWait(cmd, context)
+
+    expect(outcome.run.status).toBe('failed')
+    expect(outcome.attempts).toHaveLength(1)
+    expect(finalized).toEqual(['completed'])
+  }, 30_000)
+
+  test('finalizes the workspace when a terminal repository refresh fails', async () => {
+    let terminalProjectionPersisted = false
+    let finalized = 0
+    const built = await make({
+      projections: {
+        beginRun: async () => undefined,
+        beginAttempt: async () => undefined,
+        finalizeAttempt: async () => { terminalProjectionPersisted = true },
+        finalizeRun: async () => undefined,
+      },
+      finalizeAttemptWorkspace: async () => { finalized += 1 },
+    })
+    const originalGet = built.repositories.runs.get.bind(built.repositories.runs)
+    let injected = false
+    built.repositories.runs.get = async runId => {
+      if (terminalProjectionPersisted && !injected) {
+        injected = true
+        throw new Error('terminal run refresh failed')
+      }
+      return await originalGet(runId)
+    }
+
+    const outcome = await built.service.runAndWait(cmd, context)
+
+    expect(outcome.run.status).toBe('failed')
+    expect(outcome.attempts).toHaveLength(1)
+    expect(finalized).toBe(1)
+  }, 30_000)
+
   test('controller owns launch persistence and maps verified success after completion gates', async () => {
     const terminal = deferred<RawProcessResult>()
     const starts: string[] = []
@@ -151,6 +617,79 @@ describe('AttemptExecutor and lifecycle', () => {
       provider_handle: 'pid:321',
       exit_code: 0,
     })
+  }, 30_000)
+
+  test('bootstrap and agent launches use separate durable process records', async () => {
+    let basePath = ''
+    const starts: string[] = []
+    const built = await make({
+      bootstrapWorkspace: async ({ execute, workspace }) => {
+        for (const command of ['bootstrap-one', 'bootstrap-two']) {
+          const result = await execute({
+            command,
+            args: ['prepare'],
+            cwd: workspace.context.cwd,
+          }, {
+            cwd: workspace.context.cwd,
+            shell: false,
+            timeoutMs: 1_000,
+            maxOutputBytes: 4_096,
+          })
+          expect(result).toMatchObject({ exitCode: 0, stdout: 'ok' })
+        }
+      },
+      startProcess: async config => {
+        const processId = config.processId!
+        starts.push(processId)
+        expect(await new ProcessRepository(basePath).get(processId)).toMatchObject({
+          id: processId,
+          status: 'starting',
+          workspace_id: expect.stringMatching(/^workspace-/),
+          cwd: config.cwd,
+        })
+        const result = rawResult({ stepId: config.stepId, runId: config.runId })
+        return {
+          processId,
+          pid: 4000 + starts.length,
+          result: Promise.resolve(result),
+          cancel: async signal => ({
+            success: true,
+            signal: signal ?? 'SIGTERM',
+            escalated: false,
+          }),
+        } satisfies RunningProcessHandle
+      },
+    } as Partial<RuntimeServiceDependencies> & {
+      startProcess: (config: Parameters<NonNullable<RuntimeServiceDependencies['startProcess']>>[0]) => Promise<RunningProcessHandle>
+    })
+    basePath = built.basePath
+
+    const outcome = await built.service.runAndWait(cmd, context)
+    const attempt = outcome.attempts[0]!
+    const processes = await built.repositories.processes.list()
+    const bootstrap = processes.filter(process => process.process_purpose === 'bootstrap')
+    const agent = processes.find(process => process.id === attempt.process_id)
+
+    expect(outcome.run.status).toBe('successful')
+    expect(starts).toHaveLength(3)
+    expect(new Set(starts).size).toBe(3)
+    expect(bootstrap).toHaveLength(2)
+    expect(bootstrap.map(process => ({
+      status: process.status,
+      workspace_id: process.workspace_id,
+      command: process.command,
+      ordinal: process.process_ordinal,
+    }))).toEqual([
+      { status: 'exited', workspace_id: attempt.workspace_id, command: 'bootstrap-one', ordinal: 0 },
+      { status: 'exited', workspace_id: attempt.workspace_id, command: 'bootstrap-two', ordinal: 1 },
+    ])
+    expect(agent).toMatchObject({
+      status: 'exited',
+      workspace_id: attempt.workspace_id,
+      process_purpose: 'agent',
+      process_ordinal: 0,
+    })
+    expect(bootstrap.map(process => process.id)).not.toContain(agent!.id)
   }, 30_000)
 
   test('blocked pre-run gate durably fails and never dispatches or spawns', async () => {

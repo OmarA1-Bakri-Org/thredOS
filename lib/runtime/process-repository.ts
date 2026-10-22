@@ -2,7 +2,7 @@ import { withExclusiveFileLock, writeFileAtomic } from '../fs/atomic'
 import { assertSafePathSegment } from '../security/safe-path'
 import { readTextFileNoFollow } from '../security/safe-io'
 import { AttemptRepository } from './attempt-repository'
-import { processRecordPath } from './paths'
+import { processIdentityLockPath, processRecordPath } from './paths'
 import { RuntimeRepositoryError } from './run-repository'
 import { ProcessRecordSchema, type ProcessRecord } from './schema'
 import {
@@ -26,6 +26,27 @@ async function readProcess(path: string): Promise<ProcessRecord> {
 export class ProcessRepository {
   constructor(private readonly basePath: string) {}
 
+  private async findRecordPath(processId: string): Promise<string | null> {
+    const readReference = async (reference: string | undefined): Promise<string | null> => {
+      if (!reference) return null
+      const path = await resolveRuntimeIndexReference(this.basePath, reference)
+      const record = await readProcess(path)
+      if (record.id !== processId) throw new Error('process record identity does not match its index key')
+      return path
+    }
+    const first = (await readRuntimeIndex(this.basePath)).processes[processId]
+    try {
+      const path = await readReference(first)
+      if (path) return path
+    } catch {
+      // The derived reference is stale or invalid; authoritative scan wins below.
+    }
+    const authoritative = await scanAuthoritativeRuntimeIndex(this.basePath)
+    const retry = authoritative.processes[processId]
+    if (first || retry) await rebuildRuntimeIndex(this.basePath, 25).catch(() => undefined)
+    return await readReference(retry)
+  }
+
   async create(value: ProcessRecord): Promise<void> {
     const processRecord = ProcessRecordSchema.parse(value)
     assertSafePathSegment(processRecord.id, 'process id')
@@ -39,38 +60,30 @@ export class ProcessRepository {
       this.basePath,
       processRecord.workflow_run_id,
       processRecord.attempt_id,
+      processRecord.id,
     )
-    await withExclusiveFileLock(`${path}.lock`, async () => {
-      try {
-        await readTextFileNoFollow(path)
+    const identityLock = await processIdentityLockPath(this.basePath, processRecord.id)
+    await withExclusiveFileLock(identityLock, async () => {
+      if (await this.get(processRecord.id)) {
         throw new RuntimeRepositoryError('RUNTIME_RECORD_EXISTS', `process ${processRecord.id} already exists`)
-      } catch (error) {
-        if (!isMissing(error)) throw error
       }
-      await writeFileAtomic(path, `${JSON.stringify(processRecord, null, 2)}\n`, { allowedRoot: this.basePath })
+      await withExclusiveFileLock(`${path}.lock`, async () => {
+        try {
+          await readTextFileNoFollow(path)
+          throw new RuntimeRepositoryError('RUNTIME_RECORD_EXISTS', `process ${processRecord.id} already exists`)
+        } catch (error) {
+          if (!isMissing(error)) throw error
+        }
+        await writeFileAtomic(path, `${JSON.stringify(processRecord, null, 2)}\n`, { allowedRoot: this.basePath })
+      }, { allowedRoot: this.basePath })
     }, { allowedRoot: this.basePath })
     await refreshRuntimeIndexBestEffort(this.basePath)
   }
 
   async get(processId: string): Promise<ProcessRecord | null> {
     assertSafePathSegment(processId, 'process id')
-    const readReference = async (reference: string | undefined): Promise<ProcessRecord | null> => {
-      if (!reference) return null
-      const record = await readProcess(await resolveRuntimeIndexReference(this.basePath, reference))
-      if (record.id !== processId) throw new Error('process record identity does not match its index key')
-      return record
-    }
-    const first = (await readRuntimeIndex(this.basePath)).processes[processId]
-    try {
-      const processRecord = await readReference(first)
-      if (processRecord) return processRecord
-    } catch {
-      // The derived reference is stale or invalid; authoritative scan wins below.
-    }
-    const authoritative = await scanAuthoritativeRuntimeIndex(this.basePath)
-    const retry = authoritative.processes[processId]
-    if (first || retry) await rebuildRuntimeIndex(this.basePath, 25).catch(() => undefined)
-    return await readReference(retry)
+    const path = await this.findRecordPath(processId)
+    return path ? await readProcess(path) : null
   }
 
   async list(): Promise<ProcessRecord[]> {
@@ -82,11 +95,14 @@ export class ProcessRepository {
   }
 
   async update(processId: string, expectedRevision: number, mutate: ProcessMutation): Promise<ProcessRecord> {
-    const existing = await this.get(processId)
-    if (!existing) throw new RuntimeRepositoryError('PROCESS_NOT_FOUND', `process ${processId} was not found`)
-    const path = await processRecordPath(this.basePath, existing.workflow_run_id, existing.attempt_id)
+    assertSafePathSegment(processId, 'process id')
+    const path = await this.findRecordPath(processId)
+    if (!path) throw new RuntimeRepositoryError('PROCESS_NOT_FOUND', `process ${processId} was not found`)
     const updated = await withExclusiveFileLock(`${path}.lock`, async () => {
       const current = await readProcess(path)
+      if (current.id !== processId) {
+        throw new RuntimeRepositoryError('PROCESS_NOT_FOUND', `process ${processId} was not found`)
+      }
       if (current.revision !== expectedRevision) {
         throw new RuntimeRepositoryError('RUNTIME_REVISION_CONFLICT', `process ${processId} revision conflict`)
       }

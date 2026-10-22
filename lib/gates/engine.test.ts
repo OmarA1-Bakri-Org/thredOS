@@ -1,7 +1,14 @@
 import { describe, it, expect } from 'bun:test'
 import type { Step } from '@/lib/sequence/schema'
-import type { GateContext, CompletionGateContext } from './engine'
-import { evaluateStepCompletionGates, evaluateStepGates, getBlockReasons, isStepRunnable } from './engine'
+import { GateReasonCode } from '@/lib/contracts/reason-codes'
+import type { GateContext, CompletionGateContext, WorkspaceGateContext } from './engine'
+import {
+  evaluateStepCompletionGates,
+  evaluateStepGates,
+  evaluateWorkspaceGates,
+  getBlockReasons,
+  isStepRunnable,
+} from './engine'
 
 function makeStep(overrides: Partial<Step> = {}): Step {
   return {
@@ -128,5 +135,65 @@ describe('evaluateStepCompletionGates', () => {
     const decisions = evaluateStepCompletionGates(step, makeCompletionCtx({ completionContractSatisfied: false }))
 
     expect(getBlockReasons(decisions)).toContain('CONTRACT_INCOMPLETE')
+  })
+})
+
+describe('evaluateWorkspaceGates', () => {
+  const snapshotManifestRef = '.threados/snapshots/snapshot-1/manifest.json'
+  const workspaceManifestRef = '.threados/workspaces/workspace-1/manifest.json'
+
+  function workspaceContext(
+    overrides: Partial<WorkspaceGateContext> = {},
+  ): WorkspaceGateContext {
+    return {
+      snapshotPresent: true,
+      snapshotVerified: true,
+      workspacePresent: true,
+      workspaceReady: true,
+      workspaceManifestVerified: true,
+      snapshotManifestRef,
+      workspaceManifestRef,
+      ...overrides,
+    }
+  }
+
+  it('emits five ordered PASS decisions bound to manifest evidence', () => {
+    const decisions = evaluateWorkspaceGates('step-1', workspaceContext())
+
+    expect(decisions.map(decision => decision.gate_type)).toEqual([
+      'snapshot_present',
+      'snapshot_verified',
+      'workspace_present',
+      'workspace_ready',
+      'workspace_manifest_verified',
+    ])
+    expect(decisions.every(decision => decision.status === 'PASS')).toBe(true)
+    expect(decisions.slice(0, 2).every(decision =>
+      decision.evidence_refs.length === 1 && decision.evidence_refs[0] === snapshotManifestRef
+    )).toBe(true)
+    expect(decisions.slice(2).every(decision =>
+      decision.evidence_refs.length === 1 && decision.evidence_refs[0] === workspaceManifestRef
+    )).toBe(true)
+  })
+
+  it('blocks invalid workspace evidence without free-text evidence references', () => {
+    const decisions = evaluateWorkspaceGates('step-2', workspaceContext({
+      snapshotVerified: false,
+      workspacePresent: false,
+      workspaceReady: false,
+      workspaceManifestVerified: false,
+      workspaceManifestRef: null,
+    }))
+
+    expect(getBlockReasons(decisions)).toEqual([
+      GateReasonCode.SNAPSHOT_NOT_VERIFIED,
+      GateReasonCode.WORKSPACE_MISSING,
+      GateReasonCode.WORKSPACE_NOT_READY,
+      GateReasonCode.WORKSPACE_MANIFEST_INVALID,
+    ])
+    expect(decisions.flatMap(decision => decision.evidence_refs)).toEqual([
+      snapshotManifestRef,
+      snapshotManifestRef,
+    ])
   })
 })

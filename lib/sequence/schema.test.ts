@@ -1,5 +1,12 @@
 import { describe, test, expect } from 'bun:test'
-import { StepSchema, GateSchema, SequenceSchema, PolicySchema, MetadataSchema } from './schema'
+import {
+  StepSchema,
+  GateSchema,
+  SequenceSchema,
+  PolicySchema,
+  MetadataSchema,
+  PortableStepCwdSchema,
+} from './schema'
 
 const validStep = {
   id: 'my-step-1',
@@ -64,6 +71,50 @@ describe('StepSchema', () => {
       expect(StepSchema.safeParse({ ...validStep, model: m }).success).toBe(true)
     }
     expect(StepSchema.safeParse({ ...validStep, model: '' }).success).toBe(false)
+  })
+
+  test('classifies omitted legacy side effects conservatively by model', () => {
+    const expected = [
+      ['shell', 'execute'],
+      ['claude-code', 'write'],
+      ['codex', 'write'],
+      ['gemini', 'write'],
+      ['external-agent', 'write'],
+    ] as const
+
+    for (const [model, sideEffectClass] of expected) {
+      const result = StepSchema.safeParse({ ...validStep, model })
+      expect(result.success).toBe(true)
+      if (result.success) expect(result.data.side_effect_class).toBe(sideEffectClass)
+    }
+  })
+
+  test('keeps an explicit side effect class and validates workspace mode', () => {
+    const explicit = StepSchema.safeParse({
+      ...validStep,
+      model: 'codex',
+      side_effect_class: 'read',
+      workspace_mode: 'isolated',
+    })
+    expect(explicit.success).toBe(true)
+    if (explicit.success) {
+      expect(explicit.data.side_effect_class).toBe('read')
+      expect(explicit.data.workspace_mode).toBe('isolated')
+    }
+
+    const legacy = StepSchema.safeParse(validStep)
+    expect(legacy.success).toBe(true)
+    if (legacy.success) expect(legacy.data.workspace_mode).toBe('auto')
+
+    expect(StepSchema.safeParse({ ...validStep, workspace_mode: 'canonical' }).success).toBe(false)
+  })
+
+  test('keeps legacy cwd parsing compatible while exposing a strict mutation-boundary schema', () => {
+    expect(StepSchema.safeParse({ ...validStep, cwd: 'packages/web-app' }).success).toBe(true)
+    expect(StepSchema.safeParse({ ...validStep, cwd: 'C:\\legacy\\repo' }).success).toBe(true)
+    for (const cwd of ['/tmp/workdir', 'C:\\repo\\app', '../escape', 'nested/../../escape', 'nested\\windows']) {
+      expect(PortableStepCwdSchema.safeParse(cwd).success).toBe(false)
+    }
   })
 
   test('validates status enum', () => {

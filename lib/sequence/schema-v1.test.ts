@@ -128,7 +128,8 @@ describe('StepSchema V.1 extensions', () => {
       expect(result.data.phase).toBe('default')
       expect(result.data.surface_ref).toBe('thread-my-step-1')
       expect(result.data.agent_ref).toBeNull()
-      expect(result.data.side_effect_class).toBe('none')
+      expect(result.data.side_effect_class).toBe('write')
+      expect(result.data.workspace_mode).toBe('auto')
     }
   })
 

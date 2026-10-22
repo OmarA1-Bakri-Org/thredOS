@@ -12,6 +12,18 @@ export interface CompileOptions {
   rawPrompt: string
   sequence: Sequence
   basePath: string
+  executionRoot?: string
+  workspaceContext?: {
+    workspace_id: string
+    snapshot_id: string
+    isolation_label: 'THREADOS_SCOPED'
+    instruction: string
+  } | null
+  /** Logical in-workspace cwd rendered to the agent without a private host path. */
+  logicalWorkingDirectory?: string
+  includeDependencyArtifacts?: boolean
+  /** Restrict dependency lookup to this workflow run. Omit only for legacy callers. */
+  dependencyArtifactRunId?: string
   maxTokens?: number
   runtimeEventLogPath?: string
   runtimeEventEmitterCommand?: string
@@ -34,6 +46,7 @@ const CHARS_PER_TOKEN = 4 // rough estimate
  */
 export async function compilePrompt(opts: CompileOptions): Promise<string> {
   const { stepId, step, rawPrompt, sequence, basePath } = opts
+  const executionRoot = opts.executionRoot ?? basePath
   const maxChars = (opts.maxTokens ?? DEFAULT_MAX_TOKENS) * CHARS_PER_TOKEN
 
   const sections: string[] = []
@@ -42,9 +55,23 @@ export async function compilePrompt(opts: CompileOptions): Promise<string> {
   sections.push(buildThreadTypeSection(step, sequence))
   sections.push(buildTaskSection(rawPrompt))
   sections.push(buildSequenceStateSection(stepId, sequence))
-  sections.push(await buildArtifactsSection(step, sequence, basePath, maxChars))
-  sections.push(buildWorkingDirSection(step, basePath))
-  sections.push(await buildFileTreeSection(basePath))
+  const dependencyArtifactsAreScoped = !opts.workspaceContext
+    || opts.dependencyArtifactRunId !== undefined
+  if (opts.includeDependencyArtifacts !== false && dependencyArtifactsAreScoped) {
+    sections.push(await buildArtifactsSection(
+      step,
+      sequence,
+      basePath,
+      maxChars,
+      opts.dependencyArtifactRunId,
+    ))
+  }
+  sections.push(buildWorkingDirSection(
+    executionRoot,
+    opts.workspaceContext,
+    opts.logicalWorkingDirectory,
+  ))
+  sections.push(await buildFileTreeSection(executionRoot))
   sections.push(buildConstraintsSection(opts))
 
   let compiled = sections.filter(Boolean).join('\n')
@@ -80,17 +107,37 @@ function buildSequenceStateSection(stepId: string, sequence: Sequence): string {
   return ['## Sequence State', '', buildSequenceState(stepId, sequence), ''].join('\n')
 }
 
-async function buildArtifactsSection(step: Step, sequence: Sequence, basePath: string, maxChars: number): Promise<string> {
-  const artifacts = await loadDependencyArtifacts(step, sequence, basePath)
+async function buildArtifactsSection(
+  step: Step,
+  sequence: Sequence,
+  basePath: string,
+  maxChars: number,
+  runId?: string,
+): Promise<string> {
+  const artifacts = await loadDependencyArtifacts(step, sequence, basePath, runId)
   if (artifacts.length === 0) return ''
 
   const artifactBudget = Math.floor(maxChars * 0.3)
   return ['## Prior Step Outputs', '', formatArtifacts(artifacts, artifactBudget), ''].join('\n')
 }
 
-function buildWorkingDirSection(step: Step, basePath: string): string {
-  const cwd = step.cwd || basePath
-  return ['## Working Directory', '', `\`${cwd}\``, ''].join('\n')
+function buildWorkingDirSection(
+  executionRoot: string,
+  workspaceContext: CompileOptions['workspaceContext'],
+  logicalWorkingDirectory?: string,
+): string {
+  const displayedRoot = workspaceContext ? logicalWorkingDirectory ?? '.' : executionRoot
+  const lines = ['## Working Directory', '', `\`${displayedRoot}\``, '']
+  if (workspaceContext) {
+    lines.push(
+      `Workspace: ${workspaceContext.workspace_id}`,
+      `Snapshot: ${workspaceContext.snapshot_id}`,
+      `Isolation: ${workspaceContext.isolation_label}`,
+      workspaceContext.instruction,
+      '',
+    )
+  }
+  return lines.join('\n')
 }
 
 async function buildFileTreeSection(basePath: string): Promise<string> {
@@ -111,7 +158,9 @@ function buildConstraintsSection(opts: CompileOptions): string {
   lines.push('- If you create files, list them as: FILES_CREATED: path1, path2, ...')
 
   if (opts.runtimeEventLogPath) {
-    lines.push(`- If you delegate work or merge work into another thread, append one JSON object per line to THREADOS_EVENT_LOG (${opts.runtimeEventLogPath})`)
+    lines.push(opts.workspaceContext
+      ? '- If you delegate work or merge work into another thread, append one JSON object per line to the provided THREADOS_EVENT_LOG path'
+      : `- If you delegate work or merge work into another thread, append one JSON object per line to THREADOS_EVENT_LOG (${opts.runtimeEventLogPath})`)
     lines.push('- Runtime event types: `spawn-child` with childStepId/childLabel/spawnKind, and `merge-into` with destinationStepId/sourceStepIds/mergeKind')
     if (opts.runtimeEventEmitterCommand) {
       lines.push(`- Prefer the emitter command exposed in THREADOS_EVENT_EMITTER. Use \`${opts.runtimeEventEmitterCommand} spawn-child <child-step-id> --label <child label> --kind <orchestrator|watchdog|fanout>\` for child delegation.`)
@@ -221,7 +270,8 @@ function buildSequenceState(currentStepId: string, sequence: Sequence): string {
 async function loadDependencyArtifacts(
   step: Step,
   sequence: Sequence,
-  basePath: string
+  basePath: string,
+  runId?: string,
 ): Promise<DependencyArtifact[]> {
   const artifacts: DependencyArtifact[] = []
   let runsDir: string
@@ -233,6 +283,17 @@ async function loadDependencyArtifacts(
     throw error
   }
 
+  let selectedRunDir: string | null = null
+  if (runId !== undefined) {
+    assertSafePathSegment(runId, 'workflow run id')
+    try {
+      selectedRunDir = await resolveExistingPathWithinRoot(runsDir, runId)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return artifacts
+      throw error
+    }
+  }
+
   for (const depId of step.depends_on) {
     // Skip gate dependencies
     if (sequence.gates.some(g => g.id === depId)) continue
@@ -241,11 +302,26 @@ async function loadDependencyArtifacts(
     if (!depStep || depStep.status !== 'DONE') continue
     assertSafePathSegment(depId, 'dependency id')
 
-    const artifact = await loadSingleArtifact(runsDir, depId)
+    const artifact = selectedRunDir
+      ? await loadArtifactFromSelectedRun(selectedRunDir, depId)
+      : await loadSingleArtifact(runsDir, depId)
     if (artifact) artifacts.push(artifact)
   }
 
   return artifacts
+}
+
+async function loadArtifactFromSelectedRun(
+  runDir: string,
+  depId: string,
+): Promise<DependencyArtifact | null> {
+  try {
+    const artifactDir = await resolveExistingPathWithinRoot(runDir, depId)
+    return await readArtifactFromRun(artifactDir, depId)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
+    throw error
+  }
 }
 
 async function loadSingleArtifact(runsDir: string, depId: string): Promise<DependencyArtifact | null> {

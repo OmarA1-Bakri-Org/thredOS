@@ -94,7 +94,7 @@ describe.serial('thread spawn event persistence', () => {
     await rm(basePath, { recursive: true, force: true })
   })
 
-  test('orchestrator metadata alone does not create delegated child surfaces without runtime events', async () => {
+  test('orchestrator metadata materializes declared sequence surfaces without fabricating spawn events', async () => {
     await setupSequence({
       version: '1.0',
       name: 'Orchestrated Sequence',
@@ -156,14 +156,12 @@ describe.serial('thread spawn event persistence', () => {
     expect(response.status).toBe(200)
 
     const state = await readThreadSurfaceState()
-    expect(state.threadSurfaces).toEqual([
-      expect.objectContaining({
-        id: 'thread-root',
-        childSurfaceIds: [],
-      }),
-    ])
+    expect(state.threadSurfaces).toHaveLength(2)
+    expect(state.threadSurfaces.map(surface => surface.id)).toEqual(expect.arrayContaining([
+      'thread-root',
+      'thread-orch-orchestrator',
+    ]))
     expect(state.threadSurfaces.some(surface => surface.id === 'thread-other-step')).toBe(false)
-    expect(state.threadSurfaces.some(surface => surface.id === 'thread-orch-orchestrator')).toBe(false)
     expect(state.threadSurfaces.some(surface => surface.id === 'thread-orch-worker-1')).toBe(false)
     expect(state.threadSurfaces.some(surface => surface.id === 'thread-orch-worker-2')).toBe(false)
     expect(state.runEvents).toEqual([])
@@ -396,7 +394,7 @@ describe.serial('thread spawn event persistence', () => {
     expect(state.runEvents).toEqual([])
   })
 
-  test('watchdog metadata alone does not create a child lane without runtime events', async () => {
+  test('watchdog metadata materializes its declared child surface without runtime spawn events', async () => {
     await setupSequence({
       version: '1.0',
       name: 'Long Sequence',
@@ -491,13 +489,19 @@ describe.serial('thread spawn event persistence', () => {
       expect.arrayContaining([
         expect.objectContaining({
           id: 'thread-long-main',
-          childSurfaceIds: [],
+          childSurfaceIds: ['thread-long-watchdog'],
           sequenceRef: null,
           spawnedByAgentId: null,
         }),
+        expect.objectContaining({
+          id: 'thread-long-watchdog',
+          parentSurfaceId: 'thread-long-main',
+          parentAgentNodeId: 'long-watchdog',
+          childSurfaceIds: [],
+        }),
       ]),
     )
-    expect(state.threadSurfaces.some(surface => surface.id === 'thread-long-watchdog')).toBe(false)
+    expect(state.threadSurfaces).toHaveLength(3)
     expect(state.runEvents).toEqual([])
   })
 

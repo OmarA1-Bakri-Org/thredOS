@@ -4,17 +4,17 @@ import { resolve } from 'path'
 import { consumeApproval, readApprovals } from '../approvals/repository'
 import { recordConsumedApprovalLifecycle } from '../approvals/runtime'
 import { appendGateDecision } from '../gates/repository'
-import { evaluateStepCompletionGates, evaluateStepGates } from '../gates/engine'
+import { evaluateStepCompletionGates, evaluateStepGates, evaluateWorkspaceGates } from '../gates/engine'
 import { approvalMatchesExecutableSubject, enforceExecutablePayload, executableSubjectDigest } from '../policy/executable'
 import { PolicyEngine } from '../policy/engine'
 import { validatePromptExists } from '../prompts/manager'
-import { getRuntimeEventLogPath, saveRunArtifacts, writeCompiledPrompt, writeInputManifest } from '../runner/artifacts'
+import { saveRunArtifacts, writeCompiledPrompt, writeInputManifest } from '../runner/artifacts'
 import { dispatch } from '../runner/dispatch'
 import { compilePrompt } from '../runner/prompt-compiler'
 import { startProcess } from '../runner/wrapper'
 import { validateDAG } from '../sequence/dag'
 import { readSequence } from '../sequence/parser'
-import { readRuntimeEventLog } from '../thread-surfaces/runtime-event-log'
+import { readRuntimeEventLog, readRuntimeEventLogAtPath } from '../thread-surfaces/runtime-event-log'
 import { appendTraceEvent } from '../traces/writer'
 import { readThreadSurfaceState } from '../thread-surfaces/repository'
 import { allowShellModel } from '../hosted'
@@ -26,9 +26,27 @@ import { reconcileCanonicalRuntime } from './recovery'
 import { RunRepository } from './run-repository'
 import { SequentialScheduler } from './scheduler'
 import { ThreadOSRuntimeService } from './service'
-import type { RuntimeServiceDependencies } from './service-types'
+import type { RuntimeCanonicalWorkspaceEvidence, RuntimeServiceDependencies } from './service-types'
+import type { StepAttempt, WorkflowRun } from './schema'
 import { createTestCompatibilityStartProcess } from './test-compatibility'
 import type { RunnerConfig, RunResult } from '../runner/wrapper'
+import { loadWorkspaceConfig } from '../workspaces/config'
+import { readLocalWorkspace } from '../local-first/workspace'
+import { captureSnapshot, inspectCanonicalManifest } from '../workspaces/snapshot'
+import { SurfaceWorkspaceManager, SurfaceWorkspaceTraceError } from '../workspaces/manager'
+import { WorkspaceRepository } from '../workspaces/repository'
+import { classifyAttemptSideEffect, resolveWorkspaceDispatchContext } from './workspace-planner'
+import { runWorkspaceBootstrap } from '../workspaces/bootstrap'
+import { resolveExistingPathWithinRoot, resolvePathWithinRoot } from '../security/safe-path'
+import { writeFileAtomic } from '../fs/atomic'
+import { SnapshotRepository } from '../workspaces/snapshot-repository'
+import {
+  CanonicalPreconditionSchema,
+  CanonicalWriteAttributionError,
+  classifyCanonicalManifestChange,
+  readCanonicalPrecondition,
+  readCanonicalProjectWrites,
+} from './canonical-write-journal'
 
 export interface RuntimeFactoryOptions {
   dependencies?: Partial<RuntimeServiceDependencies>
@@ -41,8 +59,57 @@ export interface RuntimeFactoryOptions {
 
 const instances = new Map<string, Promise<ThreadOSRuntimeService>>()
 
+interface CanonicalEvidenceInput extends Omit<RuntimeCanonicalWorkspaceEvidence, 'evidenceRef'> {
+  basePath: string
+  run: WorkflowRun
+  attempt: StepAttempt
+  now(): string
+}
+
+async function persistCanonicalWorkspaceEvidence(input: CanonicalEvidenceInput): Promise<RuntimeCanonicalWorkspaceEvidence> {
+  const { basePath, run, attempt, preHash, postHash, classification, now } = input
+  const relativeRef = `.threados/runs/${run.id}/attempts/${attempt.id}/canonical-precondition.json`
+  const attemptRoot = await resolveExistingPathWithinRoot(
+    basePath, '.threados', 'runs', run.id, 'attempts', attempt.id,
+  )
+  const evidencePath = await resolvePathWithinRoot(attemptRoot, 'canonical-precondition.json')
+  await writeFileAtomic(evidencePath, `${JSON.stringify({
+    schema_version: 1,
+    workflow_run_id: run.id,
+    attempt_id: attempt.id,
+    pre_hash: preHash,
+    post_hash: postHash,
+    classification,
+    observed_at: now(),
+  }, null, 2)}\n`, { allowedRoot: basePath })
+  await appendTraceEvent(basePath, run.id, {
+    ts: now(),
+    run_id: run.id,
+    surface_id: attempt.surface_id,
+    actor: 'threados-runtime',
+    event_type: 'policy-checked',
+    payload_ref: relativeRef,
+    policy_ref: run.policy_snapshot_hash,
+  })
+  return { preHash, postHash, classification, evidenceRef: relativeRef }
+}
+
 function defaults(basePath: string): RuntimeServiceDependencies {
   const now = () => new Date().toISOString()
+  const workspaceManagers = new Map<string, SurfaceWorkspaceManager>()
+  const managerFor = async (): Promise<SurfaceWorkspaceManager> => {
+    const workspace = await readLocalWorkspace(basePath)
+    const existing = workspaceManagers.get(workspace.id)
+    if (existing) return existing
+    const manager = new SurfaceWorkspaceManager({
+      canonicalRoot: basePath,
+      runtimeDataRoot: workspace.runtimeDataRoot,
+      localWorkspaceId: workspace.id,
+      actor: 'threados-runtime',
+    })
+    workspaceManagers.set(workspace.id, manager)
+    return manager
+  }
   return {
     now,
     newId: prefix => `${prefix}-${randomUUID()}`,
@@ -50,13 +117,176 @@ function defaults(basePath: string): RuntimeServiceDependencies {
     loadPolicy: async path => (await PolicyEngine.load(path)).getConfig(),
     validateSequence: validateDAG,
     validatePrompt: validatePromptExists,
-    compilePrompt: async ({ sequence, step, runId, rawPrompt }) => {
+    compilePrompt: async input => {
+      const { sequence, step, runId, executionRoot, workspaceContext, logicalWorkingDirectory,
+        includeDependencyArtifacts, runtimeEventLogPath, rawPrompt } = input
       if (step.model === 'shell') return rawPrompt
       return await compilePrompt({
         stepId: step.id, step, rawPrompt, sequence, basePath,
+        executionRoot,
+        workspaceContext,
+        logicalWorkingDirectory,
+        includeDependencyArtifacts,
+        dependencyArtifactRunId: runId,
         maxTokens: step.model === 'claude-code' ? 8000 : 4000,
-        runtimeEventLogPath: getRuntimeEventLogPath(basePath, runId, step.id),
+        runtimeEventLogPath,
         runtimeEventEmitterCommand: 'thread event',
+      })
+    },
+    prepareRunWorkspace: async ({ run }) => {
+      const [config, localWorkspace] = await Promise.all([
+        loadWorkspaceConfig(basePath),
+        readLocalWorkspace(basePath),
+      ])
+      const captured = await captureSnapshot({
+        canonicalRoot: basePath,
+        runtimeDataRoot: localWorkspace.runtimeDataRoot,
+        localWorkspaceId: localWorkspace.id,
+        workflowRunId: run.id,
+        config,
+        actor: 'threados-runtime',
+      })
+      const canonicalPreHash = captured.manifest.root_manifest_hash
+      const runRoot = await resolveExistingPathWithinRoot(basePath, '.threados', 'runs', run.id)
+      const preconditionPath = await resolvePathWithinRoot(runRoot, 'canonical-precondition.json')
+      const precondition = CanonicalPreconditionSchema.parse({
+        schema_version: 1,
+        revision: 0,
+        workflow_run_id: run.id,
+        snapshot_id: captured.snapshot.id,
+        pre_hash: canonicalPreHash,
+        captured_at: now(),
+        threados_project_write_refs: [],
+      })
+      await writeFileAtomic(preconditionPath, `${JSON.stringify(precondition, null, 2)}\n`, { allowedRoot: basePath })
+      return {
+        snapshotId: captured.snapshot.id,
+        snapshotManifestRef: captured.snapshot.manifest_ref
+          ?? `.threados/snapshots/${captured.snapshot.id}/manifest.json`,
+        canonicalPreHash,
+      }
+    },
+    prepareAttemptWorkspace: async ({ run, attempt, step, snapshotId }) => {
+      const config = await loadWorkspaceConfig(basePath)
+      const manager = await managerFor()
+      let ready
+      try {
+        ready = await manager.provision({
+          workflowRunId: run.id,
+          attemptId: attempt.id,
+          surfaceId: attempt.surface_id,
+          snapshotId,
+          config,
+          requestedIsolation: 'THREADOS_SCOPED',
+        })
+      } catch (error) {
+        if (error instanceof SurfaceWorkspaceTraceError) {
+          await manager.finalize(error.workspace.id, { outcome: 'failed' }).catch(() => undefined)
+        }
+        throw error
+      }
+      try {
+        const siblings = (await manager.list())
+          .filter(candidate => candidate.id !== ready.id
+            && ['ready', 'active', 'frozen', 'retained'].includes(candidate.status))
+          .map(candidate => candidate.root_path)
+        const context = await resolveWorkspaceDispatchContext({
+          state: await manager.inspect(ready.id),
+          expected: {
+            workflowRunId: run.id,
+            attemptId: attempt.id,
+            surfaceId: attempt.surface_id,
+            snapshotId,
+          },
+          canonicalRoot: basePath,
+          sealedSiblingRoots: siblings,
+          stepId: step.id,
+        })
+        const repository = new WorkspaceRepository(basePath)
+        await repository.update(ready.id, ready.revision, current => ({
+          ...current,
+          status: 'active',
+        }))
+        return {
+          context,
+          manifestHash: ready.manifest_hash!,
+          workspaceManifestRef: `.threados/workspaces/records/${ready.id}.json`,
+        }
+      } catch (error) {
+        await manager.finalize(ready.id, { outcome: 'failed' }).catch(() => undefined)
+        throw error
+      }
+    },
+    bootstrapWorkspace: async ({ run, attempt, policy, context, workspace, execute }) => {
+      const config = await loadWorkspaceConfig(basePath)
+      await runWorkspaceBootstrap({
+        commands: config.bootstrap,
+        canonicalRoot: basePath,
+        context: workspace.context,
+        evaluatePolicy: payload => enforceExecutablePayload(payload, policy, context.policyConfirmed),
+        execute,
+        writeArtifact: async artifact => {
+          const attemptRoot = await resolveExistingPathWithinRoot(
+            basePath,
+            '.threados',
+            'runs',
+            run.id,
+            'attempts',
+            attempt.id,
+          )
+          const path = await resolvePathWithinRoot(attemptRoot, `bootstrap-${artifact.index}.json`)
+          await writeFileAtomic(path, `${JSON.stringify(artifact, null, 2)}\n`, { allowedRoot: basePath })
+        },
+      })
+    },
+    finalizeAttemptWorkspace: async ({ attempt, workspace }) => {
+      const manager = await managerFor()
+      const outcome = attempt.status === 'completed'
+        ? 'successful'
+        : attempt.status === 'needs_review'
+          ? 'needs_review'
+          : attempt.status === 'cancelled'
+            ? 'cancelled_before_write'
+            : attempt.status === 'interrupted'
+              ? 'interrupted'
+              : 'failed'
+      await manager.finalize(workspace.context.workspaceId, { outcome })
+    },
+    verifyCanonicalWorkspace: async ({ run, attempt }) => {
+      const [config, localWorkspace] = await Promise.all([
+        loadWorkspaceConfig(basePath),
+        readLocalWorkspace(basePath),
+      ])
+      const precondition = await readCanonicalPrecondition(basePath, run.id)
+      if (precondition.snapshot_id !== run.baseline_snapshot_id) {
+        throw new CanonicalWriteAttributionError(`Canonical pre-dispatch snapshot binding is invalid for run ${run.id}`)
+      }
+      const baseline = await new SnapshotRepository(basePath).getManifest(precondition.snapshot_id)
+      if (!baseline || baseline.root_manifest_hash !== precondition.pre_hash) {
+        throw new CanonicalWriteAttributionError(`Canonical baseline manifest is unavailable for run ${run.id}`)
+      }
+      const preHash = precondition.pre_hash
+      const inspected = await inspectCanonicalManifest({
+        canonicalRoot: basePath,
+        runtimeDataRoot: localWorkspace.runtimeDataRoot,
+        localWorkspaceId: localWorkspace.id,
+        workflowRunId: run.id,
+        config,
+      })
+      const writes = await readCanonicalProjectWrites(
+        basePath,
+        run.id,
+        precondition.threados_project_write_refs,
+      )
+      const classification = classifyCanonicalManifestChange({
+        before: baseline.entries,
+        after: inspected.entries,
+        writes,
+      })
+      return await persistCanonicalWorkspaceEvidence({
+        basePath, run, attempt, preHash,
+        postHash: inspected.rootManifestHash,
+        classification, now,
       })
     },
     prepareArtifacts: async ({ basePath: path, runId, surfaceId, step, compiledPrompt, createdAt }) => {
@@ -80,7 +310,11 @@ function defaults(basePath: string): RuntimeServiceDependencies {
       surfaceId: input.surfaceId, compiledPrompt: input.compiledPrompt,
       outputContractRef: input.step.output_contract_ref, completionContract: input.step.completion_contract,
     }),
-    readRuntimeEvents: async (path, runId, stepId) => (await readRuntimeEventLog(path, runId, stepId)).events,
+    readRuntimeEvents: async (path, runId, stepId, runtimeEventLogPath, executionRoot) => (
+      runtimeEventLogPath
+        ? await readRuntimeEventLogAtPath(runtimeEventLogPath, executionRoot)
+        : await readRuntimeEventLog(path, runId, stepId)
+    ).events,
     readApprovals,
     consumeApproval: async ({ basePath: path, runId, approvalId, targetRefs, subjectDigest, consumedAt, consumedBy }) => await consumeApproval(
       path,
@@ -88,14 +322,39 @@ function defaults(basePath: string): RuntimeServiceDependencies {
       approvalId,
       { targetRefs, subjectDigest, consumedAt, consumedBy },
     ),
-    evaluatePreGates: ({ step, sequence, policy, approvalPresent, surfaceClass, revealState }) => evaluateStepGates(step, sequence.steps, sequence.gates, {
-      policyMode: policy.mode, sideEffectMode: policy.side_effect_mode, crossSurfaceReads: policy.cross_surface_reads,
-      surfaceClass, revealState, isDependency: true, inputManifestPresent: true, approvalPresent,
-    }),
-    evaluateCompletionGates: ({ step, result, artifactManifestPresent }) => evaluateStepCompletionGates(step, {
+    evaluatePreGates: input => {
+      const decisions = evaluateStepGates(input.step, input.sequence.steps, input.sequence.gates, {
+        policyMode: input.policy.mode,
+        sideEffectMode: input.approvalPresent ? 'free' : input.policy.side_effect_mode,
+        crossSurfaceReads: input.policy.cross_surface_reads,
+        surfaceClass: input.surfaceClass,
+        revealState: input.revealState,
+        isDependency: true,
+        inputManifestPresent: true,
+        approvalPresent: input.approvalPresent,
+      })
+      const workspaceMode = (input.step as typeof input.step & { workspace_mode?: 'auto' | 'isolated' }).workspace_mode
+      const sideEffectClass = classifyAttemptSideEffect({
+        model: input.step.model,
+        declaredSideEffectClass: input.step.side_effect_class,
+      })
+      if (workspaceMode === 'isolated' || sideEffectClass === 'write' || sideEffectClass === 'execute') {
+        decisions.push(...evaluateWorkspaceGates(input.step.id, {
+          snapshotPresent: input.snapshotPresent,
+          snapshotVerified: input.snapshotVerified,
+          workspacePresent: input.workspacePresent,
+          workspaceReady: input.workspaceReady,
+          workspaceManifestVerified: input.workspaceManifestVerified,
+          snapshotManifestRef: input.snapshotManifestRef,
+          workspaceManifestRef: input.workspaceManifestRef,
+        }))
+      }
+      return decisions
+    },
+    evaluateCompletionGates: ({ step, artifactManifestPresent }) => evaluateStepCompletionGates(step, {
       artifactManifestPresent,
-      outputSchemaValid: step.output_contract_ref ? result.status === 'SUCCESS' : true,
-      completionContractSatisfied: step.completion_contract ? result.status === 'SUCCESS' : true,
+      outputSchemaValid: !step.output_contract_ref,
+      completionContractSatisfied: !step.completion_contract,
     }),
     persistGateDecisions: async (path, runId, _surfaceId, decisions) => {
       for (const decision of decisions) await appendGateDecision(path, runId, decision)
@@ -125,7 +384,10 @@ function defaults(basePath: string): RuntimeServiceDependencies {
       })
     },
     appendTrace: appendTraceEvent,
-    reconcile: reconcileCanonicalRuntime,
+    reconcile: async (path, context) => await reconcileCanonicalRuntime(path, {
+      ...context,
+      workspaceManager: await managerFor(),
+    }),
     projections: createRuntimeProjections(basePath),
   }
 }

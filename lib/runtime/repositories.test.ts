@@ -402,17 +402,42 @@ describe('atomic runtime repositories', () => {
     await new RunRepository(basePath).create(run())
     await new AttemptRepository(basePath).create(attempt('attempt-01', 1))
     const processes = new ProcessRepository(basePath)
-    await processes.create(processRecord())
+    await processes.create(processRecord({ process_purpose: 'bootstrap', process_ordinal: 0 }))
+    await processes.create(processRecord({
+      id: 'process-02',
+      process_purpose: 'agent',
+      process_ordinal: 0,
+    }))
     expect((await processes.get('process-01'))?.attempt_id).toBe('attempt-01')
+    expect((await processes.list()).map(process => process.id)).toEqual(['process-01', 'process-02'])
     const updated = await processes.update('process-01', 0, current => ({ ...current, status: 'starting' }))
     expect(updated).toMatchObject({ revision: 1, status: 'starting' })
     await expect(processes.update('process-01', 0, current => current)).rejects.toMatchObject({
       code: 'RUNTIME_REVISION_CONFLICT',
     })
     expect(JSON.parse(await readFile(
-      join(basePath, '.threados/runs/run-01/attempts/attempt-01/process.json'),
+      join(basePath, '.threados/runs/run-01/attempts/attempt-01/processes/process-01.json'),
       'utf-8',
     )).id).toBe('process-01')
+  })
+
+  test('reads legacy process.json alongside additive multi-process records', async () => {
+    await new RunRepository(basePath).create(run())
+    await new AttemptRepository(basePath).create(attempt('attempt-01', 1))
+    const legacy = processRecord({ id: 'process-legacy' })
+    await writeFile(
+      join(basePath, '.threados/runs/run-01/attempts/attempt-01/process.json'),
+      `${JSON.stringify(legacy)}\n`,
+    )
+    const processes = new ProcessRepository(basePath)
+    await processes.create(processRecord({
+      id: 'process-new',
+      process_purpose: 'agent',
+      process_ordinal: 0,
+    }))
+
+    expect(await processes.get('process-legacy')).toMatchObject({ id: 'process-legacy' })
+    expect((await processes.list()).map(process => process.id)).toEqual(['process-legacy', 'process-new'])
   })
 
   test('stable run, attempt, and process references expose fresh content without index rebuilds', async () => {
