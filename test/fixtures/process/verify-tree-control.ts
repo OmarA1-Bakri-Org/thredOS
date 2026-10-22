@@ -4,6 +4,7 @@ import { tmpdir } from 'os'
 import { delimiter, isAbsolute, join, resolve } from 'path'
 import { fileURLToPath } from 'url'
 import { ProcessTimeoutError } from '../../../lib/errors'
+import { isProcessAlive } from '../../../lib/runner/process-observation'
 import {
   runStep,
   setProcessTerminationHookForTests,
@@ -24,12 +25,7 @@ function resolveNode(): string {
 }
 
 function isAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0)
-    return true
-  } catch {
-    return false
-  }
+  return isProcessAlive(pid)
 }
 
 async function forceKill(pid: number | null): Promise<void> {

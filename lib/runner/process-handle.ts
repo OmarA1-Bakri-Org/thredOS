@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from 'child_process'
+import { isProcessGroupAlive } from './process-observation'
 import { access } from 'fs/promises'
 import { win32 } from 'path'
 
@@ -160,13 +161,7 @@ export function resolveWindowsTaskkillPath(
 }
 
 function isTreeAlive(pid: number): boolean {
-  const target = process.platform === 'win32' ? pid : -pid
-  try {
-    process.kill(target, 0)
-    return true
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code !== 'ESRCH'
-  }
+  return isProcessGroupAlive(pid)
 }
 
 async function waitForTreeDeath(pid: number, timeoutMs: number): Promise<boolean> {
