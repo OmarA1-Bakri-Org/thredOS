@@ -31,7 +31,7 @@ export interface StartControlledProcessInput {
   workflowRunId: string
   attemptId: string
   workspaceId?: string | null
-  processPurpose?: 'bootstrap' | 'agent'
+  processPurpose?: 'bootstrap' | 'agent' | 'validation'
   processOrdinal?: number
   runnerConfig: RunnerConfig
 }

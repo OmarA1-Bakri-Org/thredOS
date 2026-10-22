@@ -1,4 +1,10 @@
+import { createHash } from 'crypto'
 import { z } from 'zod'
+import { normalizeSnapshotRelativePath, SnapshotEntrySchema, SnapshotManifestSchema } from '../workspaces/schema'
+
+const SafePathSchema = z.string().min(1).refine(value => {
+  try { return normalizeSnapshotRelativePath(value) === value } catch { return false }
+}, 'Merge path must be a safe portable relative path')
 
 export function findPortablePathAlias(paths: readonly string[]): { existing: string; alias: string } | null {
   const seen = new Map<string, string>()
@@ -20,8 +26,8 @@ export type MergeConflictStatus = z.infer<typeof MergeConflictStatusSchema>
 
 export const MergeConflictSchema = z.object({
   id: z.string().min(1),
-  path: z.string().min(1),
-  kind: z.enum(['text', 'binary', 'delete_modify', 'rename', 'permission']),
+  path: SafePathSchema,
+  kind: z.enum(['text', 'binary', 'delete_modify', 'rename', 'permission', 'unsupported']),
   baseline_sha256: z.string().nullable(),
   canonical_sha256: z.string().nullable(),
   candidate_sha256: z.string().nullable(),
@@ -31,12 +37,84 @@ export const MergeConflictSchema = z.object({
 })
 export type MergeConflict = z.infer<typeof MergeConflictSchema>
 
+/** A pure preview decision. Only candidate-changed paths appear here; all other W paths survive. */
+export const MergePreviewEntrySchema = z.object({
+  path: SafePathSchema,
+  decision: z.enum(['candidate', 'already_present', 'merged']),
+  result: SnapshotEntrySchema.nullable(),
+  merged_text: z.string().nullable(),
+}).strict().superRefine((entry, context) => {
+  if (entry.result !== null && entry.result.path !== entry.path) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['result', 'path'], message: 'Result path must equal preview path' })
+  }
+  if ((entry.decision === 'merged') !== (entry.merged_text !== null)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['merged_text'], message: 'Only merged entries include merged text' })
+  }
+  if (entry.decision === 'merged') {
+    if (entry.result?.kind !== 'file' || entry.merged_text === null) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ['result'], message: 'Merged text requires a file result' })
+    } else {
+      const sha256 = `sha256:${createHash('sha256').update(entry.merged_text, 'utf8').digest('hex')}`
+      if (entry.result.sha256 !== sha256 || entry.result.size_bytes !== Buffer.byteLength(entry.merged_text)) {
+        context.addIssue({ code: z.ZodIssueCode.custom, path: ['result'], message: 'Merged result must match merged text bytes' })
+      }
+    }
+  }
+})
+export type MergePreviewEntry = z.infer<typeof MergePreviewEntrySchema>
+
+export const MergePreviewSchema = z.object({
+  schema_version: z.literal(1),
+  baseline_snapshot_id: z.string().min(1),
+  baseline_manifest_hash: z.string().regex(/^sha256:[a-f0-9]{64}$/),
+  candidate_snapshot_id: z.string().min(1),
+  candidate_manifest_hash: z.string().regex(/^sha256:[a-f0-9]{64}$/),
+  canonical_precondition_hash: z.string().regex(/^sha256:[a-f0-9]{64}$/),
+  change_set_ids: z.array(z.string().min(1)).min(1),
+  entries: z.array(MergePreviewEntrySchema),
+  conflicts: z.array(MergeConflictSchema),
+}).strict().superRefine((preview, context) => {
+  const seen = new Set<string>()
+  preview.entries.forEach((entry, index) => {
+    if (seen.has(entry.path)) context.addIssue({ code: z.ZodIssueCode.custom, path: ['entries', index, 'path'], message: 'Duplicate merge preview path' })
+    seen.add(entry.path)
+  })
+  preview.conflicts.forEach((conflict, index) => {
+    if (seen.has(conflict.path)) context.addIssue({ code: z.ZodIssueCode.custom, path: ['conflicts', index, 'path'], message: 'Duplicate merge preview path' })
+    seen.add(conflict.path)
+  })
+  const alias = findPortablePathAlias([...preview.entries.map(entry => entry.path), ...preview.conflicts.map(conflict => conflict.path)])
+  if (alias) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['entries'], message: `Portable path alias: ${alias.existing} and ${alias.alias}` })
+  }
+})
+export type MergePreview = z.infer<typeof MergePreviewSchema>
+
+export const ThreeInputMergeRequestSchema = z.object({
+  baseline: SnapshotManifestSchema,
+  canonical: SnapshotManifestSchema,
+  candidate: SnapshotManifestSchema,
+  changeSetIds: z.array(z.string().min(1)).min(1),
+  text: z.object({
+    baseline: z.record(z.string(), z.string()).optional(),
+    canonical: z.record(z.string(), z.string()).optional(),
+    candidate: z.record(z.string(), z.string()).optional(),
+  }).strict().optional(),
+  candidateOperations: z.array(z.object({
+    path: SafePathSchema,
+    operation: z.enum(['add', 'modify', 'delete', 'rename', 'chmod', 'symlink']),
+    content_kind: z.enum(['text', 'binary']).optional(),
+  }).strict()).optional(),
+}).strict()
+export type ThreeInputMergeRequest = z.infer<typeof ThreeInputMergeRequestSchema>
+
 export const MergePlanStatusSchema = z.enum([
   'draft',
   'ready',
   'conflicted',
   'validated',
   'applied',
+  'rolled_back',
   'failed',
 ])
 export type MergePlanStatus = z.infer<typeof MergePlanStatusSchema>
@@ -60,6 +138,7 @@ export type MergePlan = z.infer<typeof MergePlanSchema>
 export const FilesystemApplyStatusSchema = z.enum([
   'pending',
   'applied',
+  'rolled_back',
   'failed',
   'rolled_back',
   'rollback_failed',

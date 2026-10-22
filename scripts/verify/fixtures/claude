@@ -1,0 +1,2 @@
+#!/bin/sh
+printf '%s\n' '{"type":"result","subtype":"success","is_error":false,"result":"THREADOS_VERIFICATION_LOCAL_CLI_V1"}'

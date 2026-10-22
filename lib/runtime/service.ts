@@ -33,9 +33,15 @@ import { deriveTerminalRunOutcome } from './run-outcome'
 import type { RuntimeCommandReceipt, StepAttempt, WorkflowRun, WorkflowRunTarget } from './schema'
 import { classifyAttemptSideEffect, requiresIsolatedWorkspace } from './workspace-planner'
 import { WorkspaceOperations } from './workspace-operations'
+import { ChangeSetOperations } from '../changesets/operations'
+import type { ChangeSetComparison, ChangeSetReview, ChangeSetSummary } from '../changesets/diff'
 import type { WorkspaceDoctorReport } from '../workspaces/doctor'
 import type { WorkspaceInspection } from '../workspaces/inspection'
 import type { SurfaceWorkspace } from '../workspaces/schema'
+import { MergeRuntimeOperations, type MergePreviewResult } from '../merge/runtime-operations'
+import { MergeTransactions, type MergeApplyRequest } from '../merge/transactions'
+import { assertMergeFileCapabilities } from '../merge/mutation-provider'
+import type { MergePlan } from '../merge/schema'
 
 function targetRef(target: WorkflowRunTarget): string {
   if (target.kind === 'step') return `step:${target.step_id}`
@@ -107,6 +113,9 @@ export class ThreadOSRuntimeService {
   private readonly deps: RuntimeServiceOptions['dependencies']
   private readonly processController: ProcessController
   private readonly workspaceOperations: WorkspaceOperations
+  private readonly changeSetOperations: ChangeSetOperations
+  private readonly mergeOperations: MergeRuntimeOperations
+  private readonly mergeTransactions: MergeTransactions
   private readonly inFlight = new Map<string, Promise<CompletedRunResult>>()
   private readonly inFlightAttempts = new Map<string, Promise<{ run: WorkflowRun; attempt: StepAttempt }>>()
   private readonly inFlightAttemptCancellations = new Map<string, Promise<StepAttempt>>()
@@ -128,6 +137,126 @@ export class ThreadOSRuntimeService {
       startProcess: this.deps.startProcess,
     })
     this.workspaceOperations = new WorkspaceOperations(this.basePath)
+    this.changeSetOperations = new ChangeSetOperations(this.basePath)
+    const provider = this.deps.mergeMutationProvider
+    this.mergeOperations = new MergeRuntimeOperations(this.basePath, provider ? (decision, before, after) => {
+      provider.assertAvailable()
+      assertMergeFileCapabilities(decision, before, after)
+    } : undefined)
+    this.mergeTransactions = new MergeTransactions(this.basePath, provider)
+  }
+
+  async previewSelectedChangeSet(changeSetId: string, context: RuntimeCommandContext): Promise<MergePreviewResult> {
+    const parsed = RuntimeCommandContextSchema.parse(context)
+    if (parsed.interface !== 'api' && parsed.interface !== 'cli') {
+      throw new RuntimeServiceError('POLICY_DENIED', 'Merge preview requires an operator API or CLI action')
+    }
+    return this.mergeAction(() => this.mergeOperations.previewSelected(changeSetId, parsed.idempotencyKey))
+  }
+
+  async inspectMergePlan(planId: string): Promise<MergePlan | null> {
+    return this.mergeAction(() => this.mergeOperations.inspect(planId))
+  }
+
+  async validateMergePlan(planId: string, context: RuntimeCommandContext): Promise<MergePlan> {
+    const parsed = RuntimeCommandContextSchema.parse(context)
+    if (parsed.interface !== 'api' && parsed.interface !== 'cli') {
+      throw new RuntimeServiceError('POLICY_DENIED', 'Merge validation requires an operator API or CLI action')
+    }
+    return this.mergeAction(() => this.mergeOperations.validate(planId, parsed))
+  }
+
+  private mergeOperator(context: RuntimeCommandContext): RuntimeCommandContext {
+    const parsed = RuntimeCommandContextSchema.parse(context)
+    if (parsed.interface !== 'api' && parsed.interface !== 'cli') {
+      throw new RuntimeServiceError('POLICY_DENIED', 'Merge operations require an operator API or CLI action')
+    }
+    return parsed
+  }
+  async inspectMergeApprovalSubject(planId: string, context: RuntimeCommandContext) {
+    return this.mergeAction(() => this.mergeTransactions.subject(planId, this.mergeOperator(context)))
+  }
+  async applyMergePlan(planId: string, request: MergeApplyRequest, context: RuntimeCommandContext) {
+    return this.mergeAction(() => this.mergeTransactions.apply(planId, request, this.mergeOperator(context)))
+  }
+  async inspectMergeResult(resultId: string) {
+    return this.mergeAction(() => this.mergeTransactions.inspect(resultId))
+  }
+  async inspectMergeRollbackSubject(resultId: string, context: RuntimeCommandContext) {
+    return this.mergeAction(() => this.mergeTransactions.rollbackSubject(resultId, this.mergeOperator(context)))
+  }
+  async rollbackMergeResult(resultId: string, request: MergeApplyRequest, context: RuntimeCommandContext) {
+    return this.mergeAction(() => this.mergeTransactions.rollback(resultId, request, this.mergeOperator(context)))
+  }
+  async recoverMergeResult(resultId: string, context: RuntimeCommandContext) {
+    return this.mergeAction(() => this.mergeTransactions.recover(resultId, this.mergeOperator(context)))
+  }
+  async recoverMergeValidation(planId: string, context: RuntimeCommandContext) {
+    return this.mergeAction(() => this.mergeOperations.recoverValidation(planId, this.mergeOperator(context)))
+  }
+
+  private async mergeAction<T>(action: () => Promise<T>): Promise<T> {
+    try { return await action() } catch (error) {
+      if (error instanceof RuntimeRepositoryError || error instanceof RuntimeServiceError) throw error
+      const prefix = error instanceof Error ? error.message.split(':')[0] : ''
+      if (prefix === 'MERGE_VALIDATION_RECOVERY_REQUIRED') {
+        throw new RuntimeRepositoryError(prefix,
+          'Validation was interrupted. Create a new merge preview with a new idempotency key before retrying.')
+      }
+      if (/^MERGE_[A-Z_]+$/.test(prefix)) {
+        throw new RuntimeRepositoryError(prefix, prefix.replaceAll('_', ' ').toLowerCase())
+      }
+      throw new RuntimeRepositoryError('MERGE_EVIDENCE_UNAVAILABLE', 'Merge evidence could not be verified')
+    }
+  }
+
+  async listChangeSets(runId: string): Promise<ChangeSetSummary[]> {
+    return this.changeSetAction(() => this.changeSetOperations.list(runId))
+  }
+
+  async inspectChangeSet(runId: string, attemptId: string, changeSetId?: string): Promise<ChangeSetReview> {
+    return this.changeSetAction(() => this.changeSetOperations.inspect(runId, attemptId, changeSetId))
+  }
+
+  async inspectChangeSetById(changeSetId: string): Promise<ChangeSetReview> {
+    return this.changeSetAction(() => this.changeSetOperations.inspectById(changeSetId))
+  }
+
+  async compareChangeSets(runId: string, leftAttemptId: string, rightAttemptId: string): Promise<ChangeSetComparison> {
+    return this.changeSetAction(() => this.changeSetOperations.compare(runId, leftAttemptId, rightAttemptId))
+  }
+
+  async selectChangeSet(input: { runId: string; attemptId: string; changeSetId?: string; expectedRevision: number },
+    context: RuntimeCommandContext): Promise<ChangeSetSummary> {
+    return this.changeSetAction(() => this.changeSetOperations.decide({ ...input, action: 'select' }, context))
+  }
+
+  async selectChangeSetById(input: { changeSetId: string; expectedRevision?: number },
+    context: RuntimeCommandContext): Promise<ChangeSetSummary> {
+    return this.changeSetAction(() => this.changeSetOperations.decideById({ ...input, action: 'select' }, context))
+  }
+
+  async rejectChangeSet(input: { runId: string; attemptId: string; changeSetId?: string; expectedRevision: number; reason: string },
+    context: RuntimeCommandContext): Promise<ChangeSetSummary> {
+    return this.changeSetAction(() => this.changeSetOperations.decide({ ...input, action: 'reject' }, context))
+  }
+
+  async rejectChangeSetById(input: { changeSetId: string; expectedRevision?: number; reason?: string },
+    context: RuntimeCommandContext): Promise<ChangeSetSummary> {
+    return this.changeSetAction(() => this.changeSetOperations.decideById({ ...input, action: 'reject' }, context))
+  }
+
+  private async changeSetAction<T>(action: () => Promise<T>): Promise<T> {
+    try { return await action() } catch (error) {
+      if (error instanceof RuntimeRepositoryError && new Set([
+        'VALIDATION_ERROR', 'POLICY_DENIED', 'IDEMPOTENCY_CONFLICT', 'RUN_NOT_FOUND', 'CHANGE_SET_NOT_FOUND', 'CHANGE_SET_IDENTITY_MISMATCH',
+        'CHANGE_SET_BASELINE_MISMATCH', 'CHANGE_SET_REVISION_CONFLICT',
+        'CHANGE_SET_INVALID_TRANSITION', 'CHANGE_SET_TRACE_PERSIST_FAILED',
+        'CHANGE_SET_NOT_READY',
+        'CHANGE_SET_NOT_REVEALED', 'CHANGE_SET_SCHEMA_UPGRADE_REQUIRED',
+      ]).has(error.code)) throw error
+      throw new RuntimeRepositoryError('CHANGE_SET_EVIDENCE_UNAVAILABLE', 'Change Set evidence could not be verified')
+    }
   }
 
   async listWorkspaces(query: { runId?: string } = {}): Promise<SurfaceWorkspace[]> {

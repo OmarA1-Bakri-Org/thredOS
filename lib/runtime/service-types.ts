@@ -50,6 +50,8 @@ export interface RuntimeProjectionPort {
 }
 
 export interface RuntimeServiceDependencies {
+  /** Explicit server-owned capability. Absent in the normal factory until platform acceptance. */
+  mergeMutationProvider?: import('../merge/mutation-provider').MergeMutationProvider
   now(): string
   newId(prefix: 'run' | 'attempt' | 'process' | 'command'): string
   loadSequence(basePath: string): Promise<Sequence>
@@ -102,6 +104,25 @@ export interface RuntimeServiceDependencies {
     step: Step
     workspace: RuntimeAttemptWorkspacePreparation
   }): Promise<void>
+  /** Controlled validation runs before capture; the executor retains cancellation custody. */
+  validateAttemptWorkspace?(input: {
+    basePath: string; run: WorkflowRun; attempt: StepAttempt; workspace: RuntimeAttemptWorkspacePreparation;
+    policy: PolicyConfig; context: RuntimeCommandContext; rootIdentity: string;
+    execute(payload: ExecutablePayload, options: BootstrapExecutionOptions): Promise<BootstrapExecutionResult>
+  }): Promise<void>
+  finalizeAttemptChangeSet?(input: {
+    basePath: string
+    run: WorkflowRun
+    attempt: StepAttempt
+    step: Step
+  }): Promise<void>
+  captureAttemptChangeSet?(input: {
+    basePath: string
+    run: WorkflowRun
+    attempt: StepAttempt
+    step: Step
+    workspace: RuntimeAttemptWorkspacePreparation
+  }): Promise<{ id: string; captured: boolean; pathScopeViolations: string[] }>
   verifyCanonicalWorkspace(input: {
     basePath: string
     run: WorkflowRun

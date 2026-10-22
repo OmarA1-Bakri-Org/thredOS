@@ -146,6 +146,7 @@ async function fixture(overrides: Partial<RuntimeServiceDependencies> = {}) {
     }),
     bootstrapWorkspace: async () => undefined,
     finalizeAttemptWorkspace: async () => undefined,
+    captureAttemptChangeSet: async ({ attempt }) => ({ id: `change-set-${attempt.id}`, captured: true, pathScopeViolations: [] }),
     prepareArtifacts: async () => undefined,
     resolveGateSurface: async () => ({ surfaceClass: 'shared', revealState: null }),
     allowModelExecution: () => ({ allowed: true }),
@@ -385,6 +386,7 @@ describe('registration identity gate', () => {
     let dispatchedPrompt = ''
     const service = await getThreadOSRuntimeService(f.basePath, { dependencies: {
       ...dependencies, loadSequence: async () => current,
+      finalizeAttemptChangeSet: async () => undefined,
       dispatch: async (model, options) => {
         dispatchedPrompt = options.compiledPrompt
         return dependencies.dispatch(model, options)

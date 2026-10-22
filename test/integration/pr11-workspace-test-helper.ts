@@ -41,6 +41,7 @@ export async function createPr11Fixture(
   stepIds: string[],
   onProcessStart?: (canonical: string) => Promise<void>,
   useRealProcess = false,
+  serverDependencies: (canonical: string) => Partial<RuntimeServiceDependencies> = () => ({}),
 ): Promise<Pr11Fixture> {
   const root = await createFixtureRoot('threados-pr11-proof-')
   const canonical = join(root, 'canonical')
@@ -141,7 +142,7 @@ export async function createPr11Fixture(
       }
   }
   const service = await getThreadOSRuntimeService(canonical, {
-    dependencies,
+    dependencies: { ...dependencies, ...serverDependencies(canonical) },
   })
 
   return {

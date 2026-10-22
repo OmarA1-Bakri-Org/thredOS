@@ -15,6 +15,8 @@ import { statusCommand } from './commands/status'
 import { stepCommand } from './commands/step'
 import { templateCommand } from './commands/template'
 import { workspaceCommand } from './commands/workspace'
+import { changesCommand } from './commands/changes'
+import { mergeCommand } from './commands/merge'
 import { renderRuntimeFailure, type CLIOptions } from './formatters/runtime'
 
 type CommandHandler = (
@@ -39,6 +41,8 @@ const commands: Record<string, CommandHandler> = {
   template: templateCommand,
   event: eventCommand,
   workspace: workspaceCommand,
+  changes: changesCommand,
+  merge: mergeCommand,
 }
 
 function printHelp(): void {
@@ -66,6 +70,19 @@ Commands:
   event spawn-child|merge-into      Emit runtime delegation events
   workspace list|inspect            Inspect Surface Workspaces
   workspace retain|clean|doctor     Manage retained Surface Workspaces
+  changes list --run <runId>        List captured Change Sets
+  changes show|diff <changeSetId>   Inspect a Change Set
+  changes select|reject <id>        Record an explicit operator decision
+  changes compare                  Compare candidates from one baseline
+  merge preview <changeSetId>      Build isolated preview from selected Change Set
+  merge inspect <mergePlanId>      Inspect persisted merge plan
+  merge validate <mergePlanId>     Validate isolated preview before apply
+  merge approval-subject <id>      Inspect the exact operator approval binding (--confirm)
+  merge apply <id> <approval> <digest>    Apply through the guarded provider (--confirm)
+  merge rollback-subject <id>      Inspect a fresh exact rollback binding (--confirm)
+  merge rollback <id> <approval> <digest> Reverse unchanged affected files (--confirm)
+  merge result|recover <id>        Inspect a result or recover custody (--confirm for recover)
+  merge recover-validation <id>   Reconcile preview validation custody (--confirm)
 
 Options:
   -j, --json                        Emit the versioned JSON envelope

@@ -345,3 +345,23 @@ bun run verify:m1
 ```
 
 `verify:m1` generates fresh M1 evidence under the sequential scheduler. Runtime isolation, export privacy, the no-worktree guard, workspace API/CLI/component contracts, production build, and workspace-inspector UI/local proof must all pass. A failed evidence run is diagnostic output, not acceptance.
+
+
+### Controlled merge transactions (bounded M2)
+
+All commands use the shared runtime service. The normal runtime still refuses apply with `MERGE_APPLY_CAPABILITY_UNAVAILABLE` until an approved protected provider is explicitly configured by the server. `--confirm` is explicit operator confirmation; it does not create or replace a persisted human approval.
+
+```text
+thread merge preview <changeSetId>
+thread merge inspect <mergePlanId>
+thread merge validate <mergePlanId> [--confirm]
+thread merge approval-subject <mergePlanId> --confirm
+thread merge apply <mergePlanId> <approvalId> <exactDigest> --confirm
+thread merge result <mergeResultId>
+thread merge recover <mergeResultId> --confirm
+thread merge recover-validation <mergePlanId> --confirm
+thread merge rollback-subject <mergeResultId> --confirm
+thread merge rollback <mergeResultId> <freshApprovalId> <rollbackDigest> --confirm
+```
+
+Each accepts `--json` and `--idempotency-key`. Apply that reverses after a verified failure exits nonzero, even when rollback succeeded. Recovery requiring review also exits nonzero. Missing/corrupt process evidence, uncertain helper completion, changed affected files or stale approval bindings never authorize a retry or rollback. A successful manual rollback preserves unrelated later edits and records a new exact approval against its current precondition.

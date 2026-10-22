@@ -207,3 +207,10 @@ That model is what allows thredOS to render hierarchy, lanes, merges, ancestry, 
 ## Important Current Caveat
 
 The architecture is partly ahead of the fully finished product UX. The clearest example is `components/canvas/threadSurfaceScaffold.ts`, which can still fall back from real thread-surface data to a status-derived scaffold. That is a deliberate bridge between current runtime truth and the fuller recursive surface model the repo is moving toward.
+
+
+### Controlled M2 transaction ownership
+
+`ThreadOSRuntimeService` delegates transaction lifecycle to `lib/merge/transactions.ts`. API and CLI only parse/authorize requests, derive the operator context and map the service result. `approval.ts` uses the existing approvals and gate-decision journals; `result-repository.ts` preserves immutable transaction authority, append-only operation/check intents and rollback approval history. Apply serializes canonical transactions and holds the existing selection/visibility locks through the mutation authority boundary. `process-evidence.ts` reads expected physical process-owner paths rather than interpreting an empty derived index as termination.
+
+`mutation-provider.ts` is an explicit server-owned port. `windows-mutation-provider.ts` binds the original native root identity and invokes the existing supervised Windows helper for staging, rename and deletion. Staging pins directory ancestors before exclusive creation; rename/delete pin and hash the source before committing. The normal factory supplies no provider. The Node filesystem fixture adapter is under `test/helpers` and accepts only freshly owned temporary fixture roots; it is not a Linux production backend or evidence of Windows containment.

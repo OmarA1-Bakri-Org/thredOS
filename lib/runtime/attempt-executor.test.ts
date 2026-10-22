@@ -22,6 +22,7 @@ import type { RawProcessResult, RunningProcessHandle } from '../runner/process-h
 import type { RunResult } from '../runner/wrapper'
 import { createTestCompatibilityStartProcess } from './test-compatibility'
 import { runWorkspaceBootstrap, WorkspaceBootstrapError } from '../workspaces/bootstrap'
+import { appendGateDecision, readGateDecisions } from '../gates/repository'
 import { buildAgentComposition } from '../agents/composition'
 import { writeAgentState } from '../agents/repository'
 
@@ -94,6 +95,7 @@ async function make(overrides: Partial<RuntimeServiceDependencies>, workspaceRoo
       },
     }),
     bootstrapWorkspace: async () => undefined,
+    captureAttemptChangeSet: async ({ attempt }) => ({ id: `change-set-${attempt.id}`, captured: true, pathScopeViolations: [] }),
     finalizeAttemptWorkspace: async () => undefined,
     prepareArtifacts: async () => undefined,
     resolveGateSurface: async () => ({ surfaceClass: 'shared', revealState: null }),
@@ -129,6 +131,43 @@ async function make(overrides: Partial<RuntimeServiceDependencies>, workspaceRoo
 
 const context = { actor: 't', interface: 'system' as const, idempotencyKey: 'k', policyConfirmed: true }
 const cmd = { sequence_id: 's', target: { kind: 'step' as const, step_id: 'x' }, strategy: 'sequential' as const, max_concurrency: 1 }
+
+test('captured out-of-scope files prevent completion and bind the Change Set', async () => {
+  const { service, basePath } = await make({
+    captureAttemptChangeSet: async ({ attempt }) => ({
+      id: `change-set-${attempt.id}`, captured: true, pathScopeViolations: ['outside.txt'],
+    }),
+    persistGateDecisions: async (root, runId, _surfaceId, decisions) => {
+      for (const decision of decisions) await appendGateDecision(root, runId, decision)
+    },
+  })
+  const result = await service.runAndWait(cmd, context)
+  expect(result.attempts[0]).toMatchObject({ status: 'needs_review', change_set_id: 'change-set-attempt-3' })
+  const decisions = await readGateDecisions(basePath, result.run.id)
+  expect(decisions.filter(decision => decision.gate_type === 'change_set_captured' || decision.gate_type === 'path_scope_respected'))
+    .toMatchObject([
+      { gate_type: 'change_set_captured', status: 'PASS' },
+      { gate_type: 'path_scope_respected', status: 'BLOCK', reason_codes: ['PATH_SCOPE_VIOLATION'] },
+    ])
+  expect(result.attempts[0]?.gate_decision_refs).toContain(`gd-${result.attempts[0]!.id}-path_scope_respected`)
+}, 30_000)
+
+test('capture failure keeps the isolated workspace available for review', async () => {
+  let finalizations = 0
+  const { service, basePath } = await make({
+    captureAttemptChangeSet: async () => { throw new Error('CHANGE_SET_SOURCE_RACED') },
+    finalizeAttemptWorkspace: async () => { finalizations += 1 },
+    persistGateDecisions: async (root, runId, _surfaceId, decisions) => {
+      for (const decision of decisions) await appendGateDecision(root, runId, decision)
+    },
+  })
+  const result = await service.runAndWait(cmd, context)
+  expect(result.attempts[0]?.status).toBe('failed')
+  expect(result.attempts[0]?.change_set_id).toBeNull()
+  expect(finalizations).toBe(0)
+  expect((await readGateDecisions(basePath, result.run.id)).find(decision => decision.gate_type === 'change_set_captured'))
+    .toMatchObject({ status: 'BLOCK', reason_codes: ['CHANGE_SET_CAPTURE_FAILED'] })
+}, 30_000)
 
 function deferred<T>() {
   let resolve!: (value: T) => void

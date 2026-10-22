@@ -1,5 +1,8 @@
 import { agentRegistrationEvidence, resolveStepAgent, readRegisteredPrompt } from '../agents/execution'
+import { lstat } from 'fs/promises'
 import { createHash } from 'crypto'
+import type { GateDecision } from '../contracts/schemas'
+import { GateReasonCode } from '../contracts/reason-codes'
 import { ApprovalConsumptionError } from '../approvals/repository'
 import { approvalMatchesExecutableSubject, executableSubjectDigest } from '../policy/executable'
 import type { ExecutablePayload, PolicyConfig } from '../policy/schema'
@@ -44,6 +47,26 @@ function compatibilityResult(result: RawProcessResult): RunResult {
   }
 }
 
+function changeSetDecisions(
+  attempt: StepAttempt,
+  captured: { id: string; captured: boolean; pathScopeViolations: string[] } | null,
+  decidedAt: string,
+): GateDecision[] {
+  const capturedRef = captured?.captured ? `.threados/changesets/${captured.id}.json` : null
+  const decision = (gateType: 'change_set_captured' | 'path_scope_respected', passed: boolean, reason: string): GateDecision => ({
+    id: `gd-${attempt.id}-${gateType}`,
+    subject_type: 'step', subject_ref: attempt.step_id, gate_type: gateType,
+    status: passed ? 'PASS' : 'BLOCK',
+    reason_codes: passed ? [] : [reason], evidence_refs: capturedRef ? [capturedRef] : [],
+    decided_by: 'threados', decided_at: decidedAt,
+  })
+  return [
+    decision('change_set_captured', captured?.captured === true, GateReasonCode.CHANGE_SET_CAPTURE_FAILED),
+    decision('path_scope_respected', captured?.captured === true && captured.pathScopeViolations.length === 0,
+      captured?.captured ? GateReasonCode.PATH_SCOPE_VIOLATION : GateReasonCode.CHANGE_SET_CAPTURE_FAILED),
+  ]
+}
+
 async function resolveExecutionRoot(workspaceRoot: string, configuredCwd?: string): Promise<string> {
   if (!configuredCwd) return workspaceRoot
   if (isAbsolute(configuredCwd)) throw new Error('Step cwd must be relative to the isolated workspace')
@@ -73,11 +96,26 @@ export class AttemptExecutor {
     private readonly processController: ProcessController,
   ) {}
 
+  private async persistChangeSetDecisions(run: WorkflowRun, attempt: StepAttempt, actor: string, decisions: GateDecision[]): Promise<void> {
+    await this.deps.persistGateDecisions(this.basePath, run.id, attempt.surface_id, decisions, run.policy_snapshot_hash)
+    for (const decision of decisions) {
+      await this.deps.appendTrace(this.basePath, run.id, {
+          attempt_id: attempt.id,
+          agent_registration: attempt.agent_registration ? agentRegistrationEvidence(attempt.agent_registration) : undefined,
+        ts: decision.decided_at, run_id: run.id, surface_id: attempt.surface_id, actor,
+        event_type: decision.status === 'PASS' ? 'gate-evaluated' : 'gate-blocked',
+        payload_ref: decision.id, policy_ref: run.policy_snapshot_hash,
+      })
+    }
+  }
+
   async execute(input: ExecuteAttemptInput): Promise<ExecuteAttemptResult> {
     let { run, attempt } = input
     const { sequence, step, policy, context } = input
     const surfaceId = attempt.surface_id
     let workspace: RuntimeAttemptWorkspacePreparation | null = null
+    let captureFailure: unknown = null
+    let validationRootIdentity: string | null = null
     const cancelledBeforeProvisioning = await this.observeRunCancellation(run.id, attempt.id)
     if (cancelledBeforeProvisioning) return cancelledBeforeProvisioning
     attempt = await transitionAttempt(this.repositories.attempts, attempt, 'provisioning')
@@ -156,6 +194,10 @@ export class AttemptExecutor {
           }),
         })
         attempt = await this.repositories.attempts.get(attempt.id) ?? attempt
+        if (this.deps.validateAttemptWorkspace) {
+          const rootStat = await lstat(workspace.context.cwd)
+          validationRootIdentity = `${rootStat.dev}:${rootStat.ino}`
+        }
         executionRoot = await resolveExecutionRoot(workspace.context.cwd, step.cwd)
       }
       const runtimeEventLogPath = workspace
@@ -392,11 +434,49 @@ export class AttemptExecutor {
         return { run, attempt }
       }
 
+      if (workspace && result.status === 'SUCCESS' && result.exitCode === 0 && this.deps.validateAttemptWorkspace) {
+        let ordinal = 0
+        await this.deps.validateAttemptWorkspace({ basePath: this.basePath, run, attempt, workspace, policy, context, rootIdentity: validationRootIdentity!,
+          execute: (payload, options) => this.executeBootstrapProcess({ runId: run.id, attemptId: attempt.id,
+            stepId: step.id, step, agentRegistration: attempt.agent_registration!, workspaceId: workspace!.context.workspaceId,
+            processOrdinal: ordinal++, processPurpose: 'validation', environment: workspace!.context.environment, payload, options }) })
+        const current = await this.repositories.attempts.get(attempt.id)
+        if (!current || current.status !== 'running') throw new Error('CHANGE_SET_VALIDATION_INTERRUPTED')
+        attempt = await this.repositories.attempts.update(current.id, current.revision, value => ({ ...value, process_id: processId }))
+      }
       let artifactRef: string | null = null
       let completionGates: ReturnType<RuntimeServiceDependencies['evaluateCompletionGates']> = []
       const compatible = compatibilityResult(result)
       await this.deps.saveArtifacts(this.basePath, compatible, { surfaceId, compiledPrompt, step })
       artifactRef = `.threados/runs/${run.id}/surfaces/${surfaceId}/artifact.manifest.json`
+      let changeSetCaptured = !workspace
+      let pathScopesRespected = true
+      let changeGates: GateDecision[] = []
+      if (workspace) {
+        let captured
+        try {
+          if (!this.deps.captureAttemptChangeSet) throw new Error('CHANGE_SET_CAPTURE_UNAVAILABLE')
+          captured = await this.deps.captureAttemptChangeSet({ basePath: this.basePath, run, attempt, step, workspace })
+          if (!captured.captured) throw new Error('CHANGE_SET_CAPTURE_INCOMPLETE')
+        } catch (error) {
+          captureFailure = error
+          const failedGates = changeSetDecisions(attempt, null, result.endTime.toISOString())
+          await this.persistChangeSetDecisions(run, attempt, context.actor, failedGates)
+          attempt = await this.repositories.attempts.update(attempt.id, attempt.revision, value => ({
+            ...value, gate_decision_refs: [...new Set([...value.gate_decision_refs, ...failedGates.map(gate => gate.id)])],
+          }))
+          throw error
+        }
+        changeSetCaptured = true
+        pathScopesRespected = captured.pathScopeViolations.length === 0
+        changeGates = changeSetDecisions(attempt, captured, result.endTime.toISOString())
+        await this.persistChangeSetDecisions(run, attempt, context.actor, changeGates)
+        attempt = await this.repositories.attempts.update(attempt.id, attempt.revision, value => ({
+          ...value, change_set_id: captured.id,
+          gate_decision_refs: [...new Set([...value.gate_decision_refs, ...changeGates.map(gate => gate.id)])],
+        }))
+      }
+      completionGates = changeGates
       if (result.exitCode !== null) {
         const evaluatedGates = this.deps.evaluateCompletionGates({
           step,
@@ -415,7 +495,8 @@ export class AttemptExecutor {
           })
         }
       }
-      const completionPassed = completionGates.every(decision => decision.status === 'PASS')
+      const completionPassed = changeSetCaptured && pathScopesRespected
+        && completionGates.every(decision => decision.status === 'PASS')
       const runtimeEvents = await this.deps.readRuntimeEvents(
         this.basePath,
         run.id,
@@ -485,6 +566,36 @@ export class AttemptExecutor {
         } catch (error) {
           postAttemptErrors.push(error)
         }
+        if (!terminalAttempt.change_set_id && !captureFailure) {
+          try {
+            if (!this.deps.captureAttemptChangeSet) throw new Error('CHANGE_SET_CAPTURE_UNAVAILABLE')
+            const captured = await this.deps.captureAttemptChangeSet({
+              basePath: this.basePath, run: terminalRun, attempt: terminalAttempt, step, workspace,
+            })
+            if (!captured.captured) throw new Error('CHANGE_SET_CAPTURE_INCOMPLETE')
+            const gates = changeSetDecisions(terminalAttempt, captured, this.deps.now())
+            await this.persistChangeSetDecisions(terminalRun, terminalAttempt, context.actor, gates)
+            terminalAttempt = await this.repositories.attempts.update(
+              terminalAttempt.id, terminalAttempt.revision,
+              value => ({ ...value, change_set_id: captured.id,
+                gate_decision_refs: [...new Set([...value.gate_decision_refs, ...gates.map(gate => gate.id)])],
+              }),
+            )
+          } catch (error) {
+            captureFailure = error
+            try {
+              const gates = changeSetDecisions(terminalAttempt, null, this.deps.now())
+              await this.persistChangeSetDecisions(terminalRun, terminalAttempt, context.actor, gates)
+              terminalAttempt = await this.repositories.attempts.update(
+                terminalAttempt.id, terminalAttempt.revision,
+                value => ({ ...value,
+                  gate_decision_refs: [...new Set([...value.gate_decision_refs, ...gates.map(gate => gate.id)])],
+                }),
+              )
+            } catch (gateError) { postAttemptErrors.push(gateError) }
+            postAttemptErrors.push(error)
+          }
+        }
         try {
           const evidence = await this.deps.verifyCanonicalWorkspace({
             basePath: this.basePath,
@@ -502,14 +613,27 @@ export class AttemptExecutor {
         } catch (error) {
           postAttemptErrors.push(error)
         }
+        if (!captureFailure && postAttemptErrors.length === 0 && terminalAttempt.change_set_id
+          && this.deps.finalizeAttemptChangeSet) {
+          try {
+            await this.deps.finalizeAttemptChangeSet({
+              basePath: this.basePath, run: terminalRun, attempt: terminalAttempt, step,
+            })
+          } catch (error) {
+            captureFailure = error
+            postAttemptErrors.push(error)
+          }
+        }
         try {
-          await this.deps.finalizeAttemptWorkspace({
-            basePath: this.basePath,
-            run: terminalRun,
-            attempt: terminalAttempt,
-            step,
-            workspace,
-          })
+          if (!captureFailure) {
+            await this.deps.finalizeAttemptWorkspace({
+              basePath: this.basePath,
+              run: terminalRun,
+              attempt: terminalAttempt,
+              step,
+              workspace,
+            })
+          }
         } catch (error) {
           postAttemptErrors.push(error)
         }
@@ -582,6 +706,7 @@ export class AttemptExecutor {
     agentRegistration: NonNullable<StepAttempt['agent_registration']>
     workspaceId: string
     processOrdinal: number
+    processPurpose?: 'bootstrap' | 'validation'
     environment: Record<string, string>
     payload: ExecutablePayload
     options: BootstrapExecutionOptions
@@ -602,7 +727,7 @@ export class AttemptExecutor {
         workflowRunId: input.runId,
         attemptId: input.attemptId,
         workspaceId: input.workspaceId,
-        processPurpose: 'bootstrap',
+        processPurpose: input.processPurpose ?? 'bootstrap',
         processOrdinal: input.processOrdinal,
         runnerConfig: {
           stepId: `bootstrap-${input.stepId}`,

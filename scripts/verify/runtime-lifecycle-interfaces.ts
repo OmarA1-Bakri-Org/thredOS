@@ -230,6 +230,24 @@ const DEFAULT_FILESYSTEM: RuntimeLifecycleFileSystem = {
 }
 
 export const RUNTIME_LIFECYCLE_INTERFACE_CLASSIFICATIONS: readonly RuntimeLifecycleInterfaceClassification[] = [
+  { file: 'app/api/change-sets/[changeSetId]/reject/route.ts', kind: 'api-delegate', policy: 'delegate-to-runtime-service' },
+  { file: 'app/api/change-sets/[changeSetId]/route.ts', kind: 'api-delegate', policy: 'delegate-to-runtime-service' },
+  { file: 'app/api/change-sets/[changeSetId]/select/route.ts', kind: 'api-delegate', policy: 'delegate-to-runtime-service' },
+  { file: 'app/api/change-sets/compare/route.ts', kind: 'api-delegate', policy: 'delegate-to-runtime-service' },
+  { file: 'app/api/change-sets/route.ts', kind: 'api-delegate', policy: 'delegate-to-runtime-service' },
+  { file: 'app/api/merge-plans/[planId]/apply/route.ts', kind: 'api-delegate', policy: 'delegate-to-runtime-service' },
+  { file: 'app/api/merge-plans/[planId]/approval-subject/route.ts', kind: 'api-delegate', policy: 'delegate-to-runtime-service' },
+  { file: 'app/api/merge-plans/[planId]/recover-validation/route.ts', kind: 'api-delegate', policy: 'delegate-to-runtime-service' },
+  { file: 'app/api/merge-plans/[planId]/route.ts', kind: 'api-delegate', policy: 'delegate-to-runtime-service' },
+  { file: 'app/api/merge-plans/[planId]/validate/route.ts', kind: 'api-delegate', policy: 'delegate-to-runtime-service' },
+  { file: 'app/api/merge-plans/route.ts', kind: 'api-delegate', policy: 'delegate-to-runtime-service' },
+  { file: 'app/api/merge-results/[resultId]/recover/route.ts', kind: 'api-delegate', policy: 'delegate-to-runtime-service' },
+  { file: 'app/api/merge-results/[resultId]/rollback-subject/route.ts', kind: 'api-delegate', policy: 'delegate-to-runtime-service' },
+  { file: 'app/api/merge-results/[resultId]/rollback/route.ts', kind: 'api-delegate', policy: 'delegate-to-runtime-service' },
+  { file: 'app/api/merge-results/[resultId]/route.ts', kind: 'api-delegate', policy: 'delegate-to-runtime-service' },
+  { file: 'lib/seqctl/commands/changes.ts', kind: 'cli-delegate', policy: 'delegate-to-runtime-service' },
+  { file: 'lib/seqctl/commands/merge.ts', kind: 'cli-delegate', policy: 'delegate-to-runtime-service' },
+
   { file: 'app/api/run/route.ts', kind: 'api-delegate', policy: 'delegate-to-runtime-service' },
   { file: 'app/api/stop/route.ts', kind: 'api-delegate', policy: 'delegate-to-runtime-service' },
   { file: 'app/api/restart/route.ts', kind: 'api-delegate', policy: 'delegate-to-runtime-service' },

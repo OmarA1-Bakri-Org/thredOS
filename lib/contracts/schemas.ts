@@ -96,6 +96,8 @@ export const GateTypeSchema = z.enum([
   'workspace_present',
   'workspace_ready',
   'workspace_manifest_verified',
+  'change_set_captured',
+  'path_scope_respected',
 ])
 export type GateType = z.infer<typeof GateTypeSchema>
 
@@ -165,6 +167,8 @@ export const TraceEventTypeSchema = z.enum([
   'workspace-ready',
   'workspace-retained',
   'workspace-cleaned',
+  'change-set-selected',
+  'change-set-rejected',
 ])
 export type TraceEventType = z.infer<typeof TraceEventTypeSchema>
 
