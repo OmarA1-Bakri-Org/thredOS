@@ -77,6 +77,12 @@ Commands:
   merge preview <changeSetId>      Build isolated preview from selected Change Set
   merge inspect <mergePlanId>      Inspect persisted merge plan
   merge validate <mergePlanId>     Validate isolated preview before apply
+  merge approval-subject <id>      Inspect the exact operator approval binding (--confirm)
+  merge apply <id> <approval> <digest>    Apply through the guarded provider (--confirm)
+  merge rollback-subject <id>      Inspect a fresh exact rollback binding (--confirm)
+  merge rollback <id> <approval> <digest> Reverse unchanged affected files (--confirm)
+  merge result|recover <id>        Inspect a result or recover custody (--confirm for recover)
+  merge recover-validation <id>   Reconcile preview validation custody (--confirm)
 
 Options:
   -j, --json                        Emit the versioned JSON envelope
