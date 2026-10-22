@@ -30,6 +30,11 @@ export const MergeJournalEntrySchema = z.object({
 }).strict()
 export type MergeJournalEntry = z.infer<typeof MergeJournalEntrySchema>
 
+const applyStatusForPhase = {
+  prepared: 'pending', applying: 'pending', applied: 'applied',
+  rolled_back: 'rolled_back', rollback_failed: 'rollback_failed',
+} as const
+
 function sameJournalEntriesExceptStageIdentity(before: readonly MergeJournalEntry[],
   after: readonly MergeJournalEntry[], allowStageBinding: boolean): boolean {
   if (before.length !== after.length) return false
@@ -57,10 +62,7 @@ export const MergeTransactionRecordSchema = z.object({
   entries: z.array(MergeJournalEntrySchema),
   result: MergeResultSchema,
 }).strict().superRefine((record, context) => {
-  const expected = record.phase === 'applied' ? 'applied'
-    : record.phase === 'rolled_back' ? 'rolled_back'
-      : record.phase === 'rollback_failed' ? 'rollback_failed' : 'pending'
-  if (record.result.filesystem_apply.status !== expected) {
+  if (record.result.filesystem_apply.status !== applyStatusForPhase[record.phase]) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['result', 'filesystem_apply', 'status'],
       message: 'Result status must match transaction phase' })
   }
@@ -109,12 +111,16 @@ function sameOrWithin(root: string, path: string): boolean {
   return from === '' || (!isAbsolute(from) && from !== '..' && !from.startsWith(`..${sep}`))
 }
 
+function sameLocation(left: string, right: string): boolean {
+  return sameOrWithin(left, right) && sameOrWithin(right, left)
+}
+
 async function ensurePlainRoot(runtimeDataRoot: string, canonicalRoot: string): Promise<string> {
   if (!isAbsolute(runtimeDataRoot) || !isAbsolute(canonicalRoot)) throw new Error('MERGE_UNSAFE_STORAGE')
   const root = resolve(runtimeDataRoot)
   const canonical = await canonicalizeProspectivePath(canonicalRoot)
   const prospective = await canonicalizeProspectivePath(root)
-  if (!sameOrWithin(prospective, root) || !sameOrWithin(root, prospective)
+  if (!sameLocation(prospective, root)
     || sameOrWithin(root, canonical) || sameOrWithin(canonical, root)) {
     throw new Error('MERGE_UNSAFE_STORAGE')
   }

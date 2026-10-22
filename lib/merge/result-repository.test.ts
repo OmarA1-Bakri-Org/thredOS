@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { mkdir, readFile, writeFile } from 'fs/promises'
+import { link, mkdir, readFile, readdir, symlink, writeFile } from 'fs/promises'
 import { join } from 'path'
 import { createFixtureRoot, removeFixtureTree } from '../../test/helpers/remove-fixture-tree'
 import { MergeResultRepository, MergeTransactionRecordSchema, type MergeTransactionRecord } from './result-repository'
@@ -46,6 +46,39 @@ function phase(record: MergeTransactionRecord, next: MergeTransactionRecord['pha
 }
 
 describe('merge result journal identity and transitions', () => {
+  test('refuses a relative runtime root before creating metadata', async () => {
+    const invalid = new MergeResultRepository('relative-runtime', join(root, 'project'))
+    await expect(invalid.root()).rejects.toThrow('MERGE_UNSAFE_STORAGE')
+    expect(await readdir(root)).toEqual(['project'])
+  })
+
+  test('refuses runtime storage within or containing the canonical root', async () => {
+    const canonical = join(root, 'project')
+    for (const runtime of [join(canonical, 'runtime'), root]) {
+      await expect(new MergeResultRepository(runtime, canonical).root())
+        .rejects.toThrow('MERGE_UNSAFE_STORAGE')
+    }
+    expect(await readdir(root)).toEqual(['project'])
+    expect(await readdir(canonical)).toEqual([])
+  })
+
+  test('refuses a runtime root that aliases another directory', async () => {
+    const target = join(root, 'actual-runtime')
+    const alias = join(root, 'alias-runtime')
+    await mkdir(target)
+    await symlink(target, alias, process.platform === 'win32' ? 'junction' : 'dir')
+    await expect(new MergeResultRepository(alias, join(root, 'project')).root())
+      .rejects.toThrow('MERGE_UNSAFE_STORAGE')
+    expect(await readdir(target)).toEqual([])
+  })
+
+  test('rejects a record with another filesystem link', async () => {
+    await repository.create(initial())
+    const directory = await repository.root()
+    await link(join(directory, 'result-1.json'), join(root, 'linked-result.json'))
+    await expect(repository.get('result-1')).rejects.toThrow('MERGE_RESULT_CORRUPT')
+  })
+
   test('reopens a prepared record from a fresh repository and preserves its binding', async () => {
     const record = initial()
     await repository.create(record)
