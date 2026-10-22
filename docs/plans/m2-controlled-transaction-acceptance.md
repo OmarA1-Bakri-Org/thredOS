@@ -32,3 +32,20 @@ bun scripts/verify/m2-transaction-proof.ts --windows-native --confirm-owned-fixt
 This selects the protected adapter only inside the proof's newly created disposable fixtures. Verify both variants, operation journals, exact approval consumption, post-check processes, rollback, later-user-edit rejection, absence of leftover staging files and preservation of repository source hashes. Native helper timeout or indeterminate I/O requires review; PID absence alone must not clear a transaction or authorize reversal. Report the exact addon/source hashes, Node/Bun/OS versions and evidence path. Do not enable provider wiring for an existing canonical project, merge PRs or deploy as part of this acceptance.
 
 Packaged Desktop native binary inclusion/ASAR behavior and the full M2 UI/composition/unsupported-operation gates remain separate release work. A bounded native proof must not be reported as full product or milestone completion.
+
+## Windows Node 22 helper compatibility retest
+
+The first Windows acceptance of PR47 stopped before native mutation: Node 22.14.0 returned a nonzero `fstat.dev` and zero `lstat.dev` for the same normal journal/content file. The helper now compares the primary and separately opened verification handles using BigInt `fstat` device/inode identities, and compares before/after named metadata within `lstat`. Cross-binding inodes, regular-file type, single-link, no-follow, named-path replacement checks and native handle custody remain required. Zero path-device metadata is not accepted as a substitute for matching handle devices. The cloud regression deliberately models that metadata discrepancy; it does not establish Windows acceptance.
+
+In the existing approved executor, verify the newly published commit and all source blobs before testing. Preserve the retained diagnostic evidence and pre-provisioned headers/dependencies. No C++/addon interface changes are made by this compatibility correction; retain and verify the previously built addon hash and matching Node 22.14.0 toolchain. Do not substitute a different Node version to avoid the failing runtime.
+
+Run the credential-free helper regressions first:
+
+```text
+node --test native/windows-apply/helper-identity.test.cjs
+bun test lib/merge/windows-helper-client.test.ts lib/merge/helper-recovery.test.ts lib/merge/helper-stage-boundary.test.ts native/windows-apply/helper-identity.test.cjs
+```
+
+The multibyte request fixture now asserts that every field is schema-valid and total UTF-8 JSON exceeds 16 KiB while using its actual absolute fixture root. A separate root-overflow case still rejects at 4,097 characters; schema limits are unchanged.
+
+Only after those checks pass, run the existing bounded `--windows-native --confirm-owned-fixtures` transaction proof above in fresh owned fixtures. Record actual apply/rollback statuses, exact approval consumption, six validation processes per variant, protected helper journals/operations, user-edit preservation, source/addon hashes, process quiescence and leftovers. Keep uncertain helper outcomes pending/requires-review. Stop on any new failure, preserving evidence for the cloud owner. No ACL-changing native test, existing-project mutation, external service, merge, deployment or local source patch is part of this retest.

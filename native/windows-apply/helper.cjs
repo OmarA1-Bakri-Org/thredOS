@@ -47,12 +47,42 @@ function validate(request) {
   }
 }
 
-function verifiedContent(file, request, output) {
-  const fd = fs.openSync(file, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0));
+function regular(stat) {
+  return stat.isFile() && !stat.isSymbolicLink() && stat.nlink === 1n && stat.ino > 0n;
+}
+
+function sameIdentity(left, right) { return left.dev === right.dev && left.ino === right.ino; }
+
+function verifyOpenedFile(fd, file, code, named = fs.lstatSync(file, { bigint: true })) {
+  if (!regular(named)) fail(code);
+  const opened = fs.fstatSync(fd, { bigint: true });
+  const peer = fs.openSync(file, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0));
   try {
-    const before = fs.fstatSync(fd), named = fs.lstatSync(file);
-    if (!before.isFile() || named.isSymbolicLink() || before.nlink !== 1 || named.nlink !== 1
-        || before.dev !== named.dev || before.ino !== named.ino || before.size !== request.expected_size) fail('MERGE_HELPER_CONTENT_CHANGED');
+    const rebound = fs.fstatSync(peer, { bigint: true });
+    const current = fs.lstatSync(file, { bigint: true });
+    // Node 22 on Windows can report lstat.dev=0 but a real volume from fstat.
+    // Compare devices within the same API, retaining both handle and named-file
+    // bindings. BigInt avoids rounded inode comparisons. No zero-device bypass.
+    if (![opened, rebound, current].every(regular)
+        || !sameIdentity(opened, rebound) || !sameIdentity(named, current)
+        || opened.ino !== named.ino || rebound.ino !== current.ino) fail(code);
+  } finally { fs.closeSync(peer); }
+  return opened;
+}
+
+function openVerifiedFile(file, code) {
+  const named = fs.lstatSync(file, { bigint: true });
+  if (!regular(named)) fail(code);
+  const fd = fs.openSync(file, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0));
+  try { verifyOpenedFile(fd, file, code, named); return fd; }
+  catch (error) { fs.closeSync(fd); throw error; }
+}
+
+function verifiedContent(file, request, output) {
+  const fd = openVerifiedFile(file, 'MERGE_HELPER_CONTENT_CHANGED');
+  try {
+    const before = fs.fstatSync(fd, { bigint: true });
+    if (before.size !== BigInt(request.expected_size)) fail('MERGE_HELPER_CONTENT_CHANGED');
     const digest = crypto.createHash('sha256'), buffer = Buffer.alloc(64 * 1024);
     let size = 0;
     while (true) {
@@ -63,10 +93,10 @@ function verifiedContent(file, request, output) {
       digest.update(buffer.subarray(0, count));
       if (output !== undefined) { let offset = 0; while (offset < count) offset += fs.writeSync(output, buffer, offset, count - offset); }
     }
-    const after = fs.fstatSync(fd);
+    const after = verifyOpenedFile(fd, file, 'MERGE_HELPER_CONTENT_CHANGED');
     if (size !== request.expected_size || `sha256:${digest.digest('hex')}` !== request.expected_sha256
-        || before.dev !== after.dev || before.ino !== after.ino || before.mtimeMs !== after.mtimeMs
-        || before.size !== after.size || after.nlink !== 1) fail('MERGE_HELPER_CONTENT_CHANGED');
+        || before.dev !== after.dev || before.ino !== after.ino || before.mtimeNs !== after.mtimeNs
+        || before.ctimeNs !== after.ctimeNs || before.size !== after.size) fail('MERGE_HELPER_CONTENT_CHANGED');
   } finally { fs.closeSync(fd); }
 }
 
@@ -80,13 +110,13 @@ function journalAt(journalPath, operationId) {
   if (!parentStat.isDirectory() || parentStat.isSymbolicLink() ||
       fs.realpathSync.native(parent) !== parent || !journalStat.isFile() ||
       journalStat.isSymbolicLink() || journalStat.size > MAX_REQUEST_BYTES) fail('MERGE_HELPER_INVALID_JOURNAL');
-  const fd = fs.openSync(journalPath, 'r');
+  const fd = openVerifiedFile(journalPath, 'MERGE_HELPER_INVALID_JOURNAL');
   try {
-    const opened = fs.fstatSync(fd);
-    const current = fs.lstatSync(journalPath);
-    if (current.isSymbolicLink() || opened.dev !== current.dev || opened.ino !== current.ino ||
-        opened.size > MAX_REQUEST_BYTES) fail('MERGE_HELPER_INVALID_JOURNAL');
-    return JSON.parse(fs.readFileSync(fd, 'utf8'));
+    if (fs.fstatSync(fd, { bigint: true }).size > BigInt(MAX_REQUEST_BYTES)) fail('MERGE_HELPER_INVALID_JOURNAL');
+    const text = fs.readFileSync(fd, 'utf8');
+    verifyOpenedFile(fd, journalPath, 'MERGE_HELPER_INVALID_JOURNAL');
+    if (Buffer.byteLength(text) > MAX_REQUEST_BYTES) fail('MERGE_HELPER_INVALID_JOURNAL');
+    return JSON.parse(text);
   } finally { fs.closeSync(fd); }
 }
 
@@ -210,7 +240,9 @@ async function main() {
   }
 }
 
-main().catch(error => {
+module.exports = { journalAt, verifiedContent };
+
+if (require.main === module) main().catch(error => {
   const code = typeof error?.code === 'string' ? error.code : 'MERGE_HELPER_SETUP_ERROR';
   process.stderr.write(`${code}\n`);
   process.exitCode = 1;
