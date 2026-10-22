@@ -1,5 +1,20 @@
 import { z } from 'zod'
 
+export function findPortablePathAlias(paths: readonly string[]): { existing: string; alias: string } | null {
+  const seen = new Map<string, string>()
+  for (const path of paths) {
+    const segments = path.split('/')
+    for (let length = 1; length <= segments.length; length += 1) {
+      const prefix = segments.slice(0, length).join('/')
+      const folded = prefix.toLocaleLowerCase('en-US')
+      const existing = seen.get(folded)
+      if (existing !== undefined && existing !== prefix) return { existing, alias: prefix }
+      seen.set(folded, prefix)
+    }
+  }
+  return null
+}
+
 export const MergeConflictStatusSchema = z.enum(['unresolved', 'resolved'])
 export type MergeConflictStatus = z.infer<typeof MergeConflictStatusSchema>
 
