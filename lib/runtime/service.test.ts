@@ -1,5 +1,7 @@
+import { buildAgentComposition } from '../agents/composition'
+import { writeAgentState } from '../agents/repository'
 import { afterEach, describe, expect, test } from 'bun:test'
-import { mkdtemp, rm } from 'fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { PolicyConfigSchema } from '../policy/schema'
@@ -23,12 +25,13 @@ import { ProcessControlError } from '../runner/process-handle'
 import { createTestCompatibilityStartProcess } from './test-compatibility'
 import { formatRetryBinding, parseRetryBinding, parseUnboundRetry } from './retry-binding'
 import { readApprovals } from '../approvals/repository'
-import { setAtomicBeforeRenameHookForTests } from '../fs/atomic'
+import { setAtomicBeforeRenameHookForTests, setAtomicBoundaryHookForTests } from '../fs/atomic'
 
 const roots: string[] = []
 afterEach(async () => {
   clearRuntimeServiceFactoryForTests()
   setAtomicBeforeRenameHookForTests(null)
+  setAtomicBoundaryHookForTests(null)
   await Promise.all(roots.splice(0).map(path => rm(path, { recursive: true, force: true })))
 })
 
@@ -42,6 +45,7 @@ function sequence(stepId = 'build'): Sequence {
       name: stepId,
       type: 'base',
       model: 'shell',
+      assigned_agent_id: `registered-${stepId}`, agent_ref: `registered-${stepId}`,
       prompt_file: `.threados/prompts/${stepId}.md`,
       prompt_ref: { id: stepId, version: 1, path: `.threados/prompts/${stepId}.md` },
       status: 'READY',
@@ -64,6 +68,7 @@ function multiStepSequence(): Sequence {
         ...first,
         id: 'verify',
         name: 'verify',
+        assigned_agent_id: 'registered-verify', agent_ref: 'registered-verify',
         prompt_file: '.threados/prompts/verify.md',
         prompt_ref: { id: 'verify', version: 1, path: '.threados/prompts/verify.md' },
       },
@@ -71,9 +76,21 @@ function multiStepSequence(): Sequence {
   } as Sequence
 }
 
+async function registerFixtureAgents(basePath: string) {
+  await mkdir(join(basePath, '.threados/prompts'), { recursive: true })
+  const registeredSteps = [sequence().steps[0]!, multiStepSequence().steps[1]!]
+  await Promise.all(registeredSteps.map(step => writeFile(join(basePath, step.prompt_file), `registered command for ${step.id}`)))
+  await writeAgentState(basePath, { version: 1, agents: registeredSteps.map(step => ({
+    id: step.assigned_agent_id!, name: step.id, builderId: 'fixture-builder', builderName: 'Fixture Builder',
+    registeredAt: '2026-01-01T00:00:00.000Z', version: 1, threadSurfaceIds: [],
+    composition: buildAgentComposition({ model: step.model, role: step.role, promptRef: step.prompt_ref, skillRefs: [] }),
+  })) })
+}
+
 async function fixture(overrides: Partial<RuntimeServiceDependencies> = {}) {
   const basePath = await mkdtemp(join(tmpdir(), 'threados-service-'))
   roots.push(basePath)
+  await registerFixtureAgents(basePath)
   const calls: string[] = []
   const result: RunResult = {
     stepId: 'build', runId: 'unused', exitCode: 0, status: 'SUCCESS', duration: 4,
@@ -82,7 +99,7 @@ async function fixture(overrides: Partial<RuntimeServiceDependencies> = {}) {
   }
   const defaultRunStep: NonNullable<RuntimeServiceDependencies['runStep']> = async config => {
     calls.push('run')
-    const process = (await new ProcessRepository(basePath).list())[0]
+    const process = (await new ProcessRepository(basePath).list()).find(record => record.workflow_run_id === config.runId && record.status === 'starting')
     expect(process?.status).toBe('starting')
     expect(process).toMatchObject({ pid: null, provider_handle: null, started_at: null })
     const attempt = await new AttemptRepository(basePath).get(process!.attempt_id)
@@ -138,13 +155,14 @@ async function fixture(overrides: Partial<RuntimeServiceDependencies> = {}) {
     return repository
   }
   wrap('run', repositories.runs); wrap('attempt', repositories.attempts); wrap('process', repositories.processes)
+  const scheduler = new SequentialScheduler()
   const service = new ThreadOSRuntimeService({
     basePath,
-    scheduler: new SequentialScheduler(),
+    scheduler,
     repositories,
     dependencies,
   })
-  return { basePath, calls, dependencies, repositories, service }
+  return { basePath, calls, dependencies, repositories, service, scheduler }
 }
 
 const context = { actor: 'tester', interface: 'system' as const, idempotencyKey: 'same-key', policyConfirmed: true }
@@ -164,6 +182,207 @@ function deferred<T>() {
   })
   return { promise, resolve, reject }
 }
+
+describe('registration identity gate', () => {
+  test('rejects an unassigned step before persisting an attempt or dispatching', async () => {
+    const current = sequence()
+    current.steps[0]!.assigned_agent_id = undefined
+    current.steps[0]!.agent_ref = null
+    const f = await fixture({ loadSequence: async () => current })
+    const result = await f.service.runAndWait(request, context)
+    expect(result.run.status).toBe('failed')
+    expect(result.run.error_code).toBe('AGENT_REGISTRATION_REQUIRED')
+    expect(result.attempts).toEqual([])
+    expect(f.calls).not.toContain('dispatch')
+    expect(await f.repositories.attempts.listForRun(result.run.id)).toEqual([])
+  })
+
+  test('rejects a reference to an agent outside the registry before dispatching', async () => {
+    const current = sequence()
+    current.steps[0]!.assigned_agent_id = 'unknown-agent'
+    current.steps[0]!.agent_ref = 'unknown-agent'
+    const f = await fixture({ loadSequence: async () => current })
+    const result = await f.service.runAndWait(request, context)
+    expect(result.run.status).toBe('failed')
+    expect(result.run.error_code).toBe('AGENT_NOT_REGISTERED')
+    expect(result.attempts).toEqual([])
+    expect(f.calls).not.toContain('dispatch')
+  })
+  test('persists frozen identity before spawn and keeps it when retry assignment changes', async () => {
+    let current = sequence()
+    const traces: import('../contracts/schemas').TraceEvent[] = []
+    const f = await fixture({ loadSequence: async () => current, appendTrace: async (_base, _run, event) => { traces.push(event) } })
+    const first = await f.service.runAndWait(request, context)
+    expect(first.run.status).toBe('successful')
+    const original = first.attempts[0]!
+    expect(original.agent_registration).toMatchObject({ registration_id: 'registered-build', registration_version: 1 })
+    expect(first.run.agent_registrations?.build).toEqual(original.agent_registration)
+    expect(traces.find(event => event.event_type === 'step-started')).toMatchObject({
+      attempt_id: original.id, agent_registration: { registration_id: 'registered-build', registration_version: 1,
+        composition_hash: original.agent_registration!.composition_hash },
+    })
+    current = { ...current, steps: [{ ...current.steps[0]!, assigned_agent_id: 'registered-verify', agent_ref: 'registered-verify', model: 'codex' }] }
+    const retry = await f.service.retryAttempt(original.id, { ...context, idempotencyKey: 'changed-assignment-retry' })
+    expect(retry.agent_ref).toBe(original.agent_ref)
+    expect(retry.agent_registration).toEqual(original.agent_registration)
+    expect(retry.retry_of_attempt_id).toBe(original.id)
+    // Finish the queued execution before fixture cleanup.
+    for (let poll = 0; poll < 300; poll++) {
+      const inspected = await f.repositories.attempts.get(retry.id)
+      if (inspected && ['completed', 'failed'].includes(inspected.status)) {
+        expect(inspected.error_message).toBeNull()
+        expect(inspected.status).toBe('completed')
+        return
+      }
+      await new Promise(resolve => setTimeout(resolve, 5))
+    }
+    throw new Error('Retried attempt did not complete')
+  })
+
+  test('two service instances coalesce a retry across the accepted-receipt and missing-run window', async () => {
+    const f = await fixture()
+    const first = await f.service.runAndWait(request, context)
+    const original = first.attempts[0]!
+    const blocked = deferred<void>()
+    const release = deferred<void>()
+    const secondReachedDispatchBoundary = deferred<void>()
+    const create = f.repositories.runs.create.bind(f.repositories.runs)
+    f.repositories.runs.create = async value => {
+      if (value.id !== first.run.id) {
+        blocked.resolve()
+        await release.promise
+      }
+      return create(value)
+    }
+    const secondService = new ThreadOSRuntimeService({
+      basePath: f.basePath, scheduler: new SequentialScheduler(), dependencies: f.dependencies,
+      repositories: { runs: new RunRepository(f.basePath), attempts: new AttemptRepository(f.basePath),
+        processes: new ProcessRepository(f.basePath), commands: new CommandRepository(f.basePath) },
+    })
+    const retryContext = { ...context, idempotencyKey: 'two-services-retry' }
+    const firstRetry = f.service.retryAttempt(original.id, retryContext)
+    await blocked.promise
+    setAtomicBoundaryHookForTests(({ stage, targetPath }) => {
+      if (stage === 'before-lock-open' && targetPath.includes('retry-dispatch-')) secondReachedDispatchBoundary.resolve()
+    })
+    const secondRetry = secondService.retryAttempt(original.id, retryContext)
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try {
+      await Promise.race([secondReachedDispatchBoundary.promise, new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error('Second service did not reach retry dispatch boundary')), 3_000)
+      })])
+    } finally {
+      clearTimeout(timer)
+      release.resolve()
+    }
+    const [retried, replayed] = await Promise.all([firstRetry, secondRetry])
+    expect(retried.id).toBe(replayed.id)
+    expect(retried.agent_registration).toEqual(original.agent_registration)
+    for (let poll = 0; poll < 300; poll++) {
+      const completed = await f.repositories.attempts.get(retried.id)
+      if (completed?.status === 'completed') {
+        expect(f.calls.filter(call => call === 'dispatch')).toHaveLength(2)
+        expect((await f.repositories.runs.list()).filter(run => run.id !== first.run.id)).toHaveLength(1)
+        return
+      }
+      await new Promise(resolve => setTimeout(resolve, 5))
+    }
+    throw new Error('Retried attempt did not finish')
+  })
+
+  test('queued retry custody survives the recovery window without a second service dispatching it', async () => {
+    const f = await fixture()
+    const first = await f.service.runAndWait(request, context)
+    const queued = deferred<void>()
+    const release = deferred<void>()
+    const blocker = f.scheduler.enqueue('unrelated-long-run', async () => { queued.resolve(); await release.promise })
+    await queued.promise
+    const secondService = new ThreadOSRuntimeService({
+      basePath: f.basePath, scheduler: new SequentialScheduler(), dependencies: f.dependencies,
+      repositories: { runs: new RunRepository(f.basePath), attempts: new AttemptRepository(f.basePath),
+        processes: new ProcessRepository(f.basePath), commands: new CommandRepository(f.basePath) },
+    })
+    const retryContext = { ...context, idempotencyKey: 'queued-two-services-retry' }
+    let firstSettled = false
+    let secondSettled = false
+    const firstRetry = f.service.retryAttempt(first.attempts[0]!.id, retryContext)
+      .then(value => ({ value }), error => ({ error })).finally(() => { firstSettled = true })
+    let queuedChildId: string | undefined
+    for (let poll = 0; poll < 300; poll++) {
+      const candidate = (await f.repositories.runs.list()).find(run => run.id !== first.run.id)
+      if (candidate && f.scheduler.get(candidate.id)) { queuedChildId = candidate.id; break }
+      await new Promise(resolve => setTimeout(resolve, 5))
+    }
+    if (!queuedChildId) { release.resolve(); throw new Error('First service did not queue its retry') }
+    const secondRetry = secondService.retryAttempt(first.attempts[0]!.id, retryContext)
+      .then(value => ({ value }), error => ({ error })).finally(() => { secondSettled = true })
+    try {
+      await new Promise(resolve => setTimeout(resolve, 6_200))
+      expect(firstSettled).toBe(false)
+      expect(secondSettled).toBe(false)
+      expect(f.calls.filter(call => call === 'dispatch')).toHaveLength(1)
+    } finally {
+      release.resolve()
+      await blocker
+    }
+    const [a, b] = await Promise.all([firstRetry, secondRetry])
+    expect(a).not.toHaveProperty('error')
+    expect(b).not.toHaveProperty('error')
+    if (!('value' in a) || !('value' in b)) throw new Error('Retry failed')
+    expect(a.value.id).toBe(b.value.id)
+    expect(a.value.agent_registration).toEqual(first.attempts[0]!.agent_registration)
+    for (let poll = 0; poll < 300; poll++) {
+      if ((await f.repositories.attempts.get(a.value.id))?.status === 'completed') {
+        expect(f.calls.filter(call => call === 'dispatch')).toHaveLength(2)
+        return
+      }
+      await new Promise(resolve => setTimeout(resolve, 5))
+    }
+    throw new Error('Queued retry did not complete')
+  }, 20_000)
+
+  test('real factory compiles the canonical registered prompt when its name differs from the step', async () => {
+    const current = sequence()
+    const canonicalRef = { id: 'canonical', version: 7, path: '.threados/prompts/canonical.md' }
+    current.steps[0]!.prompt_ref = canonicalRef
+    const f = await fixture()
+    await writeFile(join(f.basePath, canonicalRef.path), 'CANONICAL_REGISTERED_COMMAND')
+    await writeAgentState(f.basePath, { version: 1, agents: [{
+      id: 'registered-build', name: 'Registered', builderId: 'fixture-builder', builderName: 'Builder',
+      registeredAt: '2026-01-01T00:00:00.000Z', version: 2, threadSurfaceIds: [],
+      composition: buildAgentComposition({ model: 'shell', promptRef: canonicalRef }),
+    }] })
+    const { compilePrompt: _mockCompile, ...dependencies } = f.dependencies
+    let dispatchedPrompt = ''
+    const service = await getThreadOSRuntimeService(f.basePath, { dependencies: {
+      ...dependencies, loadSequence: async () => current,
+      dispatch: async (model, options) => {
+        dispatchedPrompt = options.compiledPrompt
+        return dependencies.dispatch(model, options)
+      },
+    }, reconcile: async () => undefined })
+    const outcome = await service.runAndWait(request, context)
+    expect(outcome.run.error_message).toBeNull()
+    expect(outcome.run.status).toBe('successful')
+    expect(dispatchedPrompt).toBe('CANONICAL_REGISTERED_COMMAND')
+    expect(dispatchedPrompt).not.toContain('registered command for build')
+  })
+
+  test('rejects a removed identity after provider preparation before process launch', async () => {
+    let starts = 0
+    const f = await fixture({
+      startProcess: async () => { starts++; throw new Error('must not launch') },
+      dispatch: async (_model, options) => {
+        await writeAgentState(f.basePath, { version: 1, agents: [] })
+        return { stepId: options.stepId, runId: options.runId, command: 'sh', args: [], cwd: f.basePath }
+      },
+    })
+    const outcome = await f.service.runAndWait(request, context)
+    expect(outcome.attempts[0]).toMatchObject({ status: 'failed', error_code: 'AGENT_NOT_REGISTERED' })
+    expect(starts).toBe(0)
+  })
+
+})
 
 function rawResult(
   runId: string,
@@ -1393,6 +1612,7 @@ describe('ThreadOSRuntimeService', () => {
   test('factory confirmed SAFE approval lifecycle fails atomically, retries cleanly, and is consumed before spawn', async () => {
     const basePath = await mkdtemp(join(tmpdir(), 'threados-factory-approval-'))
     roots.push(basePath)
+    await registerFixtureAgents(basePath)
     let starts = 0
     const service = await getThreadOSRuntimeService(basePath, {
       dependencies: {

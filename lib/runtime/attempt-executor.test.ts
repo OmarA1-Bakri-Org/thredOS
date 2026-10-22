@@ -1,5 +1,7 @@
+import { buildAgentComposition } from '../agents/composition'
+import { writeAgentState } from '../agents/repository'
 import { afterEach, describe, expect, test } from 'bun:test'
-import { mkdtemp, rm } from 'fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { RunRepository } from './run-repository'
@@ -27,12 +29,20 @@ afterEach(async () => { await Promise.all(roots.splice(0).map(path => rm(path, {
 function seq(): Sequence {
   return { version: '1', id: 's', name: 's', gates: [], groups: [], fusion_rules: [], steps: [{
     id: 'x', name: 'x', type: 'base', model: 'shell', prompt_file: '.threados/prompts/x.md',
+    agent_ref: 'registered-x', assigned_agent_id: 'registered-x',
     prompt_ref: { id: 'x', version: 1, path: '.threados/prompts/x.md' }, status: 'READY', depends_on: [], side_effect_class: 'execute',
   }] } as Sequence
 }
 
 async function make(overrides: Partial<RuntimeServiceDependencies>) {
   const basePath = await mkdtemp(join(tmpdir(), 'threados-attempt-')); roots.push(basePath)
+  await mkdir(join(basePath, '.threados/prompts'), { recursive: true })
+  await writeFile(join(basePath, '.threados/prompts/x.md'), 'registered fixture command')
+  await writeAgentState(basePath, { version: 1, agents: [{
+    id: 'registered-x', name: 'Registered X', builderId: 'fixture-builder', builderName: 'Fixture Builder',
+    registeredAt: '2026-01-01T00:00:00.000Z', version: 1, threadSurfaceIds: [],
+    composition: buildAgentComposition({ model: 'shell', promptRef: seq().steps[0]!.prompt_ref }),
+  }] })
   let id = 0
   const defaultRunStep: NonNullable<RuntimeServiceDependencies['runStep']> = async c => ({
     stepId: c.stepId, runId: c.runId, exitCode: 0, status: 'SUCCESS', duration: 1,

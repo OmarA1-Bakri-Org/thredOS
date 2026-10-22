@@ -7,6 +7,7 @@ import { saveRunArtifacts } from '@/lib/runner/artifacts'
 import { ROOT_THREAD_SURFACE_ID } from '@/lib/thread-surfaces/constants'
 import { writeThreadSurfaceState } from '@/lib/thread-surfaces/repository'
 import type { ThreadSurface } from '@/lib/thread-surfaces/types'
+import { registerSequenceAgents } from '../helpers/registered-sequence'
 
 let basePath = ''
 
@@ -43,7 +44,7 @@ async function setupWorkspace() {
   await writeFile(join(basePath, '.threados', 'sequence.yaml'), YAML.stringify({
     version: '1.0',
     name: 'runtime-persistence-proof',
-    steps: [
+    steps: await registerSequenceAgents(basePath, [
       {
         id: 'step-a',
         name: 'Step A',
@@ -53,7 +54,7 @@ async function setupWorkspace() {
         depends_on: [],
         status: 'READY',
       },
-    ],
+    ]),
     gates: [],
   }))
   await writeThreadSurfaceState(basePath, {

@@ -3,7 +3,6 @@ import type { Step } from '@/lib/sequence/schema'
 import { emptyThreadSurfaceState, createRootThreadSurfaceRun, createChildThreadSurfaceRun } from '@/lib/thread-surfaces/mutations'
 import { beginStepRunIfSurfaceExists, finalizeStepRunWithRuntimeEvents } from '@/lib/thread-surfaces/step-run-runtime'
 import type { RuntimeDelegationEvent } from '@/lib/thread-surfaces/runtime-event-log'
-import type { AgentRegistration } from '../agents/types'
 
 function buildStep(overrides: Partial<Step> = {}): Step {
   return {
@@ -19,15 +18,62 @@ function buildStep(overrides: Partial<Step> = {}): Step {
 }
 
 describe('step run runtime helpers', () => {
-  const spawnAgent: AgentRegistration = {
-    id: 'agt-spawner',
-    name: 'Spawner',
-    registeredAt: '2026-03-14T00:00:00.000Z',
-    builderId: 'omar',
-    builderName: 'Omar',
-    threadSurfaceIds: [],
-    metadata: { skills: [{ id: 'spawn', label: 'Spawn', inherited: false }] },
+  const frozenRegistration = {
+    registration_id: 'registered-spawner', registration_version: 2,
+    composition_hash: 'a'.repeat(64), builder_id: 'builder',
+    registered_at: '2026-03-14T00:00:00.000Z', supersedes_agent_id: 'registered-v1',
+    model: 'codex', role: 'orchestrator',
+    prompt_ref: { id: 'orchestration', version: 1 },
+    skill_refs: [{ id: 'spawn', version: 1, capabilities: ['spawn'] }], tools: [],
+    prompt_content_hash: 'b'.repeat(64), skill_content_hashes: [],
   }
+
+  for (const scenario of ['missing', 'no-spawn', 'spoofed-parent'] as const) {
+    test(`denies ${scenario} child requests without provisioning child state`, () => {
+      const started = createRootThreadSurfaceRun(emptyThreadSurfaceState, {
+        surfaceId: 'thread-root', surfaceLabel: 'Root', createdAt: '2026-03-14T00:00:00.000Z',
+        runId: 'run-root', startedAt: '2026-03-14T00:00:00.000Z',
+      }).state
+      const registration = scenario === 'missing' ? undefined : {
+        ...frozenRegistration, skill_refs: scenario === 'no-spawn' ? [] : frozenRegistration.skill_refs,
+        metadata: { skills: [{ id: 'spawn', label: 'Untrusted display grant' }] },
+      }
+      let next = 0
+      const result = finalizeStepRunWithRuntimeEvents(started, {
+        step: buildStep(), stepRun: null, success: true, endedAt: '2026-03-14T00:00:00.000Z',
+        runtimeEvents: [{ eventType: 'spawn-child', createdAt: '2026-03-14T00:00:00.000Z',
+          childStepId: 'child', childLabel: 'Child', spawnKind: 'orchestrator',
+          ...(scenario === 'spoofed-parent' ? { parentStepId: 'another-agent-step' } : {}),
+        }],
+        nextRunId: () => `run-${++next}`, nextEventId: () => `event-${++next}`, nextMergeId: () => `merge-${++next}`,
+        ...{ agentRegistration: registration },
+      })
+      expect(result.pendingChildSequences).toEqual([])
+      expect(result.state.threadSurfaces.some(surface => surface.id === 'thread-child')).toBe(false)
+      expect(result.state.runEvents).toContainEqual(expect.objectContaining({ eventType: 'spawn-denied' }))
+    })
+  }
+
+  test('frozen spawn capability records the registered origin without assigning the child', () => {
+    const started = createRootThreadSurfaceRun(emptyThreadSurfaceState, {
+      surfaceId: 'thread-root', surfaceLabel: 'Root', createdAt: '2026-03-14T00:00:00.000Z',
+      runId: 'run-root', startedAt: '2026-03-14T00:00:00.000Z',
+    }).state
+    let next = 0
+    const result = finalizeStepRunWithRuntimeEvents(started, {
+      step: buildStep(), stepRun: null, success: true, endedAt: '2026-03-14T00:00:00.000Z',
+      runtimeEvents: [{ eventType: 'spawn-child', createdAt: '2026-03-14T00:00:00.000Z',
+        childStepId: 'child', childLabel: 'Child', spawnKind: 'orchestrator', parentStepId: 'step-a' }],
+      nextRunId: () => `run-${++next}`, nextEventId: () => `event-${++next}`, nextMergeId: () => `merge-${++next}`,
+      ...{ agentRegistration: frozenRegistration },
+    })
+    const child = result.state.threadSurfaces.find(surface => surface.id === 'thread-child')
+    expect(child?.spawnedByAgentId).toBe('registered-spawner')
+    expect(child?.registeredAgentId).toBeUndefined()
+    expect(result.state.runs.find(run => run.threadSurfaceId === 'thread-child')?.parentRunId).toBe(result.stepRun?.runId)
+  })
+
+  const spawnAgent = frozenRegistration
 
   test('beginStepRunIfSurfaceExists leaves state unchanged for unseen step surfaces', () => {
     const started = createRootThreadSurfaceRun(emptyThreadSurfaceState, {
@@ -99,7 +145,7 @@ describe('step run runtime helpers', () => {
       now: '2026-03-09T10:01:00.000Z',
       nextRunId: 'run-step',
       executionIndex: 2,
-      agent: spawnAgent,
+      agentRegistration: spawnAgent,
     })
 
     // Should have auto-created the thread surface
@@ -120,21 +166,13 @@ describe('step run runtime helpers', () => {
       executionIndex: 1,
     }).state
 
-    const noSpawnAgent: AgentRegistration = {
-      id: 'agt-worker',
-      name: 'Worker',
-      registeredAt: '2026-03-14T00:00:00.000Z',
-      builderId: 'omar',
-      builderName: 'Omar',
-      threadSurfaceIds: [],
-      metadata: { skills: [{ id: 'search', label: 'Search', inherited: false }] },
-    }
+    const noSpawnAgent = { ...frozenRegistration, skill_refs: [] }
 
     const result = beginStepRunIfSurfaceExists(started, buildStep(), {
       now: '2026-03-09T10:01:00.000Z',
       nextRunId: 'run-step',
       executionIndex: 2,
-      agent: noSpawnAgent,
+      agentRegistration: noSpawnAgent,
     })
 
     expect(result.stepRun).toBeNull()
@@ -168,7 +206,7 @@ describe('step run runtime helpers', () => {
       nextRunId: () => 'run-generated',
       nextEventId: () => 'event-generated',
       nextMergeId: () => 'merge-generated',
-      agent: spawnAgent,
+      agentRegistration: spawnAgent,
     })
 
     expect(result.stepRun).toEqual({
@@ -201,7 +239,7 @@ describe('step run runtime helpers', () => {
     // Verify child surface has sequenceRef set
     const childSurface = result.state.threadSurfaces.find(surface => surface.id === 'thread-child-step')
     expect(childSurface?.sequenceRef).toBe('.threados/sequences/thread-child-step/sequence.yaml')
-    expect(childSurface?.spawnedByAgentId).toBe('step-a')
+    expect(childSurface?.spawnedByAgentId).toBe('registered-spawner')
 
     // Verify pendingChildSequences returned for provisioning
     expect(result.pendingChildSequences).toEqual([{
@@ -292,15 +330,7 @@ describe('step run runtime helpers', () => {
       executionIndex: 1,
     }).state
 
-    const agent: AgentRegistration = {
-      id: 'agt-no-spawn',
-      name: 'No Spawn Agent',
-      registeredAt: '2026-03-14T00:00:00.000Z',
-      builderId: 'omar',
-      builderName: 'Omar',
-      threadSurfaceIds: [],
-      metadata: { skills: [{ id: 'search', label: 'Search', inherited: false }] },
-    }
+    const agent = { ...frozenRegistration, skill_refs: [] }
 
     const runtimeEvents: RuntimeDelegationEvent[] = [{
       eventType: 'spawn-child',
@@ -319,7 +349,7 @@ describe('step run runtime helpers', () => {
       nextRunId: () => 'run-generated',
       nextEventId: () => 'event-generated',
       nextMergeId: () => 'merge-generated',
-      agent,
+      agentRegistration: agent,
     })
 
     // Spawn-child events should be filtered out — no child surface created
@@ -363,7 +393,7 @@ describe('step run runtime helpers', () => {
       nextRunId: () => 'run-generated',
       nextEventId: () => 'event-generated',
       nextMergeId: () => 'merge-generated',
-      agent: spawnAgent,
+      agentRegistration: spawnAgent,
     })
 
     expect(result.pendingChildSequences).toEqual([{

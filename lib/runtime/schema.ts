@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { RunSchema } from '../contracts/schemas'
+import { AgentExecutionSnapshotSchema } from '../agents/execution'
 
 export const WorkflowRunStatusSchema = z.enum([
   'pending',
@@ -38,6 +39,7 @@ export const WorkflowRunSchema = z.object({
   policy_snapshot_hash: z.string().min(1),
   baseline_snapshot_id: z.string().nullable(),
   attempt_ids: z.array(z.string()),
+  agent_registrations: z.record(z.string(), AgentExecutionSnapshotSchema).optional(),
   created_by: z.string().min(1),
   created_via: z.enum(['api', 'cli', 'chat', 'mcp', 'system']),
   created_at: z.string().datetime(),
@@ -76,6 +78,7 @@ export const StepAttemptSchema = z.object({
   retry_of_attempt_id: z.string().nullable(),
   status: StepAttemptStatusSchema,
   agent_ref: z.string().nullable(),
+  agent_registration: AgentExecutionSnapshotSchema.optional(),
   model: z.string().min(1),
   side_effect_class: z.enum(['none', 'read', 'write', 'execute']),
   baseline_snapshot_id: z.string().nullable(),

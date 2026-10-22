@@ -5,6 +5,7 @@ import { dirname, join } from 'path'
 import YAML from 'yaml'
 import { eventCommand } from '@/lib/seqctl/commands/event'
 import type { ThreadSurfaceState } from '@/lib/thread-surfaces/repository'
+import { registerSequenceAgents, type RegisteredFixtureStep } from '../helpers/registered-sequence'
 
 let basePath = ''
 let runtimeEventLinesByStep: Record<string, string[]> = {}
@@ -14,9 +15,10 @@ let capturedDispatchEmitter = ''
 
 setDefaultTimeout(30_000)
 
-async function setupSequence(sequence: object) {
+async function setupSequence<T extends RegisteredFixtureStep>(sequence: { steps: T[] } & Record<string, unknown>) {
   await mkdir(join(basePath, '.threados', 'prompts'), { recursive: true })
-  await writeFile(join(basePath, '.threados', 'sequence.yaml'), YAML.stringify(sequence))
+  const steps = await registerSequenceAgents(basePath, sequence.steps)
+  await writeFile(join(basePath, '.threados', 'sequence.yaml'), YAML.stringify({ ...sequence, steps }))
 }
 
 async function writePrompt(stepId: string) {

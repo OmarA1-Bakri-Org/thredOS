@@ -1,3 +1,5 @@
+import { buildAgentComposition } from '@/lib/agents/composition'
+import { writeAgentState } from '@/lib/agents/repository'
 import { afterEach, describe, expect, test } from 'bun:test'
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
@@ -18,6 +20,8 @@ async function createRuntimeFixture(basePath: string): Promise<void> {
     version: '1.0', id: 'sequence-parity', name: 'sequence-parity',
     steps: [{
       id: 'step-a', name: 'Step A', type: 'base', model: 'codex',
+      assigned_agent_id: 'fixture-agent-step-a', agent_ref: 'fixture-agent-step-a',
+      prompt_ref: { id: 'step-a', version: 1, path: '.threados/prompts/step-a.md' },
       prompt_file: '.threados/prompts/step-a.md', depends_on: [], status: 'READY',
     }],
     gates: [],
@@ -26,6 +30,11 @@ async function createRuntimeFixture(basePath: string): Promise<void> {
     mode: 'POWER', side_effect_mode: 'free',
   }))
   await writeFile(join(basePath, '.threados', 'prompts', 'step-a.md'), '# deterministic parity step')
+  await writeAgentState(basePath, { version: 1, agents: [{
+    id: 'fixture-agent-step-a', name: 'Fixture Agent', builderId: 'fixture-builder', builderName: 'Fixture Builder',
+    registeredAt: '2026-07-16T00:00:00.000Z', version: 1, threadSurfaceIds: [],
+    composition: buildAgentComposition({ model: 'codex', promptRef: { id: 'step-a', version: 1, path: '.threados/prompts/step-a.md' } }),
+  }] })
 }
 
 function deterministicRuntime(spawn: () => void): Partial<RuntimeServiceDependencies> {

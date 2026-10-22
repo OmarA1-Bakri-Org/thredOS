@@ -5,14 +5,16 @@ import { join } from 'path'
 import YAML from 'yaml'
 import { readApprovals } from '@/lib/approvals/repository'
 import { readTraceEvents } from '@/lib/traces/reader'
+import { registerSequenceAgents, type RegisteredFixtureStep } from '../helpers/registered-sequence'
 
 let basePath = ''
 
 setDefaultTimeout(30_000)
 
-async function setupSequence(seq: object) {
+async function setupSequence<T extends RegisteredFixtureStep>(seq: { steps: T[] } & Record<string, unknown>) {
   await mkdir(join(basePath, '.threados', 'prompts'), { recursive: true })
-  await writeFile(join(basePath, '.threados', 'sequence.yaml'), YAML.stringify(seq))
+  const steps = await registerSequenceAgents(basePath, seq.steps)
+  await writeFile(join(basePath, '.threados', 'sequence.yaml'), YAML.stringify({ ...seq, steps }))
 }
 
 async function writePrompt(stepId: string, content = `# ${stepId}`) {

@@ -298,6 +298,11 @@ describe('runtime commands and errors', () => {
       'MERGE_CONFLICT',
       'MERGE_PRECONDITION_FAILED',
       'AGENT_UNAVAILABLE',
+      'AGENT_REGISTRATION_REQUIRED',
+      'AGENT_NOT_REGISTERED',
+      'AGENT_REGISTRATION_INVALID',
+      'AGENT_COMPOSITION_MISMATCH',
+      'AGENT_IDENTITY_CHANGED',
       'INTERNAL_ERROR',
     ])
     expect(RuntimeErrorCodeSchema.safeParse('UNKNOWN_ERROR').success).toBe(false)

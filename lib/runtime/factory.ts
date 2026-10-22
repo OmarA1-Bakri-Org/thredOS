@@ -7,7 +7,7 @@ import { appendGateDecision } from '../gates/repository'
 import { evaluateStepCompletionGates, evaluateStepGates } from '../gates/engine'
 import { approvalMatchesExecutableSubject, enforceExecutablePayload, executableSubjectDigest } from '../policy/executable'
 import { PolicyEngine } from '../policy/engine'
-import { readPrompt, validatePromptExists } from '../prompts/manager'
+import { validatePromptExists } from '../prompts/manager'
 import { getRuntimeEventLogPath, saveRunArtifacts, writeCompiledPrompt, writeInputManifest } from '../runner/artifacts'
 import { dispatch } from '../runner/dispatch'
 import { compilePrompt } from '../runner/prompt-compiler'
@@ -50,8 +50,7 @@ function defaults(basePath: string): RuntimeServiceDependencies {
     loadPolicy: async path => (await PolicyEngine.load(path)).getConfig(),
     validateSequence: validateDAG,
     validatePrompt: validatePromptExists,
-    compilePrompt: async ({ sequence, step, runId }) => {
-      const rawPrompt = await readPrompt(basePath, step.id)
+    compilePrompt: async ({ sequence, step, runId, rawPrompt }) => {
       if (step.model === 'shell') return rawPrompt
       return await compilePrompt({
         stepId: step.id, step, rawPrompt, sequence, basePath,

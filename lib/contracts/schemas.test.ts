@@ -227,6 +227,19 @@ describe('ApprovalSchema', () => {
 })
 
 describe('TraceEventSchema', () => {
+  it('retains frozen registration evidence and rejects content-bearing identity metadata', () => {
+    const evidence = { registration_id: 'registered-agent', registration_version: 2,
+      composition_hash: 'a'.repeat(64), builder_id: 'builder', supersedes_agent_id: 'prior-agent',
+      prompt_content_hash: 'b'.repeat(64) }
+    const event = { ts: '2026-03-28T10:00:00Z', run_id: 'run-identity', surface_id: 'surface', actor: 'operator',
+      event_type: 'step-started', payload_ref: null, policy_ref: null, attempt_id: 'attempt-identity', agent_registration: evidence }
+    expect(TraceEventSchema.parse(event)).toMatchObject({ attempt_id: 'attempt-identity', agent_registration: evidence })
+    expect(TraceEventSchema.parse({ ...event, event_type: 'snapshot-created', agent_registrations: { step: evidence } }))
+      .toMatchObject({ agent_registrations: { step: evidence } })
+    expect(TraceEventSchema.safeParse({ ...event, agent_registration: { ...evidence, tools: ['private-tool'] } }).success).toBe(false)
+    expect(TraceEventSchema.safeParse({ ...event, agent_registrations: { step: { ...evidence, prompt_ref: 'private' } } }).success).toBe(false)
+  })
+
   it('validates a step-started TraceEvent', () => {
     const result = TraceEventSchema.safeParse({
       ts: '2026-03-28T10:00:00Z',

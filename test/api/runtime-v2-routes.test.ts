@@ -9,6 +9,7 @@ import { CommandRepository } from '@/lib/runtime/command-repository'
 import { stableRuntimeHash } from '@/lib/runtime/attempt-executor'
 import { RuntimeServiceError } from '@/lib/runtime/errors'
 import YAML from 'yaml'
+import { registerSequenceAgents } from '../helpers/registered-sequence'
 
 const NOW = '2026-07-16T00:00:00.000Z'
 
@@ -171,10 +172,10 @@ describe.serial('runtime V2 API routes', () => {
     delete globalThis.__THREADOS_RUNTIME_SERVICE__
     await mkdir(join(basePath, '.threados', 'prompts'), { recursive: true })
     await writeFile(join(basePath, '.threados', 'sequence.yaml'), YAML.stringify({
-      version: '1.0', id: 'sequence-1', name: 'sequence-1', steps: [{
+      version: '1.0', id: 'sequence-1', name: 'sequence-1', steps: await registerSequenceAgents(basePath, [{
         id: 'step-1', name: 'Step 1', type: 'base', model: 'codex',
         prompt_file: '.threados/prompts/step-1.md', depends_on: [], status: 'READY',
-      }], gates: [],
+      }]), gates: [],
     }))
     await writeFile(join(basePath, '.threados', 'policy.yaml'), YAML.stringify({
       mode: 'POWER', side_effect_mode: 'free',

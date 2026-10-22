@@ -2,9 +2,11 @@ import { readdir } from 'fs/promises'
 import { ThreadSurfaceStateConflictError } from '../errors'
 import { assertSafePathSegment, resolveExistingPathWithinRoot } from '../security/safe-path'
 import { readTextFileNoFollow } from '../security/safe-io'
+import { appendTraceEvent } from '../traces/writer'
+import { agentRegistrationEvidence } from '../agents/execution'
 import { ROOT_THREAD_SURFACE_ID } from '../thread-surfaces/constants'
 import { completeRun, createReplacementRun, createRootThreadSurfaceRun } from '../thread-surfaces/mutations'
-import { provisionAllChildSequences, type PendingChildSequence } from '../thread-surfaces/provision-child-sequence'
+import { provisionAllChildSequences } from '../thread-surfaces/provision-child-sequence'
 import {
   readThreadSurfaceState, withThreadSurfaceStateRevision, writeThreadSurfaceState, type ThreadSurfaceState,
 } from '../thread-surfaces/repository'
@@ -191,6 +193,7 @@ export function createRuntimeProjections(basePath: string): RuntimeProjectionPor
         if (current.runs.some(item => item.attemptId === attempt.id || item.id === attempt.id)) return null
         const result = beginStepRunIfSurfaceExists(current, step, {
           now: attempt.created_at, nextRunId: attempt.id, executionIndex: attempt.execution_index,
+          agentRegistration: attempt.agent_registration,
         })
         if (!result.stepRun) return null
         return {
@@ -206,7 +209,7 @@ export function createRuntimeProjections(basePath: string): RuntimeProjectionPor
     },
 
     async finalizeAttempt({ run, attempt, step, runtimeEvents }) {
-      const pending = await mutateProjection<PendingChildSequence[]>(basePath, current => {
+      const mutation = await mutateProjection(basePath, current => {
         const projected = current.runs.find(item => item.attemptId === attempt.id || item.id === attempt.id)
         if (projected?.endedAt != null) return null
         const stepRun: StepRunScope | null = projected ? {
@@ -221,9 +224,13 @@ export function createRuntimeProjections(basePath: string): RuntimeProjectionPor
         const finalized = finalizeStepRunWithRuntimeEvents(current, {
           step, stepRun, success: attempt.status === 'completed', endedAt: attempt.ended_at ?? run.ended_at ?? run.created_at,
           runtimeEvents,
-          nextRunId: () => childRun++ === 0 ? attempt.id : `${attempt.id}-child-${childRun}`,
+          nextRunId: () => {
+            childRun++
+            return stepRun == null && childRun === 1 ? attempt.id : `${attempt.id}-child-${childRun}`
+          },
           nextEventId: () => `${attempt.id}-event-${++event}`,
           nextMergeId: () => `${attempt.id}-merge-${++merge}`,
+          agentRegistration: attempt.agent_registration,
         })
         return {
           state: {
@@ -231,11 +238,29 @@ export function createRuntimeProjections(basePath: string): RuntimeProjectionPor
             runs: finalized.state.runs.map(item => item.id === attempt.id
               ? { ...item, workflowRunId: run.id, attemptId: attempt.id }
               : item),
+            runEvents: finalized.state.runEvents.map(item => item.runId === attempt.id
+              ? { ...item, workflowRunId: run.id, attemptId: attempt.id }
+              : item),
           },
-          result: finalized.pendingChildSequences,
+          result: {
+            pending: finalized.pendingChildSequences,
+            events: finalized.state.runEvents.filter(item =>
+              !current.runEvents.some(existing => existing.id === item.id)
+              && (item.eventType === 'child-agent-spawned' || item.eventType === 'spawn-denied')),
+          },
         }
       })
-      if (pending && pending.length > 0) await provisionAllChildSequences(basePath, pending)
+      if (!mutation) return
+      for (const event of mutation.events) {
+        const registration = attempt.agent_registration
+        await appendTraceEvent(basePath, run.id, {
+          ts: event.createdAt, run_id: run.id, surface_id: attempt.surface_id,
+          actor: 'threados-runtime', event_type: event.eventType === 'spawn-denied' ? 'spawn-denied' : 'spawn-child',
+          payload_ref: event.id, policy_ref: run.policy_snapshot_hash, attempt_id: attempt.id,
+          ...(registration ? { agent_registration: agentRegistrationEvidence(registration) } : {}),
+        })
+      }
+      if (mutation.pending.length > 0) await provisionAllChildSequences(basePath, mutation.pending)
     },
 
     async finalizeRun({ run }) {

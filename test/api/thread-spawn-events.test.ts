@@ -4,15 +4,19 @@ import { tmpdir } from 'os'
 import { dirname, join } from 'path'
 import YAML from 'yaml'
 import type { ThreadSurfaceState } from '@/lib/thread-surfaces/repository'
+import { updateAgentState } from '@/lib/agents/repository'
+import { readTraceEvents } from '@/lib/traces/reader'
+import { registerSequenceAgents, type RegisteredFixtureStep } from '../helpers/registered-sequence'
 
 let basePath = ''
 let runtimeEventLinesByStep: Record<string, string[]> = {}
 
 setDefaultTimeout(30_000)
 
-async function setupSequence(sequence: object) {
+async function setupSequence<T extends RegisteredFixtureStep>(sequence: { steps: T[] } & Record<string, unknown>) {
   await mkdir(join(basePath, '.threados', 'prompts'), { recursive: true })
-  await writeFile(join(basePath, '.threados', 'sequence.yaml'), YAML.stringify(sequence))
+  const steps = await registerSequenceAgents(basePath, sequence.steps)
+  await writeFile(join(basePath, '.threados', 'sequence.yaml'), YAML.stringify({ ...sequence, steps }))
 }
 
 async function writePrompt(stepId: string) {
@@ -508,6 +512,7 @@ describe.serial('thread spawn event persistence', () => {
           type: 'base',
           model: 'codex',
           prompt_file: '.threados/prompts/delegate-step.md',
+          skill_refs: [{ id: 'spawn', version: 1, path: '.threados/skills/spawn/SKILL.md', capabilities: ['spawn'] }],
           depends_on: [],
           status: 'READY',
         },
@@ -559,13 +564,64 @@ describe.serial('thread spawn event persistence', () => {
           id: 'thread-delegate-child-a',
           parentSurfaceId: 'thread-delegate-step',
           surfaceLabel: 'Delegate Child A',
+          spawnedByAgentId: 'fixture-delegate-step',
         }),
         expect.objectContaining({
           id: 'thread-delegate-child-b',
           parentSurfaceId: 'thread-delegate-step',
           surfaceLabel: 'Delegate Child B',
+          spawnedByAgentId: 'fixture-delegate-step',
         }),
       ]),
     )
+    for (const child of ['delegate-child-a', 'delegate-child-b']) {
+      expect(state.threadSurfaces.find(surface => surface.id === `thread-${child}`)?.registeredAgentId).toBeUndefined()
+      const raw = await readFile(join(basePath, '.threados/sequences', `thread-${child}`, 'sequence.yaml'), 'utf-8')
+      const sequence = YAML.parse(raw) as { steps: { agent_ref?: string | null; assigned_agent_id?: string }[] }
+      expect(sequence.steps.every(step => !step.agent_ref && !step.assigned_agent_id)).toBe(true)
+    }
+    const childYaml = await readFile(join(basePath, '.threados/sequences/thread-delegate-child-a/sequence.yaml'), 'utf-8')
+    const childSequence = YAML.parse(childYaml) as { steps: { id: string }[] }
+    await writeFile(join(basePath, '.threados/sequence.yaml'), childYaml)
+    const childResponse = await POST(new Request('http://localhost/api/run', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: confirmedBody({ stepId: childSequence.steps[0]!.id }),
+    }))
+    expect(childResponse.ok).toBe(false)
+    expect(await childResponse.json()).toMatchObject({ code: 'AGENT_REGISTRATION_REQUIRED' })
+  })
+
+  test('metadata and producer skill claims cannot grant a registered agent permission to spawn', async () => {
+    await setupSequence({
+      version: '1.0', name: 'Denied Spawn Sequence', gates: [], steps: [{
+        id: 'delegate-step', name: 'Delegate Step', type: 'base', model: 'codex',
+        prompt_file: '.threados/prompts/delegate-step.md', depends_on: [], status: 'READY',
+      }],
+    })
+    await updateAgentState(basePath, state => ({
+      ...state, agents: state.agents.map(agent => ({ ...agent, metadata: { skills: [{ id: 'spawn', label: 'Spawn' }] } })),
+    }))
+    runtimeEventLinesByStep['delegate-step'] = [JSON.stringify({
+      eventType: 'spawn-child', createdAt: '2026-03-09T12:00:03.000Z', childStepId: 'denied-child',
+      childLabel: 'Denied Child', spawnKind: 'orchestrator',
+      agent_registration: { registration_id: 'producer-spoof' },
+      agent: { metadata: { skills: [{ id: 'spawn' }] } },
+    })]
+    const { POST } = await import('@/app/api/run/route')
+    const response = await POST(new Request('http://localhost/api/run', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: confirmedBody({ stepId: 'delegate-step' }),
+    }))
+    expect(response.status).toBe(200)
+    const result = await response.json() as { success: boolean; runId: string }
+    expect(result.success).toBe(true)
+    const state = await readThreadSurfaceState()
+    expect(state.threadSurfaces.some(surface => surface.id === 'thread-denied-child')).toBe(false)
+    expect(state.runEvents).toEqual([expect.objectContaining({ eventType: 'spawn-denied' })])
+    await expect(readFile(join(basePath, '.threados/sequences/thread-denied-child/sequence.yaml'))).rejects.toThrow()
+    const traces = await readTraceEvents(basePath, result.runId)
+    expect(traces.filter(event => event.event_type === 'spawn-denied')).toEqual([
+      expect.objectContaining({ agent_registration: expect.objectContaining({ registration_id: 'fixture-delegate-step' }) }),
+    ])
+    expect(JSON.stringify(traces)).not.toContain('producer-spoof')
   })
 })

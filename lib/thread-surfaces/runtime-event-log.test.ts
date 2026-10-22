@@ -63,6 +63,22 @@ describe('runtime event log', () => {
     ])
   })
 
+  test('producer identity and skill claims are never accepted as spawn authority', async () => {
+    const { getRuntimeEventLogPath, readRuntimeEventLog } = await importRuntimeEventLog()
+    const logPath = getRuntimeEventLogPath(tmpDir, 'identity-run', 'identity-step')
+    await mkdir(join(tmpDir, '.threados/runs/identity-run/identity-step'), { recursive: true })
+    await writeFile(logPath, JSON.stringify({
+      eventType: 'spawn-child', createdAt: '2026-03-09T12:00:00.000Z', childStepId: 'child', childLabel: 'Child',
+      spawnKind: 'orchestrator', agent_registration: { registration_id: 'spoofed-agent' },
+      agent: { metadata: { skills: [{ id: 'spawn' }] } },
+    }))
+    const result = await readRuntimeEventLog(tmpDir, 'identity-run', 'identity-step')
+    expect(result.invalidLines).toBe(0)
+    expect(result.events).toHaveLength(1)
+    expect(result.events[0]).not.toHaveProperty('agent_registration')
+    expect(result.events[0]).not.toHaveProperty('agent')
+  })
+
   test('ignores blank lines and counts malformed lines without throwing', async () => {
     const { getRuntimeEventLogPath, readRuntimeEventLog } = await importRuntimeEventLog()
     const logPath = getRuntimeEventLogPath(tmpDir, 'run-2', 'step-2')

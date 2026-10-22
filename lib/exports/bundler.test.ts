@@ -5,6 +5,12 @@ import { join } from 'path'
 import { generateExportBundle } from './bundler'
 import type { TraceEvent, GateDecision } from '@/lib/contracts/schemas'
 import { writeThreadSurfaceState } from '@/lib/thread-surfaces/repository'
+import { RunRepository } from '@/lib/runtime/run-repository'
+import { AttemptRepository } from '@/lib/runtime/attempt-repository'
+import { writeAgentState } from '@/lib/agents/repository'
+import { appendTraceEvent } from '@/lib/traces/writer'
+import { hashSha256Bytes } from '@/lib/workspaces/hash'
+import { ExportBundleSchema } from './schema'
 
 const makeTraceEvent = (overrides: Partial<TraceEvent> = {}): TraceEvent => ({
   ts: '2026-03-29T00:00:00.000Z',
@@ -152,6 +158,66 @@ describe('generateExportBundle', () => {
     expect(bundle.artifact_manifests).toEqual([])
     expect(bundle.timing_summary).toBeNull()
   })
+
+  test.each(['C:/private', '/private'])(
+    'exports frozen registration evidence without identity paths or tool payloads (%s)', async privateRoot => {
+      const now = '2026-10-22T00:00:00.000Z'
+      const runId = 'run-identity'
+      const attemptId = 'attempt-identity'
+      const registration = {
+        registration_id: `${privateRoot}/agent`, registration_version: 2,
+        composition_hash: 'a'.repeat(64), builder_id: `${privateRoot}/builder`, registered_at: now,
+        supersedes_agent_id: `${privateRoot}/prior`, model: 'codex', role: 'builder',
+        prompt_ref: { id: 'private-prompt', version: 1, path: `${privateRoot}/prompt.md` },
+        skill_refs: [{ id: 'private-skill', version: 1, capabilities: ['files'], path: `${privateRoot}/SKILL.md` }],
+        tools: ['private-tool-payload'], prompt_content_hash: 'b'.repeat(64),
+        skill_content_hashes: [{ id: 'private-skill', version: 1, content_hash: 'c'.repeat(64) }],
+      }
+      await new RunRepository(basePath).create({
+        schema_version: 2, id: runId, revision: 0, sequence_id: 'sequence', sequence_snapshot_hash: 'sequence-digest',
+        target: { kind: 'runnable' }, strategy: 'sequential', status: 'successful', max_concurrency: 1,
+        policy_snapshot_hash: 'policy-digest', baseline_snapshot_id: null, attempt_ids: [attemptId],
+        agent_registrations: { step: registration, [`${privateRoot}/step`]: registration }, created_by: 'operator', created_via: 'api',
+        created_at: now, started_at: now, ended_at: now, cancellation_requested_at: null,
+        summary: null, error_code: null, error_message: null,
+      })
+      await new AttemptRepository(basePath).create({
+        schema_version: 2, id: attemptId, revision: 0, workflow_run_id: runId, sequence_id: 'sequence', step_id: 'step',
+        surface_id: 'surface', execution_index: 1, attempt_number: 1, retry_of_attempt_id: null,
+        status: 'completed', agent_ref: registration.registration_id, agent_registration: registration, model: 'codex',
+        side_effect_class: 'execute', baseline_snapshot_id: null, workspace_id: null, process_id: null,
+        compiled_prompt_hash: 'compiled-digest', input_manifest_ref: null, output_manifest_ref: null,
+        artifact_manifest_ref: null, change_set_id: null, gate_decision_refs: [],
+        created_at: now, started_at: now, ended_at: now, last_heartbeat_at: now,
+        exit_code: 0, signal: null, duration_ms: 1, error_code: null, error_message: null,
+      })
+      await appendTraceEvent(basePath, runId, {
+        ts: now, run_id: runId, surface_id: 'thread-root', actor: 'runtime', event_type: 'snapshot-created',
+        payload_ref: null, policy_ref: null,
+      })
+      await appendTraceEvent(basePath, runId, {
+        ts: now, run_id: runId, surface_id: 'surface', actor: 'runtime', event_type: 'step-started',
+        payload_ref: attemptId, policy_ref: null, attempt_id: attemptId,
+      })
+      // Export must preserve persisted evidence after the live registry changes.
+      await writeAgentState(basePath, { version: 1, agents: [{ id: 'replacement', name: 'Later registration',
+        builderId: 'later-builder', builderName: 'Later', registeredAt: now, threadSurfaceIds: [], version: 99 }] })
+      const bundle = ExportBundleSchema.parse(await generateExportBundle(basePath, runId))
+      const expected = { registration_id: hashSha256Bytes(registration.registration_id), registration_version: 2,
+        composition_hash: 'a'.repeat(64), builder_id: hashSha256Bytes(registration.builder_id),
+        supersedes_agent_id: hashSha256Bytes(registration.supersedes_agent_id), prompt_content_hash: 'b'.repeat(64) }
+      expect(bundle.attempts[0]?.agent_registration).toEqual(expected)
+      expect(bundle.attempts[0]?.agent_ref).toBe(expected.registration_id)
+      const expectedRegistrations = { step: expected, [hashSha256Bytes(`${privateRoot}/step`)]: expected }
+      expect(bundle.workflow_run?.agent_registrations).toEqual(expectedRegistrations)
+      expect(bundle.trace_events[0]?.agent_registrations).toEqual(expectedRegistrations)
+      expect(bundle.trace_events[1]?.agent_registration).toEqual(expected)
+      expect(JSON.stringify(bundle)).not.toContain(privateRoot)
+      expect(JSON.stringify(bundle)).not.toContain('private-tool-payload')
+      expect(JSON.stringify(bundle.attempts[0]?.agent_registration)).not.toContain('prompt_ref')
+      expect(JSON.stringify(bundle.attempts[0]?.agent_registration)).not.toContain('skill_refs')
+    },
+  )
 
   test('rejects run ids that are not file-safe identifiers', async () => {
     await expect(generateExportBundle(basePath, '../escape')).rejects.toThrow('runId must be a file-safe identifier')
