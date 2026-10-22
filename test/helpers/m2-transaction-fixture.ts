@@ -55,4 +55,3 @@ export async function prepare(options: { git?: boolean; fault?: Parameters<typeo
   const subject = await service.inspectMergeApprovalSubject(preview.plan.id, context('subject'))
   return { fixture, service, provider, completed, preview, subject }
 }
-
