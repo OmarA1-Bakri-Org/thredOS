@@ -109,6 +109,14 @@ describe('StepSchema', () => {
     expect(StepSchema.safeParse({ ...validStep, workspace_mode: 'canonical' }).success).toBe(false)
   })
 
+  test('preserves declared path scopes in the normalized step contract', () => {
+    const parsed = StepSchema.parse({ ...validStep, path_scopes: ['src/**', 'README.md'] })
+    expect(parsed.path_scopes).toEqual(['src/**', 'README.md'])
+    const sequence = SequenceSchema.parse({ name: 'Scoped sequence', steps: [{ ...validStep, path_scopes: ['src/**'] }] })
+    expect(sequence.steps[0]?.path_scopes).toEqual(['src/**'])
+    expect(StepSchema.safeParse({ ...validStep, path_scopes: ['../escape'] }).success).toBe(false)
+  })
+
   test('keeps legacy cwd parsing compatible while exposing a strict mutation-boundary schema', () => {
     expect(StepSchema.safeParse({ ...validStep, cwd: 'packages/web-app' }).success).toBe(true)
     expect(StepSchema.safeParse({ ...validStep, cwd: 'C:\\legacy\\repo' }).success).toBe(true)

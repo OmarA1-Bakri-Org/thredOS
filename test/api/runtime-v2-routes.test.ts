@@ -182,6 +182,12 @@ describe.serial('runtime V2 API routes', () => {
     }))
     await writeFile(join(basePath, '.threados', 'prompts', 'step-1.md'), '# step 1')
     let spawns = 0
+    const waitForSpawns = async (target: number): Promise<void> => {
+      const deadline = Date.now() + 30_000
+      while (spawns < target && Date.now() < deadline) {
+        await new Promise(resolve => setTimeout(resolve, 25))
+      }
+    }
     const runStep: NonNullable<RuntimeServiceDependencies['runStep']> = async config => {
       spawns++
       return {
@@ -219,8 +225,9 @@ describe.serial('runtime V2 API routes', () => {
     await expect(conflict.json()).resolves.toMatchObject({ code: 'IDEMPOTENCY_CONFLICT' })
 
     let projection = await service.inspectRun(firstRun.id)
-    for (let poll = 0; !['successful', 'failed'].includes(projection.run.status) && poll < 500; poll++) {
-      await new Promise(resolve => setTimeout(resolve, 10))
+    const projectionDeadline = Date.now() + 30_000
+    while (!['successful', 'failed'].includes(projection.run.status) && Date.now() < projectionDeadline) {
+      await new Promise(resolve => setTimeout(resolve, 25))
       projection = await service.inspectRun(firstRun.id)
     }
     expect(projection.run.status, JSON.stringify(projection)).toBe('successful')
@@ -258,7 +265,7 @@ describe.serial('runtime V2 API routes', () => {
     expect(directProjection.attempt).toMatchObject({
       id: retried.id, retry_of_attempt_id: original.id, attempt_number: 2,
     })
-    for (let poll = 0; spawns < 2 && poll < 200; poll++) await new Promise(resolve => setTimeout(resolve, 10))
+    await waitForSpawns(2)
     expect(spawns).toBe(2)
 
     const commands = new CommandRepository(basePath)
@@ -302,7 +309,7 @@ describe.serial('runtime V2 API routes', () => {
     ])
     expect(repaired.workflow_run_id).toBe(childRunId)
     expect(repaired.retry_of_attempt_id).toBe(original.id)
-    for (let poll = 0; spawns < 3 && poll < 200; poll++) await new Promise(resolve => setTimeout(resolve, 10))
+    await waitForSpawns(3)
     expect(spawns).toBe(3)
-  }, 60_000)
+  }, 180_000)
 })

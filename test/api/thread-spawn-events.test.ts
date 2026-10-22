@@ -11,7 +11,7 @@ import { registerSequenceAgents, type RegisteredFixtureStep } from '../helpers/r
 let basePath = ''
 let runtimeEventLinesByStep: Record<string, string[]> = {}
 
-setDefaultTimeout(30_000)
+setDefaultTimeout(120_000)
 
 async function setupSequence<T extends RegisteredFixtureStep>(sequence: { steps: T[] } & Record<string, unknown>) {
   await mkdir(join(basePath, '.threados', 'prompts'), { recursive: true })

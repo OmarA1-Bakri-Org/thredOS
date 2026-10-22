@@ -233,6 +233,18 @@ mock.module('@/lib/ui/api', () => ({
     isError: false,
     error: null,
   }),
+  useChangeSets: () => ({
+    data: [], isPending: false, isSuccess: true, isError: false, isFetching: false,
+  }),
+  useChangeSetReview: () => ({
+    data: undefined, isPending: false, isError: false, isFetching: false,
+  }),
+  useChangeSetComparison: () => ({
+    data: undefined, isPending: false, isError: false,
+  }),
+  useChangeSetDecision: () => ({
+    mutate: () => {}, reset: () => {}, isPending: false, isError: false, isSuccess: false,
+  }),
 }))
 
 afterAll(() => {

@@ -15,7 +15,7 @@ const eslintConfig = defineConfig([
     },
   },
   {
-    files: ["desktop/**/*.cjs"],
+    files: ["desktop/**/*.cjs", "native/windows-apply/**/*.cjs"],
     rules: {
       "@typescript-eslint/no-require-imports": "off",
     },
@@ -35,6 +35,7 @@ const eslintConfig = defineConfig([
     // Runtime/generated/project-local data that should never be linted.
     ".threados/**",
     "dist-desktop/**",
+    "native/windows-apply/build/**",
     "output/**",
     "logo-brand-assets/**",
     "node_modules.win-old/**",

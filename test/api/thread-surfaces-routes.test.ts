@@ -196,6 +196,10 @@ describe.serial('thread surface read routes', () => {
         id: 'attempt-1',
         workflowRunId: 'workflow-run-1',
         attemptId: 'attempt-1',
+        workspaceId: 'workspace-stale',
+        snapshotId: 'snapshot-stale',
+        provider: 'copy',
+        isolationLabel: 'THREADOS_SCOPED',
       }],
       mergeEvents: [],
       runEvents: [],
@@ -217,6 +221,8 @@ describe.serial('thread surface read routes', () => {
           id: 'attempt-1',
           workflow_run_id: 'workflow-run-1',
           status: 'interrupted',
+          workspace_id: 'workspace-1',
+          baseline_snapshot_id: 'snapshot-1',
         },
         process: {
           id: 'process-1',
@@ -239,6 +245,10 @@ describe.serial('thread surface read routes', () => {
         workflowRunStatus: 'interrupted',
         attemptStatus: 'interrupted',
         processStatus: 'lost',
+        workspaceId: 'workspace-1',
+        snapshotId: 'snapshot-1',
+        provider: 'copy',
+        isolationLabel: 'THREADOS_SCOPED',
       }],
     })
   })

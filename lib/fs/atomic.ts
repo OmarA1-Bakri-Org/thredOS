@@ -365,7 +365,14 @@ export async function withExclusiveFileLock<T>(
         ownedStat = undefined
       }
       metadataWriteStarted = false
-      if (!hasCode(error, 'EEXIST')) throw error
+      const windowsOpenContention = process.platform === 'win32'
+        && (hasCode(error, 'EPERM') || hasCode(error, 'EACCES'))
+      if (!hasCode(error, 'EEXIST') && !windowsOpenContention) throw error
+      if (windowsOpenContention) {
+        if (Date.now() >= deadline) throw error
+        await pause(5)
+        continue
+      }
       if (generationChange == null) {
         try {
           if (await recoverOrphanedLock(lockPath, normalized.allowedRoot, staleAfterMs)) continue

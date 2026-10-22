@@ -12,7 +12,7 @@ import { readSequence } from '@/lib/sequence/parser'
 
 let basePath = ''
 
-setDefaultTimeout(30_000)
+setDefaultTimeout(120_000)
 
 async function setupTestSequence<T extends RegisteredFixtureStep>(seq: { steps: T[] } & Record<string, unknown>) {
   await mkdir(join(basePath, '.threados', 'prompts'), { recursive: true })

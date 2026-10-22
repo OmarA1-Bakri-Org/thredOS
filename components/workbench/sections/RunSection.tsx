@@ -11,6 +11,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { WorkspaceInspector } from '@/components/inspector/WorkspaceInspector'
+import { ChangeSetInspector } from '@/components/inspector/ChangeSetInspector'
 import { useUIStore } from '@/lib/ui/store'
 import {
   useApprovals,
@@ -706,6 +707,10 @@ export function RunSection() {
             setWorkspaceInspectorId(null)
           }}
         />
+      ) : null}
+
+      {activeRunId && activeRun?.source === 'v2' ? (
+        <ChangeSetInspector key={activeRunId} runId={activeRunId} attemptId={activeAttemptId} />
       ) : null}
 
       {activeRunId ? (

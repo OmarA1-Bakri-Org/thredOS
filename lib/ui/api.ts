@@ -15,6 +15,7 @@ import type { WorkflowRunStatus, WorkflowRunStrategy, WorkflowRunTarget } from '
 import type { AttemptProjection, RunProjection, RuntimeRunQuery } from '@/lib/runtime/service-types'
 import type { WorkspaceInspection } from '@/lib/workspaces/inspection'
 import type { SurfaceWorkspace } from '@/lib/workspaces/schema'
+import type { ChangeSetComparison, ChangeSetReview, ChangeSetSummary } from '@/lib/changesets/diff'
 
 interface ThreadSurfacesResponse {
   threadSurfaces: ThreadSurface[]
@@ -1008,6 +1009,78 @@ export function useWorkspaceAction(workspaceId: string) {
     onSuccess: inspection => {
       qc.setQueryData(['workspace-inspection', workspaceId], inspection)
       qc.invalidateQueries({ queryKey: ['workspaces'] })
+      invalidateRuntimeQueries(qc)
+    },
+  })
+}
+
+export async function fetchChangeSets(runId: string): Promise<ChangeSetSummary[]> {
+  const result = await fetchJson<{ schema_version: 1; change_sets: ChangeSetSummary[] }>(
+    `/api/change-sets?run_id=${encodeURIComponent(runId)}`,
+  )
+  return result.change_sets
+}
+
+export function fetchChangeSetReview(changeSetId: string): Promise<ChangeSetReview> {
+  return fetchJson<ChangeSetReview>(`/api/change-sets/${encodeURIComponent(changeSetId)}`)
+}
+
+export function fetchChangeSetComparison(runId: string, leftAttemptId: string, rightAttemptId: string): Promise<ChangeSetComparison> {
+  const params = new URLSearchParams({
+    run_id: runId, left_attempt_id: leftAttemptId, right_attempt_id: rightAttemptId,
+  })
+  return fetchJson<ChangeSetComparison>(`/api/change-sets/compare?${params.toString()}`)
+}
+
+export function postChangeSetDecision(changeSetId: string, input: {
+  action: 'select' | 'reject'
+  expectedRevision: number
+  reason?: string
+}): Promise<ChangeSetSummary> {
+  return postJson<{ schema_version: 1; change_set: ChangeSetSummary }>(
+    `/api/change-sets/${encodeURIComponent(changeSetId)}/${input.action}`,
+    input.action === 'reject'
+      ? { expected_revision: input.expectedRevision, reason: input.reason?.trim() }
+      : { expected_revision: input.expectedRevision },
+  ).then(response => response.change_set)
+}
+
+export function useChangeSets(runId: string | null) {
+  return useQuery<ChangeSetSummary[]>({
+    queryKey: ['change-sets', runId],
+    queryFn: () => fetchChangeSets(runId!),
+    enabled: Boolean(runId),
+    refetchInterval: 5_000,
+  })
+}
+
+export function useChangeSetReview(changeSetId: string | null) {
+  return useQuery<ChangeSetReview>({
+    queryKey: ['change-set-review', changeSetId],
+    queryFn: () => fetchChangeSetReview(changeSetId!),
+    enabled: Boolean(changeSetId),
+  })
+}
+
+export function useChangeSetComparison(runId: string | null, leftAttemptId: string | null, rightAttemptId: string | null) {
+  return useQuery<ChangeSetComparison>({
+    queryKey: ['change-set-comparison', runId, leftAttemptId, rightAttemptId],
+    queryFn: () => fetchChangeSetComparison(runId!, leftAttemptId!, rightAttemptId!),
+    enabled: Boolean(runId && leftAttemptId && rightAttemptId && leftAttemptId !== rightAttemptId),
+  })
+}
+
+export function useChangeSetDecision(changeSetId: string | null) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (input: {
+      action: 'select' | 'reject'
+      expectedRevision: number
+      reason?: string
+    }) => postChangeSetDecision(changeSetId!, input),
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ['change-sets'] })
+      qc.invalidateQueries({ queryKey: ['change-set-review', changeSetId] })
       invalidateRuntimeQueries(qc)
     },
   })

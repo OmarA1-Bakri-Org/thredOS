@@ -378,11 +378,21 @@ describe('ActionValidator.dryRun — additional coverage', () => {
   test('step update with cwd and prompt_file produces diff', async () => {
     const v = new ActionValidator(testDir)
     const result = await v.dryRun([
-      { command: 'step update', args: { id: 'step-1', cwd: '/new/path', prompt_file: 'new-prompt.md' } },
+      { command: 'step update', args: { id: 'step-1', cwd: 'new/path', prompt_file: 'new-prompt.md' } },
     ])
     expect(result.valid).toBe(true)
-    expect(result.diff).toContain('/new/path')
+    expect(result.diff).toContain('cwd: new/path')
     expect(result.diff).toContain('new-prompt.md')
+  })
+
+  test('step update rejects a new absolute cwd at the chat mutation boundary', async () => {
+    const v = new ActionValidator(testDir)
+    const result = await v.dryRun([
+      { command: 'step update', args: { id: 'step-1', cwd: '/new/absolute/path' } },
+    ])
+    expect(result.valid).toBe(false)
+    expect(result.diff).toBe('')
+    expect(result.errors.join(' ')).toContain('portable relative path')
   })
 
   test('step update with depends_on array produces diff', async () => {
@@ -454,13 +464,13 @@ describe('ActionValidator.apply — additional coverage', () => {
   test('apply step update with cwd works', async () => {
     const v = new ActionValidator(testDir)
     const result = await v.apply([
-      { command: 'step update', args: { id: 'step-1', cwd: '/custom/dir' } },
+      { command: 'step update', args: { id: 'step-1', cwd: 'custom/dir' } },
     ])
     expect(result.success).toBe(true)
 
     const { readSequence } = await import('../sequence/parser')
     const seq = await readSequence(testDir)
-    expect(seq.steps[0].cwd).toBe('/custom/dir')
+    expect(seq.steps[0].cwd).toBe('custom/dir')
   })
 
   test('apply step update with watchdog_for works', async () => {

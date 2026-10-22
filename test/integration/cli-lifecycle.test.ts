@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, setDefaultTimeout, test } from 'bun:test'
 import { mkdir, writeFile } from 'fs/promises'
 import { join } from 'path'
 import { depCommand } from '../../lib/seqctl/commands/dep'
@@ -11,6 +11,8 @@ import { readThreadSurfaceState } from '../../lib/thread-surfaces/repository'
 import { cleanTempDir, createTempDir } from '../helpers/setup'
 
 const jsonOptions = { json: true, help: false, watch: false }
+
+setDefaultTimeout(30_000)
 
 describe('CLI lifecycle integration', () => {
   let basePath: string

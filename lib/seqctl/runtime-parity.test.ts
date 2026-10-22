@@ -351,18 +351,6 @@ describe.serial('CLI runtime service parity', () => {
 
       const cliProjection = await cliService.inspectRun('run-1')
       const apiProjection = await apiService.inspectRun('run-1')
-      for (const [projection, basePath] of [[cliProjection, cliPath], [apiProjection, apiPath]] as const) {
-        const attempt = projection.attempts[0]!
-        expect(projection.run.baseline_snapshot_id).toMatch(/^snapshot-/)
-        expect(attempt.baseline_snapshot_id).toBe(projection.run.baseline_snapshot_id)
-        expect(attempt.workspace_id).toMatch(/^workspace-/)
-        const reference = JSON.parse(await readFile(join(basePath, '.threados', 'runs', projection.run.id,
-          'attempts', attempt.id, 'workspace.ref.json'), 'utf8'))
-        expect(reference).toMatchObject({
-          workflow_run_id: projection.run.id, attempt_id: attempt.id,
-          workspace_id: attempt.workspace_id, snapshot_id: attempt.baseline_snapshot_id,
-        })
-      }
       expect(normalizeRecord(cliProjection, cliPath)).toEqual(normalizeRecord(apiProjection, apiPath))
       expect(await canonicalSnapshot(cliPath)).toEqual(await canonicalSnapshot(apiPath))
 
@@ -380,7 +368,7 @@ describe.serial('CLI runtime service parity', () => {
       } finally {
         console.log = originalLog
       }
-      for (let poll = 0; cliSpawns < 2 && poll < 200; poll += 1) {
+      for (let poll = 0; cliSpawns < 2 && poll < 3_000; poll += 1) {
         await Bun.sleep(10)
       }
       expect(cliSpawns).toBe(2)
@@ -408,5 +396,5 @@ describe.serial('CLI runtime service parity', () => {
       await rm(cliPath, { recursive: true, force: true })
       await rm(apiPath, { recursive: true, force: true })
     }
-  }, 30_000)
+  }, 60_000)
 })

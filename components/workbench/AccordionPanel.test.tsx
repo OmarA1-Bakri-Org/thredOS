@@ -154,6 +154,10 @@ mock.module('@/lib/ui/api', () => ({
   }),
   useSurfaceAccess: () => ({ data: null, isLoading: false }),
   useGateDecisions: () => ({ data: [], isLoading: false }),
+  useChangeSets: () => ({ data: [], isLoading: false, isError: false, error: null }),
+  useChangeSetReview: () => ({ data: null, isLoading: false, isError: false, error: null }),
+  useChangeSetComparison: () => ({ data: null, isLoading: false, isError: false, error: null }),
+  useChangeSetDecision: () => ({ mutate: () => {}, isPending: false, isError: false, error: null }),
 }))
 
 const { AccordionPanel } = await import('./AccordionPanel')

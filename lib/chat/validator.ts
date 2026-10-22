@@ -2,7 +2,14 @@ import { readSequence, writeSequence } from '../sequence/parser'
 import { PolicyEngine } from '../policy/engine'
 import * as audit from '../audit/logger'
 import YAML from 'yaml'
-import { StepSchema, StepTypeSchema, ModelTypeSchema, FailPolicySchema, type Sequence } from '../sequence/schema'
+import {
+  StepSchema,
+  StepTypeSchema,
+  ModelTypeSchema,
+  FailPolicySchema,
+  PortableStepCwdSchema,
+  type Sequence,
+} from '../sequence/schema'
 import { readThreadSurfaceState, withThreadSurfaceStateRevision, writeThreadSurfaceState } from '@/lib/thread-surfaces/repository'
 import { materializeStepSurface, removeStepSurface } from '@/lib/thread-surfaces/materializer'
 import {
@@ -307,7 +314,11 @@ function applyStepUpdate(
   // Apply simple string fields
   if (updates.name !== undefined) step.name = String(updates.name)
   if (updates.prompt_file !== undefined) step.prompt_file = String(updates.prompt_file)
-  if (updates.cwd !== undefined) step.cwd = String(updates.cwd)
+  if (updates.cwd !== undefined) {
+    const cwd = PortableStepCwdSchema.safeParse(String(updates.cwd))
+    if (!cwd.success) return cwd.error.issues[0]?.message ?? 'Invalid step cwd'
+    step.cwd = cwd.data
+  }
   if (updates.depends_on !== undefined && Array.isArray(updates.depends_on)) {
     step.depends_on = updates.depends_on.map(String)
   }
