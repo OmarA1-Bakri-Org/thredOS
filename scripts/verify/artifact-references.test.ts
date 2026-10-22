@@ -33,8 +33,8 @@ describe('M1 verification artifact references', () => {
     const ui = 'test-results/verify/ui/proof'
     const local = 'test-results/verify/local/proof'
     for (const references of [undefined, [], [ui], [local], [null, ui]]) {
-      expect(() => validateVerificationArtifactReferences(references)).toThrow('artifact references')
+      expect(() => { validateVerificationArtifactReferences(references) }).toThrow('artifact references')
     }
-    expect(() => validateVerificationArtifactReferences([ui, local])).not.toThrow()
+    expect(() => { validateVerificationArtifactReferences([ui, local]) }).not.toThrow()
   })
 })
