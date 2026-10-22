@@ -15,6 +15,8 @@ import { statusCommand } from './commands/status'
 import { stepCommand } from './commands/step'
 import { templateCommand } from './commands/template'
 import { workspaceCommand } from './commands/workspace'
+import { changesCommand } from './commands/changes'
+import { mergeCommand } from './commands/merge'
 import { renderRuntimeFailure, type CLIOptions } from './formatters/runtime'
 
 type CommandHandler = (
@@ -39,6 +41,8 @@ const commands: Record<string, CommandHandler> = {
   template: templateCommand,
   event: eventCommand,
   workspace: workspaceCommand,
+  changes: changesCommand,
+  merge: mergeCommand,
 }
 
 function printHelp(): void {
@@ -66,6 +70,13 @@ Commands:
   event spawn-child|merge-into      Emit runtime delegation events
   workspace list|inspect            Inspect Surface Workspaces
   workspace retain|clean|doctor     Manage retained Surface Workspaces
+  changes list --run <runId>        List captured Change Sets
+  changes show|diff <changeSetId>   Inspect a Change Set
+  changes select|reject <id>        Record an explicit operator decision
+  changes compare                  Compare candidates from one baseline
+  merge preview <changeSetId>      Build isolated preview from selected Change Set
+  merge inspect <mergePlanId>      Inspect persisted merge plan
+  merge validate <mergePlanId>     Validate isolated preview before apply
 
 Options:
   -j, --json                        Emit the versioned JSON envelope

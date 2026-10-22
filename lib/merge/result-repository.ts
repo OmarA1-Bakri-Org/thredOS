@@ -1,4 +1,4 @@
-import { lstat, mkdir } from 'fs/promises'
+import { lstat, mkdir, readdir } from 'fs/promises'
 import { isAbsolute, relative, resolve, sep } from 'path'
 import { z } from 'zod'
 import { withExclusiveFileLock, writeFileAtomic } from '../fs/atomic'
@@ -12,7 +12,7 @@ const Digest = z.string().regex(/^sha256:[a-f0-9]{64}$/)
 const FileStateSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('absent') }).strict(),
   z.object({ kind: z.literal('file'), sha256: Digest, size_bytes: z.number().int().nonnegative(),
-    mode: z.number().int().nonnegative(), evidence_file: z.string().min(1) }).strict(),
+    mode: z.number().int().nonnegative(), evidence_file: z.string().min(1).refine(value => { try { return assertSafePathSegment(value, 'evidence file') === value } catch { return false } }) }).strict(),
 ])
 export type MergeFileState = z.infer<typeof FileStateSchema>
 
@@ -31,7 +31,7 @@ export const MergeJournalEntrySchema = z.object({
 export type MergeJournalEntry = z.infer<typeof MergeJournalEntrySchema>
 
 const applyStatusForPhase = {
-  prepared: 'pending', applying: 'pending', applied: 'applied',
+  prepared: 'pending', applying: 'pending', rolling_back: 'pending', applied: 'applied',
   rolled_back: 'rolled_back', rollback_failed: 'rollback_failed',
 } as const
 
@@ -49,6 +49,26 @@ function sameJournalEntriesExceptStageIdentity(before: readonly MergeJournalEntr
   })
 }
 
+export const MergeMutationSchema = z.object({
+  id: z.string().regex(/^[a-zA-Z0-9_-]{1,100}$/),
+  kind: z.enum(['stage', 'rename', 'delete']), source: z.string(), destination: z.string(),
+  expected_sha256: Digest, size_bytes: z.number().int().nonnegative(), mode: z.number().int().nonnegative(),
+  status: z.enum(['planned', 'succeeded', 'failed', 'indeterminate']),
+  helper_journal: z.string().nullable(), pid: z.number().int().positive().nullable(), code: z.string().nullable(),
+}).strict().superRefine((operation, context) => {
+  const valid = (path: string, empty: boolean) => {
+    if (!path) return empty
+    try { return normalizeSnapshotRelativePath(path) === path } catch { return false }
+  }
+  if (!valid(operation.source, operation.kind === 'stage') || !valid(operation.destination, operation.kind === 'delete')
+    || (operation.kind === 'stage' && operation.source !== '') || (operation.kind === 'delete' && operation.destination !== '')) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: 'Mutation paths must be portable and match operation kind' })
+  }
+})
+export type MergeMutation = z.infer<typeof MergeMutationSchema>
+const AuthoritySchema = z.object({ approval_id: z.string().min(1), operator_actor: z.string().min(1),
+  idempotency_key: z.string().min(1), policy_hash: Digest, root_identity: z.string().min(1), validation_commands_hash: Digest }).strict()
+
 export const MergeTransactionRecordSchema = z.object({
   schema_version: z.literal(1),
   revision: z.number().int().nonnegative(),
@@ -58,8 +78,14 @@ export const MergeTransactionRecordSchema = z.object({
   canonical_root_hash: Digest,
   canonical_precondition_hash: Digest,
   preview_manifest_hash: Digest,
-  phase: z.enum(['prepared', 'applying', 'applied', 'rolled_back', 'rollback_failed']),
+  phase: z.enum(['prepared', 'applying', 'rolling_back', 'applied', 'rolled_back', 'rollback_failed']),
   entries: z.array(MergeJournalEntrySchema),
+  authority: AuthoritySchema.nullable().default(null),
+  operations: z.array(MergeMutationSchema).default([]),
+  post_checks: z.array(z.object({ id: z.string().min(1), attempt_id: z.string().min(1), ordinal: z.number().int().nonnegative(),
+    status: z.enum(['planned', 'passed', 'failed']) }).strict()).default([]),
+  rollback_authorities: z.array(z.object({ approval_id: z.string().min(1), operator_actor: z.string().min(1),
+    plan_digest: Digest, policy_hash: Digest, idempotency_key: z.string().min(1) }).strict()).default([]),
   result: MergeResultSchema,
 }).strict().superRefine((record, context) => {
   if (record.result.filesystem_apply.status !== applyStatusForPhase[record.phase]) {
@@ -80,17 +106,18 @@ export const MergeTransactionRecordSchema = z.object({
 export type MergeTransactionRecord = z.infer<typeof MergeTransactionRecordSchema>
 
 const allowedPhaseTransitions = new Map<MergeTransactionRecord['phase'], readonly MergeTransactionRecord['phase'][]>([
-  ['prepared', ['prepared', 'applying', 'rolled_back', 'rollback_failed']],
-  ['applying', ['applying', 'applied', 'rolled_back', 'rollback_failed']],
-  ['applied', ['applied', 'rolled_back', 'rollback_failed']],
+  ['prepared', ['prepared', 'applying', 'rolling_back', 'rolled_back', 'rollback_failed']],
+  ['applying', ['applying', 'rolling_back', 'applied', 'rolled_back', 'rollback_failed']],
+  ['rolling_back', ['rolling_back', 'rolled_back', 'rollback_failed']],
+  ['applied', ['applied', 'rolling_back', 'rolled_back', 'rollback_failed']],
   ['rolled_back', ['rolled_back', 'rollback_failed']],
-  ['rollback_failed', ['rollback_failed', 'rolled_back']],
+  ['rollback_failed', ['rollback_failed', 'rolling_back', 'rolled_back']],
 ])
 
 function transactionIdentity(record: MergeTransactionRecord): readonly (string | number)[] {
   return [record.schema_version, record.plan_digest, record.preview_id, record.decision_hash,
     record.canonical_root_hash, record.canonical_precondition_hash, record.preview_manifest_hash,
-    record.result.id, record.result.merge_plan_id, record.result.workflow_run_id, record.result.created_at]
+    JSON.stringify(record.authority), record.result.id, record.result.merge_plan_id, record.result.workflow_run_id, record.result.created_at]
 }
 
 function assertUpdateBinding(current: MergeTransactionRecord, next: MergeTransactionRecord): void {
@@ -98,6 +125,37 @@ function assertUpdateBinding(current: MergeTransactionRecord, next: MergeTransac
   if (JSON.stringify(transactionIdentity(current)) !== JSON.stringify(transactionIdentity(next))
     || !sameJournalEntriesExceptStageIdentity(current.entries, next.entries, mayBindStage)) {
     throw new Error('MERGE_RESULT_IDENTITY_CHANGED')
+  }
+  if (next.post_checks.length < current.post_checks.length || next.post_checks.length > current.post_checks.length + 1
+    || current.post_checks.some((prior, index) => {
+      const updated = next.post_checks[index]
+      return !updated || prior.id !== updated.id || prior.attempt_id !== updated.attempt_id || prior.ordinal !== updated.ordinal
+        || (prior.status !== 'planned' && prior.status !== updated.status)
+    }) || (next.post_checks.length > current.post_checks.length && next.post_checks.at(-1)?.status !== 'planned')) {
+    throw new Error('MERGE_OPERATION_HISTORY_CHANGED')
+  }
+  if (next.rollback_authorities.length < current.rollback_authorities.length
+    || next.rollback_authorities.length > current.rollback_authorities.length + 1
+    || current.rollback_authorities.some((authority, index) => JSON.stringify(authority) !== JSON.stringify(next.rollback_authorities[index]))) {
+    throw new Error('MERGE_OPERATION_HISTORY_CHANGED')
+  }
+  if (next.operations.length > current.operations.length && current.operations.some(item => ['planned', 'indeterminate'].includes(item.status))) {
+    throw new Error('MERGE_RECOVERY_REQUIRED')
+  }
+  if (next.operations.length < current.operations.length || next.operations.length > current.operations.length + 1) {
+    throw new Error('MERGE_OPERATION_HISTORY_CHANGED')
+  }
+  current.operations.forEach((prior, index) => {
+    const updated = next.operations[index]!
+    const { status: oldStatus, helper_journal: oldJournal, pid: oldPid, code: oldCode, ...oldBinding } = prior
+    const { status: newStatus, helper_journal: newJournal, pid: newPid, code: newCode, ...newBinding } = updated
+    if (JSON.stringify(oldBinding) !== JSON.stringify(newBinding)
+      || (oldStatus !== 'planned' && (oldStatus !== newStatus || oldJournal !== newJournal || oldPid !== newPid || oldCode !== newCode))) {
+      throw new Error('MERGE_OPERATION_HISTORY_CHANGED')
+    }
+  })
+  if (next.operations.length > current.operations.length && next.operations.at(-1)?.status !== 'planned') {
+    throw new Error('MERGE_OPERATION_NOT_PLANNED')
   }
   if (!allowedPhaseTransitions.get(current.phase)?.includes(next.phase)) {
     throw new Error('MERGE_INVALID_RESULT_TRANSITION')
@@ -191,6 +249,12 @@ export class MergeResultRepository {
       if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return null
       throw error
     }
+  }
+
+  async list(): Promise<MergeTransactionRecord[]> {
+    const names = await readdir(await this.root())
+    const records = await Promise.all(names.filter(name => name.endsWith('.json')).map(name => this.get(name.slice(0, -5))))
+    return records.filter((item): item is MergeTransactionRecord => item !== null)
   }
 
   async create(value: MergeTransactionRecord): Promise<MergeTransactionRecord> {

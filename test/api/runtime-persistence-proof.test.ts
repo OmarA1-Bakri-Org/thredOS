@@ -156,13 +156,15 @@ describe.serial('runtime persistence proof', () => {
     })
 
     const gateDecisionLines = (await readFile(join(runDir, 'gate-decisions.ndjson'), 'utf-8')).trim().split('\n').filter(Boolean)
-    expect(gateDecisionLines).toHaveLength(13)
+    expect(gateDecisionLines).toHaveLength(15)
     expect(gateDecisionLines.map(line => JSON.parse(line))).toEqual(expect.arrayContaining([
       expect.objectContaining({ gate_type: 'snapshot_present', status: 'PASS' }),
       expect.objectContaining({ gate_type: 'snapshot_verified', status: 'PASS' }),
       expect.objectContaining({ gate_type: 'workspace_present', status: 'PASS' }),
       expect.objectContaining({ gate_type: 'workspace_ready', status: 'PASS' }),
       expect.objectContaining({ gate_type: 'workspace_manifest_verified', status: 'PASS' }),
+      expect.objectContaining({ gate_type: 'change_set_captured', status: 'PASS' }),
+      expect.objectContaining({ gate_type: 'path_scope_respected', status: 'PASS' }),
     ]))
 
     const inputManifest = JSON.parse(await readFile(join(stepSurfaceDir, 'input.manifest.json'), 'utf-8'))

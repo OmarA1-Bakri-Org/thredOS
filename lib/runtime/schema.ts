@@ -119,7 +119,7 @@ export const ProcessRecordSchema = z.object({
   workflow_run_id: z.string().min(1),
   attempt_id: z.string().min(1),
   workspace_id: z.string().min(1).nullable().optional(),
-  process_purpose: z.enum(['bootstrap', 'agent']).optional(),
+  process_purpose: z.enum(['bootstrap', 'agent', 'validation']).optional(),
   process_ordinal: z.number().int().nonnegative().optional(),
   provider: z.enum(['local-process', 'mprocs-legacy']),
   provider_handle: z.string().nullable(),

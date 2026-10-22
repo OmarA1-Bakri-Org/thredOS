@@ -36,6 +36,15 @@ export const PortableStepCwdSchema = z.string().min(1).refine(value => {
   }
 }, 'step cwd must be a portable relative path')
 
+export const PathScopeSchema = z.string().min(1).refine(value => {
+  try {
+    assertPortableRelativePath(value.endsWith('/**') ? value.slice(0, -3) : value, 'path scope')
+    return true
+  } catch {
+    return false
+  }
+}, 'path scope must be a portable relative path or directory/** pattern')
+
 export const FailPolicySchema = z.enum(['stop-all', 'continue', 'retry'])
 export type FailPolicy = z.infer<typeof FailPolicySchema>
 
@@ -154,6 +163,7 @@ const StepBaseSchema = z.object({
   completion_contract: z.string().nullable().default(null),
   side_effect_class: SideEffectClassSchema,
   workspace_mode: WorkspaceModeSchema.default('auto'),
+  path_scopes: z.array(PathScopeSchema).nullable().default(null),
 })
 
 export const StepSchema = z.preprocess(coerceStep, StepBaseSchema)
@@ -303,6 +313,7 @@ export interface Step {
   completion_contract?: string | null
   side_effect_class?: SideEffectClass
   workspace_mode?: WorkspaceMode
+  path_scopes?: string[] | null
 }
 
 export type Gate = z.infer<typeof GateSchema>

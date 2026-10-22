@@ -1,6 +1,10 @@
 import { z } from 'zod'
+import { normalizeSnapshotRelativePath } from '../workspaces/schema'
 
 const Digest = z.string().regex(/^sha256:[a-f0-9]{64}$/)
+const PortablePath = z.string().min(1).max(4096).refine(value => {
+  try { return normalizeSnapshotRelativePath(value) === value } catch { return false }
+}, 'Expected a portable contained relative path')
 const Identity = z.string().regex(/^[a-fA-F0-9]{48}$/)
 
 export const WindowsHelperRequestSchema = z.object({
@@ -8,17 +12,30 @@ export const WindowsHelperRequestSchema = z.object({
   operation_id: z.string().regex(/^[a-zA-Z0-9_-]{1,100}$/),
   root: z.string().min(1).max(4096),
   expected_root_id: Identity,
-  source: z.string().min(1).max(4096),
+  source: PortablePath,
   expected_source_id: Identity,
-  destination: z.string().max(4096),
+  destination: z.union([z.literal(''), PortablePath]),
   expected_destination_parent_id: z.string(),
-  kind: z.enum(['rename', 'delete']),
+  kind: z.enum(['rename', 'delete', 'stage']),
+  content_file: z.string().min(1).max(4096).optional(),
+  expected_sha256: Digest.optional(),
+  expected_size: z.number().int().nonnegative().optional(),
+  expected_mode: z.number().int().min(0).max(0o777).optional(),
   plan_id: z.string().min(1).max(256),
   plan_hash: Digest,
   preview_hash: Digest,
   approval_hash: Digest,
   root_hash: Digest,
 }).strict().superRefine((request, context) => {
+  if (request.kind === 'stage' && (!request.content_file || !request.expected_sha256
+    || request.expected_size === undefined || request.expected_mode === undefined)) {
+    context.addIssue({ code: 'custom', message: 'Stage requires exact external content evidence' })
+  }
+  if (request.kind === 'rename' || request.kind === 'stage') {
+    if (!request.destination || !Identity.safeParse(request.expected_destination_parent_id).success) {
+      context.addIssue({ code: 'custom', message: 'Stage/rename requires pinned destination parent' })
+    }
+  }
   if (request.kind === 'rename' && (!request.destination || !Identity.safeParse(request.expected_destination_parent_id).success)) {
     context.addIssue({ code: 'custom', message: 'Rename requires destination and pinned destination parent' })
   }

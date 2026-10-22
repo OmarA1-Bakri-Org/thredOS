@@ -1,8 +1,12 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { readFile, writeFile } from 'fs/promises'
+import { readFile, realpath, writeFile } from 'fs/promises'
 import { join } from 'path'
 import { createPr11Fixture, listFixtureWorkspaces, type Pr11Fixture } from './pr11-workspace-test-helper'
 import { readThreadSurfaceState } from '@/lib/thread-surfaces/repository'
+import { ChangeSetRepository } from '@/lib/changesets/repository'
+import { ChangeSetContentStore } from '@/lib/changesets/content-store'
+import { readLocalWorkspace } from '@/lib/local-first/workspace'
+import { resolveWorkspaceRuntimePaths } from '@/lib/workspaces/paths'
 import { readGateDecisions } from '@/lib/gates/repository'
 import { ProcessRepository } from '@/lib/runtime/process-repository'
 import { RunRepository } from '@/lib/runtime/run-repository'
@@ -20,8 +24,27 @@ describe('PR-11 isolated attempt dispatch', () => {
     expect(outcome.attempts[0]).toMatchObject({
       baseline_snapshot_id: outcome.run.baseline_snapshot_id,
       workspace_id: workspace!.id,
-      change_set_id: null,
+      change_set_id: `change-set-${outcome.attempts[0]!.id}`,
     })
+    const local = await readLocalWorkspace(fixture.canonical)
+    const namespace = resolveWorkspaceRuntimePaths(
+      fixture.runtime, local.id, await realpath(fixture.canonical),
+    ).workspaceNamespace
+    const changeSet = await new ChangeSetRepository({
+      canonicalRoot: fixture.canonical, runtimeDataRoot: fixture.runtime, namespace,
+      runId: outcome.run.id, attemptId: outcome.attempts[0]!.id,
+    }).get(outcome.attempts[0]!.change_set_id!)
+    const written = changeSet?.entries.find(entry => entry.path === 'agent-write-one.txt')
+    expect(written).toMatchObject({ operation: 'add', content_kind: 'text' })
+    expect(await new ChangeSetContentStore(
+      fixture.runtime, namespace, outcome.run.id, outcome.attempts[0]!.id,
+    ).verify(written!.content_ref!, written!.after_sha256!)).toBe(true)
+    const captureGates = (await readGateDecisions(fixture.canonical, outcome.run.id))
+      .filter(decision => ['change_set_captured', 'path_scope_respected'].includes(decision.gate_type))
+    expect(captureGates.map(decision => [decision.gate_type, decision.status])).toEqual([
+      ['change_set_captured', 'PASS'], ['path_scope_respected', 'PASS'],
+    ])
+    expect(outcome.attempts[0]!.gate_decision_refs).toContain(captureGates[0]!.id)
     expect(workspace).toMatchObject({ isolation_label: 'THREADOS_SCOPED', status: 'retained' })
     const projectedAttempt = (await readThreadSurfaceState(fixture.canonical)).runs.find(
       run => run.attemptId === outcome.attempts[0]!.id,
@@ -60,6 +83,16 @@ describe('PR-11 isolated attempt dispatch', () => {
     await expect(readFile(join(fixture.canonical, 'agent-real.txt'))).rejects.toMatchObject({ code: 'ENOENT' })
   }, 30_000)
 
+  test('persisted step scope blocks an actual out-of-scope write', async () => {
+    fixture = await createPr11Fixture(['scoped'])
+    Object.assign(fixture.sequence.steps[0]!, { path_scopes: ['source.txt'] })
+    const outcome = await fixture.run()
+    expect(outcome.attempts[0]?.status).toBe('needs_review')
+    expect(outcome.run.status).toBe('awaiting_review')
+    expect((await readGateDecisions(fixture.canonical, outcome.run.id)).find(
+      decision => decision.gate_type === 'path_scope_respected',
+    )).toMatchObject({ status: 'BLOCK', reason_codes: ['PATH_SCOPE_VIOLATION'] })
+  }, 30_000)
   test.each([
     ['output schema', 'missing-required-schema.json', undefined],
     ['completion contract', undefined, 'Produce verified evidence before completing'],

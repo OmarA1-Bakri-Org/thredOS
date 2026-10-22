@@ -143,6 +143,10 @@ describe('GateDecisionSchema', () => {
     expect(GateTypeSchema.safeParse(gateType).success).toBe(true)
   })
 
+  it.each(['change_set_captured', 'path_scope_respected'] as const)('accepts the M2 %s gate type', gateType => {
+    expect(GateTypeSchema.safeParse(gateType).success).toBe(true)
+  })
+
   it('validates a PASS decision', () => {
     const result = GateDecisionSchema.safeParse({
       id: 'gate-decision-001',
@@ -313,6 +317,16 @@ describe('TraceEventSchema', () => {
     }).success).toBe(true)
   })
 
+  it.each(['change-set-selected', 'change-set-rejected'] as const)(
+    'validates the %s decision trace', eventType => {
+      expect(TraceEventSchema.safeParse({
+        ts: '2026-09-29T10:00:00Z', run_id: 'run-1', surface_id: 'surface-1',
+        actor: 'operator', event_type: eventType,
+        payload_ref: '.threados/changesets/change-set-attempt-1.json', policy_ref: null,
+      }).success).toBe(true)
+    },
+  )
+
   it('rejects a TraceEvent with an invalid event_type', () => {
     const result = TraceEventSchema.safeParse({
       ts: '2026-03-28T10:00:00Z',
@@ -387,9 +401,14 @@ describe('GateReasonCode', () => {
     expect(GateReasonCode.WORKSPACE_MANIFEST_INVALID).toBe('WORKSPACE_MANIFEST_INVALID')
   })
 
-  it('covers all fifteen reason codes', () => {
+  it('defines change-set capture and scope reasons', () => {
+    expect(GateReasonCode.CHANGE_SET_CAPTURE_FAILED).toBe('CHANGE_SET_CAPTURE_FAILED')
+    expect(GateReasonCode.PATH_SCOPE_VIOLATION).toBe('PATH_SCOPE_VIOLATION')
+  })
+
+  it('covers all seventeen reason codes', () => {
     const codes = Object.keys(GateReasonCode)
-    expect(codes).toHaveLength(15)
+    expect(codes).toHaveLength(17)
   })
 })
 

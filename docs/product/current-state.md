@@ -60,3 +60,12 @@ If you need a concise, defensible summary of the repo state:
 - **runtime foundation:** one sequential shared runtime across API and CLI, canonical process control, recovery, retry lineage, source-aware legacy projections, and truthful operator controls
 - **partially real:** chat orchestration, lane/hierarchy completeness, builder/pack integration, and proving-layer hooks
 - **not product-ready yet:** full Thread Runner proving loop, verified VM execution, and end-to-end competitive progression
+
+
+### Bounded M2 controlled transactions (cloud implementation)
+
+The shared runtime service now owns exact merge-approval subjects, controlled apply, explicit rollback, result inspection and recovery. The normal factory leaves the mutation provider unavailable. An explicit server-owned Windows adapter uses the supervised protected helper; it has not passed native Windows acceptance in this Linux environment. No request can select a provider or executable.
+
+Configured candidate validation runs in its stopped Surface Workspace before capture/selection, with root identity and link auditing, policy checks, retained process custody and physical process evidence. Preview validation remains separate. The bounded transaction supports regular-file adds, modifications and deletions in existing directories, stages all candidates after approval consumption, persists rollback evidence and operation intents, runs configured canonical post-apply checks, and preserves exact approval and frozen registration trace links. Unknown helper/process outcomes retain a pending result and block further mutation. Manual rollback requires a fresh exact approval and affected-file preconditions.
+
+`bun scripts/verify/m2-transaction-proof.ts --fixture-contract --confirm-owned-fixtures` verifies this service contract in disposable dirty-Git and non-Git fixtures. It explicitly reports native platform acceptance as not run. Directory changes, renames/chmod, multi-candidate composition, the complete M2 operator UI and M3 concurrency remain separate acceptance gates; this change does not close M2 or enable parallel scheduling.

@@ -157,6 +157,9 @@ async function makeService(
     }),
     bootstrapWorkspace: async () => undefined,
     finalizeAttemptWorkspace: async () => undefined,
+    captureAttemptChangeSet: async ({ attempt }) => ({ id: `change-set-${attempt.id}`, captured: true, pathScopeViolations: [] }),
+    // Capture is fixture-only; no Change Set repository record exists to finalize.
+    finalizeAttemptChangeSet: async () => undefined,
     prepareArtifacts: async () => undefined,
     resolveGateSurface: async () => ({ surfaceClass: 'shared', revealState: null }),
     allowModelExecution: () => ({ allowed: true }),

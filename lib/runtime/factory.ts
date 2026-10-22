@@ -40,6 +40,14 @@ import { runWorkspaceBootstrap } from '../workspaces/bootstrap'
 import { resolveExistingPathWithinRoot, resolvePathWithinRoot } from '../security/safe-path'
 import { writeFileAtomic } from '../fs/atomic'
 import { SnapshotRepository } from '../workspaces/snapshot-repository'
+import { captureChangeSet } from '../changesets/capture'
+import { validateAttemptCandidate } from '../changesets/validation'
+import { ChangeSetOperations } from '../changesets/operations'
+import { resolveRuntimeDataRoot, resolveWorkspaceRuntimePaths } from '../workspaces/paths'
+import { buildExclusionPolicy } from '../workspaces/exclusions'
+import { hashCanonicalJson } from '../workspaces/hash'
+import { readTextFileNoFollow } from '../security/safe-io'
+import { ValidationPolicyIntentSchema } from '../changesets/validation-schema'
 import {
   CanonicalPreconditionSchema,
   CanonicalWriteAttributionError,
@@ -159,6 +167,12 @@ function defaults(basePath: string): RuntimeServiceDependencies {
         threados_project_write_refs: [],
       })
       await writeFileAtomic(preconditionPath, `${JSON.stringify(precondition, null, 2)}\n`, { allowedRoot: basePath })
+      const validationIntentPath = await resolvePathWithinRoot(runRoot, 'validation-policy.json')
+      const validationIntent = ValidationPolicyIntentSchema.parse({
+        schema_version: 1, workflow_run_id: run.id,
+        required_commands: config.validate.length, commands_hash: hashCanonicalJson(config.validate),
+      })
+      await writeFileAtomic(validationIntentPath, `${JSON.stringify(validationIntent, null, 2)}\n`, { allowedRoot: basePath })
       return {
         snapshotId: captured.snapshot.id,
         snapshotManifestRef: captured.snapshot.manifest_ref
@@ -251,6 +265,48 @@ function defaults(basePath: string): RuntimeServiceDependencies {
               ? 'interrupted'
               : 'failed'
       await manager.finalize(workspace.context.workspaceId, { outcome })
+    },
+    captureAttemptChangeSet: async ({ run, attempt, step, workspace }) => {
+      const local = await readLocalWorkspace(basePath)
+      const runtimeDataRoot = await resolveRuntimeDataRoot({ canonicalRoot: basePath, override: local.runtimeDataRoot })
+      const paths = resolveWorkspaceRuntimePaths(runtimeDataRoot, local.id, await realpath(basePath))
+      const [record, snapshot, manifest, config] = await Promise.all([
+        new WorkspaceRepository(basePath).get(workspace.context.workspaceId),
+        new SnapshotRepository(basePath).get(workspace.context.snapshotId),
+        new SnapshotRepository(basePath).getManifest(workspace.context.snapshotId),
+        loadWorkspaceConfig(basePath),
+      ])
+      if (!record || !snapshot || !manifest || record.root_path !== workspace.context.cwd) {
+        throw new Error('CHANGE_SET_WORKSPACE_MISMATCH')
+      }
+      const exclusionPolicy = await buildExclusionPolicy({
+        canonicalRoot: await realpath(basePath), config,
+        alwaysExcludedRoots: [runtimeDataRoot],
+      })
+      const validationIntentPath = await resolveExistingPathWithinRoot(basePath,
+        '.threados', 'runs', run.id, 'validation-policy.json')
+      const validationIntent = ValidationPolicyIntentSchema.parse(JSON.parse(await readTextFileNoFollow(validationIntentPath)))
+      if (validationIntent.workflow_run_id !== run.id
+        || validationIntent.commands_hash !== hashCanonicalJson(config.validate)
+        || validationIntent.required_commands !== config.validate.length) {
+        throw new Error('CHANGE_SET_VALIDATION_POLICY_CHANGED')
+      }
+      const captured = await captureChangeSet({
+        canonicalRoot: basePath, runtimeDataRoot, namespace: paths.workspaceNamespace,
+        workflowRunId: run.id, attemptId: attempt.id, stepId: step.id, surfaceId: attempt.surface_id,
+        agentRef: attempt.agent_ref, workspace: record, snapshot, baselineManifest: manifest,
+        exclusionPolicy,
+        maxFiles: config.workspace.max_files, maxBytes: config.workspace.max_bytes_each,
+        pathScopes: step.path_scopes ?? undefined,
+        outputContractConfigured: Boolean(step.output_contract_ref || step.completion_contract),
+        validationCommandsRequired: validationIntent.required_commands,
+        createdAt: now(),
+      })
+      return { id: captured.id, captured: captured.status === 'captured', pathScopeViolations: captured.path_scope_violations }
+    },
+    validateAttemptWorkspace: validateAttemptCandidate,
+    finalizeAttemptChangeSet: async ({ run, attempt }) => {
+      if (attempt.change_set_id) await new ChangeSetOperations(basePath).finalizeEvidence(run.id, attempt.id)
     },
     verifyCanonicalWorkspace: async ({ run, attempt }) => {
       const [config, localWorkspace] = await Promise.all([
@@ -351,7 +407,7 @@ function defaults(basePath: string): RuntimeServiceDependencies {
       }
       return decisions
     },
-    evaluateCompletionGates: ({ step, artifactManifestPresent }) => evaluateStepCompletionGates(step, {
+    evaluateCompletionGates: ({ step, result: _result, artifactManifestPresent }) => evaluateStepCompletionGates(step, {
       artifactManifestPresent,
       outputSchemaValid: !step.output_contract_ref,
       completionContractSatisfied: !step.completion_contract,
