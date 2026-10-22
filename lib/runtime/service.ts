@@ -74,6 +74,14 @@ function compareAttemptRecency(left: StepAttempt, right: StepAttempt): number {
   return byIndex !== 0 ? byIndex : right.id.localeCompare(left.id)
 }
 
+function retryEndedBeforeAttempt(run: WorkflowRun): RuntimeServiceError {
+  const code = RuntimeErrorCodeSchema.safeParse(run.error_code)
+  return new RuntimeServiceError(
+    code.success ? code.data : 'ATTEMPT_NOT_FOUND',
+    run.error_message ?? 'Retry ended before an attempt was created',
+  )
+}
+
 function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void; reject: (reason: unknown) => void } {
   let resolve!: (value: T) => void
   let reject!: (reason: unknown) => void
@@ -911,8 +919,7 @@ export class ThreadOSRuntimeService {
         if (attempt) return attempt
       }
       if (terminalRunStatuses.has(run.status)) {
-        const code = RuntimeErrorCodeSchema.safeParse(run.error_code)
-        throw new RuntimeServiceError(code.success ? code.data : 'ATTEMPT_NOT_FOUND', run.error_message ?? 'Retry ended before an attempt was created')
+        throw retryEndedBeforeAttempt(run)
       }
       await new Promise(resolve => setTimeout(resolve, 20))
     }

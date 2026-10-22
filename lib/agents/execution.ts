@@ -52,11 +52,16 @@ async function readAsset(basePath: string, ref: { id: string; path?: string }, k
   })
 }
 
-async function snapshot(basePath: string, agent: AgentRegistration): Promise<AgentExecutionSnapshot> {
+function canonicalComposition(agent: AgentRegistration) {
   const composition = buildRegisteredAgentComposition(agent)
   if (!composition.promptRef || (agent.composition && agent.composition.identityHash !== composition.identityHash)) {
     throw new RuntimeServiceError('AGENT_REGISTRATION_INVALID', 'Registered agent has no valid canonical composition')
   }
+  return { ...composition, promptRef: composition.promptRef }
+}
+
+async function snapshot(basePath: string, agent: AgentRegistration): Promise<AgentExecutionSnapshot> {
+  const composition = canonicalComposition(agent)
   try {
     const prompt = await readAsset(basePath, composition.promptRef, 'prompt')
     const skillHashes = await Promise.all(composition.skillRefs.map(async ref => ({
@@ -82,34 +87,48 @@ async function snapshot(basePath: string, agent: AgentRegistration): Promise<Age
   }
 }
 
+function assertMatchingAssignmentAliases(step: Step): void {
+  if (step.assigned_agent_id && step.agent_ref && step.assigned_agent_id !== step.agent_ref) {
+    throw new RuntimeServiceError('AGENT_COMPOSITION_MISMATCH', 'Step agent assignment aliases disagree')
+  }
+}
+
+function registrationId(step: Step, frozen?: AgentExecutionSnapshot | null): string {
+  if (!frozen) assertMatchingAssignmentAliases(step)
+  const id = frozen?.registration_id ?? step.assigned_agent_id ?? step.agent_ref
+  if (!id) throw new RuntimeServiceError('AGENT_REGISTRATION_REQUIRED', 'Every executable step requires a registered agent')
+  return id
+}
+
+function matchingRegistration(step: Step, current: AgentExecutionSnapshot, frozen?: AgentExecutionSnapshot | null): AgentExecutionSnapshot {
+  if (frozen) {
+    const registration = AgentExecutionSnapshotSchema.parse(frozen)
+    if (JSON.stringify(current) !== JSON.stringify(registration)) {
+      throw new RuntimeServiceError('AGENT_IDENTITY_CHANGED', 'Frozen registration or its versioned assets changed; register a replacement agent')
+    }
+    return registration
+  }
+  const declared = buildAgentComposition({
+    model: step.model, role: step.role ?? current.role,
+    promptRef: step.prompt_ref, skillRefs: step.skill_refs, tools: current.tools,
+  })
+  if (declared.identityHash !== current.composition_hash) {
+    throw new RuntimeServiceError('AGENT_COMPOSITION_MISMATCH', 'Step loadout differs from its registered agent; assign a matching registration')
+  }
+  return current
+}
+
 export async function resolveStepAgent(
   basePath: string,
   step: Step,
   frozen?: AgentExecutionSnapshot | null,
 ): Promise<{ step: Step; registration: AgentExecutionSnapshot }> {
-  if (!frozen && step.assigned_agent_id && step.agent_ref && step.assigned_agent_id !== step.agent_ref) {
-    throw new RuntimeServiceError('AGENT_COMPOSITION_MISMATCH', 'Step agent assignment aliases disagree')
-  }
-  const id = frozen?.registration_id ?? step.assigned_agent_id ?? step.agent_ref
-  if (!id) throw new RuntimeServiceError('AGENT_REGISTRATION_REQUIRED', 'Every executable step requires a registered agent')
+  const id = registrationId(step, frozen)
   const state = await readAgentState(basePath)
   const matches = state.agents.filter(agent => agent.id === id)
   if (matches.length !== 1) throw new RuntimeServiceError('AGENT_NOT_REGISTERED', 'Assigned agent is not uniquely registered')
   const current = await snapshot(basePath, matches[0]!)
-  if (frozen) {
-    if (JSON.stringify(current) !== JSON.stringify(AgentExecutionSnapshotSchema.parse(frozen))) {
-      throw new RuntimeServiceError('AGENT_IDENTITY_CHANGED', 'Frozen registration or its versioned assets changed; register a replacement agent')
-    }
-  } else {
-    const declared = buildAgentComposition({
-      model: step.model, role: step.role ?? current.role,
-      promptRef: step.prompt_ref, skillRefs: step.skill_refs, tools: current.tools,
-    })
-    if (declared.identityHash !== current.composition_hash) {
-      throw new RuntimeServiceError('AGENT_COMPOSITION_MISMATCH', 'Step loadout differs from its registered agent; assign a matching registration')
-    }
-  }
-  const registration = frozen ? AgentExecutionSnapshotSchema.parse(frozen) : current
+  const registration = matchingRegistration(step, current, frozen)
   return { registration, step: {
     ...step,
     assigned_agent_id: registration.registration_id,
