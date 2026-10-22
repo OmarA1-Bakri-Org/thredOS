@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, test } from 'bun:test'
 import { classifyWindowsHelperRecovery, runWindowsApplyHelper } from './windows-helper-client'
+import { WindowsHelperRequestSchema } from './windows-helper-types'
 import type { WindowsHelperRequest } from './windows-helper-types'
 
 const roots: string[] = []
@@ -42,8 +43,12 @@ test('rejects oversized fields and multibyte serialized input before journal or 
   const run = (candidate: WindowsHelperRequest) => runWindowsApplyHelper({ request: candidate,
     journalDir, helperPath, executablePath: process.execPath, timeoutMs: 1000 })
   await assert.rejects(run({ ...request, plan_id: 'p'.repeat(257) }))
-  await assert.rejects(run({ ...request, root: `${request.root}${'é'.repeat(3990)}`,
-    source: Array(20).fill('é'.repeat(190)).join('/'), destination: Array(20).fill('é'.repeat(190)).join('/') }), /MERGE_HELPER_REQUEST_TOO_LARGE/)
+  await assert.rejects(run({ ...request, root: 'r'.repeat(4097) }))
+  const oversized = { ...request, plan_id: 'p'.repeat(256),
+    source: Array(20).fill('é'.repeat(200)).join('/'), destination: Array(20).fill('é'.repeat(200)).join('/') }
+  assert.equal(WindowsHelperRequestSchema.safeParse(oversized).success, true)
+  assert.ok(Buffer.byteLength(JSON.stringify(oversized)) > 16 * 1024)
+  await assert.rejects(run(oversized), /MERGE_HELPER_REQUEST_TOO_LARGE/)
   assert.equal((await readdir(journalDir)).length, 0)
 })
 
