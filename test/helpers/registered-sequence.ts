@@ -26,16 +26,21 @@ async function materializeAsset(basePath: string, path: string, content: string)
   })
 }
 
+function fixtureAgentId(step: RegisteredFixtureStep): string {
+  const id = `fixture-${assertSafePathSegment(step.id, 'fixture step id')}`
+  if ((step.assigned_agent_id && step.assigned_agent_id !== id) || (step.agent_ref && step.agent_ref !== id)) {
+    throw new Error(`Fixture setup refuses to register an unknown assignment for ${step.id}`)
+  }
+  return id
+}
+
 /** Explicit setup for declared fixture steps; never called by production or shared setup. */
 export async function registerSequenceAgents<T extends RegisteredFixtureStep>(
   basePath: string,
   steps: readonly T[],
 ): Promise<Array<T & { assigned_agent_id: string; agent_ref: string; prompt_ref: PromptRef; skill_refs: SkillRef[] }>> {
   const bound = steps.map(step => {
-    const id = `fixture-${assertSafePathSegment(step.id, 'fixture step id')}`
-    if ((step.assigned_agent_id && step.assigned_agent_id !== id) || (step.agent_ref && step.agent_ref !== id)) {
-      throw new Error(`Fixture setup refuses to register an unknown assignment for ${step.id}`)
-    }
+    const id = fixtureAgentId(step)
     const promptRef = step.prompt_ref ?? { id: step.id, version: 1, path: step.prompt_file }
     return { ...step, assigned_agent_id: id, agent_ref: id, prompt_ref: promptRef, skill_refs: step.skill_refs ?? [] }
   })

@@ -7,37 +7,57 @@ import {
 } from '@/lib/security/safe-path'
 import { appendFileNoFollow } from '@/lib/security/safe-io'
 import { readTextFileNoFollow } from '@/lib/security/safe-io'
-import { WorkflowRunSchema, StepAttemptSchema } from '@/lib/runtime/schema'
+import { WorkflowRunSchema, StepAttemptSchema, type WorkflowRun } from '@/lib/runtime/schema'
 import { agentRegistrationEvidence } from '@/lib/agents/execution'
 
-async function bindFrozenRegistration(basePath: string, runId: string, event: TraceEvent): Promise<TraceEvent> {
+function isCanonicalRun(raw: unknown): boolean {
+  return !!raw && typeof raw === 'object' && 'schema_version' in raw && raw.schema_version === 2
+}
+
+async function readCanonicalRun(basePath: string, runId: string): Promise<WorkflowRun | null> {
   let raw: unknown
   try {
     const path = await resolveExistingPathWithinRoot(basePath, '.threados', 'runs', runId, 'run.json')
     raw = JSON.parse(await readTextFileNoFollow(path))
   } catch (error) {
-    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return event
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return null
     throw error
   }
   // Existing legacy traces remain readable. Canonical execution evidence always
   // comes from the persisted run/attempt, never the current registry or caller.
-  if (!raw || typeof raw !== 'object' || !('schema_version' in raw) || raw.schema_version !== 2) return event
+  if (!isCanonicalRun(raw)) return null
   const run = WorkflowRunSchema.parse(raw)
   if (run.id !== runId) throw new Error('Trace run identity does not match its persisted record')
-  if (!run.agent_registrations) return event
+  return run
+}
+
+async function readFrozenAttemptRegistration(
+  basePath: string,
+  runId: string,
+  attemptId: string,
+  surfaceId: string,
+  registrations: NonNullable<WorkflowRun['agent_registrations']>,
+) {
+  assertSafePathSegment(attemptId, 'attempt id')
+  const path = await resolveExistingPathWithinRoot(basePath, '.threados', 'runs', runId, 'attempts', attemptId, 'attempt.json')
+  const attempt = StepAttemptSchema.parse(JSON.parse(await readTextFileNoFollow(path)))
+  const registration = registrations[attempt.step_id]
+  if (attempt.id !== attemptId || attempt.workflow_run_id !== runId || !registration
+    || JSON.stringify(registration) !== JSON.stringify(attempt.agent_registration)) {
+    throw new Error('Trace attempt does not match the frozen run registration')
+  }
+  if (surfaceId !== attempt.surface_id) throw new Error('Trace surface does not match its registered attempt')
+  return registration
+}
+
+async function bindFrozenRegistration(basePath: string, runId: string, event: TraceEvent): Promise<TraceEvent> {
+  const run = await readCanonicalRun(basePath, runId)
+  if (!run?.agent_registrations) return event
   const registrations = Object.fromEntries(Object.entries(run.agent_registrations)
     .map(([stepId, registration]) => [stepId, agentRegistrationEvidence(registration)]))
   const { agent_registration: _callerRegistration, agent_registrations: _callerRegistrations, ...bound } = event
   if (event.attempt_id) {
-    assertSafePathSegment(event.attempt_id, 'attempt id')
-    const path = await resolveExistingPathWithinRoot(basePath, '.threados', 'runs', runId, 'attempts', event.attempt_id, 'attempt.json')
-    const attempt = StepAttemptSchema.parse(JSON.parse(await readTextFileNoFollow(path)))
-    const registration = run.agent_registrations[attempt.step_id]
-    if (attempt.id !== event.attempt_id || attempt.workflow_run_id !== runId || !registration
-      || JSON.stringify(registration) !== JSON.stringify(attempt.agent_registration)) {
-      throw new Error('Trace attempt does not match the frozen run registration')
-    }
-    if (event.surface_id !== attempt.surface_id) throw new Error('Trace surface does not match its registered attempt')
+    const registration = await readFrozenAttemptRegistration(basePath, runId, event.attempt_id, event.surface_id, run.agent_registrations)
     return { ...bound, agent_registration: agentRegistrationEvidence(registration) }
   }
   return { ...bound, agent_registrations: registrations }

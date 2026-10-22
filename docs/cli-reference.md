@@ -132,6 +132,8 @@ thread gate list
 
 Run one specific step through `ThreadOSRuntimeService`. Milestone 0 execution is sequential.
 
+Every executable step must be assigned an agent registered in `.threados/state/agents.json`, with matching model, role, canonical prompt reference, and skills. Missing registration fails with `AGENT_REGISTRATION_REQUIRED`; an unknown registration fails with `AGENT_NOT_REGISTERED`; a different loadout fails with `AGENT_COMPOSITION_MISMATCH`. Launch binds the registration version, composition, and asset content hashes. Retry retains the original binding. Legacy attempts without a frozen identity fail with `AGENT_REGISTRATION_REQUIRED`; a changed frozen identity or content fails with `AGENT_IDENTITY_CHANGED`. Start a new execution with a replacement registration for material changes.
+
 ```bash
 thread run step research
 ```

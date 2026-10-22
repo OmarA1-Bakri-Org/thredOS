@@ -163,6 +163,72 @@ async function mutateProjection<T>(
   return null
 }
 
+type FinalizeAttemptInput = Parameters<RuntimeProjectionPort['finalizeAttempt']>[0]
+
+function projectedStepRunScope(
+  projected: ThreadSurfaceState['runs'][number] | undefined,
+  executionIndex: number,
+): StepRunScope | null {
+  if (!projected) return null
+  return {
+    runId: projected.id,
+    startedAt: projected.startedAt,
+    executionIndex: projected.executionIndex ?? executionIndex,
+    threadSurfaceId: projected.threadSurfaceId,
+  }
+}
+
+function nextProjectionIds(attemptId: string, hasStepRun: boolean) {
+  let childRun = 0
+  let event = 0
+  let merge = 0
+  return {
+    nextRunId: () => {
+      childRun++
+      return !hasStepRun && childRun === 1 ? attemptId : `${attemptId}-child-${childRun}`
+    },
+    nextEventId: () => `${attemptId}-event-${++event}`,
+    nextMergeId: () => `${attemptId}-merge-${++merge}`,
+  }
+}
+
+function bindAttemptProjection(state: ThreadSurfaceState, runId: string, attemptId: string): ThreadSurfaceState {
+  return {
+    ...state,
+    runs: state.runs.map(item => item.id === attemptId
+      ? { ...item, workflowRunId: runId, attemptId }
+      : item),
+    runEvents: state.runEvents.map(item => item.runId === attemptId
+      ? { ...item, workflowRunId: runId, attemptId }
+      : item),
+  }
+}
+
+function newChildSpawnEvents(current: ThreadSurfaceState, finalized: ThreadSurfaceState) {
+  const existingIds = new Set(current.runEvents.map(event => event.id))
+  return finalized.runEvents.filter(event => !existingIds.has(event.id)
+    && (event.eventType === 'child-agent-spawned' || event.eventType === 'spawn-denied'))
+}
+
+function buildAttemptFinalization(current: ThreadSurfaceState, { run, attempt, step, runtimeEvents }: FinalizeAttemptInput) {
+  const projected = current.runs.find(item => item.attemptId === attempt.id || item.id === attempt.id)
+  if (projected?.endedAt != null) return null
+  const stepRun = projectedStepRunScope(projected, attempt.execution_index)
+  const finalized = finalizeStepRunWithRuntimeEvents(current, {
+    step, stepRun, success: attempt.status === 'completed', endedAt: attempt.ended_at ?? run.ended_at ?? run.created_at,
+    runtimeEvents,
+    ...nextProjectionIds(attempt.id, stepRun !== null),
+    agentRegistration: attempt.agent_registration,
+  })
+  return {
+    state: bindAttemptProjection(finalized.state, run.id, attempt.id),
+    result: {
+      pending: finalized.pendingChildSequences,
+      events: newChildSpawnEvents(current, finalized.state),
+    },
+  }
+}
+
 export function createRuntimeProjections(basePath: string): RuntimeProjectionPort {
   return {
     async beginRun({ run, sequence }) {
@@ -209,47 +275,7 @@ export function createRuntimeProjections(basePath: string): RuntimeProjectionPor
     },
 
     async finalizeAttempt({ run, attempt, step, runtimeEvents }) {
-      const mutation = await mutateProjection(basePath, current => {
-        const projected = current.runs.find(item => item.attemptId === attempt.id || item.id === attempt.id)
-        if (projected?.endedAt != null) return null
-        const stepRun: StepRunScope | null = projected ? {
-          runId: projected.id,
-          startedAt: projected.startedAt,
-          executionIndex: projected.executionIndex ?? attempt.execution_index,
-          threadSurfaceId: projected.threadSurfaceId,
-        } : null
-        let childRun = 0
-        let event = 0
-        let merge = 0
-        const finalized = finalizeStepRunWithRuntimeEvents(current, {
-          step, stepRun, success: attempt.status === 'completed', endedAt: attempt.ended_at ?? run.ended_at ?? run.created_at,
-          runtimeEvents,
-          nextRunId: () => {
-            childRun++
-            return stepRun == null && childRun === 1 ? attempt.id : `${attempt.id}-child-${childRun}`
-          },
-          nextEventId: () => `${attempt.id}-event-${++event}`,
-          nextMergeId: () => `${attempt.id}-merge-${++merge}`,
-          agentRegistration: attempt.agent_registration,
-        })
-        return {
-          state: {
-            ...finalized.state,
-            runs: finalized.state.runs.map(item => item.id === attempt.id
-              ? { ...item, workflowRunId: run.id, attemptId: attempt.id }
-              : item),
-            runEvents: finalized.state.runEvents.map(item => item.runId === attempt.id
-              ? { ...item, workflowRunId: run.id, attemptId: attempt.id }
-              : item),
-          },
-          result: {
-            pending: finalized.pendingChildSequences,
-            events: finalized.state.runEvents.filter(item =>
-              !current.runEvents.some(existing => existing.id === item.id)
-              && (item.eventType === 'child-agent-spawned' || item.eventType === 'spawn-denied')),
-          },
-        }
-      })
+      const mutation = await mutateProjection(basePath, current => buildAttemptFinalization(current, { run, attempt, step, runtimeEvents }))
       if (!mutation) return
       for (const event of mutation.events) {
         const registration = attempt.agent_registration

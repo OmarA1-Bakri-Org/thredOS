@@ -323,19 +323,21 @@ export async function appendFileNoFollow(filePath: string, content: string): Pro
   }
 }
 
-export async function readTextFileNoFollow(filePath: string, expectedSource?: SafeCopyExpectedIdentity): Promise<string> {
-  let handle: FileHandle | undefined
+async function openReadableVerified(filePath: string, allowReplacement: boolean): Promise<FileHandle> {
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      handle = await openExistingVerified(filePath, constants.O_RDONLY, 'read')
-      break
+      return await openExistingVerified(filePath, constants.O_RDONLY, 'read')
     } catch (error) {
       // Atomic JSON writers legitimately replace an inode. Retry a fresh,
       // no-follow open; pinned assets must fail on any identity replacement.
-      if (expectedSource || !(error instanceof SafeIoSourceChangedError) || attempt === 2) throw error
+      if (!allowReplacement || !(error instanceof SafeIoSourceChangedError) || attempt === 2) throw error
     }
   }
-  if (!handle) throw new Error('Unable to open a stable regular file')
+  throw new Error('Unable to open a stable regular file')
+}
+
+export async function readTextFileNoFollow(filePath: string, expectedSource?: SafeCopyExpectedIdentity): Promise<string> {
+  const handle = await openReadableVerified(filePath, expectedSource === undefined)
   try {
     const initial = expectedSource ? await readVerifiedIdentity(filePath, handle) : undefined
     if (initial) validateExpectedIdentity(initial, expectedSource, filePath)
