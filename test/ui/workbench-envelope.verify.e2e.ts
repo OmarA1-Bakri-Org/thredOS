@@ -1,4 +1,9 @@
 import { expect, test } from '@playwright/test'
+import { join, resolve } from 'node:path'
+import type { AgentRegistration } from '../../lib/agents/types'
+import type { RunProjection } from '../../lib/runtime/service-types'
+import type { Sequence } from '../../lib/sequence/schema'
+import { assertVerificationCliFixture } from '../../scripts/verify/cli-fixture'
 import {
   expectNoFrameworkOverlay,
   openAuthenticatedWorkbench,
@@ -155,8 +160,66 @@ test.describe('assets-prompts-skills-tools', () => {
 test.describe('run-chat-runtime', () => {
   test('records SAFE runtime approvals and trace events, then keeps chat interactive without framework errors', async ({ page }, testInfo) => {
     const evidence = startBrowserEvidence(page, testInfo, 'run-chat-runtime')
+    const stepId = 'orch-orchestrator'
+    let originalAssignment: string | null = null
+    let originalStatus: string | undefined
+    let assignmentChanged = false
+    let registeredAgent: AgentRegistration
+    let runId: string
 
     try {
+      // Run all confirms SAFE execution. Verify the fixed local CLI before any mutation.
+      assertVerificationCliFixture()
+      const webServer = testInfo.config.webServer
+      if (!webServer || webServer.reuseExistingServer !== false || !webServer.env
+        || !webServer.command.includes('scripts/verify/web-server.mjs')) {
+        throw new Error('The runtime verification requires its own server with an explicit fixture environment')
+      }
+      assertVerificationCliFixture({ ...process.env, ...webServer.env })
+      expect(webServer.env.THREDOS_VERIFY_CLI_FIXTURE_DIR).toBe(process.env.THREDOS_VERIFY_CLI_FIXTURE_DIR)
+      const workspace = process.env.THREDOS_BASE_PATH ?? process.env.THREADOS_BASE_PATH
+      const artifacts = testInfo.config.metadata.artifactsDir
+      if (!workspace || typeof artifacts !== 'string' || resolve(workspace) !== resolve(join(artifacts, 'workspace'))) {
+        throw new Error('The runtime verification requires a fresh workspace copied into its own artifacts directory')
+      }
+      const readiness = await page.request.get('/api/readiness')
+      expect(readiness.status()).toBe(200)
+      expect(await readiness.json()).toMatchObject({ ready: true, basePath: workspace })
+      await openAuthenticatedWorkbench(page)
+      await evidence.withinBoundary('client -> API', 'register and assign the known orchestrator through the real APIs', async () => {
+        const sequenceResponse = await page.request.get('/api/sequence')
+        expect(sequenceResponse.status()).toBe(200)
+        const sequence = await sequenceResponse.json() as Sequence
+        const step = sequence.steps.find(candidate => candidate.id === stepId)
+        expect(step).toMatchObject({
+          id: stepId,
+          model: 'claude-code',
+          role: 'orchestrator',
+          prompt_ref: { id: stepId, version: 1, path: `.threados/prompts/${stepId}.md` },
+        })
+        originalAssignment = step!.assigned_agent_id ?? step!.agent_ref ?? null
+        originalStatus = step!.status
+        const registrationResponse = await page.request.post('/api/agents', {
+          data: {
+            id: 'verify-runtime-orchestrator', name: 'Verification runtime orchestrator',
+            builderId: 'verification-fixture', builderName: 'Verification fixture',
+            model: step!.model, role: step!.role, promptRef: step!.prompt_ref,
+            tools: [], skills: [], skillRefs: [],
+          },
+        })
+        expect(registrationResponse.status()).toBe(201)
+        const registration = await registrationResponse.json() as { agent: AgentRegistration }
+        registeredAgent = registration.agent
+        expect(registeredAgent.id).toBe('verify-runtime-orchestrator')
+        expect(registeredAgent.version).toBeGreaterThan(0)
+        expect(registeredAgent.composition?.identityHash).toMatch(/^[a-f0-9]{64}$/)
+        const assignmentResponse = await page.request.post('/api/step', {
+          data: { action: 'edit', stepId, assignedAgentId: registeredAgent.id },
+        })
+        expect(assignmentResponse.status()).toBe(200)
+        assignmentChanged = true
+      })
+
       await evidence.withinBoundary('UI', 'open the run section and confirm a runnable dispatch', async () => {
         await openAuthenticatedWorkbench(page)
 
@@ -176,12 +239,10 @@ test.describe('run-chat-runtime', () => {
         await page.getByTestId('confirm-dialog').getByRole('button', { name: 'Run all' }).click()
         const response = await runResponse
         expect(response.status()).toBe(202)
-        const projection = await response.json() as {
-          source?: string
-          run?: { id?: string; status?: string }
-        }
+        const projection = await response.json() as RunProjection
         expect(projection.source).toBe('v2')
         expect(projection.run?.id).toBeTruthy()
+        runId = projection.run.id
         expect([
           'pending',
           'provisioning',
@@ -196,6 +257,27 @@ test.describe('run-chat-runtime', () => {
         ]).toContain(projection.run?.status)
       })
 
+      await evidence.withinBoundary('API -> data', 'verify the persisted run and attempt use the registered identity', async () => {
+        await expect.poll(async () => {
+          const response = await page.request.get(`/api/runs/${runId}`)
+          expect(response.status()).toBe(200)
+          const projection = await response.json() as RunProjection
+          return projection.attempts.find(attempt => attempt.step_id === stepId)?.agent_registration
+        }).toMatchObject({
+          registration_id: registeredAgent.id,
+          registration_version: registeredAgent.version,
+          composition_hash: registeredAgent.composition!.identityHash,
+        })
+        const response = await page.request.get(`/api/runs/${runId}`)
+        expect(response.status()).toBe(200)
+        const projection = await response.json() as RunProjection
+        expect(projection.run.agent_registrations?.[stepId]).toMatchObject({
+          registration_id: registeredAgent.id,
+          registration_version: registeredAgent.version,
+          composition_hash: registeredAgent.composition!.identityHash,
+        })
+      })
+
       await evidence.withinBoundary('response -> UI', 'surface the recorded control-plane state and keep chat interactive', async () => {
         await expect(page.getByTestId('run-control-plane')).toBeVisible()
         await expect(page.getByTestId('run-approval-count')).not.toHaveText('0')
@@ -205,7 +287,16 @@ test.describe('run-chat-runtime', () => {
         await expectNoFrameworkOverlay(page)
       })
     } finally {
-      await evidence.finalize()
+      try {
+        if (assignmentChanged) {
+          const response = await page.request.post('/api/step', {
+            data: { action: 'edit', stepId, assignedAgentId: originalAssignment, status: originalStatus },
+          })
+          expect(response.status()).toBe(200)
+        }
+      } finally {
+        await evidence.finalize()
+      }
     }
   })
 })
